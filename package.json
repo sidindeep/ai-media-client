@@ -1,0 +1,43 @@
+{
+  "name": "ai-media-client",
+  "version": "0.2.0",
+  "description": "Windows desktop client for image and video generation APIs",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --win --x64 --dir"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "yaml": "^2.9.0"
+  },
+  "build": {
+    "beforePack": "./scripts/single-distribution.cjs",
+    "directories": {
+      "output": "dist/queue-header"
+    },
+    "appId": "local.aimedia.client",
+    "productName": "AI Media Client",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.ico",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "ajv": "^8.20.0"
+  }
+}

@@ -1,0 +1,104 @@
+const {randomUUID}=require('node:crypto');
+const {insufficientCredits,creditErrorMessage}=require('./api-errors');
+const remoteStates=['waiting','queuing','generating'];
+class TaskQueue {
+  constructor({store,prepare,create,poll,complete=async()=>{},notify=()=>{},interval=4000,concurrency=3}) {
+    Object.assign(this,{store,prepare,create,poll,complete,notify,interval});
+    this.paused=true;this.running=false;this.timer=null;this.error=null;this.closed=false;
+    this.setConcurrency(concurrency);
+  }
+  setConcurrency(value) {if(!Number.isInteger(value)||value<1||value>5)throw new Error('Лимит должен быть от 1 до 5');this.concurrency=value;}
+  async recover() {
+    for(const record of await this.store.list()) {
+      if(record.state==='unknown'&&!record.taskId&&insufficientCredits(record.error))await this.store.update(record.id,{state:'fail',error:creditErrorMessage,failureCode:'INSUFFICIENT_CREDITS'});
+      if(record.state==='preparing'||(record.state==='queued'&&record.queueHidden))await this.store.update(record.id,{state:record.queueHidden?'cancelled':'queued'});
+      if(record.state==='submitting' && !record.taskId)await this.store.update(record.id,{state:'unknown',error:'Приложение закрылось во время отправки. Проверьте журнал провайдера.'});
+      if(record.taskId&&remoteStates.includes(record.state)&&!record.generationStartedAt)await this.store.update(record.id,{generationStartedAt:record.createdAt||new Date().toISOString()});
+    }
+    // Already submitted tasks must keep being checked after an application restart.
+    // The queue remains paused, so locally queued requests are not submitted automatically.
+    if((await this.store.list()).some(record=>record.taskId&&remoteStates.includes(record.state)))this.schedule(0);
+  }
+  async enqueue(request) {
+    const record=await this.store.update(randomUUID(),{...request,taskId:null,state:'queued',createdAt:new Date().toISOString(),error:null});
+    this.notify();this.schedule(0);return record;
+  }
+  start() { this.paused=false;this.error=null;this.schedule(0);this.notify(); }
+  pause() { this.paused=true;this.notify(); }
+  async cancel(id) {await this.store.update(id,{state:'cancelled'},['queued']);this.notify();}
+  async remove(id) {
+    const record=(await this.store.list()).find(item=>item.id===id);
+    if(!record)return;
+    await this.store.update(id,{queueHidden:true});
+    if(record.state==='queued'){
+      try{await this.store.update(id,{state:'cancelled'},['queued']);}catch{/* Preparation may have started; it checks queueHidden before submitting. */}
+    }
+    if(record.state==='unknown')await this.acknowledge(id);
+    this.notify();
+  }
+  async clear() {
+    this.pause();
+    for(const record of await this.store.list())if(!record.queueHidden)await this.remove(record.id);
+    this.notify();
+  }
+  async acknowledge(id) {await this.store.update(id,{state:'unconfirmed'},['unknown']);this.error=null;this.notify();}
+  schedule(delay=this.interval) {if(this.closed||this.timer)return;this.timer=setTimeout(()=>{this.timer=null;this.tick().catch(error=>{this.error=error.message;this.paused=true;this.notify();});},delay);}
+  close() {this.closed=true;clearTimeout(this.timer);this.timer=null;}
+  async tick() {
+    if(this.running||this.closed)return;
+    this.running=true;let record;
+    try {
+      const records=await this.store.list();
+      if(records.some(item=>['unknown','submitting'].includes(item.state))){this.paused=true;this.error='Есть задача с неизвестным результатом отправки. Проверьте журнал провайдера.';}
+      // Poll every known job independently, even when new submissions are paused.
+      await Promise.all(records.filter(item=>item.taskId&&remoteStates.includes(item.state)).map(async job=>{
+        try {
+        const data=await this.poll(job);
+        if(![...remoteStates,'success','fail'].includes(data.state))throw new Error('Неизвестный статус задачи');
+        const checkedAt=new Date().toISOString();
+        const timing=['success','fail'].includes(data.state)?this.finishTiming(job,checkedAt):{};
+        const updated=await this.store.update(job.id,{...data,...timing,lastCheckedAt:checkedAt,error:data.failMsg||null});
+        this.notify();
+        if(data.state==='success')Promise.resolve().then(()=>this.complete(updated)).catch(()=>{}).finally(()=>this.notify());
+        }catch(error){this.error=error.message;this.paused=true;await this.store.update(job.id,{error:error.message});}
+      }));
+      while(!this.paused&&!this.closed){
+      const current=await this.store.list();
+      if(current.filter(item=>remoteStates.includes(item.state)||['preparing','submitting'].includes(item.state)).length>=this.concurrency)return;
+      record=current.filter(item=>item.state==='queued'&&!item.queueHidden).reverse()[0];
+      if(!record)return;
+      try {record=await this.store.update(record.id,{state:'preparing'},['queued']);}
+      catch {return;}
+      this.notify();
+      let input;
+      try {input=await this.prepare(record);}
+      catch(error){await this.store.update(record.id,{state:'blocked',error:error.message});throw error;}
+      if((await this.store.list()).find(item=>item.id===record.id)?.queueHidden){await this.store.update(record.id,{state:'cancelled'});continue;}
+      if(this.paused||this.closed){await this.store.update(record.id,{state:'queued'});return;}
+      const generationStartedAt=new Date().toISOString();
+      await this.store.update(record.id,{state:'submitting',generationStartedAt});this.notify();
+      let taskId;
+      try {taskId=(await this.create(record,input)).taskId;if(!taskId)throw new Error('API не вернул ID задачи');}
+      catch(error){
+        const rejected=error.code==='INSUFFICIENT_CREDITS';
+        const generationCompletedAt=new Date().toISOString();
+        await this.store.update(record.id,{state:rejected?'fail':'unknown',error:error.message,...(rejected?{failureCode:error.code,...this.finishTiming({generationStartedAt},generationCompletedAt)}:{})});
+        throw error;
+      }
+      await this.store.update(record.id,{state:'waiting',taskId});
+      this.notify();
+      }
+    } catch(error) {
+      this.error=error.message;this.paused=true;
+      if(record?.taskId)await this.store.update(record.id,{error:error.message});
+    } finally {
+      this.running=false;this.notify();
+      if(!this.closed && (!this.paused || (await this.store.list()).some(item=>item.taskId&&remoteStates.includes(item.state))))this.schedule();
+    }
+  }
+  finishTiming(record,completedAt) {
+    const started=Date.parse(record.generationStartedAt),completed=Date.parse(completedAt);
+    return {generationCompletedAt:completedAt,...(Number.isFinite(started)&&Number.isFinite(completed)?{generationDurationMs:Math.max(0,completed-started)}:{})};
+  }
+}
+module.exports={TaskQueue};

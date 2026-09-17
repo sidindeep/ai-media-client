@@ -14,17 +14,20 @@ function loadConfig(env = process.env) {
   const telegramUsers = (env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(value => value.trim()).filter(Boolean);
   if (telegramUsers.some(value => !/^\d+$/.test(value))) throw new Error('Некорректный Telegram user ID');
   const telegramEnabled = env.TELEGRAM_ENABLED === 'true';
+  const publicAccessValue = env.TELEGRAM_PUBLIC_ACCESS || 'true';
+  if (!['true', 'false'].includes(publicAccessValue)) throw new Error('TELEGRAM_PUBLIC_ACCESS должен быть true или false');
+  const telegramPublicAccess = publicAccessValue === 'true';
   const rubPerCredit = Number(env.MEDIA_RUB_PER_CREDIT || 0.51);
   if (!Number.isFinite(rubPerCredit) || rubPerCredit <= 0 || rubPerCredit > 100000) throw new Error('Некорректная цена кредита');
   if (env.MEDIA_PUBLIC_ORIGIN) {
     const origin = new URL(env.MEDIA_PUBLIC_ORIGIN);
     if (!['https:', 'http:'].includes(origin.protocol) || origin.origin !== env.MEDIA_PUBLIC_ORIGIN) throw new Error('MEDIA_PUBLIC_ORIGIN должен быть origin без пути');
   }
-  if (telegramEnabled && (!env.TELEGRAM_BOT_TOKEN || !telegramUsers.length)) throw new Error('Для бота нужны TELEGRAM_BOT_TOKEN и TELEGRAM_ALLOWED_USER_IDS');
+  if (telegramEnabled && !env.TELEGRAM_BOT_TOKEN) throw new Error('Для бота нужен TELEGRAM_BOT_TOKEN');
   return {
     root, host, port, dataDirectory, kieKey: env.KIE_API_KEY || '',
     uploadLimit: integer(env.MEDIA_UPLOAD_LIMIT_MB, 64, 1, 512) * 1024 * 1024,
-    telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers },
+    telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',
     rubPerCredit
   };

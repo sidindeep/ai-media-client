@@ -31,6 +31,22 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   for (const src of [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1])) assert.equal((await fetch(base + src)).status, 200);
   assert.equal((await fetch(base + '/src/main.js')).status, 404);
   assert.equal((await fetch(base + '/.env')).status, 404);
+  const navigation = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
+  // Use node:http: fetch overrides Sec-Fetch-Mode with "cors".
+  const requestStatus = (route, method = 'GET', headers = navigation) => new Promise((resolve, reject) => {
+    const request = require('node:http').request(base + route, { method, headers }, response => {
+      response.resume(); response.on('end', () => resolve(response.statusCode));
+    });
+    request.on('error', reject); request.end();
+  });
+  assert.equal(await requestStatus('/'), 200);
+  assert.equal(await requestStatus('/index.html', 'HEAD'), 200);
+  assert.equal(await requestStatus('/', 'POST'), 403);
+  assert.equal(await requestStatus('/api/health'), 403);
+  assert.equal(await requestStatus('/api/events'), 403);
+  assert.equal(await requestStatus('/api/rpc/getCatalog', 'POST'), 403);
+  assert.equal(await requestStatus('/', 'GET', { ...navigation, 'Sec-Fetch-Dest': 'iframe' }), 403);
+  assert.equal(await requestStatus('/', 'GET', { ...navigation, Host: 'other.test' }), 403);
   assert.equal((await fetch(base + '/api/rpc/startQueue', { method: 'POST', body: '[]' })).status, 403);
   assert.equal((await fetch(base + '/api/rpc/startQueue', { method: 'POST', headers: { Origin: 'https://other.test', 'X-Media-Client': 'web' }, body: '[]' })).status, 403);
   const health = await fetch(base + '/api/health').then(r => r.json()); assert.equal(health.generationConfigured, true);
@@ -71,13 +87,13 @@ test('unconfigured service starts and refuses paid task without fabricating outp
   assert.equal((await service.listHistory()).length, 0);
 });
 
-test('Telegram requires private allowlisted user and confirms once with durable request id', async t => {
+test('Telegram accepts new private users and confirms once with durable request id', async t => {
   const dir = await directory(t);
   const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
   const bot = createTelegramBot({ service, directory: dir, allowedUsers: ['42'], downloadFile: async () => Buffer.from('image') });
   const message = text => ({ message: { text, chat: { id: 42, type: 'private' }, from: { id: 42 } } });
   const callback = data => ({ callback_query: { data, from: { id: 42 }, message: { chat: { id: 42, type: 'private' } } } });
-  assert.equal(await bot.handle({ message: { text: '/start', chat: { id: 7, type: 'private' }, from: { id: 7 } } }), null);
+  assert.ok((await bot.handle({ message: { text: '/start', chat: { id: 7, type: 'private' }, from: { id: 7 } } })).text.includes('Медиастудия'));
   assert.equal(await bot.handle({ message: { text: '/start', chat: { id: 42, type: 'group' }, from: { id: 42 } } }), null);
   await bot.handle(callback(`model:${models.indexOf(model)}`));
   await bot.handle(message('Кот на луне'));
@@ -111,4 +127,62 @@ test('Telegram polling offsets survive restart and token-bearing failures are re
 test('config rejects external data paths and unconfigured enabled bot', () => {
   assert.throws(() => loadConfig({ MEDIA_DATA_DIR: '../outside' }), /внутри проекта/);
   assert.throws(() => loadConfig({ TELEGRAM_ENABLED: 'true' }), /TELEGRAM/);
+});
+
+
+test('public Telegram isolates history and delivers results without an allowlist', async t => {
+  const dir = await directory(t);
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
+  await service.history.update('other', { telegramChatId: '42', state: 'queued', modelName: 'Private task' });
+  await service.history.update('mine', { telegramChatId: '7', state: 'success', modelName: 'My task', resultJson: '{"resultUrls":["https://example.test/mine.png"]}' });
+  const bot = createTelegramBot({ service, directory: dir, allowedUsers: ['42'] });
+  const message = text => ({ message: { text, chat: { id: 7, type: 'private' }, from: { id: 7 } } });
+  const callback = data => ({ callback_query: { data, from: { id: 7 }, message: { chat: { id: 7, type: 'private' } } } });
+  const history = await bot.handle(message('/history'));
+  assert.ok(history.text.includes('My task')); assert.ok(!history.text.includes('Private task'));
+  assert.ok((await bot.handle(callback('cancel:other'))).text.includes('недоступна'));
+  const paused = service.queue.paused; await bot.handle(callback('resume')); assert.equal(service.queue.paused, paused);
+  assert.ok(!(await bot.handle(message('/queue'))).text.includes('Private task'));
+  const config = loadConfig({ TELEGRAM_ENABLED: 'true', TELEGRAM_BOT_TOKEN: 'test-token' }).telegram;
+  const sent = [];
+  const gateway = createTelegramGateway({ service, config, directory: dir, fetchImpl: async (url, options) => {
+    if (url.endsWith('/sendMessage')) sent.push(JSON.parse(options.body));
+    return { ok: true, status: 200, json: async () => ({ ok: true, result: url.endsWith('/getUpdates') ? [] : {} }) };
+  } });
+  assert.equal(gateway.status().configured, true);
+  await gateway.pollOnce();
+  assert.equal(sent.length, 1); assert.equal(sent[0].chat_id, '7');
+  assert.ok(sent[0].text.includes('mine.png'));
+});
+
+
+test('Telegram access switches from public to allowlist and back without losing sessions', async t => {
+  const dir = await directory(t);
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
+  const message = id => ({ message: { text: '/start', chat: { id, type: 'private' }, from: { id } } });
+  const open = createTelegramBot({ service, directory: dir, allowedUsers: ['42'], publicAccess: true });
+  assert.ok(await open.handle(message(7)));
+  const prompt = message(7); prompt.message.text = "Saved prompt"; await open.handle(prompt);
+  const closed = createTelegramBot({ service, directory: dir, allowedUsers: ['42'], publicAccess: false });
+  assert.equal(await closed.handle(message(7)), null);
+  assert.ok(await closed.handle(message(42)));
+  assert.equal(closed.accepts({ callback_query: { from: { id: 7 }, message: { chat: { id: 7, type: 'private' } } } }), false);
+  assert.equal(createTelegramBot({ service, directory: dir, publicAccess: false }).accepts(message(7)), false);
+  const reopened = createTelegramBot({ service, directory: dir, publicAccess: true });
+  assert.ok(await reopened.handle(message(7)));
+  assert.ok((await reopened.sessions.list()).some(row => row.id === '7'));
+  await service.history.update('result', { telegramChatId: '7', state: 'success', modelName: 'Test', resultJson: '{"resultUrls":[]}' });
+  const sent = [];
+  const fetchImpl = async (url, options) => {
+    if (url.endsWith('/sendMessage')) sent.push(JSON.parse(options.body));
+    return { ok: true, status: 200, json: async () => ({ ok: true, result: url.endsWith('/getUpdates') ? [] : {} }) };
+  };
+  const config = { enabled: true, token: 'test-token', users: ['42'], publicAccess: false };
+  await createTelegramGateway({ service, config, directory: dir, fetchImpl }).pollOnce();
+  assert.equal(sent.length, 0);
+  await createTelegramGateway({ service, config: { ...config, publicAccess: true }, directory: dir, fetchImpl }).pollOnce();
+  assert.equal(sent.length, 1);
+  assert.equal(loadConfig({}).telegram.publicAccess, true);
+  assert.equal(loadConfig({ TELEGRAM_PUBLIC_ACCESS: 'false' }).telegram.publicAccess, false);
+  assert.throws(() => loadConfig({ TELEGRAM_PUBLIC_ACCESS: 'typo' }), /TELEGRAM_PUBLIC_ACCESS/);
 });

@@ -15,14 +15,15 @@ function defaults(model) {
   }
   return result;
 }
-function createTelegramBot({ service, directory, allowedUsers, downloadFile }) {
+function createTelegramBot({ service, directory, allowedUsers = [], publicAccess = true, downloadFile }) {
   const sessions = new History(path.join(directory, 'telegram-sessions.json'));
   const allModels = service.catalog().models;
   const allowed = new Set(allowedUsers.map(String));
   function accepts(update) {
     const message = update.callback_query?.message || update.message;
     const user = update.callback_query?.from || message?.from;
-    return Boolean(message?.chat?.type === 'private' && String(message.chat.id) === String(user?.id) && allowed.has(String(user?.id)));
+    return Boolean(message?.chat?.type === 'private' && String(message.chat.id) === String(user?.id)
+      && (publicAccess || allowed.has(String(user?.id))));
   }
   async function session(id) {
     const saved = (await sessions.list()).find(item => item.id === id);
@@ -42,7 +43,7 @@ function createTelegramBot({ service, directory, allowedUsers, downloadFile }) {
     const text = (update.callback_query?.data || message.text || '').trim();
     const save = async changes => { data = await sessions.update(chatId, { ...data, ...changes }); };
     const model = modelFor(data);
-    if (/^\/(start|help|menu)(@\w+)?$/.test(text)) return reply('Медиастудия\n\nВыберите модель, отправьте промпт и при необходимости фото/видео. «Подготовить запуск» покажет подтверждение.\n\n/models запрос — поиск модели\n/set поле значение — параметр (значение можно задать JSON)\n/params JSON — параметры целиком\n/clear — очистить исходники\n/new — новый черновик\n/queue — общая очередь\n/history — результаты\n\nБот и веб используют одну рабочую область.', menu);
+    if (/^\/(start|help|menu)(@\w+)?$/.test(text)) return reply('Медиастудия\n\nВыберите модель, отправьте промпт и при необходимости фото/видео. «Подготовить запуск» покажет подтверждение.\n\n/models запрос — поиск модели\n/set поле значение — параметр (значение можно задать JSON)\n/params JSON — параметры целиком\n/clear — очистить исходники\n/new — новый черновик\n/queue — очередь задач\n/history — результаты\n\nЛичный черновик и результаты доступны в этом чате.', menu);
     if (/^(\/models|models:)/.test(text)) {
       const page = text.startsWith('models:') ? Number(text.split(':')[1]) : 0;
       const query = text.startsWith('/models') ? text.slice(7).trim().toLowerCase() : '';
@@ -110,16 +111,18 @@ function createTelegramBot({ service, directory, allowedUsers, downloadFile }) {
       service.queue.start();
       return reply(`Задача добавлена: ${task.modelName}\n${task.id}\nО готовности сообщу здесь.`, menu);
     }
+    const operator = allowed.has(chatId);
+    const visibleTasks = async () => (await service.listHistory()).filter(item => operator || item.telegramChatId === chatId);
     if (['queue', '/queue'].includes(text)) {
-      const tasks = (await service.listHistory()).filter(item => !item.queueHidden && !['success', 'fail', 'cancelled'].includes(item.state));
-      const rows = [[button(service.queue.paused ? 'Продолжить' : 'Пауза', service.queue.paused ? 'resume' : 'pause')]];
+      const tasks = (await visibleTasks()).filter(item => !item.queueHidden && !['success', 'fail', 'cancelled'].includes(item.state));
+      const rows = operator ? [[button(service.queue.paused ? 'Продолжить' : 'Пауза', service.queue.paused ? 'resume' : 'pause')]] : [];
       for (const task of tasks.filter(item => item.state === 'queued').slice(0, 5)) rows.push([button(`Убрать ${task.modelName}`.slice(0, 50), `cancel:${task.id}`)]);
       return reply(`${service.queue.paused ? 'Очередь на паузе' : 'Очередь работает'}\n${tasks.slice(0, 10).map(item => `${labels[item.state] || item.state} · ${item.modelName}`).join('\n') || 'Задач нет'}`, rows);
     }
-    if (text === 'pause' || text === 'resume') { if (text === 'pause') service.queue.pause(); else service.queue.start(); return reply('Состояние очереди обновлено.', menu); }
-    if (text.startsWith('cancel:')) { await service.queue.cancel(text.slice(7)); return reply('Ожидающая задача отменена.', menu); }
+    if (text === 'pause' || text === 'resume') { if (!operator) return reply('Управление общей очередью доступно только оператору.', menu); if (text === 'pause') service.queue.pause(); else service.queue.start(); return reply('Состояние очереди обновлено.', menu); }
+    if (text.startsWith('cancel:')) { const id = text.slice(7); if (!(await visibleTasks()).some(item => item.id === id)) return reply('Задача недоступна.', menu); await service.queue.cancel(id); return reply('Ожидающая задача отменена.', menu); }
     if (['history', '/history'].includes(text)) {
-      const tasks = (await service.listHistory()).slice(0, 8);
+      const tasks = (await visibleTasks()).slice(0, 8);
       return reply(tasks.map(item => `${labels[item.state] || item.state} · ${item.modelName}\n${service.resultUrls(item).join('\n')}`).join('\n\n') || 'История пока пуста.', menu);
     }
     const attachment = message.photo?.at(-1) || message.video || message.document;

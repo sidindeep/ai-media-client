@@ -6,7 +6,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 function createTelegramGateway({ service, config, directory, fetchImpl = fetch }) {
   const state = new History(path.join(directory, 'telegram-polling.json'));
   let running = false, loop, controller, lastError = null, notificationBusy = false;
-  const enabled = config.enabled && Boolean(config.token) && config.users.length > 0;
+  const enabled = config.enabled && Boolean(config.token);
   async function call(method, body, signal) {
     try {
       const response = await fetchImpl(`https://api.telegram.org/bot${config.token}/${method}`, {
@@ -19,7 +19,7 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch }
       return result.result;
     } catch { trace.write('telegram.error',{method});throw new Error('Telegram временно недоступен'); }
   }
-  const bot = createTelegramBot({ service, directory, allowedUsers: config.users, downloadFile: async (id, limit) => {
+  const bot = createTelegramBot({ service, directory, allowedUsers: config.users, publicAccess: config.publicAccess, downloadFile: async (id, limit) => {
     const file = await call('getFile', { file_id: id });
     if (!file?.file_path || file.file_size > limit || !/^[\w./-]+$/.test(file.file_path) || file.file_path.split('/').includes('..')) throw new Error('Не удалось получить файл Telegram');
     let response;
@@ -34,7 +34,8 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch }
     if (notificationBusy) return; notificationBusy = true;
     try {
       for (const record of await service.history.list()) {
-        if (!record.telegramChatId || !config.users.includes(record.telegramChatId) || record.telegramNotified || !['success', 'fail', 'unknown', 'blocked'].includes(record.state)) continue;
+        if (!record.telegramChatId || record.telegramNotified || !['success', 'fail', 'unknown', 'blocked'].includes(record.state)) continue;
+        if (config.publicAccess === false && !config.users.includes(String(record.telegramChatId))) continue;
         const text = record.state === 'success'
           ? `Готово · ${record.modelName}\n${service.resultUrls(record).join('\n')}`
           : `${record.modelName}\n${record.state === 'unknown' ? 'Исход отправки неизвестен. Проверьте журнал Kie. Повторная отправка не выполнялась.' : require('../provider-errors').text(record)||'Генерация не завершена. Подробности в истории веб-версии.'}`;

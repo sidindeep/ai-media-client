@@ -50,7 +50,11 @@ function createHttpServer({ config, service, telegramStatus = () => ({ enabled: 
       if (!allowedHosts.has(req.headers.host)) return json(res, 403, { error: 'Недопустимый адрес сервиса' });
       const url = new URL(req.url, `http://${req.headers.host}`);
       const sameOrigin = !req.headers.origin || req.headers.origin === `http://${req.headers.host}` || (config.publicOrigin && req.headers.origin === config.publicOrigin);
-      if (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site') return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+      const pageNavigation = ['GET', 'HEAD'].includes(req.method)
+        && ['/', '/index.html'].includes(url.pathname)
+        && req.headers['sec-fetch-mode'] === 'navigate'
+        && req.headers['sec-fetch-dest'] === 'document';
+      if (!pageNavigation && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, generationConfigured: service.configured(), telegram: telegramStatus() });
       if (req.method === 'POST') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });

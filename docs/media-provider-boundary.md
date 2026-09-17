@@ -1,11 +1,11 @@
 # Граница приложения и библиотек провайдеров
 
 Общая абстракция медиа относится к AI Media Client. Она находится в
-`web-tg/src/media/index.mjs` и описывает prompt, assets (kind/role/url), parameters,
+`src/media/index.mjs` и описывает prompt, assets (kind/role/url), parameters,
 modelId, задачу и результаты. createMediaService получает адаптеры через
 конструктор и не знает протоколы конкретных провайдеров.
 
-`web-tg/src/media/kie-adapter.mjs` переводит контракт приложения в интерфейс клиента
+`src/media/kie-adapter.mjs` переводит контракт приложения в интерфейс клиента
 Kie. `kie-models.mjs` хранит механизм отображения полей доверенного профиля
 модели. Клиент передаётся как зависимость; машинный путь к отдельному проекту
 не записывается в runtime. Сборщик зависимостей приложения пока не подключает
@@ -14,8 +14,8 @@ Kie. `kie-models.mjs` хранит механизм отображения по�
 ```text
 AI Media Client
   интерфейс / очередь / история
-    → общий контракт приложения: web-tg/src/media/index.mjs
-      → адаптер приложения: web-tg/src/media/kie-adapter.mjs
+    → общий контракт приложения: src/media/index.mjs
+      → адаптер приложения: src/media/kie-adapter.mjs
         → клиент Kie из llm-providers: createTask / getTask / uploadFile
           → HTTP API Kie
 ```
@@ -38,5 +38,5 @@ taskId; результат проверяется и приводится к о�
 протоколов Veo/Runway/Flux/4o пока не выполнен. Это модульная основа, а не
 завершённое подключение нового транспорта к действующему приложению.
 
-Проверки: `node --test web-tg/test/media-contract.test.js`. Используются подставные
+Проверки: `node --test test/media-contract.test.js`. Используются подставные
 клиенты Kie и второй провайдер, платные вызовы не выполняются.

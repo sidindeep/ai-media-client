@@ -1,5 +1,6 @@
 // Serialize editable state, not validated API inputs: incomplete drafts are valid drafts.
 let draftsReady=false,draftTimer,draftWrite=Promise.resolve(),draftClosing=false;
+let draftRevision=0,savedDraftRevision=0;
 const draftFileCache=new WeakMap();
 async function snapshotWorkspaces(){
   const active=currentTab;
@@ -30,14 +31,16 @@ async function snapshotWorkspaces(){
 }
 function saveWorkspaceDrafts(){
   if(!draftsReady)return Promise.resolve();
+  const revision=draftRevision;
   const snapshot=snapshotWorkspaces();
   // Attach rejection handlers immediately; persist snapshots in capture order.
   const settled=snapshot.then(value=>({value}),error=>({error}));
-  draftWrite=draftWrite.catch(()=>{}).then(async()=>{const result=await settled;if(result.error)throw result.error;await window.desktop.saveDrafts(result.value);$('draftStatus').textContent='Черновики сохранены на компьютере';});
+  draftWrite=draftWrite.catch(()=>{}).then(async()=>{const result=await settled;if(result.error)throw result.error;await window.desktop.saveDrafts(result.value);savedDraftRevision=revision;$('draftStatus').textContent=window.desktop.isWeb?'Черновики сохранены на сервере':'Черновики сохранены на компьютере';});
   return draftWrite;
 }
 function scheduleDraftSave(){
   if(!draftsReady||draftClosing)return;clearTimeout(draftTimer);
+  draftRevision++;
   $('draftStatus').textContent='Сохранение черновиков…';
   draftTimer=setTimeout(()=>saveWorkspaceDrafts().catch(error=>{$('draftStatus').textContent='Черновик не сохранён: '+error.message;}),600);
 }
@@ -74,7 +77,16 @@ document.addEventListener('change',event=>{if(event.target.closest('#generationF
 document.addEventListener('click',event=>{if(event.target.closest('#generationForm,#workTabs,[data-repeat-id],#editPreview,#followCurrent,#queueTasks,#historyList'))scheduleDraftSave();});
 window.addEventListener('beforeunload',event=>{
   if(!draftsReady)return;
+  if(window.desktop.isWeb){
+    if(draftRevision!==savedDraftRevision){event.preventDefault();event.returnValue='';void saveWorkspaceDrafts().catch(()=>{});}
+    return;
+  }
   event.preventDefault();event.returnValue=false;
   if(draftClosing)return;draftClosing=true;clearTimeout(draftTimer);
   saveWorkspaceDrafts().then(()=>window.desktop.finishClose()).catch(error=>{draftClosing=false;setStatus('Не удалось сохранить черновики. Окно оставлено открытым: '+error.message,true);});
+});
+document.addEventListener('visibilitychange',()=>{
+  if(window.desktop.isWeb&&document.visibilityState==='hidden'&&draftsReady&&draftRevision!==savedDraftRevision){
+    clearTimeout(draftTimer);void saveWorkspaceDrafts().catch(()=>{});
+  }
 });

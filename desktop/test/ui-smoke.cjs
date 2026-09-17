@@ -3,7 +3,7 @@ const {app,BrowserWindow,ipcMain}=require('electron');
 const path=require('node:path');
 const assert=require('node:assert/strict');
 if(process.argv.includes('--screenshot'))app.disableHardwareAcceleration();
-const appRoot=process.argv.includes('--packaged')?path.resolve(process.env.AI_CLIENT_PACKAGED_PATH||path.join(__dirname,'../dist/win-unpacked/resources/app.asar')):path.resolve(__dirname,'..');
+const appRoot=process.argv.includes('--packaged')?path.resolve(process.env.AI_CLIENT_PACKAGED_PATH||path.join(__dirname,'../dist/queue-header/win-unpacked/resources/app.asar')):path.resolve(__dirname,'..');
 app.whenReady().then(async()=>{
   let win;
   try {

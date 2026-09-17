@@ -4,13 +4,13 @@
 
 В llm_providers оставлен createKieClient с родными интерфейсами Kie:
 createTask({model,input}), getTask({taskId}), uploadFile({file,uploadPath,fileName}).
-Общая абстракция и перевод данных перенесены в web-tg/src/media/ AI Media Client.
+Общая абстракция и перевод данных перенесены в src/media/ AI Media Client.
 Экспорт ./media из библиотеки удалён. Документация внешнего клиента:
 ../llm_providers/docs/kie-provider.md. Старые текстовые адаптеры не изменялись.
 
 Новая основа ещё не подключена к Electron и не включает специальные API.
-Для web/Telegram нативный Market-клиент скопирован в web-tg/src/providers/kie/ с
-SHA-256 provenance.json. web-tg/src/services/kie-generation.js использует его для
+Для web/Telegram нативный Market-клиент скопирован в src/providers/kie/ с
+SHA-256 provenance.json. src/services/kie-generation.js использует его для
 Market и загрузки файлов, а для специальных API переиспользует прежние
 преобразования desktop из src/adapters.js. Внешняя библиотека не менялась.
 Проверки после исправления: 20 тестов библиотеки и 6 тестов слоя приложения.

@@ -26,3 +26,7 @@ tools/summary/*.tmp
 tools/deploy/ftp.local.json
 tools/deploy/prod.local.json
 tools/deploy/deploy-gateway.local.json
+
+# Private runtime data for both products
+data/
+desktop/data/

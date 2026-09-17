@@ -3,7 +3,7 @@
 Логирование включено автоматически при запуске.
 
 - Windows: `%APPDATA%/ai-media-client/logs/generation.jsonl`; кнопка **Открыть журнал** в настройках приложения.
-- Web/Telegram: `<MEDIA_DATA_DIR>/logs/generation.jsonl` внутри `web-tg`, обычно `web-tg/data/service/logs/`. Docker использует тот же подключённый каталог данных.
+- Web/Telegram: `<MEDIA_DATA_DIR>/logs/generation.jsonl` в корне проекта, обычно `data/service/logs/`. Docker использует тот же подключённый каталог данных.
 
 JSONL: одно событие в строке. Поля `time`, `sessionId`, `sequence`, `requestId`, `jobId`, `taskId`, `model`, `event`, `details` связывают запрос пользователя, локальную очередь и удалённую задачу. До получения ID провайдера `taskId` отсутствует. У событий вне задачи (запуск, баланс, управление очередью) нет `jobId`.
 

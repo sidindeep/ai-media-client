@@ -217,7 +217,7 @@ async function refreshProviderAccount() {
   try {
     const saved=await window.desktop.keyStatus(providerId);
     if(selectedProvider().id!==providerId)return;
-    $("keyStatus").textContent=saved?'Ключ сохранён в зашифрованном хранилище Windows':'Ключ ещё не сохранён';
+    $("keyStatus").textContent=window.desktop.isWeb?(saved?'Генерация выполняется на сервере':'Подключение генерации будет настроено на сервере'):(saved?'Ключ сохранён в зашифрованном хранилище Windows':'Ключ ещё не сохранён');
     if(saved)await refreshBalance({automatic:true});
   }catch(error){if(selectedProvider().id===providerId)$("keyStatus").textContent=error.message;}
 }
@@ -502,7 +502,7 @@ function renderHistory() {
       const save=document.createElement('button');save.textContent=downloading.has(record.id)?'Скачивание…':'Скачать результаты';save.disabled=downloading.has(record.id);
       save.onclick=async()=>{
         downloading.add(record.id);renderHistory();
-        try{await window.desktop.saveResults(record.id);setStatus('Результаты сохранены на компьютере');}
+        try{await window.desktop.saveResults(record.id);setStatus(window.desktop.isWeb?'Результаты сохранены на сервере. Скачивание отправлено в браузер.':'Результаты сохранены на компьютере');}
         catch(error){setStatus(error.message,true);}
         finally{downloading.delete(record.id);renderStorage(await window.desktop.storageSettings());await refreshHistory();}
       };
@@ -524,7 +524,7 @@ function renderHistory() {
     for(const [index,file] of (record.localFiles||[]).entries()) {
       const local=document.createElement('div'); local.className='local-file';
       const label=document.createElement('span'); label.textContent=file.exists ? 'Сохранено на компьютере' : 'Локальный файл не найден'; local.append(label);
-      const reveal=document.createElement('button');reveal.textContent='Показать в папке';reveal.disabled=!file.exists;
+      const reveal=document.createElement('button');reveal.textContent=window.desktop.isWeb?'Скачать файл':'Показать в папке';reveal.disabled=!file.exists;
       reveal.onclick=()=>window.desktop.revealResult(record.id,index).catch(error=>setStatus(error.message,true));
       local.append(reveal);body.append(local);
     }
@@ -574,19 +574,19 @@ async function init() {
 
 function renderStorage(settings) {
   $('outputFolder').textContent=settings.directory || 'Папка не выбрана';
-  $('chooseFolder').textContent=settings.directory?'Изменить папку':'Выбрать папку';
+  if($('chooseFolder'))$('chooseFolder').textContent=settings.directory?'Изменить папку':'Выбрать папку';
   $('autoSave').checked=Boolean(settings.autoSave);
 }
-$('chooseFolder').addEventListener('click',async()=>{try{renderStorage(await window.desktop.chooseFolder());}catch(error){setStatus(error.message,true);}});
-$('testNotification').addEventListener('click',async()=>{try{await window.desktop.testNotification();setStatus('Проверочное уведомление отправлено в системный трей');}catch(error){setStatus(error.message,true);}});
+$('chooseFolder')?.addEventListener('click',async()=>{try{renderStorage(await window.desktop.chooseFolder());}catch(error){setStatus(error.message,true);}});
+$('testNotification')?.addEventListener('click',async()=>{try{await window.desktop.testNotification();setStatus('Проверочное уведомление отправлено в системный трей');}catch(error){setStatus(error.message,true);}});
 $('autoSave').addEventListener('change',async()=>{try{renderStorage(await window.desktop.setAutoSave($('autoSave').checked));}catch(error){$('autoSave').checked=false;setStatus(error.message,true);}});
 
-$("saveKey").addEventListener("click", async () => { try { await window.desktop.saveKey(selectedProvider().id, $("apiKey").value); $("apiKey").value=""; $("keyStatus").textContent="Ключ сохранён в зашифрованном хранилище Windows"; await refreshBalance(); } catch(e){ setStatus(e.message,true); } });
+$("saveKey")?.addEventListener("click", async () => { try { await window.desktop.saveKey(selectedProvider().id, $("apiKey").value); $("apiKey").value=""; $("keyStatus").textContent="Ключ сохранён в зашифрованном хранилище Windows"; await refreshBalance(); } catch(e){ setStatus(e.message,true); } });
 $("refreshBalance").addEventListener("click", refreshBalance);
 $("resetBalanceAudit").addEventListener("click",async()=>{if(await refreshBalance({resetAudit:true}))setStatus('Новая сверка расхода начата с текущего баланса.');});
 $("generationForm").addEventListener("submit", async (event) => {
   event.preventDefault(); setBusy('new');
-  try { const model=selectedModel(); const input=await collectInput(); const task=await window.desktop.createTask({providerId:model.providerId,model:model.apiModel,input,sourceFiles,workspace:currentTab+1});previewSelection=task.id; await window.desktop.startQueue(); setStatus('Генерация запущена.'); }
+  try { const model=selectedModel(); const input=await collectInput(); const task=await window.desktop.createTask({providerId:model.providerId,modelId:model.id,model:model.apiModel,input,sourceFiles,workspace:currentTab+1,requestId:crypto.randomUUID()});previewSelection=task.id; await window.desktop.startQueue(); setStatus('Генерация запущена.'); }
   catch(error){ setStatus(error.message,true); } finally { setBusy(null); await refreshHistory(); }
 });
 
@@ -607,5 +607,3 @@ let queueRefresh;
 window.desktop.onQueueChanged(()=>{clearTimeout(queueRefresh);queueRefresh=setTimeout(()=>refreshHistory().catch(error=>setStatus(error.message,true)),100);});
 
 init().catch((error) => setStatus(error.message, true));
-
-$('openGenerationLog')?.addEventListener('click',()=>window.desktop.openLogs().catch(error=>setStatus(error.message,true)));

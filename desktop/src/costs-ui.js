@@ -16,14 +16,14 @@ async function refreshKieAuth(){
 void refreshKieAuth();
 setInterval(refreshKieAuth,4000);
 window.addEventListener('focus',refreshKieAuth);
-if(document.getElementById('refreshKieDiagnostics'))document.getElementById('refreshKieDiagnostics').onclick=async()=>{
+document.getElementById('refreshKieDiagnostics').onclick=async()=>{
   const labels={window_opened:'Открыто окно',navigation_allowed:'Переход разрешён',navigation_blocked:'Переход заблокирован приложением',popup_allowed:'Всплывающее окно разрешено',popup_blocked:'Всплывающее окно заблокировано приложением',page_loaded:'Страница загружена',load_failed:'Ошибка загрузки',renderer_stopped:'Процесс окна остановлен'};
   try{const rows=await window.desktop.kieSessionDiagnostics();document.getElementById('kieDiagnostics').value=rows.length?rows.map(row=>`${row.time} | ${labels[row.event]||'Событие'} | ${row.origin}${row.code!==undefined?' | код '+row.code:''}`).join('\n'):'Событий пока нет. Откройте окно Kie и повторите вход. Диагностика начнётся только в этой версии приложения.';}catch{document.getElementById('kieDiagnostics').value='Не удалось получить диагностику.';}
 };
-if(document.getElementById('openKieSession'))document.getElementById('openKieSession').onclick=async()=>{
+document.getElementById('openKieSession').onclick=async()=>{
   try{await window.desktop.openKieSession();}catch{document.getElementById('kieSessionStatus').textContent='Не удалось открыть Kie. Проверьте соединение и попробуйте снова.';}
 };
-if(document.getElementById('clearKieSession'))document.getElementById('clearKieSession').onclick=async()=>{
+document.getElementById('clearKieSession').onclick=async()=>{
   if(!confirm('Удалить сохранённый вход Kie на этом компьютере? Окна кабинета закроются. API-ключ, история и черновики останутся.'))return;
   try{await window.desktop.clearKieSession();await refreshKieAuth();document.getElementById('kieSessionStatus').textContent='Сохранённый вход удалён. API-ключ, история и черновики не изменены.';}catch{document.getElementById('kieSessionStatus').textContent='Не удалось удалить сессию Kie. Попробуйте ещё раз.';}
 };
@@ -52,7 +52,6 @@ function refreshCostPreview(){
   const shown=estimate;
   $('estimatedCost').textContent=shown?`${kieAccountEstimate?'Расчёт кабинета Kie':'По тарифу Kie'}: ${formatCost(shown.credits)} кредитов · ${formatCost(costs.round(shown.credits*creditRate))} ₽${!kieAccountEstimate&&tariffData.stale?' · тарифы не обновлены':''}. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена для этих параметров. Проверяю кабинет Kie…';
   clearTimeout(kieQuoteTimer);const sequence=++kieQuoteSequence;
-  if(window.desktop.isWeb){$('estimatedCost').textContent=estimate?`По тарифу: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена. Это не означает бесплатную генерацию.';return;}
   if(model?.providerId==='kie')kieQuoteTimer=setTimeout(async()=>{
     try{const result=await window.desktop.getKieSessionQuote({model:model.apiModel,input});if(sequence!==kieQuoteSequence)return;kieAccountEstimate=result;$('estimatedCost').textContent=result?`Расчёт кабинета Kie: ${formatCost(result.credits)} кредитов · ${formatCost(costs.round(result.credits*creditRate))} ₽. Фактическое списание учитывается отдельно.`:estimate?`По тарифу Kie: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽${tariffData.stale?' · тарифы не обновлены':''}. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена для этих параметров. Это не означает бесплатную генерацию.';}
     catch{if(sequence===kieQuoteSequence)$('estimatedCost').textContent=estimate?`По тарифу Kie: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽. Кабинет Kie недоступен.`:'Стоимость до запуска не определена: кабинет Kie недоступен.';}

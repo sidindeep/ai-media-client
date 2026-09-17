@@ -1,45 +1,25 @@
 {
-  "name": "ai-media-client",
+  "name": "ai-media-web-tg",
   "version": "0.2.0",
-  "description": "Windows desktop client for image and video generation APIs",
-  "main": "src/main.js",
+  "private": true,
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.9"
+  },
   "scripts": {
-    "start": "electron .",
-    "start:web": "pnpm --dir web-tg start",
-    "dev:web": "pnpm --dir web-tg dev",
-    "check:web": "pnpm --dir web-tg check",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "check": "node --check server.js && node --check src/server/http.js && node --check src/services/media-service.js && node --check src/services/telegram-bot.js && node --check src/services/telegram-gateway.js && node --check public/web.js",
     "test": "node --test test/*.test.js",
-    "dist": "electron-builder --win nsis",
-    "pack": "electron-builder --win --x64 --dir",
-    "test:web": "pnpm --dir web-tg test"
-  },
-  "devDependencies": {
-    "electron": "44.3.0",
-    "electron-builder": "26.15.3",
-    "yaml": "^2.9.0"
-  },
-  "build": {
-    "beforePack": "./scripts/single-distribution.cjs",
-    "directories": {
-      "output": "dist/queue-header"
-    },
-    "appId": "local.aimedia.client",
-    "productName": "AI Media Client",
-    "files": [
-      "src/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "src/assets/icon.ico",
-      "signExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+    "start:web": "pnpm start",
+    "dev:web": "pnpm dev",
+    "check:web": "pnpm check",
+    "test:web": "pnpm test",
+    "start:desktop": "pnpm --dir desktop start",
+    "check:desktop": "pnpm --dir desktop check",
+    "test:desktop": "pnpm --dir desktop test",
+    "pack:desktop": "pnpm --dir desktop run pack",
+    "dist:desktop": "pnpm --dir desktop run dist"
   },
   "dependencies": {
     "ajv": "^8.20.0"

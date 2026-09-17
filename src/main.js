@@ -13,6 +13,7 @@ const { History } = require('./history');
 const {buildRequest,normalizeTask} = require('./adapters');
 const {Assets}=require('./assets');
 const {TaskQueue}=require('./task-queue');
+const {request}=require('./network');
 let assets, taskQueue, tray, mainWindow, persistentNotificationsReady=false, lastOutputDirectory='';
 const activeNotifications=new Set();
 let history;
@@ -106,11 +107,10 @@ async function getKey(providerId) {
 
 async function api(provider, apiPath, options = {}) {
   const key = await getKey(provider.id);
-  const response = await fetch(`${provider.baseUrl}${apiPath}`, {
-    signal: AbortSignal.timeout(60000),
+  const response = await request(`${provider.baseUrl}${apiPath}`, {
     ...options,
     headers: { Authorization: `Bearer ${key}`, ...(options.headers || {}) }
-  });
+  },{operation:options.method==='POST'?'Отправка задачи (результат неизвестен; проверьте журнал Kie)':'Получение данных Kie',safeToRetry:!options.method||options.method==='GET'});
   const text = await response.text();
   let body;
   try { body = JSON.parse(text); } catch { body = { msg: text || response.statusText }; }
@@ -154,7 +154,7 @@ async function uploadSource(providerId,file) {
   const form=new FormData();
   form.append('file',new Blob([Buffer.from(file.bytes)],{type:file.type}),file.name);
   form.append('uploadPath','ai-media-client');
-  const response=await fetch(provider.uploadUrl,{method:'POST',headers:{Authorization:`Bearer ${key}`},body:form,signal:AbortSignal.timeout(180000)});
+  const response=await request(provider.uploadUrl,{method:'POST',headers:{Authorization:`Bearer ${key}`},body:form},{operation:'Загрузка исходного файла в Kie',safeToRetry:true,timeout:180000});
   const body=await response.json();
   if(!response.ok||body.success===false||(body.code&&body.code!==200))throw new Error(body.msg||'Не удалось загрузить файл');
   const url=body.data?.downloadUrl||body.data?.fileUrl;

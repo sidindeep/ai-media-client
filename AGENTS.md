@@ -21,7 +21,8 @@ behavior as the full instruction kit.
 
 ## Project
 
-AI Media Client — Windows-клиент генерации изображений и видео через Kie.ai.
+AI Media Client — Windows-клиент, веб-сервис и Telegram-бот генерации изображений
+и видео через Kie.ai. Web/bot: docs/web-and-telegram.md; запуск pnpm start:web.
 
 ## Project Goal
 

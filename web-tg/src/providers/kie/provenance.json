@@ -1,0 +1,9 @@
+{
+  "source": "llm_providers",
+  "sourceVersion": "0.1.0",
+  "copiedAt": "2026-09-17",
+  "files": {
+    "client.mjs": "b0642de00670e62128350ec1d6b2bb234ed161d468af790c83ee314f74e7efc5",
+    "contracts.mjs": "a11d09ace3646f0095f79e86321567301f40524288fa36a59d32455743c99184"
+  }
+}

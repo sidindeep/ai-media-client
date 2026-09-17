@@ -47,6 +47,7 @@
       <div class="card">
         <label>Сохранение результатов</label>
         <button id="chooseFolder" type="button">Выбрать папку</button>
+        <button id="openGenerationLog" type="button">Открыть журнал</button>
         <button id="testNotification" type="button">Проверить уведомление</button>
         <p id="outputFolder" class="hint">Папка не выбрана</p>
         <p class="hint">Выбранная папка запоминается после закрытия приложения и используется для следующих скачиваний.</p>
@@ -74,6 +75,7 @@
       </div>
       <div class="preview-heading"><strong>Просмотр генерации</strong><button id="followCurrent" type="button" class="quiet">Текущая задача</button></div>
       <p id="previewModel" class="hint">Результат появится здесь</p>
+      <p id="generationCost" class="hint" aria-live="polite">Стоимость появится после выбора задачи</p>
       <p id="generationProgress" role="status">Нет активной генерации</p>
       <p id="progressDetails" class="hint hidden"></p>
       <progress id="progressBar" class="hidden" max="100" aria-label="Прогресс генерации"></progress>
@@ -127,10 +129,12 @@
   <script src="choice-buttons.js"></script>
   <script src="structured-fields.js"></script>
   <script src="drafts.js"></script>
+  <script src="tariff-snapshot.js"></script>
   <script src="costs.js"></script>
   <script src="price-audit.js"></script>
   <script src="duration.js"></script>
   <script src="costs-ui.js"></script>
+  <script src="provider-errors.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

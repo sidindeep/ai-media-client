@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Media Client</title>
+  <link rel="stylesheet" href="/shared/styles.css">
+  <link rel="stylesheet" href="/web.css">
+  <script src="/web.js"></script>
+</head>
+<body>
+  <header>
+    <div><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p></div>
+  <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
+    <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
+    <button id="tabHistory" type="button" role="tab" aria-controls="pageHistory" aria-selected="false" tabindex="-1" data-page="pageHistory">История</button>
+    <button id="tabSpending" type="button" role="tab" aria-controls="pageSpending" aria-selected="false" tabindex="-1" data-page="pageSpending">Расходы</button>
+  </nav>
+    <div class="header-provider"><label for="provider">Сайт / API</label><select id="provider"></select></div>
+    <div class="balance">Баланс: <b id="balance">—</b> кредитов <button id="refreshBalance" class="quiet">↻</button></div>
+  </header>
+  <main id="appMain">
+    <aside>
+      <label>Модель</label><select id="model"></select>
+      <label for="modelSearch">Найти модель</label><input id="modelSearch" type="search" placeholder="Grok, Kling, Seedream…">
+      <label for="mediaFilter">Тип результата</label><select id="mediaFilter"><option value="">Все</option><option value="image">Изображения</option><option value="video">Видео</option></select>
+      <div class="favorites-card">
+        <div class="favorites-heading"><strong>Избранное</strong><button id="toggleFavorite" type="button">☆ Добавить</button></div>
+        <div id="favoriteModels" class="favorite-models"></div>
+      </div>
+      <div class="service-card"><strong id="serviceState">Подключение к сервису…</strong><p id="keyStatus">Генерация выполняется на сервере.</p><p id="botState">Telegram-бот</p></div>
+      <div class="card web-storage"><label>Результаты</label><p id="outputFolder" class="hint">Хранилище сервиса</p><label class="check"><input id="autoSave" type="checkbox"> Сохранять готовые файлы на сервере</label><p class="hint">Скачайте результат из истории на своё устройство.</p></div>
+    </aside>
+    <section>
+      <div id="status" class="status hidden" role="status"></div>
+      <div id="pageGeneration" role="tabpanel" aria-labelledby="tabGeneration">
+      <div class="generation-header">
+      <div id="workTabs" class="work-tabs" role="tablist" aria-label="Рабочие вкладки"></div>
+      <p id="draftStatus" class="hint">Черновики вкладок сохраняются автоматически. Число вкладок задаётся в настройках генерации.</p>
+      <div class="section-title"><div class="model-heading"><div class="model-caption"><span class="eyebrow">НОВАЯ ГЕНЕРАЦИЯ</span><span id="kind" class="pill"></span></div><h1 id="title">Модель</h1></div>
+      <div class="queue-header">
+        <div><p id="queueStatus">Приостановлена</p></div>
+        <div class="inline"><button id="startQueue" type="button" hidden>Продолжить ожидающие</button><button id="pauseQueue" type="button">Пауза</button><button id="clearQueue" type="button">Очистить очередь</button></div>
+      </div>
+      </div>
+      </div>
+      <div class="generation-layout">
+      <div class="input-panel"><form id="generationForm"><div id="fields"></div><p id="estimatedCost" class="card" role="status">Стоимость до запуска: не определена</p><details id="officialTariff"><summary>Тариф Kie — справка</summary><p id="tariffDescription"></p><p id="tariffDescriptionSource" class="hint"></p></details><button id="generate" class="primary" type="submit">Запустить генерацию</button></form></div>
+      <div class="preview-panel">
+      <div class="queue-overview">
+        <div id="queueTasks" aria-label="Задачи очереди"></div>
+      </div>
+      <div class="preview-heading"><strong>Просмотр генерации</strong><button id="followCurrent" type="button" class="quiet">Текущая задача</button></div>
+      <p id="previewModel" class="hint">Результат появится здесь</p>
+      <p id="generationCost" class="hint" aria-live="polite">Стоимость появится после выбора задачи</p>
+      <p id="generationProgress" role="status">Нет активной генерации</p>
+      <p id="progressDetails" class="hint hidden"></p>
+      <progress id="progressBar" class="hidden" max="100" aria-label="Прогресс генерации"></progress>
+      <div id="previewEmpty" class="preview-empty">Изображение или видео появится здесь после завершения задачи</div>
+      <div id="results" class="results"></div>
+      <button id="editPreview" type="button" class="hidden">Изменить и повторить</button>
+      <details id="recentQueue"><summary>Последние завершённые</summary><div id="recentQueueTasks"></div></details>
+      <details><summary>Настройки генерации</summary><label for="queueConcurrency">Одновременно генераций</label><select id="queueConcurrency"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select><p class="hint">При занятом лимите новые задачи ждут свободного места и запускаются автоматически. Уменьшение лимита не отменяет запущенные задачи. После ошибки или перезапуска для оставшихся задач появится кнопка «Продолжить ожидающие».</p></details>
+      </div></div>
+      </div>
+      <div id="pageSpending" role="tabpanel" aria-labelledby="tabSpending" hidden>
+      <h1>Расходы</h1>
+      <div class="card">
+        <strong>Учёт кредитов</strong>
+        <label for="spendPeriod">Период создания задач</label><select id="spendPeriod"><option value="all">За всё время</option><option value="day">Сегодня</option><option value="month">Этот месяц</option></select>
+        <p id="spendSummary"></p><p id="balanceAudit" class="hint">Сверка по балансу начнётся после следующего обновления баланса.</p><button id="resetBalanceAudit" type="button" class="quiet">Начать сверку заново</button><details><summary>Расход по моделям</summary><div id="spendModels"></div></details>
+        <details><summary>Цена кредита и тарифы</summary>
+          <label for="creditPackRub">Стоимость 1000 кредитов, ₽</label><input id="creditPackRub" type="number" min="0.01" step="0.01" value="510"><button id="saveCreditRate" type="button">Сохранить цену</button>
+          <p class="hint">Для новых задач сохраняется цена кредита на момент добавления в очередь. Для старых записей без цены — пересчёт по текущей настройке. Это учёт задач этого клиента, не полная выписка аккаунта Kie.</p>
+          <button id="refreshTariffs" type="button">Обновить тарифы Kie</button><p id="tariffStatus" class="hint"></p>
+          <div class="inline"><button id="auditPrices" type="button">Проверить цены всех моделей</button><button id="stopPriceAudit" type="button" disabled>Остановить</button></div>
+
+          <progress id="priceAuditProgress" max="1" value="0" aria-label="Прогресс проверки цен"></progress>
+          <p id="priceAuditSummary" class="hint">Автопроверка ещё не запускалась.</p>
+          <details class="web-excluded"><summary>Отчёт проверки цен</summary><div id="priceAuditReport"></div></details>
+        </details>
+      </div>
+      </div>
+      <div id="pageHistory" role="tabpanel" aria-labelledby="tabHistory" hidden>
+      <div class="history-head"><h1>История генераций</h1><button id="reloadHistory" type="button">Обновить список</button></div>
+      <p class="hint">Поиск по всем сохранённым генерациям. Ссылки на файлы могут истечь.</p>
+      <input id="historySearch" type="search" placeholder="Поиск по промпту, сайту или модели" aria-label="Поиск в истории">
+      <label for="historyFilter">Статус</label><select id="historyFilter"><option value="all">Все</option><option value="success">Готовые</option><option value="active">В работе</option><option value="other">Ошибки и отменённые</option></select>
+      <nav class="history-pagination" aria-label="Страницы истории">
+        <span id="historyCount" role="status"></span>
+        <div class="inline"><button id="historyPrevious" type="button">← Назад</button><span id="historyPage"></span><button id="historyNext" type="button">Далее →</button></div>
+      </nav>
+      <div id="historyList" tabindex="0" role="region" aria-label="История генераций"></div>
+      </div>
+    </section>
+  </main>
+  <dialog id="historyPreview" aria-labelledby="historyPreviewTitle">
+    <div class="preview-heading"><h2 id="historyPreviewTitle">Просмотр генерации</h2><button id="closeHistoryPreview" type="button" autofocus>Закрыть</button></div>
+    <p id="historyPreviewStatus" role="status"></p>
+    <div id="historyPreviewResults" class="results"></div>
+  </dialog>
+  <script src="/shared/ru.js"></script>
+  <script src="/shared/templates-ui.js"></script>
+  <script src="/shared/source-preview.js"></script>
+  <script src="/shared/file-drop.js"></script>
+  <script src="/shared/choice-buttons.js"></script>
+  <script src="/shared/structured-fields.js"></script>
+  <script src="/shared/drafts.js"></script>
+  <script src="/shared/tariff-snapshot.js"></script>
+  <script src="/shared/costs.js"></script>
+  <script src="/shared/price-audit.js"></script>
+  <script src="/shared/duration.js"></script>
+  <script src="/shared/costs-ui.js"></script>
+  <script src="/shared/provider-errors.js"></script>
+  <script src="/shared/renderer.js"></script>
+</body>
+</html>

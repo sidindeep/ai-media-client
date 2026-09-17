@@ -1,0 +1,17 @@
+name: ai-media-web-tg
+services:
+  media:
+    build: .
+    image: ai-media-web-tg:local
+    init: true
+    env_file:
+      - .env
+    environment:
+      MEDIA_HOST: 0.0.0.0
+      MEDIA_PORT: 3000
+      MEDIA_DATA_DIR: data/service
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data/service:/app/data/service
+    stop_grace_period: 60s

@@ -1,0 +1,43 @@
+:root { font-size:16px; }
+html,body { height:auto; overflow:auto; }
+body { min-width:320px; }
+#appMain { height:auto; min-height:calc(100vh - 76px); overflow:visible; }
+#appMain > section { overflow:visible; }
+.generation-layout { overflow:visible; }
+.input-panel { overflow:visible; }
+#appMain .preview-panel { position:sticky; top:90px; max-height:calc(100vh - 110px); }
+header { height:auto; min-height:76px; flex-wrap:wrap; padding:14px 24px; }
+header .brand-caption { font-size:12px; margin:4px 0 0 45px; color:#a5adc1; letter-spacing:.12em; }
+main { min-height:calc(100vh - 76px); }
+aside { position:sticky; top:0; align-self:start; max-height:100vh; overflow:auto; }
+label,button,input,select,textarea { font-size:14px; }
+button,input,select { min-height:40px; }
+.service-card { padding:16px; border:1px solid #303747; border-radius:12px; margin-top:20px; background:#121726; }
+.service-card p { line-height:1.55; font-size:14px; color:#b3bdd3; }
+.service-card strong { color:#d5d0ff; }
+.web-storage { margin-top:18px; }
+.preview-panel { top:90px; max-height:calc(100vh - 110px); }
+#auditPrices,#stopPriceAudit,#priceAuditProgress,#priceAuditSummary,#priceAuditReport,#resetBalanceAudit,#balanceAudit { display:none; }
+.web-excluded { display:none!important; }
+@media(max-width:1100px) {
+  .generation-layout { grid-template-columns:minmax(0,1fr); }
+  #appMain .preview-panel { position:static; max-height:none; }
+  header { gap:12px; }
+  .app-tabs { order:3; width:100%; }
+}
+@media(max-width:720px) {
+  main { display:flex; flex-direction:column; }
+  aside { position:static; max-height:none; width:100%; border-right:0; border-bottom:1px solid #303747; }
+  section { padding:18px 14px 40px; }
+  header { position:static; padding:14px; }
+  .header-provider { display:none; }
+  .balance { font-size:13px; }
+  .app-tabs button { flex:1; font-size:14px; }
+  .generation-header,.section-title { flex-wrap:wrap; }
+  .queue-header { max-width:none; width:100%; justify-content:flex-start; }
+  .work-tabs { display:flex; overflow:auto; max-width:100%; }
+  .work-tabs button { min-width:145px; }
+  .queue-header,.history-head,.history-pagination { flex-wrap:wrap; }
+  .service-card { margin-top:12px; }
+  #historyList { max-height:none; }
+}

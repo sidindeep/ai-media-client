@@ -29,10 +29,10 @@ document.getElementById('clearKieSession').onclick=async()=>{
 };
 const formatCost=value=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(value);
 function recordCostText(record){
-  const value=costs.charge(record,creditRate);
-  if(value.credits!==null)return `Списано: ${formatCost(value.credits)} кредитов · ${formatCost(value.rubles)} ₽${value.historical?'':' (по текущей цене кредита)'}`;
-  const estimate=record.estimate;
-  return `Расход не указан${estimate?` · расчёт перед запуском: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*(record.rubPerCredit??creditRate)))} ₽`:''}`;
+  const value=costs.breakdown(record,creditRate);
+  const estimate=value.estimate.credits===null?'Оценка: неизвестна':`Оценка: ${formatCost(value.estimate.credits)} кредитов · ${formatCost(value.estimate.rubles)} ₽${value.estimate.stale?' (тариф требует обновления)':''}`;
+  const actual=value.actual.known?`Списано: ${formatCost(value.actual.credits)} кредитов · ${formatCost(value.actual.rubles)} ₽`:['queued','preparing','submitting','waiting','queuing','generating'].includes(record.state)?'Списание: ожидается ответ Kie':'Списание: неизвестно — Kie не сообщил стоимость';
+  return estimate+' · '+actual+(record.rubPerCredit==null?' (рубли по текущему курсу)':'');
 }
 function refreshCostPreview(){
   if(!catalog)return;
@@ -118,7 +118,7 @@ async function runPriceAudit(){
 }
 async function loadTariffs(force=false){
   $('refreshTariffs').disabled=true;
-  try{tariffData=await window.desktop.getTariffs(force);$('tariffStatus').textContent=`${tariffData.fetchedAt?'Тарифы от '+new Date(tariffData.fetchedAt).toLocaleString('ru-RU'):'Тарифы не загружены'}${tariffData.stale?' · обновление недоступно':''}. Источник: kie.ai/pricing. Расчёт: проверенные сочетания Grok 1.5, Kling 2.6/3.0, Veo 3.1, Hailuo 02/2.3, Seedance 1.5 Pro, Imagen 4, Seedream 4.5/5.0 Lite. Остальные параметры могут не поддерживаться.`;refreshCostPreview();}
+  try{tariffData=await window.desktop.getTariffs(force);$('tariffStatus').textContent=`${tariffData.fetchedAt?'Тарифы от '+new Date(tariffData.fetchedAt).toLocaleString('ru-RU'):'Тарифы не загружены'}${tariffData.stale?' · обновление недоступно':''}. Источник: kie.ai/pricing. Расчёт: проверенные сочетания Nano Banana Pro/2/2 Lite, Grok 1.5, Kling 2.6/3.0, Veo 3.1, Hailuo 02/2.3, Seedance 1.5 Pro, Imagen 4, Seedream 4.5/5.0 Lite. Остальные параметры могут не поддерживаться.`;refreshCostPreview();}
   catch(error){$('tariffStatus').textContent=error.message;}
   finally{$('refreshTariffs').disabled=false;}
 }

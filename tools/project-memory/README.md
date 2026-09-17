@@ -4,6 +4,10 @@
 
 ## Быстрый вход
 
+- [Веб и Telegram](specs/features/web-telegram.md) — сервер, общий workspace, бот и проверки.
+
+- [Граница медиа и провайдеров](specs/features/media-provider-boundary.md) — контракт приложения и клиенты провайдеров.
+
 - [Архитектура](architecture.md) — границы процессов и поток данных.
 - [Стек](specs/technology-stack.md) — технологии и команды.
 - [Очередь](specs/features/generation-queue.md) — отправка, параллельность, пауза, восстановление.

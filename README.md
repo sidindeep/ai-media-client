@@ -4,6 +4,17 @@
 Технологии: [стек](tools/project-memory/specs/technology-stack.md).
 Команды и ограничения сборки: [runbook](tools/AGENT_RUNBOOK.md).
 
+## Веб и Telegram
+
+Самостоятельная переносимая папка — [web-tg](web-tg/README.md). Установить её зависимости: `pnpm --dir web-tg install --ignore-workspace --frozen-lockfile`.
+
+`pnpm start:web` запускает веб-версию на http://127.0.0.1:3000 и Telegram-бота,
+если он настроен. Общие каталог, формы, очередь, история, исходники и результаты.
+Ключ Kie задаётся на сервере; ввода ключа и входа в кабинет в веб-интерфейсе нет.
+Без ключа доступны каталог и черновики. [Настройка и команды бота](docs/web-and-telegram.md).
+
+Модульная основа веб-версии: [граница приложения и провайдеров](docs/media-provider-boundary.md).
+
 ## Windows без установки
 
 После сборки запустите `dist/queue-header/win-unpacked/AI Media Client.exe`.

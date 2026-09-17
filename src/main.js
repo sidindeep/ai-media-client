@@ -1,3 +1,4 @@
+const trace = require('./generation-log');
 const { app, BrowserWindow, ipcMain, safeStorage, dialog, shell, Notification, Tray, Menu, session } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -78,7 +79,7 @@ async function saveResults(id) {
       for(const url of urls) {
         const existing=localFiles.find(file=>file.url===url);
         if(existing && await fs.stat(existing.path).then(s=>s.isFile()).catch(()=>false)) continue;
-        const file=await download(url,directory);
+        const file=await trace.run(record,()=>download(url,directory));
         if(existing) localFiles.splice(localFiles.indexOf(existing),1);
         localFiles.push(file);
         await history.update(id,{localFiles,downloadError:null});
@@ -102,7 +103,7 @@ async function getKey(providerId) {
   const keys = await readKeys();
   if (!keys[providerId]) throw new Error("Сначала сохраните API-ключ провайдера");
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Шифрование Windows недоступно");
-  return safeStorage.decryptString(Buffer.from(keys[providerId], "base64"));
+  const key=safeStorage.decryptString(Buffer.from(keys[providerId], "base64"));trace.secret(key);return key;
 }
 
 async function api(provider, apiPath, options = {}) {
@@ -166,6 +167,7 @@ function getModel(record) {
   if(!model)throw new Error('Модель не найдена');return model;
 }
 function validateInput(model,input) {
+  trace.write('input.validation',{model:model.apiModel,input});
   require('./duration').validate(model,input);
   if(model.inputSchema&&!ajv.validate(model.inputSchema,input))throw new Error('Проверьте параметры: '+ajv.errorsText());
   return buildRequest(model,input);
@@ -229,6 +231,9 @@ function showGenerationReady(record) {
 // One writer for history/queue across application windows and launches.
 if(!app.requestSingleInstanceLock())app.quit();
 else app.whenReady().then(async () => {
+  trace.configure(path.join(app.getPath('userData'),'logs'));
+  app.on('before-quit',()=>trace.write('session.stop'));
+  ipcMain.handle('logs:open',()=>shell.openPath(path.join(app.getPath('userData'),'logs')));
   createTray();
   persistentNotificationsReady=await registerWindowsNotifications().catch(()=>false);
   history = new History(path.join(app.getPath('userData'), 'history.json'));
@@ -331,7 +336,7 @@ else app.whenReady().then(async () => {
   ipcMain.handle("file:upload", async (_event, providerId, file) => {
     return uploadSource(providerId,file);
   });
-  ipcMain.handle("task:create", async (_event, request) => {
+  ipcMain.handle("task:create", async (_event, request) => trace.request(()=>trace.step('generation.request',{request},async () => {
     const provider = providerById(request.providerId);
     const model = models.find(item => item.providerId === provider.id && item.apiModel === request.model);
     if (!model) throw new Error('Неизвестная модель');
@@ -344,7 +349,7 @@ else app.whenReady().then(async () => {
       rubPerCredit,estimate,
       model: model.apiModel, modelName: model.name, kind: model.kind, input: request.input,workspace:[1,2,3,4,5].includes(request.workspace)?request.workspace:1,
       sourceFiles:(request.sourceFiles||[]).filter(file=>JSON.stringify(request.input).includes(file.ref)) });
-  });
+  })));
   ipcMain.handle("task:get", async (_event, providerId, taskId) => {
     const provider = providerById(providerId);
     const record = (await history.list()).find(item => item.providerId === providerId && item.taskId === taskId);
@@ -353,7 +358,7 @@ else app.whenReady().then(async () => {
     const raw = (await api(provider, `${model.taskPath || provider.taskPath}?taskId=${encodeURIComponent(taskId)}`)).data;
     const data = normalizeTask(model, raw);
     if (record) await history.update(record.id, { state: data.state, resultJson: data.resultJson,
-      creditsConsumed: data.creditsConsumed, progress: data.progress, error: data.failMsg || null });
+      creditsConsumed: data.creditsConsumed, progress: data.progress, error: data.errorInfo?.message || data.failMsg || null, errorInfo:data.errorInfo||null });
     if(record && data.state==='success' && (await storageSettings()).autoSave) {
       try { await saveResults(record.id); } catch(error) { data.downloadError=error.message; }
     }

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("desktop", {
+  openLogs: () => ipcRenderer.invoke('logs:open'),
   openKieSession: () => ipcRenderer.invoke('kie-session:open'),
   clearKieSession: () => ipcRenderer.invoke('kie-session:clear'),
   kieSessionDiagnostics: () => ipcRenderer.invoke('kie-session:diagnostics'),

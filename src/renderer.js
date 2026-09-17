@@ -51,6 +51,7 @@ function switchWorkTab(index,restoring=false){
   const blank=document.createElement('div');blank.id='fields';$('generationForm').insertBefore(blank,$('generate'));
   currentTab=index;const draft=workTabs[index].draft;
   $('modelSearch').value=draft?.search||'';$('mediaFilter').value=draft?.filter||'';
+  if(!draft)$('model').value='';
   $('provider').value=draft?.provider||catalog.providers[0].id;$('provider').dispatchEvent(new Event('change'));
   if(draft){
     $('model').value=draft.model;renderModel();$('fields').replaceWith(draft.fields);draft.fields.id='fields';draft.fields.hidden=false;
@@ -274,7 +275,7 @@ function refreshHistoryPreview(){
   if(!record){$('historyPreviewStatus').textContent='Запись не найдена';$('historyPreviewResults').replaceChildren();return;}
   $('historyPreviewTitle').textContent=record.modelName||'Просмотр генерации';
   const labels={success:'Готово',generating:'Генерация идёт. Результат появится здесь автоматически.',waiting:'Ожидаем результат провайдера',queuing:'В очереди провайдера',queued:'Ожидает отправки',preparing:'Загрузка исходников',submitting:'Отправка задачи',fail:'Ошибка генерации',unknown:'Статус отправки неизвестен',blocked:'Ошибка подготовки',cancelled:'Отменена',unconfirmed:'Пропущена'};
-  $('historyPreviewStatus').textContent=(labels[record.state]||record.state)+(record.error?' · '+record.error:'');
+  $('historyPreviewStatus').textContent=(labels[record.state]||record.state)+(record.error?' · '+providerErrors.text(record):'');
   const signature=record.state==='success'?JSON.stringify([record.id,record.resultJson,record.localFiles]):'';
   if(signature!==historyPreviewSignature){historyPreviewSignature=signature;showResults(record,$('historyPreviewResults'));}
   if(record.state==='success'&&!$('historyPreviewResults').children.length)$('historyPreviewStatus').textContent='Готово, но провайдер не вернул файл для просмотра';
@@ -298,12 +299,13 @@ function updatePreview() {
   const record=previewSelection ? historyRecords.find(r=>r.id===previewSelection) : tabRecords.find(r=>activeStates.includes(r.state)) || tabRecords.find(r=>r.state==='success') || tabRecords[0];
   previewRecord=record;$('editPreview').classList.toggle('hidden',!record);
   const labels={queued:'Ожидает отправки',preparing:'Загрузка исходников',submitting:'Отправка задачи',waiting:'Ожидание провайдера',queuing:'В очереди провайдера',generating:'Генерация',success:'Готово',fail:'Ошибка генерации',blocked:'Требуется исправление',unknown:'Статус отправки неизвестен',cancelled:'Отменена',unconfirmed:'Пропущена'};
+  $('generationCost').textContent=record?recordCostText(record):'Стоимость появится после выбора задачи';
   $('previewModel').textContent=record ? `${record.providerName} · ${record.modelName}` : 'Результат появится здесь';
   const percent=typeof record?.progress==='number'&&Number.isFinite(record.progress)?Math.max(0,Math.min(100,record.progress)):null;
   const active=record&&activeStates.includes(record.state);
   const activeLabels={preparing:'Запуск генерации · загружаем исходники',submitting:'Запуск генерации · отправляем задачу',waiting:'Генерация запущена · ждём ответа провайдера',queuing:'Генерация запущена · в очереди провайдера',generating:'Генерация идёт · результат ещё не готов'};
   $('generationProgress').classList.toggle('is-active',Boolean(active));
-  $('generationProgress').textContent=record ? `${activeLabels[record.state]||labels[record.state]||record.state}${active&&percent!==null?' — '+Math.round(percent)+'%':''}${record.error?' · '+record.error:''}` : 'Нет активной генерации';
+  $('generationProgress').textContent=record ? `${activeLabels[record.state]||labels[record.state]||record.state}${active&&percent!==null?' — '+Math.round(percent)+'%':''}${record.error?' · '+providerErrors.text(record):''}` : 'Нет активной генерации';
   $('progressBar').classList.toggle('hidden',!active||percent===null||Boolean(record?.error));
   $('progressDetails').classList.toggle('hidden',!active);
   $('progressDetails').textContent=active?progressDetails(record):'';
@@ -378,6 +380,7 @@ function renderQueueTasks(){
     const title=document.createElement('strong');title.textContent=`${record.workspace?'Вкладка '+record.workspace+' · ':''}${record.providerName} · ${record.modelName}`;
     const status=document.createElement('p');status.className=`hint${live.includes(record.state)?' live-status':''}`;status.textContent=(record.state==='queued'?`№${++position} · `:'')+(record.state==='generating'?'Генерация идёт':labels[record.state]);
     row.append(title,status);
+    const charge=document.createElement('p');charge.className='hint';charge.textContent=recordCostText(record);row.append(charge);
     if(live.includes(record.state)&&typeof record.progress==='number'&&Number.isFinite(record.progress)&&!record.error){
       const progress=document.createElement('progress');progress.max=100;
       if(typeof record.progress==='number'&&Number.isFinite(record.progress)){progress.value=Math.max(0,Math.min(100,record.progress));status.textContent+=` · ${Math.round(progress.value)}%`;}
@@ -387,7 +390,7 @@ function renderQueueTasks(){
       const detail=document.createElement('p');detail.className='hint';detail.textContent=progressDetails(record);row.append(detail);
       if(record.error)status.textContent='Не удалось обновить статус';
     }
-    if(record.error){const error=document.createElement('p');error.className='hint';error.textContent=record.error;row.append(error);}
+    if(record.error){const error=document.createElement('p');error.className='hint';error.textContent=providerErrors.text(record);row.append(error);}
     const view=document.createElement('button');view.textContent='Показать';view.onclick=()=>{previewSelection=record.id;updatePreview();$('previewModel').scrollIntoView({block:'nearest'});};row.append(view);
     const remove=document.createElement('button');remove.textContent='Удалить из очереди';remove.onclick=()=>{
       if(['submitting','waiting','queuing','generating','unknown'].includes(record.state)&&!confirm('Убрать задачу из очереди? Отправленная генерация продолжится у Kie. Запись останется в истории; неизвестный результат отправки будет отмечен как пропущенный.'))return;
@@ -511,7 +514,7 @@ function renderHistory() {
     }
     const view=document.createElement('button');view.textContent='Просмотр';view.className='history-view';view.onclick=()=>openHistoryPreview(record.id);
     const detail = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Параметры и ID';
-    const pre = document.createElement('pre'); pre.textContent = JSON.stringify({ taskId: record.taskId, input: record.input, error: record.error }, null, 2);
+    const pre = document.createElement('pre'); pre.textContent = JSON.stringify({ taskId: record.taskId, input: record.input, error: record.error, errorInfo: providerErrors.forRecord(record) }, null, 2);
     detail.append(summary, pre);
     const entry=document.createElement('details');entry.className='history-entry';entry.dataset.recordId=record.id;entry.open=expanded.has(record.id);
     const heading=document.createElement('summary');heading.title='Раскрыть промпт, параметры и действия';
@@ -555,6 +558,7 @@ async function init() {
     const query = $('modelSearch').value.toLowerCase(); const kind = $('mediaFilter').value;
     $("model").replaceChildren(...catalog.models.filter(m => m.providerId === $('provider').value && (!kind || m.kind === kind) && `${m.name} ${m.apiModel}`.toLowerCase().includes(query)).map(m => new Option(m.name, m.id)));
     if ([...$('model').options].some(option => option.value === previous)) $('model').value = previous;
+    else {const preferred=catalog.models.find(model=>model.startupDefault&&[...$('model').options].some(option=>option.value===model.id));if(preferred)$('model').value=preferred.id;}
     renderModel();
   }
   $('modelSearch').addEventListener('input', loadModels); $('mediaFilter').addEventListener('change', loadModels);
@@ -603,3 +607,5 @@ let queueRefresh;
 window.desktop.onQueueChanged(()=>{clearTimeout(queueRefresh);queueRefresh=setTimeout(()=>refreshHistory().catch(error=>setStatus(error.message,true)),100);});
 
 init().catch((error) => setStatus(error.message, true));
+
+$('openGenerationLog')?.addEventListener('click',()=>window.desktop.openLogs().catch(error=>setStatus(error.message,true)));

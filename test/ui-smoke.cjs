@@ -47,6 +47,7 @@ app.whenReady().then(async()=>{
     await win.loadFile(path.join(appRoot,'src/index.html'));
     const count=await win.webContents.executeJavaScript(`new Promise((resolve,reject)=>{let n=0;const t=setInterval(()=>{const count=document.querySelector('#model').options.length;if(count){clearInterval(t);resolve(count)}else if(++n>100){clearInterval(t);reject(new Error('UI did not initialize'))}},50)})`);
     assert.ok(count>=143);
+    assert.deepEqual(await win.webContents.executeJavaScript("({model:selectedModel().apiModel,imageRequired:$('fields').querySelector('[data-key=image_urls]').required,first:selectedModel().fields[0].key})"),{model:'nano-banana-2-lite',imageRequired:false,first:'prompt'});
     const providerPlacement=await win.webContents.executeJavaScript(`({inHeader:Boolean($('provider').closest('header')),inAside:Boolean($('provider').closest('aside')),firstSidebarLabel:document.querySelector('aside > label')?.textContent})`);
     assert.deepEqual(providerPlacement,{inHeader:true,inAside:false,firstSidebarLabel:'Модель'});
     assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modelInfo')"),null);
@@ -126,7 +127,7 @@ app.whenReady().then(async()=>{
     const repeat=await win.webContents.executeJavaScript(`(async()=>{
       [...document.querySelectorAll('#historyList button')].find(b=>b.textContent==='Изменить и повторить').click();
       const input=await collectInput();
-      const label=document.querySelector('[data-saved-key="image_urls"]').textContent;
+      const label=document.querySelector('#fields [data-saved-key="image_urls"]').textContent;
       const valid=document.querySelector('#generationForm').checkValidity();
       document.querySelector('#generationForm').requestSubmit();return{input,label,valid};
     })()`);

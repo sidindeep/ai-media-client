@@ -6,6 +6,8 @@
 | --- | --- | --- |
 | Язык | JavaScript CommonJS, HTML, CSS | package.json, src/ |
 | Runtime/UI | Electron 44.3.0, обычный DOM | package.json, src/index.html |
+| Web runtime | Node >=22.9, встроенные HTTP/fetch/SSE; проверено 24.14.1 | web-tg/server.js, web-tg/src/server/, web-tg/public/ |
+| Telegram | Bot API long polling, private allowlist | src/services/telegram-*.js |
 | Валидация | AJV ^8.20.0 | package.json, src/main.js |
 | Пакеты | pnpm, pnpm-lock.yaml | README.md, lockfile |
 | Инструменты импорта | yaml ^2.9.0 | package.json, scripts/ |
@@ -15,7 +17,8 @@
 | Тесты | node:test; скрытый Electron smoke | test/, package.json |
 | Сборка | electron-builder 26.15.3, Windows NSIS/x64 dir | package.json |
 | Секреты | Electron safeStorage | src/main.js |
+| Секреты web/bot | Server environment, .env вне Git | web-tg/.env.example, web-tg/src/server/config.js |
 
 Команды: pnpm install --frozen-lockfile, pnpm start, pnpm check, pnpm test, pnpm exec electron test/ui-smoke.cjs, pnpm run pack, pnpm run dist. Подробности и ограничения — в tools/AGENT_RUNBOOK.md.
 
-Версия внешнего Node и pnpm не закреплена в package.json. Electron включает собственный Node; его точная версия не проверялась запуском. Нет настроенного линтера, TypeScript, собственного backend-сервиса, SQL-БД продукта или vector store. Python-инструмент GI code_intelligence не является зависимостью приложения; интеграция выключена.
+Веб-команды: pnpm start:web, pnpm dev:web, pnpm check:web. Версия внешнего Node и pnpm не закреплена в package.json; web требует Node >=22.9 из-за --env-file-if-exists. Electron включает собственный Node. Нет настроенного линтера, TypeScript, SQL-БД продукта или vector store. Python-инструмент GI code_intelligence не является зависимостью приложения; интеграция выключена.

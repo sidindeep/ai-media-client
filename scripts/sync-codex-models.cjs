@@ -41,6 +41,7 @@ const result = spawnSync('docker', ['compose', '--project-directory', providerRo
 });
 if (result.error || result.status !== 0) throw new Error('Не удалось получить модели из контейнера Codex. Проверьте Docker и вход провайдера.');
 const catalog = JSON.parse(result.stdout.trim());
+catalog.uiDefaults = JSON.parse(fs.readFileSync(path.join(root, 'config/codex-models.json'), 'utf8')).uiDefaults;
 if (!catalog.models?.length || catalog.models.some(model => typeof model.id !== 'string' || !model.id)) throw new Error('Codex вернул пустой или некорректный каталог');
 fs.writeFileSync(path.join(root, 'config/codex-models.json'), JSON.stringify(catalog, null, 2) + '\n');
 console.log(`${catalog.version}: ${catalog.models.map(m=>m.id).join(', ')}`);

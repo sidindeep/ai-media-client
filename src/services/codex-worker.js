@@ -1,6 +1,7 @@
 // Private container worker. Only the authenticated web service can reach this network.
 const http = require('node:http');
 const { spawn } = require('node:child_process');
+const { setMaxListeners } = require('node:events');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
@@ -63,7 +64,9 @@ async function execute(request, { signal } = {}) {
 }
 function createCodexWorker(run = execute, { login = createCodexLogin({ environment: codexEnvironment }) } = {}) {
   const controller = new AbortController();
-  const jobs = new Map(); let active = false;
+  // Every in-flight process listens for shutdown; concurrency is intentionally uncapped.
+  setMaxListeners(0, controller.signal);
+  const jobs = new Map();
   const send = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
   const server = http.createServer(async (req, res) => {
     try {
@@ -86,14 +89,13 @@ function createCodexWorker(run = execute, { login = createCodexLogin({ environme
       const input = validateCodexRequest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       const key = account + ':' + input.requestId;
       if (jobs.has(key)) return send(res, 200, jobs.get(key));
-      if (active || jobs.size >= 100) return send(res, 429, { error: 'Codex занят. Повторите позже.' });
       const job = { id: input.requestId, model: input.model, effort: input.effort, speed: input.speed, kind: input.kind || 'text', state: 'running', createdAt: now };
-      jobs.set(key, job); active = true;
+      jobs.set(key, job);
       void Promise.resolve().then(() => run(input, { signal: controller.signal })).then(output => {
         if (typeof output === 'string') job.output = output;
         else { job.output = output.output; job.imageBase64 = output.imageBase64; job.usage = normalizeUsage(output.usage); }
         job.state = 'success';
-      }, error => { job.error = error.message; job.state = 'failed'; }).finally(() => { active = false; });
+      }, error => { job.error = error.message; job.state = 'failed'; });
       return send(res, 202, job);
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });

@@ -24,8 +24,8 @@
     document.body.classList.toggle('codex-active', codex);
     settings.provider = $('generationProvider').value; save();
   }
-  $('generationProvider').value = settings.provider === 'codex' ? 'codex' : 'kie';
-  $('generationProvider').addEventListener('change', switchProvider); switchProvider();
+  $('generationProvider').disabled = true;
+  $('generationProvider').addEventListener('change', switchProvider);
   function describe() {
     if (!model()) return;
     settings.model = model().id; settings.effort = effort(); settings.speed = $('codexSpeed').value;
@@ -138,6 +138,10 @@
   async function load() {
     try {
       [catalog, permissions] = await Promise.all([api('/codex-models.json'), api('/api/codex/status')]);
+      settings = { ...catalog.uiDefaults, ...settings };
+      $('generationProvider').value = settings.provider === 'codex' ? 'codex' : 'kie';
+      switchProvider();
+      $('generationProvider').disabled = false;
       $('codexModel').replaceChildren(...catalog.models.map(item => new Option(item.name, item.id)));
       $('codexModel').value = catalog.models.some(item => item.id === settings.model) ? settings.model : (catalog.models.find(item => item.isDefault) || catalog.models[0]).id;
       $('codexSpeed').value = settings.speed === 'fast' ? 'fast' : 'standard';
@@ -149,7 +153,7 @@
       if (settings.result) { $('codexOutput').textContent = settings.result.output; $('codexOutput').hidden = false; $('codexResultRoute').textContent = route(settings.result); $('codexStatus').textContent = receipt(settings.result); showImage(settings.result); }
       pending = typeof settings.pending === 'string' ? settings.pending : null;
       busy(Boolean(pending)); if (pending && ready) void check();
-    } catch { $('codexStatus').textContent = 'Не удалось подключить Codex. Обновите страницу позже.'; }
+    } catch { $('generationProvider').disabled = false; $('codexStatus').textContent = 'Не удалось подключить Codex. Обновите страницу позже.'; }
   }
   void load();
 })();

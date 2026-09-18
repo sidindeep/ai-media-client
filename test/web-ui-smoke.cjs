@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
     await win.loadURL(origin);
-    await until("document.querySelector('#appVersion').textContent.includes('DEBUG · Версия 0.3.2')");
+    await until(`document.querySelector('#appVersion').textContent.includes(${JSON.stringify('DEBUG · Версия ' + require('../package.json').version)})`);
     await until("typeof draftsReady!=='undefined' && draftsReady && document.querySelector('#estimatedCost').textContent.includes('Цена: 1')");
     assert.equal(await evaluate("catalog.models.length"), 149);
     const codexCatalog = require('../config/codex-models.json');
@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
     await win.loadURL(origin + '/admin.html#credits');
     await until("document.querySelector('#grantAccount').options.length===2");
     await until("document.querySelector('#appVersion').textContent.includes('сборка')");
-    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия 0\.3\.2 · сборка [a-f0-9]{12}/);
+    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия \d+\.\d+\.\d+ · сборка [a-f0-9]{12}/);
     await evaluate("location.hash='codexPanel';void 0");
     await until("document.querySelector('#codexLoginStatus').textContent==='Codex ещё не подключён.'");
     await evaluate("document.querySelector('#codexLoginStart').click();void 0");

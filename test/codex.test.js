@@ -80,9 +80,9 @@ test('Codex validates model-specific effort, speed and executable boundary', () 
   assert.throws(() => validateCodexRequest({ ...input, kind: 'video' }));
 });
 
-test('Codex worker isolates accounts, deduplicates requests and limits concurrency', async t => {
-  let finish, calls = 0;
-  const server = createCodexWorker(() => { calls++; return new Promise(resolve => { finish = resolve; }); });
+test('Codex worker accepts over 100 simultaneous jobs while isolating accounts and deduplicating requests', async t => {
+  const finishes = []; let calls = 0;
+  const server = createCodexWorker(() => { calls++; return new Promise(resolve => { finishes.push(resolve); }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -90,10 +90,16 @@ test('Codex worker isolates accounts, deduplicates requests and limits concurren
   const post = value => fetch(base + '/jobs', { method: 'POST', headers: { 'x-account-id': account }, body: JSON.stringify(value) });
   assert.equal((await post(input)).status, 202);
   assert.equal((await post(input)).status, 200); assert.equal(calls, 1);
-  assert.equal((await post(request())).status, 429);
+  const parallel = await Promise.all(Array.from({ length: 104 }, () => post(request())));
+  assert.ok(parallel.every(response => response.status === 202));
+  assert.equal(calls, 105);
+  assert.equal((await post(input)).status, 200);
+  assert.equal(calls, 105);
   assert.equal((await fetch(base + '/jobs/' + input.requestId, { headers: { 'x-account-id': randomUUID() } })).status, 404);
-  finish('ok');
+  finishes.forEach(finish => finish('ok'));
   assert.equal((await fetch(base + '/jobs/' + input.requestId, { headers: { 'x-account-id': account } }).then(r => r.json())).output, 'ok');
+  assert.equal((await post(request())).status, 202);
+  finishes.at(-1)('ok');
 });
 
 test('Codex credit reservations survive replay, failure and unknown transport', async t => {

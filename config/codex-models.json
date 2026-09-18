@@ -1,6 +1,13 @@
 {
   "version": "codex-cli 0.155.0",
   "checkedAt": "2026-09-18T12:02:31.103Z",
+  "uiDefaults": {
+    "provider": "codex",
+    "kind": "image",
+    "model": "gpt-5.5",
+    "effort": "medium",
+    "speed": "fast"
+  },
   "models": [
     {
       "id": "gpt-6-astra",

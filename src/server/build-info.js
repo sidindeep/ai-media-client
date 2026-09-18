@@ -21,7 +21,8 @@ function buildInfo(root = path.resolve(__dirname, '../..'), manifest = '/opt/med
     const saved = JSON.parse(fs.readFileSync(manifest, 'utf8'));
     if (saved.sourceId === sourceId && Number.isFinite(Date.parse(saved.builtAt))) builtAt = saved.builtAt;
   } catch { /* Local source runs have no Docker build manifest. */ }
-  return { version: JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version, build: sourceId.slice(0, 12), sourceId, builtAt };
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  return { version: pkg.version, channel: pkg.releaseChannel, build: sourceId.slice(0, 12), sourceId, builtAt };
 }
 if (require.main === module) {
   fs.writeFileSync(process.argv[2], JSON.stringify({ ...buildInfo(), builtAt: new Date().toISOString() }) + '\n');

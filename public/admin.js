@@ -1,9 +1,4 @@
 let grantReference = crypto.randomUUID();
-void fetch('/api/version', { cache: 'no-store' }).then(async response => {
-  if (!response.ok) throw new Error('version unavailable');
-  const release = await response.json();
-  document.getElementById('appVersion').textContent = `Версия ${release.version} · сборка ${release.build} · ${release.builtAt ? new Date(release.builtAt).toLocaleString('ru-RU') : 'запуск из исходников'}`;
-}).catch(() => { document.getElementById('appVersion').textContent = 'Версия сервера недоступна — проверьте обновление приложения.'; });
 let accountRows = [];
 let creditScale = 1000;
 let roleTargetId;

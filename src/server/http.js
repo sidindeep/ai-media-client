@@ -95,7 +95,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         try { return redirect('/', await auth.finish(req, authRoute[1], url.searchParams)); }
         catch { return redirect('/login?error=oauth'); }
       }
-      if (['GET', 'HEAD'].includes(req.method) && ['/login', '/login.js', '/web.css'].includes(url.pathname)) {
+      if (['GET', 'HEAD'].includes(req.method) && ['/login', '/login.js', '/web.css', '/version.js'].includes(url.pathname)) {
         return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
       }
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);

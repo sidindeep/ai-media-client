@@ -7,12 +7,13 @@
   <link rel="stylesheet" href="/shared/styles.css">
   <link rel="stylesheet" href="/web.css">
   <script src="/account-menu.js" defer></script>
+  <script src="/version.js" defer></script>
   <script src="/codex-models.js" defer></script>
   <script src="/web.js"></script>
 </head>
 <body>
   <header>
-    <div><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p></div>
+    <div><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p><p id="appVersion" class="app-version" role="status">DEBUG · проверяем версию…</p></div>
   <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
     <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
     <button id="tabHistory" type="button" role="tab" aria-controls="pageHistory" aria-selected="false" tabindex="-1" data-page="pageHistory">История</button>

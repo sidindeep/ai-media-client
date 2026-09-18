@@ -26,6 +26,8 @@ test('temporary database failure gives a retryable page and an unhealthy API sta
   assert.equal(version.headers.get('cache-control'), 'no-store');
   const release = await version.json();
   assert.equal(release.version, require('../package.json').version);
+  assert.equal(release.channel, 'debug');
+  assert.equal((await fetch(base + '/version.js')).status, 200);
   assert.match(release.build, /^[a-f0-9]{12}$/);
 });
 test('protected scripts retry transient session reads without initializing account storage or bypassing access', async t => {

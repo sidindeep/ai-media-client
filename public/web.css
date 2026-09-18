@@ -101,3 +101,5 @@ button,input,select { min-height:40px; }
 @media(max-width:720px) { .admin-account-row { align-items:flex-start; flex-direction:column; } .account-card { padding:20px; } .account-page { padding:12px; } #accountName { max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } }
 
 .codex-login-code { font-size: 1.8rem; letter-spacing: .12em; }
+
+.app-version { margin: 6px 0; font-size: 12px; line-height: 1.5; color: #b9b0ff; overflow-wrap: anywhere; }

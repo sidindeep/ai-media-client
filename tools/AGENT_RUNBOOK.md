@@ -19,6 +19,8 @@
 | Docker сборка и запуск | docker compose up -d --build |
 | Docker состояние | docker compose ps |
 | Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
+| Пилот exec/app-server (реальный расход, только с бюджетом 6 текстов + 6 PNG) | node scripts/benchmark-codex-transports.cjs --docker --live |
+| Ступени генераций Codex (реальный расход, до 127 запросов при потолке 64) | node scripts/benchmark-codex-capacity.cjs --docker --live --kind=image --transport=app-server --max-concurrency=64 |
 | Docker остановка | docker compose down |
 | Проверка diff | git diff --check |
 

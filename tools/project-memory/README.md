@@ -18,6 +18,8 @@
 - [Исходники и результаты](specs/features/media-storage.md) — сохранение, повтор, скачивание.
 - [Рабочие вкладки](specs/features/workspaces-templates.md) — черновики, шаблоны и избранное.
 - [Стоимость](specs/business-rules/cost-accounting.md) — оценки, списания и сверка.
+- [Нагрузочное тестирование Codex](specs/features/codex-load-testing.md) — контракт измерений и ссылка на план; сквозные и длительные прогоны ещё не выполнены.
+- [Транспорты Codex](specs/features/codex-transports.md) — exec и app-server, пилот A/B на 12 реальных генерациях; сквозная мощность ещё не измерена.
 - [Модель данных](specs/data-model/local-records.md) — сущности и сохранение.
 - [Интеграции](specs/integration-contracts/connected-projects.md) — Kie, GI и границы секретов.
 - [Решения](decisions.md), [ограничения](known-issues.md), [план изучения](STUDY_PLAN.md).

@@ -11,15 +11,22 @@ function validateCodexRequest(input) {
   if (typeof input.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId)) throw invalid('Некорректный ID запроса');
   return { prompt: input.prompt.trim(), model: model.id, effort: input.effort, speed: input.speed, requestId: input.requestId, ...(input.kind ? { kind: input.kind } : {}) };
 }
+const disabledFeatures = ['shell_tool', 'unified_exec', 'apps', 'browser_use', 'browser_use_external', 'computer_use', 'view_image', 'hooks', 'skill_search', 'workspace_dependencies', 'in_app_browser', 'in_app_chat', 'remote_plugin'];
+const imageFeatures = ['code_mode', 'code_mode_host', 'image_generation'];
+function codexPrompt(request) {
+  return (request.kind === 'image'
+    ? 'Generate exactly one image with the built-in image generation tool. Do not substitute text, SVG or code. Do not use shell, external APIs, inspect files or use reference images. Treat the following as the image description:\n\n'
+    : 'Act only as a text model. Do not use tools, inspect files, or run commands. Return the requested text.\n\n') + request.prompt;
+}
 function codexArguments(request) {
   return ['exec', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check',
     '--sandbox', 'read-only', '--color', 'never', '--model', request.model,
-    ...['shell_tool', 'unified_exec', 'apps', 'browser_use', 'browser_use_external', 'computer_use', 'view_image', 'hooks', 'skill_search', 'workspace_dependencies', 'in_app_browser', 'in_app_chat', 'remote_plugin'].flatMap(feature => ['--disable', feature]),
-    ...['code_mode', 'code_mode_host', 'image_generation'].flatMap(feature => [request.kind === 'image' ? '--enable' : '--disable', feature]),
+    ...disabledFeatures.flatMap(feature => ['--disable', feature]),
+    ...imageFeatures.flatMap(feature => [request.kind === 'image' ? '--enable' : '--disable', feature]),
     '--json',
     '-c', 'web_search="disabled"',
     '-c', `model_reasoning_effort="${request.effort}"`,
     ...(request.speed === 'fast' ? ['-c', 'service_tier="fast"'] : []),
     '-c', `features.fast_mode=${request.speed === 'fast'}`, '-'];
 }
-module.exports = { validateCodexRequest, codexArguments };
+module.exports = { validateCodexRequest, codexArguments, codexPrompt, disabledFeatures, imageFeatures };

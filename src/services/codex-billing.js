@@ -19,7 +19,15 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
       const row = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2 FOR UPDATE", [account, id(account, requestId)])).rows[0];
       if (!row) throw Object.assign(new Error('Запрос не найден'), { status: 404 });
       if (['success', 'fail'].includes(row.data.state)) return row.data;
-      const next = { ...row.data, ...patch, updatedAt: new Date().toISOString() };
+      const now = new Date();
+      const next = { ...row.data, ...patch, updatedAt: now.toISOString() };
+      if (['success', 'fail'].includes(next.state) && next.durationMs == null) {
+        const started = Date.parse(next.startedAt || next.createdAt);
+        if (Number.isFinite(started)) {
+          next.completedAt = now.toISOString();
+          next.durationMs = Math.max(0, now.getTime() - started);
+        }
+      }
       await settle(client, account, id(account, requestId), next.state);
       await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId), JSON.stringify(next)]);
       return next;
@@ -27,7 +35,18 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
   }
   async function remote(account, pathname, body) {
     const response = await fetchImpl(url + pathname, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Account-Id': account }, body: body && JSON.stringify(body), signal: AbortSignal.timeout(10000) });
-    const value = await response.json();
+    // A reverse proxy can return concatenated JSON or an HTML/plain-text error.
+    // Keep the original status and classify it as an unknown submission instead
+    // of leaking JSON.parse's misleading syntax error to the user.
+    let value;
+    if (typeof response.text === 'function') {
+      const text = await response.text();
+      try { value = JSON.parse(text); }
+      catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
+    } else {
+      try { value = await response.json(); }
+      catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
+    }
     if (!response.ok) throw Object.assign(new Error(value.error || 'Codex недоступен'), { remoteStatus: response.status });
     return value;
   }
@@ -62,9 +81,16 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
         return await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', error: null });
       }
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: result.error });
+      if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: result.error });
       return job;
-    } catch {
+    } catch (error) {
       // Unknown completion must never release or charge automatically.
+      if (error.remoteStatus === 404) {
+        return await update(account, requestId, {
+          state: 'cancelled', stage: 'cancelled',
+          error: 'Генерация отменена: worker больше не хранит это задание. Резерв возвращён.'
+        });
+      }
       return await update(account, requestId, { state: 'unknown', error: 'Статус Codex уточняется. Резерв сохранён; проверьте позже или обратитесь в поддержку.' });
     }
   }
@@ -80,14 +106,15 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
       }
       const nativeQuote = quote(request);
       await reserve(client, account, id(account, request.requestId), nativeQuote);
-      const record = { ...request, id: request.requestId, state: 'submitting', nativeQuote, createdAt: new Date().toISOString() };
+      const createdAt = new Date().toISOString();
+      const record = { ...request, id: request.requestId, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, startedAt: createdAt };
       await client.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'codex',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
       fresh = true; return record;
     });
     if (!fresh) return job;
     try {
       await remote(account, '/jobs', request);
-      const running = await update(account, request.requestId, { state: 'running' });
+      const running = await update(account, request.requestId, { state: 'running', stage: 'generating' });
       watch(account, request.requestId); return running;
     } catch (error) {
       const rejected = [400, 403, 413, 429].includes(error.remoteStatus);
@@ -101,8 +128,20 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
       return imagePath(account, requestId);
     },
     async recover() {
-      const rows = (await accounts.pool.query("SELECT account_id,data FROM media_records WHERE namespace='codex' AND data->>'state' IN ('running','submitting','unknown')")).rows;
-      for (const row of rows) watch(row.account_id, row.data.id);
+      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='codex' AND data->>'state' IN ('running','submitting','unknown')")).rows;
+      for (const row of rows) {
+        await transaction(accounts.pool, async client => {
+          await lockWallet(client, row.account_id);
+          const current = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2 FOR UPDATE", [row.account_id, row.id])).rows[0];
+          if (!current || !['running', 'submitting', 'unknown'].includes(current.data.state)) return;
+          const now = new Date();
+          const started = Date.parse(current.data.startedAt || current.data.createdAt);
+          const next = { ...current.data, state: 'cancelled', stage: 'cancelled', error: 'Генерация отменена при обновлении сервиса. Резерв возвращён.', completedAt: now.toISOString(), updatedAt: now.toISOString() };
+          if (Number.isFinite(started)) next.durationMs = Math.max(0, now.getTime() - started);
+          await settle(client, row.account_id, row.id, 'cancelled');
+          await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [row.account_id, row.id, JSON.stringify(next)]);
+        });
+      }
     },
     close() { closed = true; for (const timer of timers.values()) clearTimeout(timer); timers.clear(); }
   };

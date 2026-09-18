@@ -5,6 +5,7 @@ const path = require('node:path');
 const { validateCodexRequest } = require('../services/codex-request');
 const { createCodexBilling } = require('../services/codex-billing');
 const { buildInfo } = require('./build-info');
+const { checkDatabase } = require('../database/database');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
@@ -82,8 +83,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       if (!pageNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       if (req.method === 'GET' && url.pathname === '/api/health') {
-        if (accounts) await accounts.pool.query('SELECT 1');
-        return json(res, 200, { ok: true, version: release.version, build: release.build, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
+        const database = await checkDatabase(accounts?.pool);
+        return json(res, 200, { ok: database.state !== 'unavailable', version: release.version, build: release.build, database, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });

@@ -27,6 +27,11 @@ services:
       dockerfile: Dockerfile.codex
     image: ai-media-codex:local
     init: true
+    environment:
+      MEDIA_CODEX_TRANSPORT: ${MEDIA_CODEX_TRANSPORT:-app-server}
+      MEDIA_CODEX_POOL_SIZE: ${MEDIA_CODEX_POOL_SIZE:-2}
+      MEDIA_CODEX_PROCESS_CONCURRENCY: ${MEDIA_CODEX_PROCESS_CONCURRENCY:-128}
+      MEDIA_CODEX_RPC_TIMEOUT_MS: ${MEDIA_CODEX_RPC_TIMEOUT_MS:-60000}
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

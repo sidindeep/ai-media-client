@@ -144,6 +144,11 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
   assert.equal((await accounts.wallet.get(account)).heldUnits, 1000);
   mode = 'success'; await billing.status(account, unknown.id);
   assert.equal((await accounts.wallet.get(account)).balanceUnits, 8000);
+  mode = 'running'; const uncertain = await billing.submit(account, request());
+  mode = 'unknown'; assert.equal((await billing.status(account, uncertain.id)).state, 'unknown');
+  assert.equal((await accounts.wallet.get(account)).heldUnits, 1000);
+  mode = 'failed'; await billing.status(account, uncertain.id);
+  assert.equal((await accounts.wallet.get(account)).heldUnits, 0);
   await assert.rejects(billing.submit(account, { ...request(), speed: 'standard' }), /Цена/);
   await pool.query('UPDATE media_wallets SET balance=0 WHERE account_id=$1', [second]);
   const prior = sent; await assert.rejects(billing.submit(second, request()), /Недостаточно/); assert.equal(sent, prior);

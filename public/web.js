@@ -60,12 +60,16 @@
     const update = async () => {
       try {
         const health = await fetch('/api/health').then(response => response.json());
-        state.textContent = health.generationConfigured ? 'Генерация подключена' : 'Генерация пока не подключена';
+        const database = document.getElementById('databaseState');
+        if (database) database.textContent = health.database?.state === 'connected'
+          ? `База данных: подключена (${health.database.latencyMs} мс · пул ${health.database.pool?.idle ?? 0}/${health.database.pool?.total ?? 0}, сессии ${health.database.server?.sessions ?? '?'}/${health.database.server?.maxConnections ?? '?'})`
+          : health.database?.state === 'disabled' ? 'База данных: отключена' : `База данных: нет связи (${health.database?.code || 'ошибка'})`;
+        state.textContent = health.ok && health.generationConfigured ? 'Генерация подключена' : health.ok ? 'Сервис подключён' : 'Сервис работает, БД недоступна';
         const bot = document.getElementById('botState');
         bot.textContent = health.telegram.disabledReason === 'account-linking-required' ? 'Telegram: требуется привязка аккаунтов' : health.telegram.enabled ? 'Telegram-бот включён' : 'Telegram-бот ожидает подключения';
-      } catch { state.textContent = 'Нет связи с сервисом'; }
+      } catch { state.textContent = 'Нет связи с сервисом'; const database = document.getElementById('databaseState'); if (database) database.textContent = 'База данных: нет связи с сервисом'; }
     };
-    void update(); events.onopen = update;
+    void update(); setInterval(update, 10000); events.onopen = update;
     events.onerror = () => { state.textContent = 'Переподключение к сервису…'; };
     document.getElementById('pauseQueue').onclick = () => api.pauseQueue().catch(error => { state.textContent = error.message; });
   });

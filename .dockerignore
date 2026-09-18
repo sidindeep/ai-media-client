@@ -7,3 +7,5 @@
 !src/**
 !public/
 !public/**
+!config/
+!config/native-prices.json

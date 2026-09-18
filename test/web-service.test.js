@@ -21,7 +21,7 @@ async function directory(t) {
 
 test('web serves shared forms, no credentials UI, strict API boundary and persistent drafts', async t => {
   const dir = await directory(t);
-  const config = { ...loadConfig({ MEDIA_PORT: '0' }), dataDirectory: dir };
+  const config = { ...loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false' }), dataDirectory: dir };
   const runtime = await start({ config, provider: fakeProvider() }); t.after(() => runtime.close());
   const base = `http://127.0.0.1:${runtime.server.address().port}`;
   const rpc = (name, args) => fetch(`${base}/api/rpc/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web' }, body: JSON.stringify(args) });

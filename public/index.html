@@ -10,6 +10,7 @@
 </head>
 <body>
   <header>
+    <div class="account-controls"><span id="accountName"></span><a id="adminLink" href="/admin.html" hidden>Администрирование</a><button id="logout" type="button">Выйти</button></div>
     <div><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p></div>
   <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
     <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
@@ -65,11 +66,13 @@
       </div>
       <div id="pageSpending" role="tabpanel" aria-labelledby="tabSpending" hidden>
       <h1>Расходы</h1>
+      <div id="nativeLedger" class="native-only card"></div>
       <div class="card">
         <strong>Учёт кредитов</strong>
         <label for="spendPeriod">Период создания задач</label><select id="spendPeriod"><option value="all">За всё время</option><option value="day">Сегодня</option><option value="month">Этот месяц</option></select>
         <p id="spendSummary"></p><p id="balanceAudit" class="hint">Сверка по балансу начнётся после следующего обновления баланса.</p><button id="resetBalanceAudit" type="button" class="quiet">Начать сверку заново</button><details><summary>Расход по моделям</summary><div id="spendModels"></div></details>
-        <details><summary>Цена кредита и тарифы</summary>
+        <!-- provider-settings:start -->
+        <details class="provider-only"><summary>Цена кредита и тарифы</summary>
           <label for="creditPackRub">Стоимость 1000 кредитов, ₽</label><input id="creditPackRub" type="number" min="0.01" step="0.01" value="510"><button id="saveCreditRate" type="button">Сохранить цену</button>
           <p class="hint">Для новых задач сохраняется цена кредита на момент добавления в очередь. Для старых записей без цены — пересчёт по текущей настройке. Это учёт задач этого клиента, не полная выписка аккаунта Kie.</p>
           <button id="refreshTariffs" type="button">Обновить тарифы Kie</button><p id="tariffStatus" class="hint"></p>
@@ -79,6 +82,7 @@
           <p id="priceAuditSummary" class="hint">Автопроверка ещё не запускалась.</p>
           <details class="web-excluded"><summary>Отчёт проверки цен</summary><div id="priceAuditReport"></div></details>
         </details>
+        <!-- provider-settings:end -->
       </div>
       </div>
       <div id="pageHistory" role="tabpanel" aria-labelledby="tabHistory" hidden>

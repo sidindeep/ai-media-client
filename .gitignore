@@ -5,6 +5,7 @@ data/service/
 .env
 .env.*
 !.env.example
+client_secret_*.json
 builder-debug.yml
 builder-effective-config.yaml
 *.log

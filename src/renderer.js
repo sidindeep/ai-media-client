@@ -530,7 +530,7 @@ function renderHistory() {
     }
     if(record.downloadError){const note=document.createElement('p');note.textContent='Ошибка скачивания: '+record.downloadError;body.append(note);}
     if(record.sourceFiles?.length){const note=document.createElement('p');note.className='hint';note.textContent=`Сохранено исходников: ${record.sourceFiles.length}`;body.append(note);}
-    if (['unknown','unconfirmed'].includes(record.state)) { const note = document.createElement('p'); note.textContent = 'Проверьте журнал провайдера перед повторным запуском: запрос мог быть принят.'; body.append(note); }
+    if (['unknown','unconfirmed'].includes(record.state)) { const note = document.createElement('p'); note.textContent = window.desktop.nativeAccount ? 'Статус уточняется. Резерв сохранён; обратитесь в поддержку перед повторным запуском.' : 'Проверьте журнал провайдера перед повторным запуском: запрос мог быть принят.'; body.append(note); }
     $('historyList').append(card);
   }
 }
@@ -599,7 +599,7 @@ $('followCurrent').addEventListener('click',()=>{previewSelection=null;updatePre
 $('editPreview').addEventListener('click',()=>{const button=[...document.querySelectorAll('[data-repeat-id]')].find(b=>b.dataset.repeatId===previewRecord?.id);if(button)button.click();else { $('historySearch').value='';$('historyFilter').value='all';historyPage=Math.floor(Math.max(0,historyRecords.findIndex(record=>record.id===previewRecord?.id))/historyPageSize);renderHistory();[...document.querySelectorAll('[data-repeat-id]')].find(b=>b.dataset.repeatId===previewRecord?.id)?.click(); }});
 $('startQueue').addEventListener('click',()=>window.desktop.startQueue().then(refreshHistory).catch(error=>setStatus(error.message,true)));
 $('clearQueue').addEventListener('click',()=>{
-  if(!confirm('Очистить всю очередь? Ожидающие задачи будут отменены. Отправленные продолжатся у Kie. Все записи останутся в истории.'))return;
+  if(!confirm('Очистить всю очередь? Ожидающие задачи будут отменены. Уже отправленные продолжатся. Все записи останутся в истории.'))return;
   window.desktop.clearQueue().then(refreshHistory).catch(error=>setStatus(error.message,true));
 });
 $('queueConcurrency').addEventListener('change',async()=>{try{await window.desktop.setConcurrency(Number($('queueConcurrency').value));}catch(error){setStatus(error.message,true);}await refreshHistory();});

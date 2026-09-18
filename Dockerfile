@@ -6,6 +6,7 @@ RUN pnpm install --prod --frozen-lockfile --ignore-workspace
 COPY server.js ./
 COPY src ./src
 COPY public ./public
+COPY config ./config
 RUN mkdir -p data/service && chown -R node:node data
 USER node
 ENV MEDIA_HOST=0.0.0.0 MEDIA_PORT=3000

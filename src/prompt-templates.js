@@ -1,7 +1,7 @@
 const {History}=require('./history');
 const {randomUUID}=require('node:crypto');
 class PromptTemplates {
-  constructor(file){this.store=new History(file);}
+  constructor(file,store){this.store=store||new History(file);}
   async list(){return (await this.store.list()).filter(row=>!row.deleted);}
   async save({id,name,text}){
     if(typeof name!=='string'||!name.trim()||name.length>120)throw new Error('Введите название до 120 символов');

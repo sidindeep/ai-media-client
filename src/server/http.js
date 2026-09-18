@@ -40,8 +40,9 @@ async function sendFile(req, res, filename, type, attachment = false) {
   const stream = createReadStream(filename, { start, end });
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-function createHttpServer({ config, service, telegramStatus = () => ({ enabled: false }) }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, telegramStatus = () => ({ enabled: false }) }) {
   const connections = new Set();
+  let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
     try {
       const localPort = server.address().port;
@@ -49,13 +50,62 @@ function createHttpServer({ config, service, telegramStatus = () => ({ enabled: 
       if (config.publicOrigin) allowedHosts.add(new URL(config.publicOrigin).host);
       if (!allowedHosts.has(req.headers.host)) return json(res, 403, { error: 'Недопустимый адрес сервиса' });
       const url = new URL(req.url, `http://${req.headers.host}`);
+      if (auth && config.port !== 0 && req.method === 'GET' && (url.pathname === '/' || /^\/auth\/[a-z][a-z0-9_-]*\/start$/.test(url.pathname)) && req.headers.host !== new URL(config.auth.origin).host) {
+        res.writeHead(302, { ...headers, Location: config.auth.origin + url.pathname + url.search, 'Cache-Control': 'no-store' }); res.end(); return;
+      }
       const sameOrigin = !req.headers.origin || req.headers.origin === `http://${req.headers.host}` || (config.publicOrigin && req.headers.origin === config.publicOrigin);
+      const callbackProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/callback$/.exec(url.pathname)?.[1];
+      const oauthCallback = req.method === 'GET' && auth?.providers().some(provider => provider.id === callbackProvider);
       const pageNavigation = ['GET', 'HEAD'].includes(req.method)
-        && ['/', '/index.html'].includes(url.pathname)
+        && ['/', '/index.html', '/login'].includes(url.pathname)
         && req.headers['sec-fetch-mode'] === 'navigate'
         && req.headers['sec-fetch-dest'] === 'document';
-      if (!pageNavigation && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
-      if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, generationConfigured: service.configured(), telegram: telegramStatus() });
+      if (!pageNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+      const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
+      if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
+      if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
+      const authRoute = /^\/auth\/([a-z][a-z0-9_-]*)\/(start|callback)$/.exec(url.pathname);
+      if (auth && req.method === 'GET' && authRoute) {
+        if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
+        if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
+        if (authRoute[2] === 'start') { const result = await auth.begin(authRoute[1]); return redirect(result.location, result.cookie); }
+        try { return redirect('/', await auth.finish(req, authRoute[1], url.searchParams)); }
+        catch { return redirect('/login?error=oauth'); }
+      }
+      if (['GET', 'HEAD'].includes(req.method) && ['/login', '/login.js', '/web.css'].includes(url.pathname)) {
+        return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
+      }
+      const user = auth ? await auth.user(req) : { id: 'local', role: 'admin', name: 'Владелец' };
+      if (!user) {
+        if (['/', '/index.html'].includes(url.pathname)) return redirect('/login');
+        return json(res, 401, { error: 'Необходим вход в аккаунт' });
+      }
+      if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
+      if (req.method === 'POST' && url.pathname === '/auth/logout') {
+        if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Доступ запрещён' });
+        res.setHeader('Set-Cookie', auth ? await auth.logout(req) : '');
+        for (const connection of connections) if (connection.accountId === user.id) connection.end();
+        return json(res, 200, { result: true });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
+      if (url.pathname.startsWith('/api/admin/')) {
+        if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return json(res, 200, { result: await accounts.list() });
+        if (url.pathname === '/api/admin/reconcile' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
+          const body = JSON.parse((await readBody(req, 8192)).toString('utf8'));
+          const result = await accounts.reconcile(user.id, body.accountId, body.jobId, body.outcome, body.evidence);
+          return json(res, 200, { result });
+        }
+        if (url.pathname === '/api/admin/grant' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
+          const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
+          await accounts.wallet.grant(user.id, body.accountId, body.amountUnits, body.reference, body.note);
+          return json(res, 200, { result: await accounts.wallet.get(body.accountId) });
+        }
+        return json(res, 404, { error: 'Метод не найден' });
+      }
+      // An admin can explicitly select a workspace; ordinary users cannot supply a tenant.
+      const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
+      const service = accounts ? await accounts.scope(user, selected) : legacyService;
       if (req.method === 'POST') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
         if (url.pathname === '/api/source') {
@@ -77,10 +127,10 @@ function createHttpServer({ config, service, telegramStatus = () => ({ enabled: 
       if (url.pathname === '/api/events') {
         if (connections.size >= 20) return json(res, 429, { error: 'Слишком много открытых вкладок' });
         res.writeHead(200, { ...headers, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-        res.write('data: ready\n\n'); connections.add(res);
+        res.write('data: ready\n\n'); res.accountId = user.id; connections.add(res);
         const notify = () => { if (!res.destroyed && res.writableLength < 65536) res.write('data: changed\n\n'); };
         service.events.on('changed', notify);
-        const heartbeat = setInterval(() => { if (!res.destroyed) res.write(': keepalive\n\n'); }, 15000);
+        const heartbeat = setInterval(async () => { try { if (auth && (await auth.user(req))?.id !== user.id) { res.end(); return; } if (!res.destroyed) res.write(': keepalive\n\n'); } catch { res.end(); } }, 15000);
         res.on('close', () => { clearInterval(heartbeat); connections.delete(res); service.events.off('changed', notify); });
         return;
       }
@@ -95,14 +145,29 @@ function createHttpServer({ config, service, telegramStatus = () => ({ enabled: 
         return await sendFile(req, res, file.path, null, url.searchParams.has('download'));
       }
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
+      if (user.role !== 'admin' && shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) return json(res, 403, { error: 'Доступ запрещён' });
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
       const publicFile = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (['index.html', 'web.js', 'web.css'].includes(publicFile)) return await sendFile(req, res, path.join(config.root, 'public', publicFile));
+      if (publicFile === 'index.html') {
+        let html = await fs.readFile(path.join(config.root, 'public/index.html'), 'utf8');
+        html = html.replace('<head>', `<head><meta name="account-id" content="${user.id}"><meta name="account-role" content="${user.role}">`);
+        if (user.role !== 'admin') {
+          html = html.replace(/<!-- provider-settings:start -->[\s\S]*?<!-- provider-settings:end -->/, '');
+          html = html.replace(/<details id="officialTariff">[\s\S]*?<\/details>/, '');
+          html = html.replace(/<script src="\/shared\/(tariff-snapshot|costs|price-audit|costs-ui)\.js"><\/script>/g, '');
+          html = html.replace('<script src="/shared/renderer.js">', '<script src="/native-costs.js"></script><script src="/shared/renderer.js">');
+          html = html.replace('<body>', '<body class="native-account">');
+        }
+        res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(req.method === 'HEAD' ? '' : html);
+      }
+      if (['admin.html', 'admin.js'].includes(publicFile) && user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+      if (['web.js', 'web.css', 'native-costs.js', 'admin.html', 'admin.js'].includes(publicFile)) return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       return json(res, 404, { error: 'Не найдено' });
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
       const message = error.code?.startsWith('E') || error instanceof SyntaxError ? 'Не удалось обработать запрос' : error.message;
-      json(res, 400, { error: message });
+      json(res, error.status || 400, { error: accounts && !error.status && !['Некоррект', 'Недостаточно', 'Цена', 'Требуется', 'Для расчёта', 'Этот запрос', 'Укажите', 'Начисление', 'Проверьте', 'Генерация'].some(prefix => message.startsWith(prefix)) ? 'Не удалось выполнить запрос' : message });
     }
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;

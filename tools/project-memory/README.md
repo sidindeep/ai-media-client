@@ -4,6 +4,9 @@
 
 ## Быстрый вход
 
+- [Аккаунты и кредиты](specs/features/accounts-credits.md) — Google/VK, PostgreSQL,
+  изоляция, роли и независимый от провайдера кредитный модуль.
+
 - [Веб и Telegram](specs/features/web-telegram.md) — сервер, общий workspace, бот и проверки.
 
 - [Граница медиа и провайдеров](specs/features/media-provider-boundary.md) — контракт приложения и клиенты провайдеров.

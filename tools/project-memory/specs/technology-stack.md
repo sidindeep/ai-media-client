@@ -11,7 +11,10 @@
 | Валидация | AJV ^8.20.0 | package.json, desktop/src/main.js |
 | Пакеты | pnpm, pnpm-lock.yaml | README.md, lockfile |
 | Инструменты импорта | yaml ^2.9.0 | desktop/package.json, desktop/scripts/ |
-| Хранилище продукта | JSON и файловые SHA-256 объекты | src/history.js, assets.js |
+| Хранилище аккаунтов | PostgreSQL через pg 8.22.0; транзакции, ledger, tenant JSONB records | src/database/, src/billing/ |
+| Legacy/desktop и файлы | JSON, файловые SHA-256 объекты; медиа аккаунтов в отдельных каталогах | src/history.js, assets.js |
+| Вход в веб | OAuth Google, VK ID Code + PKCE; HttpOnly sessions | src/auth/ |
+| SQL-тесты | PGlite ^0.5.8, только devDependency | test/helpers/pg-pool.js |
 | Очередь | Собственный TaskQueue в main-процессе | src/task-queue.js |
 | Интеграция | Kie HTTP API, fetch | src/catalog.js, main.js |
 | Тесты | node:test; скрытый Electron smoke | test/, desktop/test/, package.json, desktop/package.json |
@@ -21,4 +24,4 @@
 
 Команды: pnpm install --frozen-lockfile, pnpm start, pnpm check, pnpm test, pnpm --dir desktop exec electron test/ui-smoke.cjs, pnpm pack:desktop, pnpm dist:desktop. Подробности и ограничения — в tools/AGENT_RUNBOOK.md.
 
-Веб-команды: pnpm start:web, pnpm dev:web, pnpm check:web. Версия внешнего Node и pnpm не закреплена в package.json; web требует Node >=22.9 из-за --env-file-if-exists. Electron включает собственный Node. Нет настроенного линтера, TypeScript, SQL-БД продукта или vector store. Python-инструмент GI code_intelligence не является зависимостью приложения; интеграция выключена.
+Веб-команды: pnpm start:web, pnpm dev:web, pnpm check:web. Версия внешнего Node и pnpm не закреплена в package.json; web требует Node >=22.9 из-за --env-file-if-exists. Electron включает собственный Node. Нет настроенного линтера, TypeScript или vector store. PostgreSQL продуктовых аккаунтов добавлен 2026-09-18; конфигурация живой БД требуется отдельно. Python-инструмент GI code_intelligence не является зависимостью приложения; интеграция выключена.

@@ -5,8 +5,12 @@ const { createHttpServer } = require('./src/server/http');
 const { createKieGeneration } = require('./src/services/kie-generation');
 const { createMediaService } = require('./src/services/media-service');
 const { createTelegramGateway } = require('./src/services/telegram-gateway');
+const { openDatabase } = require('./src/database/database');
+const { createAuth } = require('./src/auth/service');
+const { createAccounts } = require('./src/services/accounts');
 
-async function start({ config = loadConfig(), provider } = {}) {
+async function start({ config = loadConfig(), provider, pool: suppliedPool, authProviders } = {}) {
+  if (config.auth.enabled && !config.database.url && !suppliedPool) throw new Error('Для аккаунтов настройте DATABASE_URL. Локальный режим владельца: MEDIA_AUTH_ENABLED=false');
   await fs.mkdir(config.dataDirectory, { recursive: true });
   const lockPath = path.join(config.dataDirectory, 'service.lock');
   let lock;
@@ -15,21 +19,33 @@ async function start({ config = loadConfig(), provider } = {}) {
     if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
     throw error;
   }
-  let service, telegram, server;
+  let service, telegram, server, pool, accounts, auth;
   const cleanup = async () => {
     await telegram?.stop();
     server?.closeEvents();
     if (server?.listening) { server.closeIdleConnections(); await new Promise(resolve => server.close(resolve)); }
     await service?.close();
+    await accounts?.close();
+    await pool?.end();
     await lock.close(); await fs.unlink(lockPath).catch(() => {});
   };
   try {
-    service = await createMediaService({ directory: config.dataDirectory, provider: provider || await createKieGeneration({ apiKey: config.kieKey }), rubPerCredit: config.rubPerCredit });
-    telegram = createTelegramGateway({ service, config: config.telegram, directory: config.dataDirectory });
-    server = createHttpServer({ config, service, telegramStatus: telegram.status });
+    provider = provider || await createKieGeneration({ apiKey: config.kieKey });
+    service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit });
+    if (config.auth.enabled) {
+      pool = await openDatabase(config.database, suppliedPool);
+      auth = createAuth({ pool, config: config.auth, providers: authProviders });
+      accounts = createAccounts({ pool, config, provider, legacy: service });
+      await accounts.recover();
+    }
+    // Legacy Telegram has no account binding yet: never bypass the wallet via the bot.
+    const telegramConfig = config.auth.enabled ? { ...config.telegram, enabled: false } : config.telegram;
+    telegram = createTelegramGateway({ service, config: telegramConfig, directory: config.dataDirectory });
+    const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled ? { disabledReason: 'account-linking-required' } : {}) });
+    server = createHttpServer({ config, service, auth, accounts, telegramStatus });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     telegram.start();
-    return { server, service, telegram, close: cleanup };
+    return { server, service, telegram, accounts, auth, close: cleanup };
   } catch (error) { await cleanup(); throw error; }
 }
 if (require.main === module) {

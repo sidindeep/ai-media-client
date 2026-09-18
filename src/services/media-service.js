@@ -13,14 +13,14 @@ const costs = require('../costs');
 const { download } = require('../downloads');
 const Ajv = require('ajv');
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 4000 }) {
-  trace.configure(path.join(directory, 'logs'));
-  const history = new History(path.join(directory, 'history.json'));
-  const preferences = new History(path.join(directory, 'preferences.json'));
-  const drafts = new History(path.join(directory, 'drafts.json'));
-  const sourceMetadata = new History(path.join(directory, 'source-metadata.json'));
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 4000, stores, pricing }) {
+  if (!stores) trace.configure(path.join(directory, 'logs'));
+  const history = stores?.history || new History(path.join(directory, 'history.json'));
+  const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
+  const drafts = stores?.drafts || new History(path.join(directory, 'drafts.json'));
+  const sourceMetadata = stores?.sources || new History(path.join(directory, 'source-metadata.json'));
   const assets = new Assets(path.join(directory, 'sources'));
-  const templates = new PromptTemplates(path.join(directory, 'templates.json'));
+  const templates = new PromptTemplates(path.join(directory, 'templates.json'), stores?.templates);
   const tariffs = new (require('../tariffs').Tariffs)(preferences);
   const events = new EventEmitter();
   const ajv = new Ajv({ strict: false, validateFormats: false });
@@ -140,6 +140,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           modelName: model.name, kind: model.kind, input: request.input,
           sourceFiles: request.sourceFiles || [], workspace: [1, 2, 3, 4, 5].includes(request.workspace) ? request.workspace : 1,
           requestId: request.requestId || null, requestDigest: digest,
+          ...(pricing ? { nativeQuote: pricing.quote(model.id, request.input) } : {}),
           rubPerCredit: price.rubPerCredit, estimate: costs.quote(model, request.input, cachedTariffs)
         });
         return record;

@@ -13,6 +13,7 @@
 | Проверка Windows | pnpm check:desktop |
 | Тесты Windows | pnpm test:desktop |
 | Скрытый UI smoke | pnpm --dir desktop exec electron test/ui-smoke.cjs --disable-gpu |
+| Веб UI аккаунтов (скрытый, изолированная БД) | pnpm --dir desktop exec electron ../test/web-ui-smoke.cjs --disable-gpu |
 | Папка Windows x64 | pnpm pack:desktop |
 | Установщик NSIS | pnpm dist:desktop |
 | Docker сборка и запуск | docker compose up -d --build |
@@ -31,3 +32,10 @@ Dockerfile и контекст сборки находятся в корне. О
 GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настройки источника: tools/project-memory/instruction-kit.json.
 
 Продуктовые инструкции: [веб и Telegram](../docs/web-and-telegram.md), [логирование](../docs/generation-logging.md).
+
+Аккаунты: [PostgreSQL/OAuth/кредиты](../docs/accounts-and-credits.md). По умолчанию
+MEDIA_AUTH_ENABLED=true; DATABASE_URL обязателен. `.env.example` содержит только
+пустые секреты. Для полноценного входа нужны Google/VK приложения и HTTPS origin.
+Схема v1 применяется на старте транзакционно, старая JSON-история не мигрирует.
+Тарифы config/native-prices.json пусты до принятия коммерческих цен.
+Docker копирует этот конфиг. В auth-режиме Telegram отключён до привязки аккаунтов.

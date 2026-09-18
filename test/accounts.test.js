@@ -71,6 +71,27 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request(sourcePath, { headers: { Cookie: alice.cookie } })).status, 200);
   const catalog = await result(rpc(alice, 'getCatalog')); assert.equal(catalog.providers[0].id, 'media'); assert.equal(catalog.models[0].pricing, undefined);
   const empty = await result(rpc(alice, 'getBalance')); assert.equal(empty.balance, 0);
+  const adminPayload = { modelId, input, requestId: randomUUID(), billingExemptActor: owner.id };
+  const tariff = config.pricing.models[modelId];
+  delete config.pricing.models[modelId];
+  for (const user of [alice, owner]) {
+    const denied = await rpc(user, 'createTask', [adminPayload, { billingExemptActor: owner.id }]);
+    assert.equal(denied.status, 400);
+    assert.match((await denied.json()).error, /не опубликована/);
+  }
+  config.pricing.models[modelId] = tariff;
+  assert.equal((await rpc(owner, 'createTask', [adminPayload])).status, 400);
+  assert.equal((await rpc(owner, 'createTask', [adminPayload], { 'X-Media-Account': 'legacy' })).status, 400);
+  await runtime.accounts.wallet.grant(owner.id, owner.id, 5000, 'admin-test-balance', 'Тестовый баланс');
+  const adminJob = await result(rpc(owner, 'createTask', [adminPayload]));
+  assert.equal(adminJob.nativeQuote.amountUnits, 2500);
+  assert.equal((await runtime.accounts.wallet.get(owner.id)).heldUnits, 2500);
+  const adminService = await runtime.accounts.get(owner.id);
+  adminService.queue.paused = false; await adminService.queue.tick(); adminService.queue.pause(); await adminService.queue.tick();
+  assert.equal((await adminService.history.list())[0].state, 'success');
+  assert.equal((await runtime.accounts.wallet.get(owner.id)).balanceUnits, 2500);
+  assert.equal((await runtime.accounts.wallet.get(owner.id)).heldUnits, 0);
+  assert.equal((await result(rpc(owner, 'createTask', [adminPayload]))).id, adminJob.id);
   assert.equal((await rpc(alice, 'createTask', [{ modelId, input, requestId: 'no-money' }])).status, 400);
   assert.equal((await result(rpc(alice, 'getHistory'))).length, 0);
   await runtime.accounts.wallet.grant(owner.id, alice.id, 5000, 'grant-once', 'Тестовый баланс');

@@ -51,9 +51,19 @@ app.whenReady().then(async () => {
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
     await win.loadURL(origin + '/admin.html');
     await until("document.querySelector('#grantAccount').options.length===2");
+    assert.equal(await evaluate("document.querySelector('#grantAccount').value"), adminId);
+    assert.match(await evaluate("document.querySelector('#grantBalance').textContent"), /Доступно: 5/);
+    await evaluate("document.querySelector('#grantAmount').value='2.125';document.querySelector('#grantNote').value='Пополнение своего счёта';document.querySelector('#grantForm').requestSubmit();void 0");
+    await until("document.querySelector('#grantBalance').textContent.includes('7,125') && !document.querySelector('#grantForm button').disabled");
+    assert.equal((await runtime.accounts.wallet.get(adminId)).balanceUnits, 7125);
     await evaluate(`document.querySelector('#grantAccount').value=${JSON.stringify(userId)};document.querySelector('#grantAmount').value='1.25';document.querySelector('#grantNote').value='Проверка UI';document.querySelector('#grantForm').requestSubmit();void 0`);
-    await until("document.querySelector('#adminStatus').textContent==='Начисление сохранено'");
+    await until("document.querySelector('#grantBalance').textContent.includes('6,25') && !document.querySelector('#grantForm button').disabled");
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 6250);
+    await evaluate("document.querySelector('#grantSelf').click(); void 0");
+    await until(`document.querySelector('#grantAccount').value===${JSON.stringify(adminId)}`);
+    assert.match(await evaluate("document.querySelector('#grantBalance').textContent"), /7,125/);
+    const notes = (await pool.query("SELECT note FROM media_ledger WHERE kind='grant' ORDER BY created_at")).rows.map(row => row.note);
+    assert.deepEqual(notes, ['Пополнение своего счёта', 'Проверка UI']);
     assert.deepEqual(errors, []);
     console.log('PASS: web account UI, 149 models, native price and spending, hidden provider finance, logout, admin account list and exact credit grant.');
   } catch (error) { console.error(error); process.exitCode = 1; }

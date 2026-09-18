@@ -37,7 +37,13 @@ function createAccounts({ pool, config, provider, legacy }) {
     },
     async scope(user, selected) {
       if (selected && user.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
-      if (selected === 'legacy') return legacy;
+      if (selected === 'legacy') return {
+        ...legacy,
+        async dispatch(method, args = []) {
+          if (method === 'createTask') throw new Error('Для генерации выберите аккаунт с кредитным балансом');
+          return legacy.dispatch(method, args);
+        }
+      };
       const accountId = selected || user.id;
       if (!/^[a-f0-9-]{36}$/.test(accountId) || !(await pool.query('SELECT id FROM media_accounts WHERE id=$1', [accountId])).rowCount) throw new Error('Аккаунт не найден');
       const service = await get(accountId);

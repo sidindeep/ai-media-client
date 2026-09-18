@@ -11,6 +11,7 @@ COPY server.js ./
 COPY src ./src
 COPY public ./public
 COPY config ./config
+RUN node src/server/build-info.js /opt/media-build.json
 RUN mkdir -p data/service data/codex-auth && chown -R node:node data
 USER node
 ENV MEDIA_HOST=0.0.0.0 MEDIA_CODEX_EMBEDDED=true CODEX_HOME=/app/data/codex-auth

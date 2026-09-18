@@ -4,6 +4,7 @@ const { createReadStream } = require('node:fs');
 const path = require('node:path');
 const { validateCodexRequest } = require('../services/codex-request');
 const { createCodexBilling } = require('../services/codex-billing');
+const { buildInfo } = require('./build-info');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
@@ -57,6 +58,7 @@ async function sendFile(req, res, filename, type, attachment = false) {
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
 function createHttpServer({ config, service: legacyService, auth, accounts, telegramStatus = () => ({ enabled: false }) }) {
+  const release = buildInfo(config.root);
   const codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
@@ -81,8 +83,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       if (req.method === 'GET' && url.pathname === '/api/health') {
         if (accounts) await accounts.pool.query('SELECT 1');
-        return json(res, 200, { ok: true, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
+        return json(res, 200, { ok: true, version: release.version, build: release.build, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
       }
+      if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
       const authRoute = /^\/auth\/([a-z][a-z0-9_-]*)\/(start|callback)$/.exec(url.pathname);
       if (auth && req.method === 'GET' && authRoute) {

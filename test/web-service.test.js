@@ -21,6 +21,12 @@ test('temporary database failure gives a retryable page and an unhealthy API sta
   const page = await fetch(base); assert.equal(page.status, 503); assert.equal(page.headers.get('retry-after'), '5');
   const html = await page.text(); assert.match(html, /Повторить/); assert.doesNotMatch(html, /private database details/);
   assert.equal((await fetch(base + '/api/health')).status, 503);
+  const version = await fetch(base + '/api/version');
+  assert.equal(version.status, 200);
+  assert.equal(version.headers.get('cache-control'), 'no-store');
+  const release = await version.json();
+  assert.equal(release.version, require('../package.json').version);
+  assert.match(release.build, /^[a-f0-9]{12}$/);
 });
 test('protected scripts retry transient session reads without initializing account storage or bypassing access', async t => {
   let attempts = 0, failure = 'once', role = 'user';

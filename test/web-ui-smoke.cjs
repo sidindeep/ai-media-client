@@ -120,6 +120,8 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('#provider').value"), 'kie');
     await win.loadURL(origin + '/admin.html#credits');
     await until("document.querySelector('#grantAccount').options.length===2");
+    await until("document.querySelector('#appVersion').textContent.includes('сборка')");
+    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /Версия 0\.3\.0 · сборка [a-f0-9]{12}/);
     await evaluate("location.hash='codexPanel';void 0");
     await until("document.querySelector('#codexLoginStatus').textContent==='Codex ещё не подключён.'");
     await evaluate("document.querySelector('#codexLoginStart').click();void 0");

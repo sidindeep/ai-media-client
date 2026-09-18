@@ -138,6 +138,16 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       }
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (url.pathname.startsWith('/api/admin/codex/')) {
+          const action = url.pathname.slice('/api/admin/codex/'.length);
+          if (!((action === 'status' && req.method === 'GET') || (['start', 'cancel'].includes(action) && req.method === 'POST' && req.headers['x-media-client'] === 'web'))) return json(res, 404, { error: 'Не найдено' });
+          if (!config.codex?.url) return json(res, 503, { error: 'Сервис Codex не подключён на сервере.' });
+          try {
+            const response = await fetch(`${config.codex.url.replace(/\/$/, '')}/auth/${action}`, { method: req.method, headers: { 'x-account-id': user.id }, signal: AbortSignal.timeout(15000) });
+            if (!response.ok) return json(res, 502, { error: 'Обновите и проверьте сервис Codex на сервере.' });
+            return json(res, 200, { result: await response.json() });
+          } catch { return json(res, 502, { error: 'Сервис Codex не отвечает. Проверьте его запуск.' }); }
+        }
         if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return json(res, 200, { result: await accounts.list() });
         if (url.pathname === '/api/admin/roles' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
           const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));

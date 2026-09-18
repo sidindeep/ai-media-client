@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { validateCodexRequest, codexArguments } = require('./codex-request');
 const { collectImage } = require('./codex-images');
+const { createCodexLogin } = require('./codex-login');
 
 function codexEnvironment(env = process.env) {
   // The hosting container also has database/OAuth/Kie secrets. Do not inherit them.
@@ -56,7 +57,7 @@ async function execute(request, { signal } = {}) {
     finally { await fs.rm(image.directory, { recursive: true, force: true }); }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 }
-function createCodexWorker(run = execute) {
+function createCodexWorker(run = execute, { login = createCodexLogin({ environment: codexEnvironment }) } = {}) {
   const controller = new AbortController();
   const jobs = new Map(); let active = false;
   const send = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -66,6 +67,9 @@ function createCodexWorker(run = execute) {
       if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
       const account = req.headers['x-account-id'];
       if (typeof account !== 'string' || !/^(local|[a-f0-9-]{36})$/.test(account)) return send(res, 403, { error: 'Доступ запрещён' });
+      if (url.pathname === '/auth/status' && req.method === 'GET') return send(res, 200, await login.status());
+      if (url.pathname === '/auth/start' && req.method === 'POST') return send(res, 200, await login.start());
+      if (url.pathname === '/auth/cancel' && req.method === 'POST') return send(res, 200, login.cancel());
       const now = Date.now();
       for (const [key, job] of jobs) if (job.state !== 'running' && now - job.createdAt > 3600000) jobs.delete(key);
       if (req.method === 'GET' && /^\/jobs\/[a-f0-9-]{36}$/.test(url.pathname)) {
@@ -90,7 +94,8 @@ function createCodexWorker(run = execute) {
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });
   server.requestTimeout = 15000;
-  server.stopActive = () => controller.abort();
+  server.stopActive = () => { controller.abort(); login.close(); };
+  server.on('close', () => login.close());
   return server;
 }
 if (require.main === module) createCodexWorker().listen(3210, '0.0.0.0', () => console.log('Codex worker ready'));

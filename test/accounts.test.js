@@ -70,6 +70,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   const alice = await login('alice'), bob = await login('bob'), owner = await login('owner'), otherIdentity = await login('alice', 'vk');
   assert.equal(alice.role, 'user'); assert.equal(owner.role, 'admin'); assert.notEqual(otherIdentity.id, alice.id);
   assert.equal((await request('/api/admin/accounts', { headers: { Cookie: alice.cookie } })).status, 403);
+  assert.equal((await request('/api/admin/codex/status')).status, 401);
+  assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: alice.cookie } })).status, 403);
+  assert.equal((await request('/api/admin/codex/start', { method: 'POST', headers: { Cookie: alice.cookie, 'X-Media-User': alice.id, 'X-Media-Client': 'web' } })).status, 403);
+  assert.equal((await request('/api/admin/codex/start', { method: 'POST', headers: { Cookie: owner.cookie } })).status, 409);
+  assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: owner.cookie } })).status, 503);
   assert.equal((await rpc(alice, 'getHistory', [], { 'X-Media-Account': bob.id })).status, 403);
   assert.equal((await rpc(alice, 'setCreditRate', [1])).status, 403);
   assert.equal((await rpc(alice, 'saveDrafts', [], { 'X-Media-User': bob.id })).status, 409);

@@ -16,10 +16,15 @@ app.whenReady().then(async () => {
   try {
     const artifacts = path.resolve(__dirname, '../artifacts'); await fs.mkdir(artifacts, { recursive: true });
     directory = await fs.mkdtemp(path.join(artifacts, 'web-ui-'));
+    let loginState = { state: 'disconnected' };
     codexWorker = require('../src/services/codex-worker').createCodexWorker(async request => {
       codexRequest = request;
       return request.kind === 'image' ? { output: 'Тестовый ответ Codex', imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' } : 'Тестовый ответ Codex';
-    });
+    }, { login: {
+      status: async () => loginState,
+      start: async () => (loginState = { state: 'running', code: 'ABCD-EF123' }),
+      cancel: () => (loginState = { state: 'idle' }), close() {},
+    } });
     await new Promise(resolve => codexWorker.listen(0, '127.0.0.1', resolve));
     const config = { ...loadConfig({ MEDIA_PORT: '0' }), dataDirectory: directory,
       codex: { url: `http://127.0.0.1:${codexWorker.address().port}` },
@@ -47,7 +52,7 @@ app.whenReady().then(async () => {
     const evaluate = code => win.webContents.executeJavaScript(code);
     async function until(code) {
       for (let count = 0; count < 100; count++) { if (await evaluate(code)) return; await new Promise(resolve => setTimeout(resolve, 50)); }
-      throw new Error('UI condition timeout: ' + code);
+      throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("document.querySelector('#codexStatus')?.textContent || ''"));
     }
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
@@ -115,6 +120,20 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('#provider').value"), 'kie');
     await win.loadURL(origin + '/admin.html#credits');
     await until("document.querySelector('#grantAccount').options.length===2");
+    await evaluate("location.hash='codexPanel';void 0");
+    await until("document.querySelector('#codexLoginStatus').textContent==='Codex ещё не подключён.'");
+    await evaluate("document.querySelector('#codexLoginStart').click();void 0");
+    await until("document.querySelector('#codexLoginCode').textContent==='ABCD-EF123'");
+    assert.equal(await evaluate("document.querySelector('#codexLoginStart').disabled"), true);
+    assert.equal(await evaluate("document.querySelector('#codexLoginInstructions').hidden"), false);
+    await evaluate("document.querySelector('#codexLoginCancel').click();void 0");
+    await until("document.querySelector('#codexLoginInstructions').hidden && !document.querySelector('#codexLoginStart').disabled");
+    await evaluate("document.querySelector('#codexLoginStart').click();void 0");
+    await until("document.querySelector('#codexLoginCode').textContent==='ABCD-EF123'");
+    loginState = { state: 'connected' };
+    await until("document.querySelector('#codexLoginStatus').textContent.includes('Codex подключён.')");
+    assert.equal(await evaluate("document.querySelector('#codexLoginCode').textContent"), '');
+    await evaluate("location.hash='credits';void 0");
     assert.equal(await evaluate("document.querySelector('#grantAccount').value"), adminId);
     assert.match(await evaluate("document.querySelector('#grantBalance').textContent"), /Доступно: 5/);
     await evaluate("document.querySelector('#grantAmount').value='2.125';document.querySelector('#grantNote').value='Пополнение своего счёта';document.querySelector('#grantForm').requestSubmit();void 0");

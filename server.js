@@ -13,6 +13,10 @@ const { createCodexWorker } = require('./src/services/codex-worker');
 async function start({ config = loadConfig(), provider, pool: suppliedPool, authProviders } = {}) {
   if (config.auth.enabled && !config.database.url && !suppliedPool) throw new Error('Для аккаунтов настройте DATABASE_URL. Локальный режим владельца: MEDIA_AUTH_ENABLED=false');
   await fs.mkdir(config.dataDirectory, { recursive: true });
+  // Hosting mounts /app/data after image build, hiding directories created there.
+  if (config.codex?.embedded && process.env.CODEX_HOME) {
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true, mode: 0o700 });
+  }
   const lockPath = path.join(config.dataDirectory, 'service.lock');
   let lock;
   try { lock = await fs.open(lockPath, 'wx'); await lock.writeFile(String(process.pid)); }

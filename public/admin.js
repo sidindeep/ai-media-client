@@ -11,7 +11,7 @@ function showBalance() {
   void loadLedger();
 }
 function selectPanel() {
-  const panels = ['accountsPanel', 'credits', 'auditPanel', 'reconcilePanel'];
+  const panels = ['accountsPanel', 'credits', 'auditPanel', 'reconcilePanel', 'codexPanel'];
   const selected = panels.includes(location.hash.slice(1)) ? location.hash.slice(1) : panels[0];
   for (const id of panels) document.getElementById(id).hidden = id !== selected;
   document.querySelectorAll('.admin-tabs a').forEach(link => link.setAttribute('aria-current', link.hash === '#' + selected ? 'page' : 'false'));
@@ -98,3 +98,38 @@ document.getElementById('grantForm').onsubmit = async event => {
   finally { button.disabled = false; document.getElementById('grantSelf').disabled = false; }
 };
 void loadAccounts().catch(error => { document.getElementById('adminStatus').textContent = error.message; });
+
+// Poll only while this panel is visible; returning to it recovers an active login.
+(() => {
+  const status = document.getElementById('codexLoginStatus');
+  const start = document.getElementById('codexLoginStart');
+  const refresh = document.getElementById('codexLoginRefresh');
+  const cancel = document.getElementById('codexLoginCancel');
+  let timer, busy = false;
+  async function update(action = 'status') {
+    if (busy) return;
+    busy = true; clearTimeout(timer); start.disabled = refresh.disabled = cancel.disabled = true;
+    try {
+      const value = await adminRequest('/api/admin/codex/' + action, { method: action === 'status' ? 'GET' : 'POST' });
+      const running = value.state === 'running';
+      status.textContent = ({ connected: 'Codex подключён. Можно запускать генерации.', disconnected: 'Codex ещё не подключён.', idle: 'Вход отменён. Можно проверить текущий статус или начать заново.', running: value.code ? 'Ожидаем подтверждения входа в браузере.' : 'Получаем одноразовый код…', failed: 'Вход не завершён: код истёк или CLI не смог войти. Попробуйте снова.' })[value.state] || 'Неизвестный статус.';
+      document.getElementById('codexLoginInstructions').hidden = !running || !value.code;
+      document.getElementById('codexLoginCode').textContent = running ? value.code || '' : '';
+      cancel.hidden = !running; start.disabled = running;
+      start.textContent = value.state === 'connected' ? 'Войти другим аккаунтом' : 'Войти в Codex';
+      if (running && location.hash === '#codexPanel') timer = setTimeout(() => void update(), 2000);
+    } catch (error) {
+      status.textContent = error.message;
+      document.getElementById('codexLoginInstructions').hidden = true;
+      document.getElementById('codexLoginCode').textContent = '';
+      start.disabled = false;
+    } finally { busy = false; refresh.disabled = cancel.disabled = false; }
+  }
+  start.onclick = () => void update('start');
+  refresh.onclick = () => void update();
+  cancel.onclick = () => void update('cancel');
+  const show = () => { clearTimeout(timer); if (location.hash === '#codexPanel') void update(); };
+  window.addEventListener('hashchange', show);
+  window.addEventListener('pagehide', () => clearTimeout(timer));
+  show();
+})();

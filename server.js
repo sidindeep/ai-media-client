@@ -43,6 +43,7 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
     telegram = createTelegramGateway({ service, config: telegramConfig, directory: config.dataDirectory });
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled ? { disabledReason: 'account-linking-required' } : {}) });
     server = createHttpServer({ config, service, auth, accounts, telegramStatus });
+    await server.recoverCodex();
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     telegram.start();
     return { server, service, telegram, accounts, auth, close: cleanup };

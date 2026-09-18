@@ -40,6 +40,7 @@ function loadConfig(env = process.env) {
     telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',
     rubPerCredit, pricing,
+    codex: { url: env.MEDIA_CODEX_URL || '' },
     database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1' },
     auth: { enabled: authEnabled, origin: authOrigin,
       sessionSeconds: integer(env.MEDIA_SESSION_SECONDS, 604800, 300, 2592000),

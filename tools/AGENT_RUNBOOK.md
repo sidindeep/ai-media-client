@@ -18,6 +18,7 @@
 | Установщик NSIS | pnpm dist:desktop |
 | Docker сборка и запуск | docker compose up -d --build |
 | Docker состояние | docker compose ps |
+| Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
 | Docker остановка | docker compose down |
 | Проверка diff | git diff --check |
 
@@ -26,6 +27,20 @@
 Веб: http://127.0.0.1:3000; health: /api/health. Конфиг: .env, образец .env.example. Данные: data/service, включая logs/generation.jsonl. Docker монтирует тот же каталог. Остановка Node: Ctrl+C. Не запускайте одновременно Node и Docker с одними данными.
 
 Dockerfile и контекст сборки находятся в корне. Образ содержит только веб и Telegram; desktop/ исключён allowlist в .dockerignore. На хостинге: порт 3000, MEDIA_HOST=0.0.0.0, MEDIA_PUBLIC_ORIGIN=https://ваш-домен.
+
+Переключатель провайдера разделяет Kie.ai (изображения/видео) и Codex CLI
+(изображения и текст). Для Codex выбираются тип результата, модель, уровень рассуждения и обычная/Fast
+скорость. Все пользователи с кредитным счётом используют серверный аккаунт
+Codex и платят внутренними кредитами. Настройка и тарифы:
+[Codex в вебе](../docs/codex.md).
+
+Каталог `config/codex-models.json` обновляется через `model/list` контейнера
+`../llm_providers` без генерации. Другой каталог провайдера можно передать
+первым аргументом команды. После обновления пересобрать оба контейнера.
+Для первой сборки необходим образ `llm-providers:local`; Compose использует
+приватный том `llm-providers_codex-auth`. Повторный вход на хосте:
+`docker compose exec codex codex login --device-auth` — открыть выданную ссылку
+в своём браузере и ввести код из терминала хоста.
 
 Профиль Electron, история, ключи и черновики остаются в прежнем userData. Не читать его без отдельной задачи. Каталог обновляется командами node scripts/import-kie.js и node scripts/import-special.js из desktop/ (сетевые операции).
 
@@ -36,6 +51,8 @@ GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настр
 Аккаунты: [PostgreSQL/OAuth/кредиты](../docs/accounts-and-credits.md). По умолчанию
 MEDIA_AUTH_ENABLED=true; DATABASE_URL обязателен. `.env.example` содержит только
 пустые секреты. Для полноценного входа нужны Google/VK приложения и HTTPS origin.
-Схема v1 применяется на старте транзакционно, старая JSON-история не мигрирует.
-Тарифы config/native-prices.json пусты до принятия коммерческих цен.
+Схема v2 применяется на старте транзакционно, старая JSON-история не мигрирует.
+Тарифы config/native-prices.json: Nano Banana 2 Lite и все режимы Codex —
+4 внутренних кредита за запрос по решению владельца от 2026-09-18;
+остальные цены публикуются отдельно.
 Docker копирует этот конфиг. В auth-режиме Telegram отключён до привязки аккаунтов.

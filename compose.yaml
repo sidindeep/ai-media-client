@@ -4,14 +4,43 @@ services:
     build: .
     image: ai-media-web-tg:local
     init: true
+    dns:
+      - ${MEDIA_DNS_PRIMARY:-1.1.1.1}
+      - ${MEDIA_DNS_SECONDARY:-8.8.8.8}
     env_file:
       - .env
     environment:
       MEDIA_HOST: 0.0.0.0
       MEDIA_PORT: 3000
       MEDIA_DATA_DIR: data/service
+      MEDIA_CODEX_URL: http://codex:3210
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./data/service:/app/data/service
     stop_grace_period: 60s
+    networks: [default, codex-link]
+  codex:
+    build:
+      context: .
+      dockerfile: Dockerfile.codex
+    image: ai-media-codex:local
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
+    volumes:
+      - codex-auth:/home/node/.codex
+    networks: [codex-link]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3210/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+volumes:
+  codex-auth:
+    external: true
+    name: ${MEDIA_CODEX_AUTH_VOLUME:-llm-providers_codex-auth}
+networks:
+  codex-link:

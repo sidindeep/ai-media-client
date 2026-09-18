@@ -1,0 +1,6 @@
+FROM llm-providers:local
+WORKDIR /worker
+COPY --chown=node:node src/services/codex-request.js src/services/codex-worker.js ./src/services/
+COPY --chown=node:node src/services/codex-images.js ./src/services/
+COPY --chown=node:node config/codex-models.json ./config/
+ENTRYPOINT ["node", "/worker/src/services/codex-worker.js"]

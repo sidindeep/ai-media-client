@@ -30,3 +30,10 @@ test('VK binds device, verifier and returned state, and rejects mismatched token
   badState = true; await assert.rejects(adapters.get('vk').exchange(params));
   await assert.rejects(adapters.get('vk').exchange({ ...params, deviceId: '' }));
 });
+test('Google supplies bootstrap email only when explicitly verified by userinfo', async () => {
+  for (const verified of [false, 'true', undefined, true]) {
+    const adapters = createProviders({ google: { clientId: 'client', clientSecret: 'secret' }, vk: {} }, async url => ({ ok: true, json: async () => url.includes('/token') ? { access_token: 'access' } : { sub: 'subject', email: 'Owner@Example.test', email_verified: verified } }));
+    const profile = await adapters.get('google').exchange({ code: 'code', verifier: 'verifier', redirectUri: 'https://app.test/auth/google/callback' });
+    assert.equal(profile.verifiedEmail, verified === true ? 'owner@example.test' : undefined);
+  }
+});

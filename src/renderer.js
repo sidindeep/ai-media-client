@@ -194,7 +194,7 @@ async function refreshBalance({automatic=false,resetAudit=false}={}) {
   const providerId=selectedProvider()?.id;if(!providerId)return;
   const request=++balanceRequest;
   try {
-    if(automatic&&!await window.desktop.keyStatus(providerId))return;
+    if(automatic&&!window.desktop.nativeBalance&&!await window.desktop.keyStatus(providerId))return;
     const response=await window.desktop.getBalance(providerId,resetAudit);
     if(request!==balanceRequest||selectedProvider()?.id!==providerId)return;
     const value=typeof response==='object'?response.balance:response;
@@ -218,7 +218,7 @@ async function refreshProviderAccount() {
     const saved=await window.desktop.keyStatus(providerId);
     if(selectedProvider().id!==providerId)return;
     $("keyStatus").textContent=window.desktop.isWeb?(saved?'Генерация выполняется на сервере':'Подключение генерации будет настроено на сервере'):(saved?'Ключ сохранён в зашифрованном хранилище Windows':'Ключ ещё не сохранён');
-    if(saved)await refreshBalance({automatic:true});
+    if(saved||window.desktop.nativeBalance)await refreshBalance({automatic:true});
   }catch(error){if(selectedProvider().id===providerId)$("keyStatus").textContent=error.message;}
 }
 

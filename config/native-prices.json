@@ -1,4 +1,170 @@
 {
-  "version": "unpublished",
-  "models": {}
+  "version": "2026-09-18-codex-nano-lite",
+  "models": {
+    "kie:nano-banana-2-lite": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:low:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:low:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:medium:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:medium:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:high:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:high:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:xhigh:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:xhigh:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:max:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:max:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:ultra:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-6-astra:ultra:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:low:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:low:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:medium:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:medium:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:high:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:high:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:xhigh:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:xhigh:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:max:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:max:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:ultra:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-sol:ultra:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:low:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:low:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:medium:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:medium:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:high:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:high:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:xhigh:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:xhigh:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:max:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:max:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:ultra:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-terra:ultra:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:low:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:low:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:medium:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:medium:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:high:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:high:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:xhigh:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:xhigh:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:max:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.6-luna:max:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:low:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:low:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:medium:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:medium:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:high:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:high:fast": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:xhigh:standard": {
+      "baseUnits": 4000
+    },
+    "codex:gpt-5.5:xhigh:fast": {
+      "baseUnits": 4000
+    }
+  }
 }

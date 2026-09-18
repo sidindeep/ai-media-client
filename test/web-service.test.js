@@ -12,17 +12,63 @@ const { models } = require('../src/catalog');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
-async function directory(t) {
+test('temporary database failure gives a retryable page and an unhealthy API status', async t => {
+  const unavailable = async () => { throw Object.assign(new Error('private database details'), { code: 'EAI_AGAIN' }); };
+  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { pool: { query: unavailable } } });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const page = await fetch(base); assert.equal(page.status, 503); assert.equal(page.headers.get('retry-after'), '5');
+  const html = await page.text(); assert.match(html, /Повторить/); assert.doesNotMatch(html, /private database details/);
+  assert.equal((await fetch(base + '/api/health')).status, 503);
+});
+test('protected scripts retry transient session reads without initializing account storage or bypassing access', async t => {
+  let attempts = 0, failure = 'once', role = 'user';
+  const auth = { providers: () => [], user: async () => {
+    attempts++;
+    if (failure === 'always' || (failure === 'once' && attempts === 1)) throw Object.assign(new Error('Connection terminated'), { code: 'ECONNRESET' });
+    return role ? { id: 'test', role } : null;
+  } };
+  const server = require('../src/server/http').createHttpServer({
+    config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth,
+    accounts: { scope: async () => { throw new Error('Static assets must not initialize a workspace'); } }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const script = await fetch(base + '/shared/file-drop.js');
+  assert.equal(script.status, 200); assert.equal(attempts, 2);
+  assert.match(await script.text(), /window.attachFileDrop=function/);
+  failure = 'none'; attempts = 0;
+  assert.equal((await fetch(base + '/shared/costs.js')).status, 403);
+  assert.equal(attempts, 1);
+  role = null; attempts = 0;
+  assert.equal((await fetch(base + '/shared/file-drop.js')).status, 401);
+  assert.equal(attempts, 1);
+  failure = 'always'; attempts = 0;
+  assert.equal((await fetch(base + '/shared/file-drop.js')).status, 503);
+  assert.equal(attempts, 3);
+  attempts = 0;
+  assert.equal((await fetch(base + '/api/rpc/createTask', { method: 'POST' })).status, 503);
+  assert.equal(attempts, 1, 'paid requests must not be retried');
+});
+async function directory() {
   const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });
   const dir = await fs.mkdtemp(path.join(base, 'web-test-'));
-  t.after(async () => { assert.ok(dir.startsWith(base + path.sep)); await fs.rm(dir, { recursive: true, force: true }); });
   return dir;
 }
 
+async function cleanup(dir, resource) {
+  await resource.close();
+  const base = path.resolve(__dirname, '../artifacts');
+  assert.ok(dir.startsWith(base + path.sep));
+  await fs.rm(dir, { recursive: true, force: true, maxRetries: 3 });
+}
+
 test('web serves shared forms, no credentials UI, strict API boundary and persistent drafts', async t => {
-  const dir = await directory(t);
+  const dir = await directory();
   const config = { ...loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false' }), dataDirectory: dir };
-  const runtime = await start({ config, provider: fakeProvider() }); t.after(() => runtime.close());
+  const runtime = await start({ config, provider: fakeProvider() }); t.after(() => cleanup(dir, runtime));
   const base = `http://127.0.0.1:${runtime.server.address().port}`;
   const rpc = (name, args) => fetch(`${base}/api/rpc/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web' }, body: JSON.stringify(args) });
   const html = await fetch(base).then(r => r.text());
@@ -64,9 +110,9 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
 });
 
 test('service deduplicates enqueue, validates exact model id and keeps queue on server', async t => {
-  const dir = await directory(t); let sent = 0;
+  const dir = await directory(); let sent = 0;
   const provider = fakeProvider(); provider.create = async () => { sent++; return { taskId: 'remote-1' }; };
-  const service = await createMediaService({ directory: dir, provider, interval: 5 }); t.after(() => service.close());
+  const service = await createMediaService({ directory: dir, provider, interval: 5 }); t.after(() => cleanup(dir, service));
   const request = { modelId: model.id, input, requestId: 'same-request' };
   const [a, b] = await Promise.all([service.createTask(request), service.createTask(request)]);
   assert.equal(a.id, b.id); assert.equal((await service.listHistory()).length, 1);
@@ -80,16 +126,16 @@ test('service deduplicates enqueue, validates exact model id and keeps queue on 
 });
 
 test('unconfigured service starts and refuses paid task without fabricating output', async t => {
-  const dir = await directory(t); const provider = fakeProvider(); provider.isConfigured = () => false;
-  const service = await createMediaService({ directory: dir, provider }); t.after(() => service.close());
+  const dir = await directory(); const provider = fakeProvider(); provider.isConfigured = () => false;
+  const service = await createMediaService({ directory: dir, provider }); t.after(() => cleanup(dir, service));
   assert.equal(service.configured(), false);
   await assert.rejects(service.createTask({ modelId: model.id, input }), /не подключена/);
   assert.equal((await service.listHistory()).length, 0);
 });
 
 test('Telegram accepts new private users and confirms once with durable request id', async t => {
-  const dir = await directory(t);
-  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
+  const dir = await directory();
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => cleanup(dir, service));
   const bot = createTelegramBot({ service, directory: dir, allowedUsers: ['42'], downloadFile: async () => Buffer.from('image') });
   const message = text => ({ message: { text, chat: { id: 42, type: 'private' }, from: { id: 42 } } });
   const callback = data => ({ callback_query: { data, from: { id: 42 }, message: { chat: { id: 42, type: 'private' } } } });
@@ -107,8 +153,8 @@ test('Telegram accepts new private users and confirms once with durable request 
 });
 
 test('Telegram polling offsets survive restart and token-bearing failures are redacted', async t => {
-  const dir = await directory(t);
-  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
+  const dir = await directory();
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => cleanup(dir, service));
   let observedOffset;
   const config = { enabled: true, token: 'test-token', users: ['42'] };
   const gateway = createTelegramGateway({ service, config, directory: dir, fetchImpl: async (url, options) => {
@@ -131,8 +177,8 @@ test('config rejects external data paths and unconfigured enabled bot', () => {
 
 
 test('public Telegram isolates history and delivers results without an allowlist', async t => {
-  const dir = await directory(t);
-  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
+  const dir = await directory();
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => cleanup(dir, service));
   await service.history.update('other', { telegramChatId: '42', state: 'queued', modelName: 'Private task' });
   await service.history.update('mine', { telegramChatId: '7', state: 'success', modelName: 'My task', resultJson: '{"resultUrls":["https://example.test/mine.png"]}' });
   const bot = createTelegramBot({ service, directory: dir, allowedUsers: ['42'] });
@@ -157,8 +203,8 @@ test('public Telegram isolates history and delivers results without an allowlist
 
 
 test('Telegram access switches from public to allowlist and back without losing sessions', async t => {
-  const dir = await directory(t);
-  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => service.close());
+  const dir = await directory();
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => cleanup(dir, service));
   const message = id => ({ message: { text: '/start', chat: { id, type: 'private' }, from: { id } } });
   const open = createTelegramBot({ service, directory: dir, allowedUsers: ['42'], publicAccess: true });
   assert.ok(await open.handle(message(7)));

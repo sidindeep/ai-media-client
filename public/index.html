@@ -6,25 +6,47 @@
   <title>AI Media Client</title>
   <link rel="stylesheet" href="/shared/styles.css">
   <link rel="stylesheet" href="/web.css">
+  <script src="/account-menu.js" defer></script>
+  <script src="/codex-models.js" defer></script>
   <script src="/web.js"></script>
 </head>
 <body>
   <header>
-    <div class="account-controls"><span id="accountName"></span><a id="adminLink" href="/admin.html" hidden>Администрирование</a><button id="logout" type="button">Выйти</button></div>
     <div><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p></div>
   <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
     <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
     <button id="tabHistory" type="button" role="tab" aria-controls="pageHistory" aria-selected="false" tabindex="-1" data-page="pageHistory">История</button>
     <button id="tabSpending" type="button" role="tab" aria-controls="pageSpending" aria-selected="false" tabindex="-1" data-page="pageSpending">Расходы</button>
+    <a id="adminLink" href="/admin.html" hidden>Админ</a>
   </nav>
     <div class="header-provider"><label for="provider">Сайт / API</label><select id="provider"></select></div>
     <div class="balance">Баланс: <b id="balance">—</b> кредитов <button id="refreshBalance" class="quiet">↻</button></div>
+    <div id="accountMenuMount"></div>
   </header>
   <main id="appMain">
     <aside>
+      <label for="generationProvider">Провайдер генерации</label>
+      <select id="generationProvider"><option value="kie">Kie.ai · изображения и видео</option><option value="codex">Codex CLI · изображения и текст</option></select>
+      <div id="kieModelControls">
       <label>Модель</label><select id="model"></select>
       <label for="modelSearch">Найти модель</label><input id="modelSearch" type="search" placeholder="Grok, Kling, Seedream…">
       <label for="mediaFilter">Тип результата</label><select id="mediaFilter"><option value="">Все</option><option value="image">Изображения</option><option value="video">Видео</option></select>
+      </div>
+      <div id="codexModelsMenu" class="codex-models-menu" hidden>
+        <label for="codexKind">Тип результата</label>
+        <select id="codexKind"><option value="image">Изображение</option><option value="text">Текст</option></select>
+        <label for="codexModel">Модель Codex</label>
+        <select id="codexModel" disabled><option>Загрузка моделей…</option></select>
+        <div class="codex-effort-control">
+          <div class="codex-effort-heading"><label for="codexEffort">Уровень рассуждения</label><button id="codexResetEffort" type="button" class="quiet" aria-label="Сбросить уровень рассуждения">↺</button></div>
+          <output id="codexModelDetails" for="codexEffort" aria-live="polite"></output>
+          <input id="codexEffort" type="range" min="0" max="0" step="1" value="0" disabled>
+        </div>
+        <label for="codexSpeed">Скорость</label>
+        <select id="codexSpeed"><option value="standard">Обычная</option><option value="fast">⚡ Быстрая (Fast)</option></select>
+        <p id="codexSpeedHint" class="hint">Обычный расход лимита Codex.</p>
+        <p id="codexModelsDate" class="hint"></p>
+      </div>
       <div class="favorites-card">
         <div class="favorites-heading"><strong>Избранное</strong><button id="toggleFavorite" type="button">☆ Добавить</button></div>
         <div id="favoriteModels" class="favorite-models"></div>
@@ -35,6 +57,7 @@
     <section>
       <div id="status" class="status hidden" role="status"></div>
       <div id="pageGeneration" role="tabpanel" aria-labelledby="tabGeneration">
+      <div id="kieGeneration">
       <div class="generation-header">
       <div id="workTabs" class="work-tabs" role="tablist" aria-label="Рабочие вкладки"></div>
       <p id="draftStatus" class="hint">Черновики вкладок сохраняются автоматически. Число вкладок задаётся в настройках генерации.</p>
@@ -63,6 +86,24 @@
       <details id="recentQueue"><summary>Последние завершённые</summary><div id="recentQueueTasks"></div></details>
       <details><summary>Настройки генерации</summary><label for="queueConcurrency">Одновременно генераций</label><select id="queueConcurrency"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select><p class="hint">При занятом лимите новые задачи ждут свободного места и запускаются автоматически. Уменьшение лимита не отменяет запущенные задачи. После ошибки или перезапуска для оставшихся задач появится кнопка «Продолжить ожидающие».</p></details>
       </div></div>
+      </div>
+      <div id="codexGeneration" hidden>
+        <span class="eyebrow">ГЕНЕРАЦИЯ · CODEX CLI</span>
+        <h1 id="codexTitle">Codex</h1>
+        <form id="codexForm">
+          <label for="codexPrompt">Запрос</label>
+          <textarea id="codexPrompt" rows="8" maxlength="20000" required placeholder="Опишите нужный результат…"></textarea>
+          <p id="codexRoute" class="card" role="status"></p>
+          <p id="codexPrice" class="card" role="status">Проверка цены…</p>
+          <p class="hint">Оплата внутренними кредитами. Сумма резервируется до запуска и списывается после успешного ответа.</p>
+          <button id="codexSubmit" class="primary" type="submit" disabled>Отправить в Codex CLI</button>
+        </form>
+        <p id="codexStatus" role="status"></p>
+        <button id="codexCheck" type="button" hidden>Проверить статус</button>
+        <p id="codexResultRoute" class="hint"></p>
+        <pre id="codexOutput" class="card codex-output" hidden></pre>
+        <div id="codexImageResult" hidden><img id="codexImage" alt="Изображение, созданное Codex"><a id="codexDownload" download>Скачать PNG</a></div>
+      </div>
       </div>
       <div id="pageSpending" role="tabpanel" aria-labelledby="tabSpending" hidden>
       <h1>Расходы</h1>

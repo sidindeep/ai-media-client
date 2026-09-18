@@ -12,7 +12,7 @@ function createAuth({ pool, config, providers = createProviders(config) }) {
   const sessionSeconds = config.sessionSeconds;
   return {
     sessionName,
-    async identities(accountId) { return (await pool.query('SELECT provider,subject FROM media_identities WHERE account_id=$1', [accountId])).rows; },
+    async identities(accountId) { return (await pool.query('SELECT provider,subject,verified_email AS email FROM media_identities WHERE account_id=$1', [accountId])).rows; },
     providers: () => [...providers].map(([id, adapter]) => ({ id, label: adapter.label })),
     async user(req) {
       const raw = cookieValue(req, sessionName);
@@ -39,6 +39,7 @@ function createAuth({ pool, config, providers = createProviders(config) }) {
       if (typeof profile.subject !== 'string' || !profile.subject || profile.subject.length > 255) throw new Error('Некорректный аккаунт');
       const raw = token();
       await transaction(pool, async client => {
+        await client.query('SELECT pg_advisory_xact_lock(18274692)');
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${provider}:${profile.subject}`]);
         let identity = (await client.query('SELECT account_id FROM media_identities WHERE provider=$1 AND subject=$2', [provider, profile.subject])).rows[0];
         const isAdmin = config.adminIdentities.includes(`${provider}:${profile.subject}`);
@@ -47,7 +48,17 @@ function createAuth({ pool, config, providers = createProviders(config) }) {
           await client.query('INSERT INTO media_accounts(id,display_name,role) VALUES($1,$2,$3)', [identity.account_id, String(profile.name).slice(0, 200), isAdmin ? 'admin' : 'user']);
           await client.query('INSERT INTO media_identities(provider,subject,account_id) VALUES($1,$2,$3)', [provider, profile.subject, identity.account_id]);
           await client.query('INSERT INTO media_wallets(account_id) VALUES($1)', [identity.account_id]);
-        } else if (isAdmin) await client.query("UPDATE media_accounts SET role='admin' WHERE id=$1", [identity.account_id]);
+        } else if (isAdmin) await client.query("UPDATE media_accounts SET role='admin' WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM media_role_audit WHERE account_id=$1)", [identity.account_id]);
+        const email = provider === 'google' && typeof profile.verifiedEmail === 'string' ? profile.verifiedEmail.trim().toLowerCase() : null;
+        await client.query('UPDATE media_identities SET verified_email=$3 WHERE provider=$1 AND subject=$2', [provider, profile.subject, email]);
+        if (email) {
+          const invitation = (await client.query('UPDATE media_admin_invitations SET consumed_by=$2,consumed_at=now() WHERE email=$1 AND consumed_by IS NULL RETURNING email', [email, identity.account_id])).rows[0];
+          if (invitation) {
+            const old = (await client.query('SELECT role FROM media_accounts WHERE id=$1 FOR UPDATE', [identity.account_id])).rows[0];
+            await client.query("UPDATE media_accounts SET role='admin' WHERE id=$1", [identity.account_id]);
+            await client.query('INSERT INTO media_role_audit(id,account_id,old_role,new_role,reason) VALUES($1,$2,$3,$4,$5)', [randomUUID(), identity.account_id, old.role, 'admin', 'Назначение владельца по подтверждённому Google email']);
+          }
+        }
         // Rotate any previous session in this browser. Email never merges identities.
         const previous = cookieValue(req, sessionName);
         if (previous) await client.query('DELETE FROM media_sessions WHERE token_hash=$1', [hash(previous)]);

@@ -9,6 +9,18 @@ const { loadConfig } = require('../src/server/config');
 const { createPricing } = require('../src/billing/pricing');
 const modelId = 'kie:grok-imagine-video-1-5-preview';
 const input = { prompt: 'Тест', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
+test('connection retries support both pg pool interfaces without replaying queries', async () => {
+  const { retryConnections } = require('../src/database/database');
+  let attempts = 0, releases = 0;
+  const client = { release: () => releases++ };
+  const pool = retryConnections({ connect: async () => { if (++attempts < 3) throw Object.assign(new Error('DNS'), { code: 'EAI_AGAIN' }); return client; } });
+  assert.equal(await pool.connect(), client); assert.equal(attempts, 3);
+  await new Promise((resolve, reject) => pool.connect((error, value, release) => { if (error) return reject(error); assert.equal(value, client); release(); resolve(); }));
+  assert.equal(releases, 1);
+  let denied = 0;
+  const bad = retryConnections({ connect: async () => { denied++; throw Object.assign(new Error('Login denied'), { code: '28P01' }); } });
+  await assert.rejects(bad.connect()); assert.equal(denied, 1);
+});
 
 test('native prices use exact minor units, explicit tariffs, no provider cost conversion', () => {
   const pricing = createPricing({ version: 'v1', models: { demo: { baseUnits: 1001, perSecondUnits: 123 } } });
@@ -32,7 +44,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   const config = { ...loadConfig({ MEDIA_PORT: '0', MEDIA_ADMIN_IDENTITIES: 'google:owner' }), dataDirectory: directory,
     pricing: { version: 'test-v1', models: { [modelId]: { baseUnits: 2500 } } } };
   const adapter = { label: 'Test', authorize: ({ state, challenge }) => `https://identity.example/auth?state=${state}&code_challenge=${challenge}`,
-    exchange: async ({ code }) => ({ subject: code, name: `Аккаунт ${code}` }) };
+    exchange: async ({ code }) => ({ subject: code, name: `Аккаунт ${code}`, ...(code === 'invited-owner' ? { verifiedEmail: 'owner@example.test' } : {}) }) };
   runtime = await start({ config, provider, pool, authProviders: new Map([['google', adapter], ['vk', adapter]]) });
   const base = `http://127.0.0.1:${runtime.server.address().port}`;
   const request = (url, options = {}) => fetch(base + url, { ...options, redirect: 'manual' });
@@ -149,4 +161,27 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.ok((await pool.query('SELECT token_hash FROM media_sessions')).rows.every(row => /^[a-f0-9]{64}$/.test(row.token_hash)));
   await pool.query("UPDATE media_sessions SET expires_at=now()-interval '1 second' WHERE account_id=$1", [returning.id]);
   assert.equal((await rpc(returning, 'getHistory')).status, 401);
+  const setRole = (user, accountId, role) => request('/api/admin/roles', { method: 'POST', headers: { Cookie: user.cookie, 'X-Media-User': user.id, 'X-Media-Client': 'web', 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, role, reason: 'Проверка ролей' }) });
+  assert.equal((await setRole(bob, bob.id, 'admin')).status, 403);
+  assert.equal((await setRole(owner, owner.id, 'user')).status, 409);
+  await result(setRole(owner, bob.id, 'admin'));
+  assert.equal((await rpc(bob, 'getHistory')).status, 401);
+  const bobAdmin = await login('bob'); assert.equal(bobAdmin.role, 'admin');
+  await result(setRole(bobAdmin, owner.id, 'user'));
+  assert.equal((await request('/api/admin/accounts', { headers: { Cookie: owner.cookie } })).status, 401);
+  const demoted = await login('owner'); assert.equal(demoted.role, 'user'); // Config cannot undo an explicit role edit.
+  assert.equal((await setRole(bobAdmin, bob.id, 'user')).status, 409);
+  const audit = await result(request('/api/admin/roles', { headers: { Cookie: bobAdmin.cookie } }));
+  assert.equal(audit.length, 2); assert.ok(audit.every(row => row.reason === 'Проверка ролей'));
+  await pool.query('INSERT INTO media_admin_invitations(email) VALUES($1)', ['owner@example.test']);
+  assert.equal((await login('invited-owner', 'vk')).role, 'user');
+  const invited = await login('invited-owner'); assert.equal(invited.role, 'admin');
+  assert.equal(invited.identities[0].email, 'owner@example.test');
+  assert.equal((await pool.query('SELECT consumed_by FROM media_admin_invitations')).rows[0].consumed_by, invited.id);
+  await result(setRole(bobAdmin, invited.id, 'user'));
+  assert.equal((await login('invited-owner')).role, 'user'); // Invitation is consumed exactly once.
+  const renamed = await result(request('/api/account/profile', { method: 'POST', headers: { Cookie: bobAdmin.cookie, 'X-Media-User': bobAdmin.id, 'X-Media-Client': 'web' }, body: JSON.stringify({ name: 'Новое имя', id: invited.id, role: 'admin' }) }));
+  assert.equal(renamed.name, 'Новое имя');
+  assert.equal((await pool.query('SELECT display_name FROM media_accounts WHERE id=$1', [bob.id])).rows[0].display_name, 'Новое имя');
+  assert.equal((await pool.query('SELECT role FROM media_accounts WHERE id=$1', [invited.id])).rows[0].role, 'user');
 });

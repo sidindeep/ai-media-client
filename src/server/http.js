@@ -2,8 +2,24 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const { createReadStream } = require('node:fs');
 const path = require('node:path');
+const { validateCodexRequest } = require('../services/codex-request');
+const { createCodexBilling } = require('../services/codex-billing');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
+const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
+function temporaryConnectionFailure(error) {
+  return ['EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', '57P01', '57P03', '53300'].includes(error.code)
+    || /Connection terminated|connection timeout|timeout expired|timeout exceeded when trying to connect/i.test(error.message || '');
+}
+async function assetUser(auth, req, retry) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await auth.user(req); }
+    catch (error) {
+      if (!retry || attempt >= 2 || !temporaryConnectionFailure(error)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+  }
+}
 const headers = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': "default-src 'self'; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
@@ -41,6 +57,7 @@ async function sendFile(req, res, filename, type, attachment = false) {
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
 function createHttpServer({ config, service: legacyService, auth, accounts, telegramStatus = () => ({ enabled: false }) }) {
+  const codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
@@ -62,7 +79,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         && req.headers['sec-fetch-dest'] === 'document';
       if (!pageNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
-      if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
+      if (req.method === 'GET' && url.pathname === '/api/health') {
+        if (accounts) await accounts.pool.query('SELECT 1');
+        return json(res, 200, { ok: true, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
+      }
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
       const authRoute = /^\/auth\/([a-z][a-z0-9_-]*)\/(start|callback)$/.exec(url.pathname);
       if (auth && req.method === 'GET' && authRoute) {
@@ -75,12 +95,34 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       if (['GET', 'HEAD'].includes(req.method) && ['/login', '/login.js', '/web.css'].includes(url.pathname)) {
         return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
       }
-      const user = auth ? await auth.user(req) : { id: 'local', role: 'admin', name: 'Владелец' };
+      const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
+      const isAsset = ['GET', 'HEAD'].includes(req.method)
+        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json');
+      // Retry only the read-only session lookup for assets, never account/API writes.
+      const user = auth ? await assetUser(auth, req, isAsset) : { id: 'local', role: 'admin', name: 'Владелец' };
       if (!user) {
         if (['/', '/index.html'].includes(url.pathname)) return redirect('/login');
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
+      if (url.pathname.startsWith('/api/codex/')) {
+        if (req.method === 'GET' && url.pathname === '/api/codex/status') return json(res, 200, { enabled: Boolean(codex), allowed: Boolean(accounts) });
+        if (!codex) return json(res, 503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
+        const imageRequest = /^\/api\/codex\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
+        if (imageRequest && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, await codex.image(user.id, imageRequest[1]), 'image/png', url.searchParams.get('download') === '1');
+        if (req.method === 'GET' && url.pathname === '/api/codex/quote') {
+          try { return json(res, 200, { quote: codex.quote({ model: url.searchParams.get('model'), effort: url.searchParams.get('effort'), speed: url.searchParams.get('speed') }) }); }
+          catch { return json(res, 200, { quote: null, error: 'Цена этого режима Codex ещё не опубликована.' }); }
+        }
+        const jobPath = /^\/api\/codex\/jobs(?:\/[a-f0-9-]{36})?$/.test(url.pathname);
+        if (!jobPath || !['GET', 'POST'].includes(req.method) || (req.method === 'POST' && url.pathname !== '/api/codex/jobs')) return json(res, 404, { error: 'Не найдено' });
+        if (req.method === 'POST') {
+          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
+          const body = validateCodexRequest(JSON.parse((await readBody(req, 100000)).toString('utf8')));
+          return json(res, 200, await codex.submit(user.id, body));
+        }
+        return json(res, 200, await codex.status(user.id, url.pathname.split('/').pop()));
+      }
       if (req.method === 'POST' && url.pathname === '/auth/logout') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Доступ запрещён' });
         res.setHeader('Set-Cookie', auth ? await auth.logout(req) : '');
@@ -88,9 +130,22 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         return json(res, 200, { result: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
+      if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
+        const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
+        if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 200) throw new Error('Укажите имя до 200 символов');
+        await accounts.pool.query('UPDATE media_accounts SET display_name=$2 WHERE id=$1', [user.id, body.name.trim()]);
+        return json(res, 200, { result: { name: body.name.trim() } });
+      }
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
         if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return json(res, 200, { result: await accounts.list() });
+        if (url.pathname === '/api/admin/roles' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
+          const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
+          await accounts.setRole(user.id, body.accountId, body.role, body.reason);
+          return json(res, 200, { result: true });
+        }
+        if (url.pathname === '/api/admin/roles' && req.method === 'GET') return json(res, 200, { result: await accounts.audit() });
+        if (url.pathname === '/api/admin/ledger' && req.method === 'GET') return json(res, 200, { result: await accounts.ledger(url.searchParams.get('account')) });
         if (url.pathname === '/api/admin/reconcile' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
           const body = JSON.parse((await readBody(req, 8192)).toString('utf8'));
           const result = await accounts.reconcile(user.id, body.accountId, body.jobId, body.outcome, body.evidence);
@@ -105,7 +160,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       }
       // An admin can explicitly select a workspace; ordinary users cannot supply a tenant.
       const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
-      const service = accounts ? await accounts.scope(user, selected) : legacyService;
+      // Static scripts need authentication, not account storage/queue initialization.
+      const service = accounts && url.pathname.startsWith('/api/') ? await accounts.scope(user, selected) : legacyService;
       if (req.method === 'POST') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
         if (url.pathname === '/api/source') {
@@ -124,6 +180,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         return json(res, 200, { result: result ?? null });
       }
       if (!['GET', 'HEAD'].includes(req.method)) return json(res, 405, { error: 'Метод не поддерживается' });
+      if (url.pathname === '/codex-models.json') return await sendFile(req, res, path.join(config.root, 'config/codex-models.json'), 'application/json; charset=utf-8');
       if (url.pathname === '/api/events') {
         if (connections.size >= 20) return json(res, 429, { error: 'Слишком много открытых вкладок' });
         res.writeHead(200, { ...headers, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
@@ -144,7 +201,6 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         const file = await service.resultFile(result[1], Number(result[2]));
         return await sendFile(req, res, file.path, null, url.searchParams.has('download'));
       }
-      const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
       if (user.role !== 'admin' && shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) return json(res, 403, { error: 'Доступ запрещён' });
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
       const publicFile = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -162,16 +218,25 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         return res.end(req.method === 'HEAD' ? '' : html);
       }
       if (['admin.html', 'admin.js'].includes(publicFile) && user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
-      if (['web.js', 'web.css', 'native-costs.js', 'admin.html', 'admin.js'].includes(publicFile)) return await sendFile(req, res, path.join(config.root, 'public', publicFile));
+      if (publicAssets.has(publicFile) || publicFile === 'admin.html') return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       return json(res, 404, { error: 'Не найдено' });
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
+      if (temporaryConnectionFailure(error)) {
+        console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
+        if (req.method === 'GET' && ['/', '/index.html', '/admin.html'].includes(req.url?.split('?')[0])) {
+          res.writeHead(503, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '5' });
+          return res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Временная ошибка подключения</title><h1>Не удалось подключиться к сервису</h1><p>Связь с базой данных временно недоступна. Аккаунт и данные сохранены. Повторите через несколько секунд.</p><a href="/">Повторить</a></html>');
+        }
+        return json(res, 503, { error: 'Связь с базой данных временно недоступна. Повторите через несколько секунд.' });
+      }
       const message = error.code?.startsWith('E') || error instanceof SyntaxError ? 'Не удалось обработать запрос' : error.message;
       json(res, error.status || 400, { error: accounts && !error.status && !['Некоррект', 'Недостаточно', 'Цена', 'Требуется', 'Для расчёта', 'Этот запрос', 'Укажите', 'Начисление', 'Проверьте', 'Генерация'].some(prefix => message.startsWith(prefix)) ? 'Не удалось выполнить запрос' : message });
     }
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;
-  server.closeEvents = () => { for (const connection of connections) connection.end(); };
+  server.recoverCodex = () => codex?.recover();
+  server.closeEvents = () => { codex?.close(); for (const connection of connections) connection.end(); };
   return server;
 }
 module.exports = { createHttpServer, readBody };

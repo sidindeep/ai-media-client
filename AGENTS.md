@@ -8,6 +8,7 @@
 
 ## Карта проекта
 
+- Каталог для работы с LLM-провайдерами — `../llm_providers` относительно корня проекта (пользователь подтвердил `D:\AI\llm_providers` 2026-09-18). Это внешний источник адаптеров, включая Codex CLI и app-server, а не корень AI Media Client. Перед работой читать его локальные инструкции и [контракт интеграции](tools/project-memory/specs/integration-contracts/llm-providers.md); не включать машинный абсолютный путь в runtime приложения.
 - Память и бизнес-логика: [tools/project-memory/README.md](tools/project-memory/README.md).
 - Стек: [tools/project-memory/specs/technology-stack.md](tools/project-memory/specs/technology-stack.md).
 - Команды: [tools/AGENT_RUNBOOK.md](tools/AGENT_RUNBOOK.md).

@@ -50,3 +50,14 @@ CREATE TABLE IF NOT EXISTS media_reconciliations (
   evidence text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO media_schema_versions(version) VALUES (1) ON CONFLICT DO NOTHING;
+ALTER TABLE media_identities ADD COLUMN IF NOT EXISTS verified_email text;
+CREATE TABLE IF NOT EXISTS media_admin_invitations (
+  email text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),
+  consumed_by uuid REFERENCES media_accounts(id), consumed_at timestamptz
+);
+CREATE TABLE IF NOT EXISTS media_role_audit (
+  id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES media_accounts(id),
+  actor_id uuid REFERENCES media_accounts(id), old_role text NOT NULL, new_role text NOT NULL,
+  reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO media_schema_versions(version) VALUES (2) ON CONFLICT DO NOTHING;

@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { AccountRecords } = require('../database/records');
 const { createMediaService } = require('./media-service');
 const { createWallet } = require('../billing/wallet');
@@ -47,7 +48,13 @@ function createAccounts({ pool, config, provider, legacy }) {
       const accountId = selected || user.id;
       if (!/^[a-f0-9-]{36}$/.test(accountId) || !(await pool.query('SELECT id FROM media_accounts WHERE id=$1', [accountId])).rowCount) throw new Error('Аккаунт не найден');
       const service = await get(accountId);
-      if (user.role === 'admin') return service;
+      if (user.role === 'admin') return {
+        ...service,
+        async dispatch(method, args = []) {
+          if (method === 'getBalance') return wallet.get(accountId);
+          return service.dispatch(method, args);
+        }
+      };
       return {
         ...service,
         async dispatch(method, args) {
@@ -86,7 +93,29 @@ function createAccounts({ pool, config, provider, legacy }) {
       };
     },
     async list() {
-      return (await pool.query('SELECT a.id,a.display_name AS name,a.role,a.created_at,w.balance,w.held FROM media_accounts a JOIN media_wallets w ON w.account_id=a.id ORDER BY a.created_at DESC LIMIT 500')).rows;
+      return (await pool.query('SELECT a.id,a.display_name AS name,a.role,a.created_at,w.balance,w.held,(SELECT string_agg(verified_email,\', \') FROM media_identities i WHERE i.account_id=a.id) AS email FROM media_accounts a JOIN media_wallets w ON w.account_id=a.id ORDER BY a.created_at DESC LIMIT 500')).rows;
+    },
+    async setRole(actorId, accountId, role, reason) {
+      if (!['admin', 'user'].includes(role) || typeof reason !== 'string' || !reason.trim() || reason.length > 500) throw new Error('Укажите роль и причину изменения');
+      return transaction(pool, async client => {
+        await client.query('SELECT pg_advisory_xact_lock(18274692)');
+        const actor = (await client.query('SELECT role FROM media_accounts WHERE id=$1', [actorId])).rows[0];
+        if (actor?.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
+        const target = (await client.query('SELECT role FROM media_accounts WHERE id=$1 FOR UPDATE', [accountId])).rows[0];
+        if (!target) throw Object.assign(new Error('Аккаунт не найден'), { status: 404 });
+        if (target.role === role) return true;
+        if (target.role === 'admin' && role === 'user' && Number((await client.query("SELECT count(*) AS count FROM media_accounts WHERE role='admin'")).rows[0].count) <= 1) throw Object.assign(new Error('Нельзя снять роль у последнего администратора'), { status: 409 });
+        await client.query('UPDATE media_accounts SET role=$2 WHERE id=$1', [accountId, role]);
+        await client.query('INSERT INTO media_role_audit(id,account_id,actor_id,old_role,new_role,reason) VALUES($1,$2,$3,$4,$5,$6)', [randomUUID(), accountId, actorId, target.role, role, reason.trim()]);
+        await client.query('DELETE FROM media_sessions WHERE account_id=$1', [accountId]);
+        return true;
+      });
+    },
+    async audit() {
+      return (await pool.query('SELECT r.*,a.display_name AS name FROM media_role_audit r JOIN media_accounts a ON a.id=r.account_id ORDER BY r.created_at DESC LIMIT 100')).rows;
+    },
+    async ledger(accountId) {
+      return (await pool.query('SELECT kind,amount,note,actor_id,created_at FROM media_ledger WHERE account_id=$1 ORDER BY created_at DESC LIMIT 200', [accountId])).rows;
     },
     async reconcile(actorId, accountId, jobId, outcome, evidence) {
       if (!['success', 'fail'].includes(outcome) || typeof evidence !== 'string' || !evidence.trim() || evidence.length > 2000) throw new Error('Укажите исход и основание сверки');
@@ -98,12 +127,12 @@ function createAccounts({ pool, config, provider, legacy }) {
           if (prior.account_id !== accountId || prior.outcome !== outcome || prior.evidence !== evidence) throw new Error('Результат сверки уже зафиксирован иначе');
           return true;
         }
-        const row = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='history' AND id=$2 FOR UPDATE", [accountId, jobId])).rows[0];
+        const row = (await client.query("SELECT namespace,data FROM media_records WHERE account_id=$1 AND namespace IN ('history','codex') AND id=$2 FOR UPDATE", [accountId, jobId])).rows[0];
         if (!['unknown', 'unconfirmed'].includes(row?.data.state)) throw new Error('Задача не требует ручной сверки');
         await settle(client, accountId, jobId, outcome);
         await client.query('INSERT INTO media_reconciliations(job_id,account_id,actor_id,outcome,evidence) VALUES($1,$2,$3,$4,$5)', [jobId, accountId, actorId, outcome, evidence]);
         const record = { ...row.data, state: outcome, error: null, errorInfo: null, reconciled: true, generationCompletedAt: new Date().toISOString() };
-        await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='history' AND id=$2", [accountId, jobId, JSON.stringify(record)]);
+        await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace=$4 AND id=$2", [accountId, jobId, JSON.stringify(record), row.namespace]);
         return true;
       });
     },

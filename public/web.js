@@ -19,7 +19,7 @@
     return scopedLinks(body.result);
   }
   const rpc = (name, args) => request(`/api/rpc/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
-  const api = { isWeb: true, nativeAccount: role !== 'admin' };
+  const api = { isWeb: true, nativeAccount: role !== 'admin', nativeBalance: accountId !== 'local' && selectedAccount !== 'legacy' };
   for (const name of ['nativeQuote', 'nativeLedger']) api[name] = (...args) => rpc(name, args);
   for (const method of methods) api[method] = (...args) => rpc(method, args);
   const draftKey = `ai-media.pending-draft.v2.${accountId}.${selectedAccount || 'self'}`;
@@ -56,13 +56,6 @@
   api.onQueueChanged = callback => { events.addEventListener('message', callback); return () => events.removeEventListener('message', callback); };
   window.desktop = api; // Compatibility port for the shared desktop/browser presentation.
   document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('adminLink').hidden = role !== 'admin' || accountId === 'local';
-    document.getElementById('logout').hidden = accountId === 'local';
-    request('/api/account').then(account => { document.getElementById('accountName').textContent = `${account.name}${selectedAccount ? ' · просмотр ' + selectedAccount : ''}`; }).catch(() => {});
-    document.getElementById('logout').onclick = async () => {
-      try { await request('/auth/logout', { method: 'POST' }); events.close(); localStorage.removeItem(draftKey); location.assign('/login'); }
-      catch (error) { document.getElementById('serviceState').textContent = error.message; }
-    };
     const state = document.getElementById('serviceState');
     const update = async () => {
       try {

@@ -1,5 +1,6 @@
 **
 !Dockerfile
+!Dockerfile.codex
 !package.json
 !pnpm-lock.yaml
 !server.js
@@ -9,3 +10,4 @@
 !public/**
 !config/
 !config/native-prices.json
+!config/codex-models.json

@@ -49,9 +49,12 @@ async function restoreWorkspaceDrafts(){
   if(data?.version===1&&Array.isArray(data.tabs)){
     for(let index=0;index<Math.min(data.tabs.length,workTabs.length);index++){
       const draft=data.tabs[index];if(!draft||!draft.model)continue;
-      const model=catalog.models.find(m=>m.id===draft.model&&m.providerId===draft.provider);
+      // Model IDs are stable across user/admin catalog views; provider labels
+      // may change (the public web catalog hides the underlying provider).
+      const matches=catalog.models.filter(m=>m.id===draft.model);
+      const model=matches.find(m=>m.providerId===draft.provider)||(window.desktop.isWeb&&matches.length===1?matches[0]:null);
       if(!model)throw new Error('Модель сохранённого черновика отсутствует: '+draft.model);
-      switchWorkTab(index,true);$('modelSearch').value='';$('mediaFilter').value='';$('provider').value=draft.provider;$('provider').dispatchEvent(new Event('change'));$('model').value=draft.model;renderModel();
+      switchWorkTab(index,true);$('modelSearch').value='';$('mediaFilter').value='';$('provider').value=model.providerId;$('provider').dispatchEvent(new Event('change'));$('model').value=model.id;renderModel();
       sourceFiles=draft.sourceFiles||[];previewSelection=draft.previewSelection||null;
       for(const field of model.fields){
         const saved=draft.values?.[field.key];if(!saved)continue;

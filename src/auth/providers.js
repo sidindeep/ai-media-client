@@ -22,7 +22,9 @@ function createProviders(config, fetcher = fetch) {
       if (typeof token.access_token !== 'string') throw new Error('Не получен токен входа');
       const user = await responseJson(fetcher, 'https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${token.access_token}` } });
       if (typeof user.sub !== 'string' || !user.sub) throw new Error('Не получен идентификатор аккаунта');
-      return { subject: user.sub, name: user.name || 'Пользователь Google' };
+      return { subject: user.sub, name: user.name || 'Пользователь Google',
+        ...(user.email_verified === true && typeof user.email === 'string'
+          ? { verifiedEmail: user.email.trim().toLowerCase() } : {}) };
     }
   });
   if (config.vk.clientId) registry.set('vk', {

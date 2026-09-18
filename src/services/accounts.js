@@ -7,6 +7,7 @@ const { createPricing } = require('../billing/pricing');
 const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
+const { generationHistory } = require('./generation-history');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
   const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs'];
@@ -52,6 +53,7 @@ function createAccounts({ pool, config, provider, legacy }) {
         ...service,
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
+          if (method === 'getHistory') return generationHistory(pool, accountId, service);
           return service.dispatch(method, args);
         }
       };
@@ -66,7 +68,7 @@ function createAccounts({ pool, config, provider, legacy }) {
                 fields: model.fields, inputSchema: model.inputSchema, startupDefault: model.startupDefault
               })) };
             }
-            case 'getHistory': return (await service.listHistory()).map(publicRecord);
+            case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
             case 'createTask': {
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
               return publicRecord(await service.createTask(args[0]));

@@ -31,7 +31,7 @@ function renderSpending() {
   });
   const spent = records.filter(row => row.state === 'success').reduce((sum, row) => sum + (row.nativeQuote?.amountUnits || 0), 0);
   const scale = records.find(row => row.nativeQuote)?.nativeQuote.scale;
-  $('spendSummary').textContent = `Списано за генерации Kie.ai: ${formatNative(scale ? spent / scale : 0)} кредитов. Операции всех провайдеров — в журнале ниже.`;
+  $('spendSummary').textContent = `Списано за генерации всех провайдеров: ${formatNative(scale ? spent / scale : 0)} кредитов. Операции — в журнале ниже.`;
   $('balanceAudit').textContent = 'Покупка кредитов появится позже. Для тестирования обратитесь к администратору.';
   void window.desktop.getBalance().then(wallet => {
     $('balanceAudit').textContent = `Доступно: ${formatNative(wallet.balance)}; в резерве: ${formatNative(wallet.heldUnits / wallet.scale)} кредитов. Покупка появится позже; для тестирования обратитесь к администратору.`;

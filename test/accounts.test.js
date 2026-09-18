@@ -189,4 +189,9 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(renamed.name, 'Новое имя');
   assert.equal((await pool.query('SELECT display_name FROM media_accounts WHERE id=$1', [bob.id])).rows[0].display_name, 'Новое имя');
   assert.equal((await pool.query('SELECT role FROM media_accounts WHERE id=$1', [invited.id])).rows[0].role, 'user');
+  const savedCodex = { id: randomUUID(), model: 'gpt-5.5', kind: 'text', prompt: 'Saved Codex', output: 'Saved answer', state: 'success', createdAt: new Date().toISOString() };
+  await pool.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'codex',$2,$3)", [demoted.id, `codex:${demoted.id}:${savedCodex.id}`, JSON.stringify(savedCodex)]);
+  assert.equal((await result(rpc(demoted, 'getHistory'))).find(row => row.providerId === 'codex').output, savedCodex.output);
+  assert.equal((await result(rpc(bobAdmin, 'getHistory'))).some(row => row.providerId === 'codex'), false);
+  assert.equal((await result(rpc(bobAdmin, 'getHistory', [], { 'X-Media-Account': demoted.id }))).find(row => row.providerId === 'codex').output, savedCodex.output);
 });

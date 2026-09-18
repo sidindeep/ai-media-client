@@ -356,7 +356,7 @@ async function refreshHistory() {
   const state=await window.desktop.queueStatus();
   refreshHistoryPreview();
   const pending=historyRecords.filter(item=>item.state==='queued').length;
-  const active=historyRecords.filter(item=>['preparing','submitting','waiting','queuing','generating'].includes(item.state));
+  const active=historyRecords.filter(item=>item.providerId!=='codex'&&['preparing','submitting','waiting','queuing','generating'].includes(item.state));
   $('queueConcurrency').value=String(state.concurrency||2);
   visibleWorkTabs=state.concurrency||2;
   if(draftsReady&&!activeTask&&currentTab>=visibleWorkTabs)switchWorkTab(visibleWorkTabs-1);
@@ -453,6 +453,7 @@ function renderHistory() {
   $('historyList').replaceChildren();
   if (!records.length) { $('historyList').textContent = query||filter!=='all' ? 'Ничего не найдено' : 'Здесь появятся ваши генерации'; return; }
   for (const record of records.slice(offset,offset+historyPageSize)) {
+    if (record.providerId === 'codex' && window.renderCodexHistory) { $('historyList').append(window.renderCodexHistory(record, states)); continue; }
     const card = document.createElement('article'); card.className = 'card compact-history';
     const title = document.createElement('strong'); title.textContent = `${record.providerName} · ${record.modelName}`;
     const meta = document.createElement('p'); meta.className = 'hint';

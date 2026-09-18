@@ -103,3 +103,4 @@ button,input,select { min-height:40px; }
 .codex-login-code { font-size: 1.8rem; letter-spacing: .12em; }
 
 .app-version { margin: 6px 0; font-size: 12px; line-height: 1.5; color: #b9b0ff; overflow-wrap: anywhere; }
+.codex-history-image { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin: 12px 0; }

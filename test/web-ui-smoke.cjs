@@ -79,6 +79,12 @@ app.whenReady().then(async () => {
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 4000);
     const userCodexJob = codexRequest.requestId;
     assert.equal(codexRequest.kind, 'image');
+    await evaluate("document.querySelector('#tabHistory').click();void 0");
+    await until("document.querySelector('#historyList').textContent.includes('Codex CLI') && document.querySelector('#historyList .codex-history-image')");
+    assert.match(await evaluate("document.querySelector('#historyList').textContent"), /Тестовый ответ Codex/);
+    assert.match(await evaluate("document.querySelector('#historyList').textContent"), /Токены: 120/);
+    assert.equal(await evaluate("document.querySelector('#queueTasks').textContent.includes('Codex CLI')"), false);
+    await evaluate("document.querySelector('#tabGeneration').click();void 0");
     await until("document.querySelector('#codexImage').complete && document.querySelector('#codexImage').naturalWidth===1");
     assert.equal(await evaluate("document.querySelector('#codexImageResult').hidden"), false);
     assert.equal((await browserSession.fetch(origin + '/api/codex/jobs/' + userCodexJob + '/image?download=1')).headers.get('content-type'), 'image/png');

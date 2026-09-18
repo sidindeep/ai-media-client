@@ -7,6 +7,35 @@
   let catalog, permissions, ready = false, priced = false, quoteRevision = 0, pending = null, timer, settings = {};
   try { settings = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch {}
   const save = () => { try { localStorage.setItem(key, JSON.stringify(settings)); } catch {} };
+  const refreshSavedHistory = () => {
+    if (typeof refreshHistory === 'function') void refreshHistory().then(() => {
+      if (typeof renderSpending === 'function') renderSpending();
+    }).catch(() => {});
+  };
+  document.getElementById('appTabs').addEventListener('click', event => {
+    if (event.target.closest('[data-page="pageHistory"], [data-page="pageSpending"]')) refreshSavedHistory();
+  });
+  window.renderCodexHistory = (record, states) => {
+    const card = document.createElement('article'); card.className = 'card compact-history';
+    const title = document.createElement('strong'); title.textContent = `Codex CLI · ${record.modelName}`;
+    const meta = document.createElement('p'); meta.className = 'hint';
+    meta.textContent = [new Date(record.createdAt).toLocaleString('ru-RU'), states[record.state] || record.state,
+      recordCostText(record), record.usage ? `Токены: ${record.usage.total_tokens.toLocaleString('ru-RU')}` : '',
+      names[record.input.effort] || record.input.effort, record.input.speed === 'fast' ? 'Fast' : 'Обычная скорость'].filter(Boolean).join(' · ');
+    const detail = document.createElement('details');
+    const heading = document.createElement('summary'); heading.textContent = record.input.prompt || 'Без промпта';
+    const prompt = document.createElement('p'); prompt.textContent = record.input.prompt;
+    detail.append(heading, prompt);
+    if (record.output) { const output = document.createElement('pre'); output.className = 'codex-output'; output.textContent = record.output; detail.append(output); }
+    if (record.error) { const error = document.createElement('p'); error.textContent = record.error; detail.append(error); }
+    card.append(title, meta, detail);
+    for (const file of record.localFiles || []) {
+      const image = document.createElement('img'); image.src = file.previewUrl; image.alt = record.input.prompt || 'Результат Codex'; image.loading = 'lazy'; image.className = 'codex-history-image';
+      const link = document.createElement('a'); link.href = file.url; link.download = file.name; link.textContent = 'Скачать PNG';
+      card.append(image, link);
+    }
+    return card;
+  };
   const model = () => catalog?.models.find(item => item.id === $('codexModel').value);
   const effort = () => model()?.efforts[Number($('codexEffort').value)];
   const route = value => `Codex CLI → ${value.model}${value.kind === 'image' ? ' → генератор изображений' : ' · Текст'} · ${names[value.effort] || value.effort} · ${value.speed === 'fast' ? '⚡ Fast' : 'Обычная скорость'}`;
@@ -84,6 +113,7 @@
     return text + ').';
   }
   function result(job) {
+    refreshSavedHistory();
     $('codexResultRoute').textContent = route(job);
     if (['running', 'submitting'].includes(job.state)) {
       $('codexStatus').textContent = 'Codex выполняет запрос…';

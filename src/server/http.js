@@ -112,7 +112,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         if (req.method === 'GET' && url.pathname === '/api/codex/status') return json(res, 200, { enabled: Boolean(codex), allowed: Boolean(accounts) });
         if (!codex) return json(res, 503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
         const imageRequest = /^\/api\/codex\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
-        if (imageRequest && ['GET', 'HEAD'].includes(req.method)) return await sendFile(req, res, await codex.image(user.id, imageRequest[1]), 'image/png', url.searchParams.get('download') === '1');
+        if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
+          const selectedAccount = url.searchParams.get('account');
+          if (selectedAccount) await accounts.scope(user, selectedAccount);
+          return await sendFile(req, res, await codex.image(selectedAccount || user.id, imageRequest[1]), 'image/png', url.searchParams.get('download') === '1');
+        }
         if (req.method === 'GET' && url.pathname === '/api/codex/quote') {
           try { return json(res, 200, { quote: codex.quote({ model: url.searchParams.get('model'), effort: url.searchParams.get('effort'), speed: url.searchParams.get('speed') }) }); }
           catch { return json(res, 200, { quote: null, error: 'Цена этого режима Codex ещё не опубликована.' }); }

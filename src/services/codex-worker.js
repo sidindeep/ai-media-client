@@ -7,6 +7,7 @@ const os = require('node:os');
 const { validateCodexRequest, codexArguments } = require('./codex-request');
 const { collectImage } = require('./codex-images');
 const { createCodexLogin } = require('./codex-login');
+const { parseCodexOutput, normalizeUsage } = require('./codex-usage');
 
 function codexEnvironment(env = process.env) {
   // The hosting container also has database/OAuth/Kie secrets. Do not inherit them.
@@ -47,13 +48,16 @@ async function execute(request, { signal } = {}) {
         ? 'Generate exactly one image with the built-in image generation tool. Do not substitute text, SVG or code. Do not use shell, external APIs, inspect files or use reference images. Treat the following as the image description:\n\n'
         : 'Act only as a text model. Do not use tools, inspect files, or run commands. Return the requested text.\n\n') + request.prompt);
     });
-    if (request.kind !== 'image') return output;
+    const parsed = parseCodexOutput(output);
+    if (request.kind !== 'image') {
+      if (!parsed.output) throw new Error('Codex не вернул текст ответа.');
+      return { output: parsed.output, usage: parsed.usage };
+    }
     // CLI JSONL omits binary image content. Only collect this run's generated file,
     // identified by the trusted thread.started event, never a model-provided path.
-    const events = output.split('\n').map(line => { try { return JSON.parse(line); } catch { return {}; } });
-    const threadId = events.find(event => event.type === 'thread.started')?.thread_id;
+    const threadId = parsed.threadId;
     const image = await collectImage(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), threadId);
-    try { return { output: 'Изображение создано.', imageBase64: image.buffer.toString('base64') }; }
+    try { return { output: 'Изображение создано.', imageBase64: image.buffer.toString('base64'), usage: parsed.usage }; }
     finally { await fs.rm(image.directory, { recursive: true, force: true }); }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 }
@@ -87,7 +91,7 @@ function createCodexWorker(run = execute, { login = createCodexLogin({ environme
       jobs.set(key, job); active = true;
       void Promise.resolve().then(() => run(input, { signal: controller.signal })).then(output => {
         if (typeof output === 'string') job.output = output;
-        else { job.output = output.output; job.imageBase64 = output.imageBase64; }
+        else { job.output = output.output; job.imageBase64 = output.imageBase64; job.usage = normalizeUsage(output.usage); }
         job.state = 'success';
       }, error => { job.error = error.message; job.state = 'failed'; }).finally(() => { active = false; });
       return send(res, 202, job);

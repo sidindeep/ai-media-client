@@ -16,7 +16,7 @@ function codexArguments(request) {
     '--sandbox', 'read-only', '--color', 'never', '--model', request.model,
     ...['shell_tool', 'unified_exec', 'apps', 'browser_use', 'browser_use_external', 'computer_use', 'view_image', 'hooks', 'skill_search', 'workspace_dependencies', 'in_app_browser', 'in_app_chat', 'remote_plugin'].flatMap(feature => ['--disable', feature]),
     ...['code_mode', 'code_mode_host', 'image_generation'].flatMap(feature => [request.kind === 'image' ? '--enable' : '--disable', feature]),
-    ...(request.kind === 'image' ? ['--json'] : []),
+    '--json',
     '-c', 'web_search="disabled"',
     '-c', `model_reasoning_effort="${request.effort}"`,
     ...(request.speed === 'fast' ? ['-c', 'service_tier="fast"'] : []),

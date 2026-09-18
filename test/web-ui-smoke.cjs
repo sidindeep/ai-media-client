@@ -19,7 +19,7 @@ app.whenReady().then(async () => {
     let loginState = { state: 'disconnected' };
     codexWorker = require('../src/services/codex-worker').createCodexWorker(async request => {
       codexRequest = request;
-      return request.kind === 'image' ? { output: 'Тестовый ответ Codex', imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' } : 'Тестовый ответ Codex';
+      return { output: 'Тестовый ответ Codex', usage: { input_tokens: 100, output_tokens: 20, cached_input_tokens: 60, reasoning_output_tokens: 5 }, ...(request.kind === 'image' ? { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' } : {}) };
     }, { login: {
       status: async () => loginState,
       start: async () => (loginState = { state: 'running', code: 'ABCD-EF123' }),
@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
     await win.loadURL(origin);
-    await until("document.querySelector('#appVersion').textContent.includes('DEBUG · Версия 0.3.1')");
+    await until("document.querySelector('#appVersion').textContent.includes('DEBUG · Версия 0.3.2')");
     await until("typeof draftsReady!=='undefined' && draftsReady && document.querySelector('#estimatedCost').textContent.includes('Цена: 1')");
     assert.equal(await evaluate("catalog.models.length"), 149);
     const codexCatalog = require('../config/codex-models.json');
@@ -75,6 +75,7 @@ app.whenReady().then(async () => {
     await until("!document.querySelector('#codexSubmit').disabled");
     await evaluate("document.querySelector('#codexPrompt').value='Запрос обычного пользователя';document.querySelector('#codexForm').requestSubmit();void 0");
     await until("document.querySelector('#codexOutput').textContent==='Тестовый ответ Codex'");
+    assert.match(await evaluate("document.querySelector('#codexStatus').textContent"), /Списано: 1 кредитов\. Токены: 120/);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 4000);
     const userCodexJob = codexRequest.requestId;
     assert.equal(codexRequest.kind, 'image');
@@ -122,7 +123,7 @@ app.whenReady().then(async () => {
     await win.loadURL(origin + '/admin.html#credits');
     await until("document.querySelector('#grantAccount').options.length===2");
     await until("document.querySelector('#appVersion').textContent.includes('сборка')");
-    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия 0\.3\.1 · сборка [a-f0-9]{12}/);
+    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия 0\.3\.2 · сборка [a-f0-9]{12}/);
     await evaluate("location.hash='codexPanel';void 0");
     await until("document.querySelector('#codexLoginStatus').textContent==='Codex ещё не подключён.'");
     await evaluate("document.querySelector('#codexLoginStart').click();void 0");

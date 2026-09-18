@@ -73,6 +73,16 @@
     if (!response.ok) throw Object.assign(new Error(body.error || 'Не удалось выполнить запрос'), { status: response.status });
     return body;
   }
+  function receipt(job) {
+    const format = n => n.toLocaleString('ru-RU');
+    let text = 'Ответ получен от Codex CLI.' + (job.nativeQuote ? ` Списано: ${format(job.nativeQuote.credits)} кредитов.` : '');
+    if (!job.usage) return text + ' Расход токенов не предоставлен.';
+    const u = job.usage;
+    text += ` Токены: ${format(u.total_tokens)} (вход: ${format(u.input_tokens)}, выход: ${format(u.output_tokens)}`;
+    if (u.cached_input_tokens !== null) text += `; из входных — кэш: ${format(u.cached_input_tokens)}`;
+    if (u.reasoning_output_tokens !== null) text += `; из выходных — рассуждения: ${format(u.reasoning_output_tokens)}`;
+    return text + ').';
+  }
   function result(job) {
     $('codexResultRoute').textContent = route(job);
     if (['running', 'submitting'].includes(job.state)) {
@@ -87,9 +97,9 @@
     $('codexCheck').hidden = true; busy(false);
     if (job.state === 'success') {
       $('codexOutput').textContent = job.output; $('codexOutput').hidden = false;
-      $('codexStatus').textContent = 'Ответ получен от Codex CLI.' + (job.nativeQuote ? ` Списано: ${job.nativeQuote.credits.toLocaleString('ru-RU')} кредитов.` : '');
+      $('codexStatus').textContent = receipt(job);
       showImage(job);
-      settings.result = { id: job.id, hasImage: job.hasImage, kind: job.kind, output: job.output, model: job.model, effort: job.effort, speed: job.speed };
+      settings.result = { id: job.id, hasImage: job.hasImage, kind: job.kind, output: job.output, model: job.model, effort: job.effort, speed: job.speed, usage: job.usage, nativeQuote: job.nativeQuote };
     } else $('codexStatus').textContent = job.error || 'Ошибка Codex';
     save();
   }
@@ -136,7 +146,7 @@
       $('codexModelsDate').textContent = `Каталог проверен ${new Date(catalog.checkedAt).toLocaleDateString('ru-RU')}.`;
       ready = permissions.enabled && permissions.allowed;
       if (!ready) $('codexStatus').textContent = 'Для Codex нужны подключённый сервис и кредитный счёт.';
-      if (settings.result) { $('codexOutput').textContent = settings.result.output; $('codexOutput').hidden = false; $('codexResultRoute').textContent = route(settings.result); showImage(settings.result); }
+      if (settings.result) { $('codexOutput').textContent = settings.result.output; $('codexOutput').hidden = false; $('codexResultRoute').textContent = route(settings.result); $('codexStatus').textContent = receipt(settings.result); showImage(settings.result); }
       pending = typeof settings.pending === 'string' ? settings.pending : null;
       busy(Boolean(pending)); if (pending && ready) void check();
     } catch { $('codexStatus').textContent = 'Не удалось подключить Codex. Обновите страницу позже.'; }

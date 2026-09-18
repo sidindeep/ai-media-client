@@ -10,6 +10,20 @@ const { validateCodexRequest, codexArguments } = require('../src/services/codex-
 const { createCodexWorker, codexEnvironment } = require('../src/services/codex-worker');
 const { collectImage, validatePng } = require('../src/services/codex-images');
 const request = () => ({ requestId: randomUUID(), prompt: 'Привет', model: 'gpt-6-astra', effort: 'ultra', speed: 'fast' });
+const sampleUsage = { input_tokens: 100, cached_input_tokens: 60, output_tokens: 20, reasoning_output_tokens: 5, total_tokens: 120 };
+
+test('CLI usage comes only from completed turn metadata, without counting cache or reasoning twice', () => {
+  const { parseCodexOutput, normalizeUsage } = require('../src/services/codex-usage');
+  const message = { type: 'item.completed', item: { type: 'agent_message', text: '{"usage":{"input_tokens":999999}}' } };
+  const output = [message, { type: 'turn.completed', usage: sampleUsage }].map(JSON.stringify).join('\n');
+  assert.deepEqual(parseCodexOutput(output).usage, sampleUsage);
+  assert.equal(parseCodexOutput(output).output, message.item.text);
+  assert.equal(parseCodexOutput(JSON.stringify(message) + '\n{"type":"turn.completed"}').usage, null);
+  assert.throws(() => parseCodexOutput(JSON.stringify(message)), /не завершил/);
+  assert.equal(normalizeUsage({ input_tokens: -1, output_tokens: 2 }), null);
+  assert.equal(normalizeUsage({ input_tokens: 1, output_tokens: 2 }).cached_input_tokens, null);
+  assert.ok(codexArguments(request()).includes('--json'));
+});
 
 test('Single-container hosting selects loopback and does not expose web secrets to Codex', () => {
   const { loadConfig } = require('../src/server/config');
@@ -95,7 +109,7 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
     if (options.method === 'POST') sent++;
     if (mode === 'network') throw new Error('network');
     if (mode === 'reject') return { ok: false, status: 429, json: async () => ({ error: 'busy' }) };
-    return { ok: true, json: async () => ({ state: mode, output: 'Ответ', error: 'failed' }) };
+    return { ok: true, json: async () => ({ state: mode, output: 'Ответ', usage: sampleUsage, error: 'failed' }) };
   } });
   t.after(async () => { billing.close(); await pool.end(); });
   const input = request();
@@ -104,7 +118,8 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
   assert.equal((await accounts.wallet.get(account)).heldUnits, 1000);
   await assert.rejects(billing.status(second, input.requestId), /не найден/);
   mode = 'success';
-  await billing.status(account, input.requestId); await billing.status(account, input.requestId);
+  assert.deepEqual((await billing.status(account, input.requestId)).usage, sampleUsage);
+  assert.deepEqual((await billing.status(account, input.requestId)).usage, sampleUsage);
   assert.equal((await accounts.wallet.get(account)).balanceUnits, 9000);
   mode = 'running'; const missingImage = await billing.submit(account, { ...request(), kind: 'image' });
   mode = 'success'; assert.equal((await billing.status(account, missingImage.id)).state, 'fail');

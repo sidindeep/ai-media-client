@@ -2,6 +2,7 @@ const { transaction } = require('../database/database');
 const { reserve, settle, lockWallet } = require('../billing/wallet');
 const { validateCodexRequest } = require('./codex-request');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
+const { normalizeUsage } = require('./codex-usage');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -58,7 +59,7 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
           try { await fs.writeFile(temporary, image, { flag: 'wx' }); await fs.rename(temporary, filename); }
           finally { await fs.unlink(temporary).catch(() => {}); }
         }
-        return await update(account, requestId, { state: 'success', output: result.output, hasImage: job.kind === 'image', error: null });
+        return await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', error: null });
       }
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: result.error });
       return job;

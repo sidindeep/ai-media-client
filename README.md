@@ -61,4 +61,4 @@ Telegram пока работает только в локальном режим
 
 Исходники, зависимости, тесты и сборки находятся в [desktop/](desktop/README.md). Установка: `pnpm --dir desktop install --frozen-lockfile`. Запуск: `pnpm start:desktop`. Проверки: `pnpm check:desktop`, `pnpm test:desktop`. Сборка: `pnpm pack:desktop`; единственный EXE: `desktop/dist/queue-header/win-unpacked/AI Media Client.exe`.
 
-На хостинге: корень репозитория, Dockerfile, порт 3000; без вложенной папки web-tg. Для внешнего домена задайте MEDIA_PUBLIC_ORIGIN=https://ваш-домен.
+На хостинге: корень репозитория, собственный Dockerfile; порт MEDIA_PORT или PORT, по умолчанию 3000. Для внешнего домена задайте MEDIA_PUBLIC_ORIGIN=https://ваш-домен. Корневой образ запускает веб и встроенный Codex worker; на Bothost после нового деплоя нужен один вход `codex login --device-auth` в терминале приложения. Авторизация хранится в /app/data/codex-auth. [Подключение Codex на Bothost](docs/codex.md).

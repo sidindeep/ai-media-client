@@ -14,6 +14,7 @@ services:
       MEDIA_PORT: 3000
       MEDIA_DATA_DIR: data/service
       MEDIA_CODEX_URL: http://codex:3210
+      MEDIA_CODEX_EMBEDDED: 'false'
     ports:
       - "127.0.0.1:3000:3000"
     volumes:

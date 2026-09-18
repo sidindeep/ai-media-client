@@ -8,7 +8,7 @@ function integer(value, fallback, min, max) {
 }
 function loadConfig(env = process.env) {
   const host = env.MEDIA_HOST || '127.0.0.1';
-  const port = integer(env.MEDIA_PORT, 3000, 0, 65535);
+  const port = integer(env.MEDIA_PORT || env.PORT, 3000, 0, 65535);
   const dataDirectory = path.resolve(root, env.MEDIA_DATA_DIR || 'data/service');
   const relative = path.relative(root, dataDirectory);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('MEDIA_DATA_DIR должен быть внутри проекта');
@@ -40,7 +40,8 @@ function loadConfig(env = process.env) {
     telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',
     rubPerCredit, pricing,
-    codex: { url: env.MEDIA_CODEX_URL || '' },
+    codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
+      embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },
     database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1' },
     auth: { enabled: authEnabled, origin: authOrigin,
       sessionSeconds: integer(env.MEDIA_SESSION_SECONDS, 604800, 300, 2592000),

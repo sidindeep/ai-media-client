@@ -8,6 +8,7 @@ const { createTelegramGateway } = require('./src/services/telegram-gateway');
 const { openDatabase } = require('./src/database/database');
 const { createAuth } = require('./src/auth/service');
 const { createAccounts } = require('./src/services/accounts');
+const { createCodexWorker } = require('./src/services/codex-worker');
 
 async function start({ config = loadConfig(), provider, pool: suppliedPool, authProviders } = {}) {
   if (config.auth.enabled && !config.database.url && !suppliedPool) throw new Error('Для аккаунтов настройте DATABASE_URL. Локальный режим владельца: MEDIA_AUTH_ENABLED=false');
@@ -19,10 +20,14 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
     if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
     throw error;
   }
-  let service, telegram, server, pool, accounts, auth;
+  let service, telegram, server, pool, accounts, auth, codexWorker;
   const cleanup = async () => {
     await telegram?.stop();
     server?.closeEvents();
+    if (codexWorker) {
+      codexWorker.stopActive(); codexWorker.closeAllConnections();
+      if (codexWorker.listening) await new Promise(resolve => codexWorker.close(resolve));
+    }
     if (server?.listening) { server.closeIdleConnections(); await new Promise(resolve => server.close(resolve)); }
     await service?.close();
     await accounts?.close();
@@ -37,6 +42,14 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
       auth = createAuth({ pool, config: config.auth, providers: authProviders });
       accounts = createAccounts({ pool, config, provider, legacy: service });
       await accounts.recover();
+    }
+    if (config.codex?.embedded) {
+      codexWorker = createCodexWorker();
+      await new Promise((resolve, reject) => {
+        codexWorker.once('error', reject);
+        codexWorker.listen(3210, '127.0.0.1', resolve);
+      });
+      console.log('Codex worker ready on loopback');
     }
     // Legacy Telegram has no account binding yet: never bypass the wallet via the bot.
     const telegramConfig = config.auth.enabled ? { ...config.telegram, enabled: false } : config.telegram;

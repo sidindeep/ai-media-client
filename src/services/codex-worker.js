@@ -7,21 +7,30 @@ const os = require('node:os');
 const { validateCodexRequest, codexArguments } = require('./codex-request');
 const { collectImage } = require('./codex-images');
 
-async function execute(request) {
+function codexEnvironment(env = process.env) {
+  // The hosting container also has database/OAuth/Kie secrets. Do not inherit them.
+  return Object.fromEntries(['PATH', 'HOME', 'CODEX_HOME', 'TMPDIR', 'LANG', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'SystemRoot'].filter(key => env[key]).map(key => [key, env[key]]));
+}
+async function execute(request, { signal } = {}) {
+  if (signal?.aborted) throw new Error('Сервис Codex остановлен.');
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'media-codex-'));
   try {
     const output = await new Promise((resolve, reject) => {
-      const child = spawn('codex', codexArguments(request), { cwd: directory, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn('codex', codexArguments(request), { cwd: directory, env: codexEnvironment(), detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
       let output = '', errorText = '', failure;
       const stop = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } };
+      const abort = () => { failure = new Error('Сервис Codex остановлен.'); stop(); };
+      signal?.addEventListener('abort', abort, { once: true });
       const timeout = request.kind === 'image' ? 300000 : 180000;
       const timer = setTimeout(() => { failure = new Error('Codex не завершил запрос за отведённое время.'); stop(); }, timeout);
+      if (signal?.aborted) abort();
       child.on('error', () => { clearTimeout(timer); reject(new Error('Не удалось запустить Codex.')); });
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
       child.stdout.on('data', chunk => { output += chunk; if (Buffer.byteLength(output) > 1024 * 1024) { failure = new Error('Ответ Codex слишком большой.'); stop(); } });
       child.stderr.on('data', chunk => { errorText = (errorText + chunk).slice(-16000); });
       child.stdin.on('error', () => {});
       child.on('close', code => {
+        signal?.removeEventListener('abort', abort);
         clearTimeout(timer);
         if (failure) return reject(failure);
         if (code !== 0 || !output.trim()) {
@@ -48,6 +57,7 @@ async function execute(request) {
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 }
 function createCodexWorker(run = execute) {
+  const controller = new AbortController();
   const jobs = new Map(); let active = false;
   const send = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
   const server = http.createServer(async (req, res) => {
@@ -71,7 +81,7 @@ function createCodexWorker(run = execute) {
       if (active || jobs.size >= 100) return send(res, 429, { error: 'Codex занят. Повторите позже.' });
       const job = { id: input.requestId, model: input.model, effort: input.effort, speed: input.speed, kind: input.kind || 'text', state: 'running', createdAt: now };
       jobs.set(key, job); active = true;
-      void Promise.resolve().then(() => run(input)).then(output => {
+      void Promise.resolve().then(() => run(input, { signal: controller.signal })).then(output => {
         if (typeof output === 'string') job.output = output;
         else { job.output = output.output; job.imageBase64 = output.imageBase64; }
         job.state = 'success';
@@ -80,7 +90,8 @@ function createCodexWorker(run = execute) {
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });
   server.requestTimeout = 15000;
+  server.stopActive = () => controller.abort();
   return server;
 }
 if (require.main === module) createCodexWorker().listen(3210, '0.0.0.0', () => console.log('Codex worker ready'));
-module.exports = { createCodexWorker };
+module.exports = { createCodexWorker, codexEnvironment };

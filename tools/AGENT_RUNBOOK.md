@@ -26,7 +26,7 @@
 
 Веб: http://127.0.0.1:3000; health: /api/health. Конфиг: .env, образец .env.example. Данные: data/service, включая logs/generation.jsonl. Docker монтирует тот же каталог. Остановка Node: Ctrl+C. Не запускайте одновременно Node и Docker с одними данными.
 
-Dockerfile и контекст сборки находятся в корне. Образ содержит только веб и Telegram; desktop/ исключён allowlist в .dockerignore. На хостинге: порт 3000, MEDIA_HOST=0.0.0.0, MEDIA_PUBLIC_ORIGIN=https://ваш-домен.
+Dockerfile и контекст сборки находятся в корне. Образ содержит веб, Telegram и Codex CLI; desktop/ исключён allowlist в .dockerignore. На хостинге worker Codex запускается автоматически на loopback, авторизация сохраняется в /app/data/codex-auth. Compose отключает встроенный worker и использует отдельный codex. На хостинге: MEDIA_HOST=0.0.0.0, MEDIA_PUBLIC_ORIGIN=https://ваш-домен; порт MEDIA_PORT или PORT, по умолчанию 3000. Инструкция Bothost и входа: [Codex](../docs/codex.md).
 
 Переключатель провайдера разделяет Kie.ai (изображения/видео) и Codex CLI
 (изображения и текст). Для Codex выбираются тип результата, модель, уровень рассуждения и обычная/Fast

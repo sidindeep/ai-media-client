@@ -7,9 +7,19 @@ const { createWallet } = require('../src/billing/wallet');
 const { createPricing } = require('../src/billing/pricing');
 const { createCodexBilling, priceKey } = require('../src/services/codex-billing');
 const { validateCodexRequest, codexArguments } = require('../src/services/codex-request');
-const { createCodexWorker } = require('../src/services/codex-worker');
+const { createCodexWorker, codexEnvironment } = require('../src/services/codex-worker');
 const { collectImage, validatePng } = require('../src/services/codex-images');
 const request = () => ({ requestId: randomUUID(), prompt: 'Привет', model: 'gpt-6-astra', effort: 'ultra', speed: 'fast' });
+
+test('Single-container hosting selects loopback and does not expose web secrets to Codex', () => {
+  const { loadConfig } = require('../src/server/config');
+  const embedded = loadConfig({ PORT: '8080', MEDIA_CODEX_EMBEDDED: 'true' });
+  assert.equal(embedded.port, 8080);
+  assert.deepEqual(embedded.codex, { url: 'http://127.0.0.1:3210', embedded: true });
+  const sidecar = loadConfig({ MEDIA_CODEX_EMBEDDED: 'true', MEDIA_CODEX_URL: 'http://codex:3210' });
+  assert.equal(sidecar.codex.embedded, false);
+  assert.deepEqual(codexEnvironment({ PATH: '/bin', CODEX_HOME: '/app/data/codex-auth', DATABASE_URL: 'secret', GOOGLE_CLIENT_SECRET: 'secret', KIE_API_KEY: 'secret' }), { PATH: '/bin', CODEX_HOME: '/app/data/codex-auth' });
+});
 
 test('Image collection requires this CLI thread and validates PNG instead of model text', async t => {
   const fs = require('node:fs/promises'), path = require('node:path');

@@ -26,6 +26,17 @@ button,input,select { min-height:40px; }
   .app-tabs { order:3; width:100%; }
 }
 @media(max-width:720px) {
+  /* Use the document scroll on phones; desktop panes must not trap swipes. */
+  html { height:auto; overflow-y:auto; overscroll-behavior-y:auto; }
+  body { height:auto; overflow:visible; }
+  #appMain { display:flex; flex-direction:column; height:auto; overflow:visible; }
+  #appMain > aside, #appMain > section, #pageGeneration, #pageHistory, #pageSpending,
+  #appMain .generation-layout, #appMain .input-panel, #appMain .preview-panel {
+    flex:none; height:auto; min-height:0; max-height:none; overflow:visible;
+    overscroll-behavior:auto; scrollbar-gutter:auto;
+  }
+  #appMain > aside { position:static; align-self:stretch; }
+  #appMain input, #appMain select, #appMain textarea { font-size:16px; }
   main { display:flex; flex-direction:column; }
   aside { position:static; max-height:none; width:100%; border-right:0; border-bottom:1px solid #303747; }
   section { padding:18px 14px 40px; }

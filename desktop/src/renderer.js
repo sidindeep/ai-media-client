@@ -12,6 +12,10 @@ function switchAppPage(page) {
   }
   document.querySelector('#appMain > aside').hidden=page!=='pageGeneration';
   document.getElementById('appMain').classList.toggle('full-page',page!=='pageGeneration');
+  document.querySelectorAll('#studioRail [data-page]').forEach(item=>{
+    const selected=item.dataset.page===page;item.classList.toggle('is-active',selected);
+    if(selected)item.setAttribute('aria-current','page');else item.removeAttribute('aria-current');
+  });
   window.scrollTo(0,0);
 }
 document.getElementById('appTabs').addEventListener('click',event=>{
@@ -79,6 +83,30 @@ const $ = (id) => document.getElementById(id);
 
 function selectedProvider() { return catalog.providers.find((p) => p.id === $("provider").value); }
 function selectedModel() { return catalog.models.find((m) => m.id === $("model").value); }
+
+function renderStudioContext() {
+  const provider=selectedProvider(),model=selectedModel();
+  $('contextProvider').textContent=provider?.name||'—';
+  $('contextModel').textContent=model?.name||'Модель не выбрана';
+  $('contextCost').textContent=$('estimatedCost')?.textContent?.replace(/^.*?:\s*/,'')||'—';
+}
+window.renderStudioContext=renderStudioContext;
+
+function renderDiscovery(models=catalog?.models||[]) {
+  const model=selectedModel();
+  window.discoveryUi?.renderScenarios($('promptScenarios'),model?.kind||'image',scenario=>{
+    const input=$('fields')?.querySelector('[data-key="prompt"]');
+    if(!input){setStatus('Сначала выберите модель с текстовым промптом.',true);return;}
+    if(input.value.trim()&&input.value!==scenario.prompt&&!confirm('Заменить текущий промпт выбранным сценарием?'))return;
+    input.value=scenario.prompt;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();setStatus(`Сценарий «${scenario.label}» добавлен в composer.`);
+  });
+  window.discoveryUi?.renderModels($('modelShowcase'),models,model?.id,choice=>{
+    if(activeTask)return;
+    $('provider').value=choice.providerId;$('provider').dispatchEvent(new Event('change',{bubbles:true}));
+    $('model').value=choice.id;$('model').dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  renderStudioContext();
+}
 
 function setStatus(text, error = false) {
   const box = $("status");
@@ -161,7 +189,7 @@ function renderModel() {
   structured=new Map();
   sourceFiles=[];restoredFiles={};
   const model = selectedModel();
-  if (!model) { $('title').textContent = 'Модели не найдены'; $('fields').replaceChildren(); $('generate').disabled = true; renderFavorites(); return; }
+  if (!model) { $('title').textContent = 'Модели не найдены'; $('fields').replaceChildren(); $('generate').disabled = true; renderFavorites(); renderDiscovery([]); return; }
   $('generate').disabled = Boolean(activeTask);
   $("title").textContent = model.name; $("kind").textContent = model.kind === "video" ? "Видео" : "Изображение";
   const displayFields=[...model.fields];
@@ -171,6 +199,8 @@ function renderModel() {
   $("fields").replaceChildren(...displayFields.map(makeField));
   renderFavorites();
   renderWorkTabs();
+  renderDiscovery(catalog.models.filter(item=>item.providerId===model.providerId&&(!$("mediaFilter").value||item.kind===$("mediaFilter").value)));
+  renderStudioContext();
   refreshCostPreview();
 }
 
@@ -361,6 +391,7 @@ async function refreshHistory() {
   visibleWorkTabs=state.concurrency||2;
   if(draftsReady&&!activeTask&&currentTab>=visibleWorkTabs)switchWorkTab(visibleWorkTabs-1);
   $('queueStatus').textContent=`Выполняется: ${active.length}/${state.concurrency||2} · ожидает: ${pending}${state.paused&&pending?' · ожидающие задачи приостановлены':''}${state.error?' · '+state.error:''}`;
+  $('contextQueue').textContent=state.paused&&pending?'Пауза очереди':active.length?`В работе ${active.length}/${state.concurrency||2}`:'Готова';
   $('startQueue').hidden=!(state.paused&&pending>0);
   renderQueueTasks();
   renderSpending();
@@ -563,6 +594,13 @@ async function init() {
   }
   $('modelSearch').addEventListener('input', loadModels); $('mediaFilter').addEventListener('change', loadModels);
   $("provider").addEventListener("change", loadModels); $("model").addEventListener("change", renderModel); loadModels();
+  document.querySelectorAll('#studioNav [data-studio-kind]').forEach(button=>button.addEventListener('click',()=>{
+    const kind=button.dataset.studioKind;
+    document.querySelectorAll('#studioNav [data-studio-kind]').forEach(item=>item.classList.toggle('is-active',item===button));
+    if(kind==='image'||kind==='video'||kind===''){ $('mediaFilter').value=kind;loadModels();return; }
+    setStatus(`${button.textContent}: раздел будет добавлен в следующем UI-батче.`);
+  }));
+  document.querySelectorAll('#studioRail [data-page]').forEach(button=>button.addEventListener('click',()=>switchAppPage(button.dataset.page)));
   $('toggleFavorite').addEventListener('click',async()=>{const model=selectedModel();if(!model)return;try{favoriteModelIds=await window.desktop.setFavoriteModels(favoriteModelIds.includes(model.id)?favoriteModelIds.filter(id=>id!==model.id):[...favoriteModelIds,model.id]);renderFavorites();}catch(error){setStatus(error.message,true);}});
   $("provider").addEventListener('change',()=>{void refreshProviderAccount();});
   void refreshProviderAccount();

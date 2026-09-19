@@ -9,7 +9,15 @@
 </head>
 <body>
   <header>
-    <div><span class="mark">ИИ</span><strong>Медиаклиент</strong></div>
+    <div class="brand"><span class="mark">ИИ</span><strong>Медиаклиент</strong><small>STUDIO</small></div>
+  <nav id="studioNav" class="studio-nav" aria-label="Рабочие разделы">
+    <button type="button" class="studio-nav-item is-active" data-studio-kind="" aria-current="page">Текст</button>
+    <button type="button" class="studio-nav-item" data-studio-kind="image">Дизайн</button>
+    <button type="button" class="studio-nav-item" data-studio-kind="video">Видео</button>
+    <button type="button" class="studio-nav-item" data-studio-kind="audio">Аудио</button>
+    <button type="button" class="studio-nav-item" data-studio-kind="agents">Агенты</button>
+    <button type="button" class="studio-nav-item" data-studio-kind="community">Сообщество</button>
+  </nav>
   <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
     <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
     <button id="tabHistory" type="button" role="tab" aria-controls="pageHistory" aria-selected="false" tabindex="-1" data-page="pageHistory">История</button>
@@ -19,7 +27,14 @@
     <div class="balance">Баланс: <b id="balance">—</b> кредитов <button id="refreshBalance" class="quiet">↻</button></div>
   </header>
   <main id="appMain">
-    <aside>
+    <nav id="studioRail" class="studio-rail" aria-label="Навигация студии">
+      <button type="button" class="rail-item is-active" data-page="pageGeneration" aria-current="page"><span class="rail-icon">✦</span><span>Создать</span></button>
+      <button type="button" class="rail-item" data-page="pageHistory"><span class="rail-icon">◷</span><span>История</span></button>
+      <button type="button" class="rail-item" data-page="pageSpending"><span class="rail-icon">₽</span><span>Расходы</span></button>
+      <div class="rail-spacer"></div>
+      <button type="button" class="rail-item rail-muted" id="railQueue" title="Очередь отображается в рабочей области"><span class="rail-icon">≡</span><span>Очередь</span></button>
+    </nav>
+    <aside class="inspector-panel">
       <label>Модель</label><select id="model"></select>
       <label for="modelSearch">Найти модель</label><input id="modelSearch" type="search" placeholder="Grok, Kling, Seedream…">
       <label for="mediaFilter">Тип результата</label><select id="mediaFilter"><option value="">Все</option><option value="image">Изображения</option><option value="video">Видео</option></select>
@@ -57,6 +72,15 @@
     <section>
       <div id="status" class="status hidden" role="status"></div>
       <div id="pageGeneration" role="tabpanel" aria-labelledby="tabGeneration">
+      <div class="context-bar" aria-label="Контекст рабочей области">
+        <div class="context-item"><span class="context-label">ПРОВАЙДЕР</span><strong id="contextProvider">—</strong></div>
+        <div class="context-divider"></div>
+        <div class="context-item"><span class="context-label">МОДЕЛЬ</span><strong id="contextModel">—</strong></div>
+        <div class="context-divider"></div>
+        <div class="context-item"><span class="context-label">СТОИМОСТЬ</span><strong id="contextCost">—</strong></div>
+        <div class="context-divider"></div>
+        <div class="context-item context-queue"><span class="context-label">ОЧЕРЕДЬ</span><strong id="contextQueue">Готова</strong></div>
+      </div>
       <div class="generation-header">
       <div id="workTabs" class="work-tabs" role="tablist" aria-label="Рабочие вкладки"></div>
       <p id="draftStatus" class="hint">Черновики вкладок сохраняются автоматически. Число вкладок задаётся в настройках генерации.</p>
@@ -67,8 +91,13 @@
       </div>
       </div>
       </div>
+      <section class="discovery-panel" aria-labelledby="discoveryTitle">
+        <div class="discovery-heading"><div><span class="eyebrow">ВЫБЕРИТЕ НАПРАВЛЕНИЕ</span><h2 id="discoveryTitle">Начните с идеи или модели</h2></div><span id="discoveryHint" class="hint">Сценарий подставит безопасную основу промпта</span></div>
+        <div id="promptScenarios" class="prompt-scenarios" aria-label="Сценарии промптов"></div>
+        <div id="modelShowcase" class="model-showcase" aria-label="Рекомендованные модели"></div>
+      </section>
       <div class="generation-layout">
-      <div class="input-panel"><form id="generationForm"><div id="fields"></div><p id="estimatedCost" class="card" role="status">Стоимость до запуска: не определена</p><details id="officialTariff"><summary>Тариф Kie — справка</summary><p id="tariffDescription"></p><p id="tariffDescriptionSource" class="hint"></p></details><button id="generate" class="primary" type="submit">Запустить генерацию</button></form></div>
+      <div class="input-panel composer-panel"><form id="generationForm"><div class="composer-heading"><div><span class="eyebrow">COMPOSER</span><h2>Соберите запрос</h2></div><span class="composer-note">Черновик сохраняется автоматически</span></div><div id="fields"></div><p id="estimatedCost" class="card" role="status">Стоимость до запуска: не определена</p><details id="officialTariff"><summary>Тариф Kie — справка</summary><p id="tariffDescription"></p><p id="tariffDescriptionSource" class="hint"></p></details><button id="generate" class="primary" type="submit">Запустить генерацию <span class="generate-arrow">↗</span></button></form></div>
       <div class="preview-panel">
       <div class="queue-overview">
         <div id="queueTasks" aria-label="Задачи очереди"></div>
@@ -135,6 +164,7 @@
   <script src="duration.js"></script>
   <script src="costs-ui.js"></script>
   <script src="provider-errors.js"></script>
+  <script src="discovery-ui.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

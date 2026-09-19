@@ -47,6 +47,8 @@ app.whenReady().then(async()=>{
     await win.loadFile(path.join(appRoot,'src/index.html'));
     const count=await win.webContents.executeJavaScript(`new Promise((resolve,reject)=>{let n=0;const t=setInterval(()=>{const count=document.querySelector('#model').options.length;if(count){clearInterval(t);resolve(count)}else if(++n>100){clearInterval(t);reject(new Error('UI did not initialize'))}},50)})`);
     assert.ok(count>=143);
+    const discovery=await win.webContents.executeJavaScript(`({rail:Boolean(document.querySelector('#studioRail')),scenarios:document.querySelectorAll('#promptScenarios .scenario-card').length,models:document.querySelectorAll('#modelShowcase .model-card').length,context:Boolean(document.querySelector('#contextProvider').textContent)})`);
+    assert.equal(discovery.rail,true);assert.ok(discovery.scenarios>0);assert.ok(discovery.models>0);assert.equal(discovery.context,true);
     assert.deepEqual(await win.webContents.executeJavaScript("({model:selectedModel().apiModel,imageRequired:$('fields').querySelector('[data-key=image_urls]').required,first:selectedModel().fields[0].key})"),{model:'nano-banana-2-lite',imageRequired:false,first:'prompt'});
     const providerPlacement=await win.webContents.executeJavaScript(`({inHeader:Boolean($('provider').closest('header')),inAside:Boolean($('provider').closest('aside')),firstSidebarLabel:document.querySelector('aside > label')?.textContent})`);
     assert.deepEqual(providerPlacement,{inHeader:true,inAside:false,firstSidebarLabel:'Модель'});

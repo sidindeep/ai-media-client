@@ -51,10 +51,11 @@ function refreshCostPreview(){
   kieAccountEstimate=null;
   const shown=estimate;
   $('estimatedCost').textContent=shown?`${kieAccountEstimate?'Расчёт кабинета Kie':'По тарифу Kie'}: ${formatCost(shown.credits)} кредитов · ${formatCost(costs.round(shown.credits*creditRate))} ₽${!kieAccountEstimate&&tariffData.stale?' · тарифы не обновлены':''}. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена для этих параметров. Проверяю кабинет Kie…';
+  window.renderStudioContext?.();
   clearTimeout(kieQuoteTimer);const sequence=++kieQuoteSequence;
   if(model?.providerId==='kie')kieQuoteTimer=setTimeout(async()=>{
-    try{const result=await window.desktop.getKieSessionQuote({model:model.apiModel,input});if(sequence!==kieQuoteSequence)return;kieAccountEstimate=result;$('estimatedCost').textContent=result?`Расчёт кабинета Kie: ${formatCost(result.credits)} кредитов · ${formatCost(costs.round(result.credits*creditRate))} ₽. Фактическое списание учитывается отдельно.`:estimate?`По тарифу Kie: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽${tariffData.stale?' · тарифы не обновлены':''}. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена для этих параметров. Это не означает бесплатную генерацию.';}
-    catch{if(sequence===kieQuoteSequence)$('estimatedCost').textContent=estimate?`По тарифу Kie: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽. Кабинет Kie недоступен.`:'Стоимость до запуска не определена: кабинет Kie недоступен.';}
+    try{const result=await window.desktop.getKieSessionQuote({model:model.apiModel,input});if(sequence!==kieQuoteSequence)return;kieAccountEstimate=result;$('estimatedCost').textContent=result?`Расчёт кабинета Kie: ${formatCost(result.credits)} кредитов · ${formatCost(costs.round(result.credits*creditRate))} ₽. Фактическое списание учитывается отдельно.`:estimate?`По тарифу Kie: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽${tariffData.stale?' · тарифы не обновлены':''}. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена для этих параметров. Это не означает бесплатную генерацию.';window.renderStudioContext?.();}
+    catch{if(sequence===kieQuoteSequence){$('estimatedCost').textContent=estimate?`По тарифу Kie: ${formatCost(estimate.credits)} кредитов · ${formatCost(costs.round(estimate.credits*creditRate))} ₽. Кабинет Kie недоступен.`:'Стоимость до запуска не определена: кабинет Kie недоступен.';window.renderStudioContext?.();}}
   },600);
 }
 function renderSpending(){

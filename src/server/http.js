@@ -84,7 +84,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       if (req.method === 'GET' && url.pathname === '/api/health') {
         const database = await checkDatabase(accounts?.pool);
-        return json(res, 200, { ok: database.state !== 'unavailable', version: release.version, build: release.build, database, generationConfigured: legacyService.configured(), telegram: telegramStatus() });
+        const status = database.state === 'unavailable' ? 503 : 200;
+        return json(res, status, { ok: status === 200, version: release.version, build: release.build, database, generationConfigured: Boolean(legacyService.configured?.()), telegram: telegramStatus() });
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });

@@ -18,7 +18,9 @@ pnpm install --ignore-workspace --frozen-lockfile
 pnpm start
 ```
 
-Открыть http://127.0.0.1:3000. Остановить — Ctrl+C. Разработка: `pnpm dev`.
+Открыть http://127.0.0.1:3000. Новая Vue-студия доступна по адресу http://127.0.0.1:3000/app после входа; legacy-интерфейс остаётся на корневом адресе до завершения миграции. Остановить — Ctrl+C. Разработка: `pnpm dev`.
+
+Для web-фронтенда: `pnpm build:web` собирает Vue/Vite-приложение в `public/vue`, `pnpm check:web:vue` проверяет TypeScript. Backend и API остаются общими для обоих интерфейсов.
 Проверки: `pnpm check` и `pnpm test`.
 
 ## Модули

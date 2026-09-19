@@ -9,6 +9,7 @@ const { checkDatabase } = require('../database/database');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
+const vueAppPrefix = '/app';
 function temporaryConnectionFailure(error) {
   return ['EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', '57P01', '57P03', '53300'].includes(error.code)
     || /Connection terminated|connection timeout|timeout expired|timeout exceeded when trying to connect/i.test(error.message || '');
@@ -76,11 +77,14 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       const sameOrigin = !req.headers.origin || req.headers.origin === `http://${req.headers.host}` || (config.publicOrigin && req.headers.origin === config.publicOrigin);
       const callbackProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/callback$/.exec(url.pathname)?.[1];
       const oauthCallback = req.method === 'GET' && auth?.providers().some(provider => provider.id === callbackProvider);
+      const oauthStartProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/start$/.exec(url.pathname)?.[1];
+      const oauthStart = req.method === 'GET' && auth?.providers().some(provider => provider.id === oauthStartProvider);
       const pageNavigation = ['GET', 'HEAD'].includes(req.method)
         && ['/', '/index.html', '/login'].includes(url.pathname)
         && req.headers['sec-fetch-mode'] === 'navigate'
         && req.headers['sec-fetch-dest'] === 'document';
-      if (!pageNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+      const allowedTopLevelNavigation = pageNavigation || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
+      if (!allowedTopLevelNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       if (req.method === 'GET' && url.pathname === '/api/health') {
         const database = await checkDatabase(accounts?.pool);
@@ -101,12 +105,13 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
       }
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
+      const isVueApp = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json');
+        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp);
       // Retry only the read-only session lookup for assets, never account/API writes.
       const user = auth ? await assetUser(auth, req, isAsset) : { id: 'local', role: 'admin', name: 'Владелец' };
       if (!user) {
-        if (['/', '/index.html'].includes(url.pathname)) return redirect('/login');
+        if (isVueApp || ['/', '/index.html'].includes(url.pathname)) return redirect('/login');
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
@@ -137,6 +142,17 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         res.setHeader('Set-Cookie', auth ? await auth.logout(req) : '');
         for (const connection of connections) if (connection.accountId === user.id) connection.end();
         return json(res, 200, { result: true });
+      }
+      if (isVueApp && ['GET', 'HEAD'].includes(req.method)) {
+        const root = path.join(config.root, 'public', 'vue');
+        const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
+        if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
+        const filename = path.join(root, relative);
+        try { return await sendFile(req, res, filename); }
+        catch (error) {
+          if (path.extname(relative)) throw error;
+          return await sendFile(req, res, path.join(root, 'index.html'));
+        }
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {

@@ -13,10 +13,7 @@
 </head>
 <body>
   <header>
-    <div><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p><p id="appVersion" class="app-version" role="status">DEBUG · проверяем версию…</p></div>
-  <nav id="studioNav" class="studio-nav" aria-label="Студия">
-    <button type="button" class="studio-nav-active">Генерация</button><button type="button">История</button><button type="button">Расходы</button><button type="button">Агенты</button>
-  </nav>
+    <div class="header-brand"><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p><p id="appVersion" class="app-version" role="status">DEBUG · проверяем версию…</p></div>
   <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
     <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
     <button id="tabHistory" type="button" role="tab" aria-controls="pageHistory" aria-selected="false" tabindex="-1" data-page="pageHistory">История</button>
@@ -95,29 +92,30 @@
       <div id="codexGeneration" hidden>
         <div class="studio-context" aria-label="Контекст генерации"><span id="studioContextProvider">Codex CLI</span><span class="context-separator">→</span><strong id="studioContextModel">GPT</strong><span class="context-cost">Стоимость уточняется</span><span class="context-queue" id="studioContextQueue">Очередь свободна</span></div>
         <div class="generation-header">
-          <div class="section-title"><div class="model-heading"><div class="model-caption"><span class="eyebrow">НОВАЯ ГЕНЕРАЦИЯ</span><span class="pill">Codex</span></div><h1 id="codexTitle">Codex</h1></div>
+          <div class="section-title"><div class="model-heading"><div class="model-caption"><span class="eyebrow">СТУДИЯ ИЗОБРАЖЕНИЙ</span><span class="pill">Codex</span></div><h1 id="codexTitle">Codex</h1><p class="hero-subtitle">Сформулируйте идею, выберите направление и получите первый кадр.</p></div>
             <div class="queue-header"><p id="codexTaskCount">Нет активных задач</p></div>
           </div>
         </div>
         <div class="generation-layout">
         <div class="input-panel">
         <form id="codexForm">
-          <div class="discovery-panel"><div class="discovery-heading"><div><span class="eyebrow">ИДЕИ ДЛЯ СТАРТА</span><h2>Выберите сценарий</h2></div><span class="hint">Готовые направления</span></div><div id="promptScenarios" class="prompt-scenarios"></div></div>
-          <label for="codexPrompt">Промпт *</label>
-          <textarea id="codexPrompt" rows="8" maxlength="20000" required placeholder="Опишите нужный результат…"></textarea>
-          <div id="codexTemplateActions" class="inline"></div>
-          <div class="model-showcase"><div class="discovery-heading"><div><span class="eyebrow">МОДЕЛЬ</span><h2>Подходящий инструмент</h2></div><span class="hint">Для текущей задачи</span></div><div id="modelShowcase" class="model-showcase-grid"></div></div>
-          <label for="codexImages">Исходные изображения (необязательно)</label>
-          <input id="codexImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
-          <p class="hint">До 10 файлов, максимум 30 МБ каждый</p>
-          <button id="codexClearImages" type="button" class="quiet">Очистить файлы</button>
-          <div id="codexImagesPreview" class="codex-images-preview" aria-live="polite" hidden></div>
-          <label for="codexAspectRatio">Соотношение сторон *</label>
-          <select id="codexAspectRatio"><option value="auto">Автоматически</option><option value="1:1">1:1</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="3:2">3:2</option><option value="2:3">2:3</option></select>
-          <p id="codexPrice" class="card" role="status">Проверка цены…</p>
-          <p class="hint">Оплата внутренними кредитами. Сумма резервируется до запуска и списывается после успешного ответа.</p>
-          <p id="codexRoute" class="card" role="status"></p>
-          <button id="codexSubmit" class="primary" type="submit" disabled>Запустить генерацию</button>
+          <div class="codex-composer">
+            <div class="discovery-panel"><div class="discovery-heading"><div><span class="eyebrow">ИДЕИ ДЛЯ СТАРТА</span><h2>Начните с направления</h2></div><span class="hint">Готовые подсказки</span></div><div id="promptScenarios" class="prompt-scenarios"></div></div>
+            <label for="codexPrompt">Что создаём *</label>
+            <textarea id="codexPrompt" rows="8" maxlength="20000" required placeholder="Опишите сцену, настроение или задачу…"></textarea>
+            <div id="codexTemplateActions" class="inline"></div>
+            <div class="codex-attachments">
+              <div><label for="codexImages">Исходные изображения <span class="label-muted">необязательно</span></label><input id="codexImages" type="file" accept="image/png,image/jpeg,image/webp" multiple><p class="hint">До 10 файлов · максимум 30 МБ каждый</p></div>
+              <div class="codex-ratio"><label for="codexAspectRatio">Соотношение сторон *</label><select id="codexAspectRatio"><option value="auto">Автоматически</option><option value="1:1">1:1</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="3:2">3:2</option><option value="2:3">2:3</option></select></div>
+            </div>
+            <div class="codex-upload-actions"><button id="codexClearImages" type="button" class="quiet">Очистить файлы</button><div id="codexImagesPreview" class="codex-images-preview" aria-live="polite" hidden></div></div>
+          </div>
+          <div class="codex-submit-panel">
+            <div class="codex-submit-copy"><span class="eyebrow">ГОТОВЫ К ЗАПУСКУ?</span><p>Сумма резервируется до запуска и списывается после успешного ответа.</p></div>
+            <p id="codexPrice" class="card" role="status">Проверка цены…</p>
+            <p id="codexRoute" class="card" role="status"></p>
+            <button id="codexSubmit" class="primary" type="submit" disabled>Создать изображение <span aria-hidden="true">↗</span></button>
+          </div>
         </form>
         </div>
         <div class="preview-panel">

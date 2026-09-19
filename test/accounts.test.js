@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const { testPool } = require('./helpers/pg-pool');
 const { start } = require('../server');
@@ -49,9 +50,14 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   const base = `http://127.0.0.1:${runtime.server.address().port}`;
   const request = (url, options = {}) => fetch(base + url, { ...options, redirect: 'manual' });
   async function login(subject, providerName = 'google') {
-    const begin = await request(`/auth/${providerName}/start`);
-    const state = new URL(begin.headers.get('location')).searchParams.get('state');
-    const cookie = begin.headers.get('set-cookie').split(';')[0];
+    const begin = await new Promise((resolve, reject) => {
+      const req = http.request(new URL(`${base}/auth/${providerName}/start`), { headers: { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' } }, response => {
+        response.resume(); response.on('end', () => resolve(response));
+      });
+      req.on('error', reject); req.end();
+    });
+    const state = new URL(begin.headers.location).searchParams.get('state');
+    const cookie = begin.headers['set-cookie'][0].split(';')[0];
     const callback = `/auth/${providerName}/callback?state=${state}&code=${subject}`;
     const wrongBrowser = await request(callback); assert.equal(wrongBrowser.headers.get('location'), '/login?error=oauth');
     const result = await request(callback, { headers: { Cookie: cookie, 'Sec-Fetch-Site': 'cross-site' } });

@@ -83,6 +83,13 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   assert.ok(html.includes('generationForm')); assert.ok(html.includes('pauseQueue'));
   assert.ok(!html.includes('id="apiKey"')); assert.ok(!html.includes('id="openKieSession"'));
   for (const src of [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1])) assert.equal((await fetch(base + src)).status, 200);
+  const vueApp = await fetch(base + '/app');
+  assert.equal(vueApp.status, 200);
+  const vueHtml = await vueApp.text();
+  const vueAsset = [...vueHtml.matchAll(/(?:src|href)="(\/app\/assets\/[^"']+)"/g)].map(match => match[1]);
+  assert.ok(vueAsset.length >= 2);
+  for (const asset of vueAsset) assert.equal((await fetch(base + asset)).status, 200);
+  assert.equal((await fetch(base + '/app/projects/demo')).status, 200);
   assert.equal((await fetch(base + '/src/main.js')).status, 404);
   assert.equal((await fetch(base + '/.env')).status, 404);
   const navigation = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };

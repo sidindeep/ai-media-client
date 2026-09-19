@@ -1,6 +1,6 @@
 {
   "name": "ai-media-web-tg",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "releaseChannel": "debug",
   "private": true,
   "type": "commonjs",
@@ -20,7 +20,8 @@
     "check:desktop": "pnpm --dir desktop check",
     "test:desktop": "pnpm --dir desktop test",
     "pack:desktop": "pnpm --dir desktop run pack",
-    "dist:desktop": "pnpm --dir desktop run dist"
+    "dist:desktop": "pnpm --dir desktop run dist",
+    "release:bump": "node scripts/bump-release-version.cjs"
   },
   "dependencies": {
     "ajv": "^8.20.0",

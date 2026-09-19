@@ -129,7 +129,7 @@ app.whenReady().then(async () => {
     await win.loadURL(origin + '/admin.html#credits');
     await until("document.querySelector('#grantAccount').options.length===2");
     await until("document.querySelector('#appVersion').textContent.includes('сборка')");
-    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия \d+\.\d+\.\d+ · сборка [a-f0-9]{12}/);
+    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия \d+\.\d+\.\d+(?: · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2})? · сборка [a-f0-9]{12}/);
     await evaluate("location.hash='codexPanel';void 0");
     await until("document.querySelector('#codexLoginStatus').textContent==='Codex ещё не подключён.'");
     await evaluate("document.querySelector('#codexLoginStart').click();void 0");

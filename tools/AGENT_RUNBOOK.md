@@ -17,6 +17,7 @@
 | Папка Windows x64 | pnpm pack:desktop |
 | Установщик NSIS | pnpm dist:desktop |
 | Docker сборка и запуск | docker compose up -d --build |
+| Подготовить новую заливку | pnpm release:bump |
 | Docker состояние | docker compose ps |
 | Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
 | Пилот exec/app-server (реальный расход, только с бюджетом 6 текстов + 6 PNG) | node scripts/benchmark-codex-transports.cjs --docker --live |

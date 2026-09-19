@@ -162,6 +162,18 @@ test('App-server accepts inline imageGeneration PNG results', async t => {
   assert.deepEqual(Buffer.from(result.imageBase64, 'base64'), png);
 });
 
+test('App-server sends source images with the v2 UserInput url field', async t => {
+  let turnInput;
+  const source = 'data:image/png;base64,iVBORw0KGgo=';
+  const h = await harness(t, data => {
+    if (data.m.method !== 'turn/start') return;
+    turnInput = data.m.params.input;
+    complete(data, 'edited');
+  });
+  await h.adapter.run({ ...request(), images: [source] });
+  assert.deepEqual(turnInput[1], { type: 'image', url: source });
+});
+
 test('App-server sandbox and feature policy is per-thread, with no inherited user config', async t => {
   const text = threadParams(request(), '/tmp/work');
   const image = threadParams({ ...request(), kind: 'image', speed: 'fast' }, '/tmp/work');

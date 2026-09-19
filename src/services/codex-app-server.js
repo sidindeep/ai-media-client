@@ -197,7 +197,7 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
         if (id) await current.rpc('turn/interrupt', { threadId, turnId: id }).catch(() => {});
         await current.rpc('thread/unsubscribe', { threadId }).catch(() => {});
       };
-      const input = [{ type: 'text', text: codexPrompt(request) }, ...(request.images || []).map(image_url => ({ type: 'image', image_url }))];
+      const input = [{ type: 'text', text: codexPrompt(request) }, ...(request.images || []).map(url => ({ type: 'image', url }))];
       const turn = current.rpc('turn/start', { threadId, input,
         effort: request.effort, serviceTier: request.speed === 'fast' ? 'fast' : 'default' }, stopLateTurn)
         .then(async reply => {

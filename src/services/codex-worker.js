@@ -35,7 +35,7 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
       }
       if (req.method !== 'POST' || url.pathname !== '/jobs') return send(res, 404, { error: 'Не найдено' });
       const chunks = []; let length = 0;
-      for await (const chunk of req) { length += chunk.length; if (length > 100000) return send(res, 413, { error: 'Запрос слишком большой' }); chunks.push(chunk); }
+      for await (const chunk of req) { length += chunk.length; if (length > 128 * 1024 * 1024) return send(res, 413, { error: 'Запрос слишком большой' }); chunks.push(chunk); }
       const input = validateCodexRequest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       const key = account + ':' + input.requestId;
       if (jobs.has(key)) return send(res, 200, jobs.get(key));

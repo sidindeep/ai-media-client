@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
     await until("!document.querySelector('#codexSubmit').disabled");
     await evaluate("document.querySelector('#codexPrompt').value='Запрос обычного пользователя';document.querySelector('#codexForm').requestSubmit();void 0");
     await until("document.querySelector('#codexOutput').textContent==='Тестовый ответ Codex'");
-    assert.match(await evaluate("document.querySelector('#codexStatus').textContent"), /Списано: 1 кредитов\. Токены: 120/);
+    assert.match(await evaluate("document.querySelector('#codexStatus').textContent"), /Списано: 1 кредитов\..*Токены: 120/);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 4000);
     const userCodexJob = codexRequest.requestId;
     assert.equal(codexRequest.kind, 'image');

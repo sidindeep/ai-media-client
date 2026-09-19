@@ -59,11 +59,12 @@
   function describe() {
     if (!model()) return;
     settings.model = model().id; settings.effort = effort(); settings.speed = $('codexSpeed').value;
-    settings.kind = $('codexKind').value;
+    settings.kind = $('codexKind').value; settings.aspectRatio = $('codexAspectRatio').value;
     $('codexModelDetails').textContent = names[effort()] || effort();
     $('codexEffort').setAttribute('aria-valuetext', $('codexModelDetails').textContent);
     $('codexTitle').textContent = model().name;
     $('codexRoute').textContent = 'Запрос пойдёт через ' + route(settings);
+    if (!pending) $('codexPreviewSettings').textContent = route(settings);
     $('codexSpeedHint').textContent = settings.speed === 'fast' ? 'Приоритетная обработка. Цена указана перед запуском.' : 'Стандартная обработка запроса.';
     save();
     void updateQuote();
@@ -90,6 +91,27 @@
   $('codexEffort').addEventListener('input', describe);
   $('codexSpeed').addEventListener('change', describe);
   $('codexKind').addEventListener('change', describe);
+  let codexImageUrls = [];
+  function renderCodexImages() {
+    codexImageUrls.forEach(url => URL.revokeObjectURL(url)); codexImageUrls = [];
+    const holder = $('codexImagesPreview'); holder.replaceChildren();
+    const files = Array.from($('codexImages').files || []);
+    holder.hidden = !files.length;
+    files.forEach((file, index) => {
+      const item = document.createElement('div'); item.className = 'codex-image-thumb';
+      const image = document.createElement('img'); const url = URL.createObjectURL(file); codexImageUrls.push(url); image.src = url; image.alt = file.name;
+      const caption = document.createElement('span'); caption.textContent = file.name;
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'quiet'; remove.textContent = 'Удалить'; remove.addEventListener('click', () => {
+        const transfer = new DataTransfer(); files.forEach((entry, entryIndex) => { if (entryIndex !== index) transfer.items.add(entry); });
+        $('codexImages').files = transfer.files; renderCodexImages();
+      });
+      item.append(image, caption, remove); holder.append(item);
+    });
+  }
+  $('codexImages').addEventListener('change', renderCodexImages);
+  $('codexAspectRatio').addEventListener('change', describe);
+  $('codexClearImages').addEventListener('click', () => { $('codexImages').value = ''; renderCodexImages(); });
+  if (typeof attachFileDrop === 'function') attachFileDrop($('codexImages'), { maxFiles: 10, maxSizeMb: 30 });
   $('codexResetEffort').addEventListener('click', () => selectModel());
   $('codexPrompt').value = typeof settings.prompt === 'string' ? settings.prompt : '';
   $('codexPrompt').addEventListener('input', () => { settings.prompt = $('codexPrompt').value; save(); });
@@ -140,6 +162,12 @@
   }
   function showProgress(job) {
     clearInterval(progressTimer);
+    $('codexTaskCount').textContent = 'Выполняется: 1';
+    $('codexTaskState').textContent = 'Текущая задача выполняется';
+    $('codexPreviewEmpty').hidden = false;
+    $('codexPreviewEmpty').textContent = 'Результат появится здесь после завершения задачи';
+    $('codexOutput').hidden = true;
+    showImage({});
     const render = () => { $('codexStatus').textContent = `Codex: ${stage(job)} · Прошло: ${elapsed(job)}`; };
     render();
     if (['running', 'submitting'].includes(job.state)) progressTimer = setInterval(render, 1000);
@@ -147,18 +175,24 @@
   function result(job) {
     refreshSavedHistory();
     $('codexResultRoute').textContent = route(job);
+    $('codexPreviewSettings').textContent = route(job);
     if (['running', 'submitting'].includes(job.state)) {
       showProgress(job);
       timer = setTimeout(check, 1500); return;
     }
     clearInterval(progressTimer);
     if (job.state === 'unknown') {
+      $('codexTaskCount').textContent = 'Уточняется статус: 1';
+      $('codexTaskState').textContent = 'Ожидается подтверждение результата';
       $('codexStatus').textContent = job.error;
       $('codexCheck').hidden = false; busy(true); return;
     }
     pending = null; delete settings.pending;
+    $('codexTaskCount').textContent = 'Нет активных задач';
+    $('codexTaskState').textContent = job.state === 'success' ? 'Генерация завершена' : 'Генерация завершена без результата';
     $('codexCheck').hidden = true; busy(false);
     if (job.state === 'success') {
+      $('codexPreviewEmpty').hidden = true;
       $('codexOutput').textContent = job.output; $('codexOutput').hidden = false;
       $('codexStatus').textContent = receipt(job);
       showImage(job);
@@ -179,7 +213,12 @@
     $('codexCheck').hidden = true;
     try { result(await api('/api/codex/jobs/' + pending)); if (typeof refreshBalance === 'function') void refreshBalance(); }
     catch (error) {
-      if (error.status === 404) { pending = null; delete settings.pending; save(); busy(false); }
+      if (error.status === 404) {
+        clearInterval(progressTimer); pending = null; delete settings.pending; save(); busy(false);
+        $('codexTaskCount').textContent = 'Нет активных задач';
+        $('codexTaskState').textContent = 'Задача не найдена';
+        $('codexStatus').textContent = error.message;
+      }
       else {
         // A status GET is safe to repeat. Keep the request ID and recover from
         // a transient DB/proxy disconnect without submitting a paid job again.
@@ -192,13 +231,23 @@
   $('codexCheck').addEventListener('click', check);
   $('codexForm').addEventListener('submit', async event => {
     event.preventDefault(); if (!ready || !priced || pending || $('generationProvider').value !== 'codex') return;
-    const request = { prompt: $('codexPrompt').value, model: model().id, effort: effort(), speed: $('codexSpeed').value, kind: $('codexKind').value, requestId: crypto.randomUUID() };
+    const sourceFiles = [];
+    for (const file of Array.from($('codexImages').files || [])) {
+      const saved = await fetch('/api/source?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': file.type, 'X-Media-Client': 'web', 'X-Media-User': account }, body: file }).then(async response => { const value = await response.json(); if (!response.ok) throw Object.assign(new Error(value.error || 'Не удалось загрузить изображение'), { status: response.status }); return value.result; });
+      sourceFiles.push(saved.ref);
+    }
+    const request = { prompt: $('codexPrompt').value, model: model().id, effort: effort(), speed: $('codexSpeed').value, kind: $('codexKind').value, aspectRatio: $('codexAspectRatio').value, sourceFiles, requestId: crypto.randomUUID() };
     pending = request.requestId; settings.pending = pending; save(); busy(true);
+    $('codexResultRoute').textContent = route(request);
+    $('codexPreviewSettings').textContent = route(request);
     showProgress({ state: 'submitting', kind: request.kind, startedAt: new Date().toISOString() }); $('codexOutput').hidden = true;
     showImage({});
     try { result(await api('/api/codex/jobs', { method: 'POST', body: JSON.stringify(request) })); }
     catch (error) {
       if ([400, 403, 409, 429].includes(error.status)) {
+        clearInterval(progressTimer);
+        $('codexTaskCount').textContent = 'Нет активных задач';
+        $('codexTaskState').textContent = 'Запрос отклонён';
         $('codexStatus').textContent = error.message;
         pending = null; delete settings.pending; save(); busy(false);
       } else {
@@ -217,12 +266,13 @@
       $('codexModel').replaceChildren(...catalog.models.map(item => new Option(item.name, item.id)));
       $('codexModel').value = catalog.models.some(item => item.id === settings.model) ? settings.model : (catalog.models.find(item => item.isDefault) || catalog.models[0]).id;
       $('codexSpeed').value = settings.speed === 'fast' ? 'fast' : 'standard';
-      $('codexKind').value = settings.kind === 'text' ? 'text' : 'image';
+      $('codexKind').value = settings.kind === 'text' ? 'text' : 'image'; $('codexAspectRatio').value = ['auto','1:1','16:9','9:16','3:2','2:3'].includes(settings.aspectRatio) ? settings.aspectRatio : 'auto';
+      if (typeof attachPromptTemplates === 'function') attachPromptTemplates($('codexTemplateActions'), $('codexPrompt'));
       selectModel(settings.effort);
       $('codexModelsDate').textContent = `Каталог проверен ${new Date(catalog.checkedAt).toLocaleDateString('ru-RU')}.`;
       ready = permissions.enabled && permissions.allowed;
       if (!ready) $('codexStatus').textContent = 'Для Codex нужны подключённый сервис и кредитный счёт.';
-      if (settings.result) { $('codexOutput').textContent = settings.result.output; $('codexOutput').hidden = false; $('codexResultRoute').textContent = route(settings.result); $('codexStatus').textContent = receipt(settings.result); showImage(settings.result); }
+      if (settings.result) { $('codexPreviewEmpty').hidden = true; $('codexTaskState').textContent = 'Последняя завершённая генерация'; $('codexPreviewSettings').textContent = route(settings.result); $('codexOutput').textContent = settings.result.output; $('codexOutput').hidden = false; $('codexResultRoute').textContent = route(settings.result); $('codexStatus').textContent = receipt(settings.result); showImage(settings.result); }
       pending = typeof settings.pending === 'string' ? settings.pending : null;
       busy(Boolean(pending)); if (pending && ready) void check();
     } catch { $('generationProvider').disabled = false; $('codexStatus').textContent = 'Не удалось подключить Codex. Обновите страницу позже.'; }

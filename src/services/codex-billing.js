@@ -96,6 +96,14 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
   }
   async function submit(account, raw) {
     const request = validateCodexRequest(raw);
+    const images = [];
+    for (const ref of request.sourceFiles || []) {
+      const match = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(ref);
+      if (!match) continue;
+      const filename = path.join(dataDirectory, 'accounts', account, 'sources', match[1]);
+      const bytes = await fs.readFile(filename).catch(() => { throw Object.assign(new Error('Исходное изображение не найдено'), { status: 400 }); });
+      images.push(`data:image/png;base64,${bytes.toString('base64')}`);
+    }
     let fresh = false;
     const job = await transaction(accounts.pool, async client => {
       await lockWallet(client, account);
@@ -113,7 +121,7 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
     });
     if (!fresh) return job;
     try {
-      await remote(account, '/jobs', request);
+      await remote(account, '/jobs', { ...request, images });
       const running = await update(account, request.requestId, { state: 'running', stage: 'generating' });
       watch(account, request.requestId); return running;
     } catch (error) {

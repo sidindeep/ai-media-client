@@ -148,6 +148,20 @@ test('App-server returns only trusted thread PNG, rejects missing image and neve
   assert.equal(collected, h.calls.find(m => m.method === 'turn/start').params.threadId);
 });
 
+test('App-server accepts inline imageGeneration PNG results', async t => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const threadId = m.params.threadId, turnId = randomUUID();
+    emit({ method: 'item/completed', params: { threadId, turnId,
+      item: { id: randomUUID(), type: 'imageGeneration', status: 'completed', result: png.toString('base64') } } });
+    emit({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed' } } });
+    reply(m, { turn: { id: turnId } });
+  }, { collect: async () => { throw new Error('inline result should avoid directory collection'); } });
+  const result = await h.adapter.run({ ...request(), kind: 'image' });
+  assert.deepEqual(Buffer.from(result.imageBase64, 'base64'), png);
+});
+
 test('App-server sandbox and feature policy is per-thread, with no inherited user config', async t => {
   const text = threadParams(request(), '/tmp/work');
   const image = threadParams({ ...request(), kind: 'image', speed: 'fast' }, '/tmp/work');

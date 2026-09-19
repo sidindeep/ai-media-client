@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { codexEnvironment } = require('./codex-runtime');
 const { codexPrompt, disabledFeatures, imageFeatures } = require('./codex-request');
-const { collectImage } = require('./codex-images');
+const { collectImage, validatePng } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
 
 const uncertain = () => Object.assign(new Error('Связь с Codex app-server потеряна. Результат неизвестен; автоматический повтор отключён.'), { outcomeUnknown: true });
@@ -145,6 +145,14 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
               job.reject(uncertain());
             }
           }
+          if (message.method === 'item/completed' && params.item?.type === 'imageGeneration'
+            && typeof params.item.result === 'string') {
+            try {
+              job.imageBuffer = validatePng(Buffer.from(params.item.result, 'base64'));
+            } catch (error) {
+              job.reject(error);
+            }
+          }
           if (message.method === 'turn/completed') {
             if (params.turn?.status === 'completed') job.resolve();
             else job.reject(failure());
@@ -180,7 +188,7 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
       // An abort during thread/start must not start a generation after the caller left.
       if (aborted || signal?.aborted) { await current.rpc('thread/unsubscribe', { threadId }); throw uncertain(); }
       const done = new Promise((resolve, reject) => {
-        job = { resolve, reject, messages: new Map(), usage: null, turnId: null };
+        job = { resolve, reject, messages: new Map(), usage: null, imageBuffer: null, turnId: null };
         current.threads.set(threadId, job);
       });
       // Notifications may arrive before the turn/start response.
@@ -189,7 +197,8 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
         if (id) await current.rpc('turn/interrupt', { threadId, turnId: id }).catch(() => {});
         await current.rpc('thread/unsubscribe', { threadId }).catch(() => {});
       };
-      const turn = current.rpc('turn/start', { threadId, input: [{ type: 'text', text: codexPrompt(request) }],
+      const input = [{ type: 'text', text: codexPrompt(request) }, ...(request.images || []).map(image_url => ({ type: 'image', image_url }))];
+      const turn = current.rpc('turn/start', { threadId, input,
         effort: request.effort, serviceTier: request.speed === 'fast' ? 'fast' : 'default' }, stopLateTurn)
         .then(async reply => {
           job.turnId = reply?.turn?.id || job.turnId;
@@ -204,7 +213,10 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
         if (!output) throw new Error('Codex не вернул текст ответа.');
         return { output, usage: job.usage };
       }
-      // Use only the trusted thread's generated_images directory, never item paths.
+      if (job.imageBuffer) {
+        return { output: 'Изображение создано.', imageBase64: job.imageBuffer.toString('base64'), usage: job.usage };
+      }
+      // Older Codex releases write the result to a trusted thread directory.
       const image = await collect(current.home, threadId);
       try { return { output: 'Изображение создано.', imageBase64: image.buffer.toString('base64'), usage: job.usage }; }
       finally { await fs.rm(image.directory, { recursive: true, force: true }); }

@@ -89,21 +89,41 @@
       </div></div>
       </div>
       <div id="codexGeneration" hidden>
-        <span class="eyebrow">ГЕНЕРАЦИЯ · CODEX CLI</span>
-        <h1 id="codexTitle">Codex</h1>
+        <div class="generation-header">
+          <div class="section-title"><div class="model-heading"><div class="model-caption"><span class="eyebrow">НОВАЯ ГЕНЕРАЦИЯ</span><span class="pill">Codex</span></div><h1 id="codexTitle">Codex</h1></div>
+            <div class="queue-header"><p id="codexTaskCount">Нет активных задач</p></div>
+          </div>
+        </div>
+        <div class="generation-layout">
+        <div class="input-panel">
         <form id="codexForm">
-          <label for="codexPrompt">Запрос</label>
+          <label for="codexPrompt">Промпт *</label>
           <textarea id="codexPrompt" rows="8" maxlength="20000" required placeholder="Опишите нужный результат…"></textarea>
-          <p id="codexRoute" class="card" role="status"></p>
+          <div id="codexTemplateActions" class="inline"></div>
+          <label for="codexImages">Исходные изображения (необязательно)</label>
+          <input id="codexImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+          <p class="hint">До 10 файлов, максимум 30 МБ каждый</p>
+          <button id="codexClearImages" type="button" class="quiet">Очистить файлы</button>
+          <div id="codexImagesPreview" class="codex-images-preview" aria-live="polite" hidden></div>
+          <label for="codexAspectRatio">Соотношение сторон *</label>
+          <select id="codexAspectRatio"><option value="auto">Автоматически</option><option value="1:1">1:1</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="3:2">3:2</option><option value="2:3">2:3</option></select>
           <p id="codexPrice" class="card" role="status">Проверка цены…</p>
           <p class="hint">Оплата внутренними кредитами. Сумма резервируется до запуска и списывается после успешного ответа.</p>
-          <button id="codexSubmit" class="primary" type="submit" disabled>Отправить в Codex CLI</button>
+          <p id="codexRoute" class="card" role="status"></p>
+          <button id="codexSubmit" class="primary" type="submit" disabled>Запустить генерацию</button>
         </form>
-        <p id="codexStatus" role="status"></p>
+        </div>
+        <div class="preview-panel">
+        <div class="queue-overview"><p id="codexTaskState">Нет активных или ожидающих задач</p></div>
+        <div class="preview-heading"><strong>Просмотр генерации</strong><span class="hint">Текущая задача</span></div>
+        <p id="codexResultRoute" class="hint">Результат появится здесь</p>
+        <p id="codexStatus" role="status" aria-live="polite">Нет активной генерации</p>
         <button id="codexCheck" type="button" hidden>Проверить статус</button>
-        <p id="codexResultRoute" class="hint"></p>
+        <div id="codexPreviewEmpty" class="preview-empty">Изображение или текст появится здесь после завершения задачи</div>
         <pre id="codexOutput" class="card codex-output" hidden></pre>
         <div id="codexImageResult" hidden><img id="codexImage" alt="Изображение, созданное Codex"><a id="codexDownload" download>Скачать PNG</a></div>
+        <details><summary>Настройки генерации</summary><p id="codexPreviewSettings" class="hint"></p></details>
+        </div></div>
       </div>
       </div>
       <div id="pageSpending" role="tabpanel" aria-labelledby="tabSpending" hidden>

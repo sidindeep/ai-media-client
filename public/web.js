@@ -56,6 +56,34 @@
   api.onQueueChanged = callback => { events.addEventListener('message', callback); return () => events.removeEventListener('message', callback); };
   window.desktop = api; // Compatibility port for the shared desktop/browser presentation.
   document.addEventListener('DOMContentLoaded', () => {
+    const scenarios = [
+      ['Городской свет', 'Измени фон на современный город на закате, добавь мягкий контровой свет и реалистичные отражения.'],
+      ['Кинопостер', 'Создай выразительный кинопостер с главным героем, драматичным светом и чистой композицией.'],
+      ['Продуктовый кадр', 'Сделай премиальный рекламный кадр продукта на минималистичном фоне, студийный свет, высокая детализация.'],
+      ['Концепт сцены', 'Разработай атмосферную сцену для фильма: окружение, настроение, цветовая палитра и детали костюма.']
+    ];
+    const scenarioRoot = document.getElementById('promptScenarios');
+    const prompt = document.getElementById('codexPrompt');
+    if (scenarioRoot && prompt) {
+      scenarioRoot.replaceChildren(...scenarios.map(([title, text]) => {
+        const card = document.createElement('button'); card.type = 'button'; card.className = 'scenario-card';
+        card.innerHTML = `<span class="scenario-icon">✦</span><strong>${title}</strong><small>${text}</small>`;
+        card.onclick = () => { prompt.value = text; prompt.focus(); prompt.dispatchEvent(new Event('input', { bubbles: true })); };
+        return card;
+      }));
+    }
+    const showcase = document.getElementById('modelShowcase');
+    const codexModel = document.getElementById('codexModel');
+    if (showcase) {
+      showcase.replaceChildren(...[['GPT-5.5', 'Универсальный редактор', 'Точный prompt и сложные правки'], ['GPT-5.5 · Fast', 'Быстрый черновик', 'Быстрый результат для итераций']].map(([name, kind, text]) => {
+        const card = document.createElement('button'); card.type = 'button'; card.className = 'model-card';
+        card.innerHTML = `<span class="model-card-mark">✦</span><span><strong>${name}</strong><small>${kind}</small><em>${text}</em></span>`;
+        card.onclick = () => { if (codexModel && [...codexModel.options].some(option => option.textContent.includes(name.split(' · ')[0]))) { codexModel.value = [...codexModel.options].find(option => option.textContent.includes(name.split(' · ')[0])).value; codexModel.dispatchEvent(new Event('change', { bubbles: true })); } };
+        return card;
+      }));
+    }
+    const contextModel = document.getElementById('studioContextModel');
+    if (codexModel && contextModel) codexModel.addEventListener('change', () => { contextModel.textContent = codexModel.selectedOptions[0]?.textContent || 'GPT'; });
     const state = document.getElementById('serviceState');
     const update = async () => {
       try {

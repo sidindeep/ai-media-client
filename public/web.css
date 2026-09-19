@@ -7,6 +7,28 @@ body { min-width:320px; }
 .input-panel { overflow:visible; }
 #appMain .preview-panel { position:sticky; top:90px; max-height:calc(100vh - 110px); }
 header { height:auto; min-height:76px; flex-wrap:wrap; padding:14px 24px; }
+.studio-nav { display:flex; gap:4px; margin-right:auto; }
+.studio-nav button { padding:9px 12px; background:transparent; color:#aeb3c4; font-size:12px; }
+.studio-nav .studio-nav-active { background:#7563dc; color:#fff; }
+.studio-rail { display:flex; align-items:center; gap:10px; padding:0 0 18px; margin-bottom:18px; border-bottom:1px solid #303440; }
+.studio-rail-logo { display:grid; place-items:center; width:32px; height:32px; border-radius:9px; background:#7563dc; font-weight:800; }
+.studio-rail-label { color:#9ca5ba; font-size:10px; letter-spacing:1.3px; line-height:1.2; }
+.studio-context { display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:10px 13px; border:1px solid #303747; border-radius:10px; background:#111521; color:#aeb7cc; font-size:12px; }
+.studio-context strong { color:#fff; font-size:14px; }
+.context-separator { color:#7868ff; }
+.context-cost { color:#8f99af; }
+.context-queue { margin-left:auto; color:#a6d6ba; }
+.discovery-panel,.model-showcase { margin:0 0 18px; padding:14px; border:1px solid #303747; border-radius:13px; background:linear-gradient(145deg,#151a28,#11131b); }
+.discovery-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:11px; }
+.discovery-heading h2 { margin:3px 0 0; font-size:16px; }
+.prompt-scenarios,.model-showcase-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.scenario-card,.model-card { display:flex; gap:9px; align-items:flex-start; min-width:0; padding:10px; border:1px solid #343b52; border-radius:10px; background:#181d2a; text-align:left; }
+.scenario-card:hover,.model-card:hover { border-color:#8c78ff; background:#20253a; }
+.scenario-icon,.model-card-mark { color:#9d8cff; font-size:16px; }
+.scenario-card strong,.model-card strong,.scenario-card small,.model-card small,.model-card em { display:block; }
+.scenario-card strong,.model-card strong { color:#fff; font-size:12px; }
+.scenario-card small,.model-card small,.model-card em { margin-top:4px; color:#8f9ab1; font-size:11px; line-height:1.35; font-style:normal; }
+.model-card em { color:#c3c9da; }
 header .brand-caption { font-size:12px; margin:4px 0 0 45px; color:#a5adc1; letter-spacing:.12em; }
 main { min-height:calc(100vh - 76px); }
 aside { position:sticky; top:0; align-self:start; max-height:100vh; overflow:auto; }
@@ -24,7 +46,9 @@ button,input,select { min-height:40px; }
   #appMain .preview-panel { position:static; max-height:none; }
   header { gap:12px; }
   .app-tabs { order:3; width:100%; }
+  .studio-nav { display:none; }
 }
+@media(max-width:600px) { .prompt-scenarios,.model-showcase-grid { grid-template-columns:1fr; } .studio-context { flex-wrap:wrap; } .context-queue { margin-left:0; } }
 @media(max-width:720px) {
   /* Use the document scroll on phones; desktop panes must not trap swipes. */
   html { height:auto; overflow-y:auto; overscroll-behavior-y:auto; }

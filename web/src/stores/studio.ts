@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
-import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus } from '../types';
+import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
@@ -13,6 +13,7 @@ const CODEX_POLL_INTERVAL_MS = 1500;
 export const useStudioStore = defineStore('studio', () => {
   const catalog = ref<Catalog | null>(null);
   const codexCatalog = ref<CodexCatalog | null>(null);
+  const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
   const projects = ref<Project[]>([]);
   const chats = ref<Chat[]>([]);
@@ -156,7 +157,7 @@ export const useStudioStore = defineStore('studio', () => {
         if (saved?.chatId === 'system:recent' || /^[a-f0-9-]{36}$/.test(saved?.chatId || '')) activeChatId.value = saved.chatId;
         if (saved?.projectId === null || /^[a-f0-9-]{36}$/.test(saved?.projectId || '')) activeProjectId.value = saved.projectId;
       } catch { /* ignore damaged browser state */ }
-      [catalog.value, codexCatalog.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null)]);
+      [catalog.value, codexCatalog.value, release.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null)]);
       const defaults = codexCatalog.value?.uiDefaults;
       codexModel.value = defaults?.model || codexCatalog.value?.models.find(model => model.id === 'gpt-6-astra')?.id || codexCatalog.value?.models[0]?.id || '';
       codexEffort.value = defaults?.effort || currentCodexModel.value?.defaultEffort || 'medium';
@@ -227,7 +228,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, history, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, release, history, queue, selectedId, selected, active, accountActive, completed, loading, error,
     prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, quantity, setMode,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, refreshWorkspaces,

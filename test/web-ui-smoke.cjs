@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
     }
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
-    await win.loadURL(origin);
+    await win.loadURL(origin + '/legacy');
     await until(`document.querySelector('#appVersion').textContent.includes(${JSON.stringify('DEBUG · Версия ' + require('../package.json').version)})`);
     await until("typeof draftsReady!=='undefined' && draftsReady && document.querySelector('#estimatedCost').textContent.includes('Цена: 1')");
     assert.equal(await evaluate("catalog.models.length"), 149);
@@ -125,8 +125,9 @@ app.whenReady().then(async () => {
     await browserSession.fetch(origin + '/api/rpc/saveDrafts', { method: 'POST', headers: userHeaders, body: JSON.stringify([vueDraft, { chatId: vueChat.id }]) });
     const workspaceState = JSON.stringify({ chatId: vueChat.id, projectId: vueProject.id });
     await evaluate(`localStorage.setItem('media-studio-workspace', ${JSON.stringify(workspaceState)});void 0`);
-    await win.loadURL(origin + '/app');
+    await win.loadURL(origin);
     await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
+    await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
     assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
     assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого') || document.querySelector('.quote')!==null"), true);
@@ -141,13 +142,13 @@ app.whenReady().then(async () => {
     win.setSize(390, 844); await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.mobile-nav')).display"), 'grid');
     win.setSize(1280, 900);
-    await win.loadURL(origin); await until("document.querySelector('#logout')!==null");
+    await win.loadURL(origin + '/legacy'); await until("document.querySelector('#logout')!==null");
     await evaluate("document.querySelector('#logout').click(); void 0");
     await until("location.pathname==='/login' && document.querySelector('#loginProviders')!==null");
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
     assert.equal((await browserSession.fetch(origin + '/api/codex/jobs/' + userCodexJob)).status, 404);
     assert.equal((await browserSession.fetch(origin + '/api/codex/jobs/' + userCodexJob + '/image')).status, 404);
-    await win.loadURL(origin + '/?account=' + userId);
+    await win.loadURL(origin + '/legacy?account=' + userId);
     await until("typeof draftsReady!=='undefined' && draftsReady");
     assert.equal(await evaluate("document.querySelector('[data-key=prompt]').value"), 'Черновик после смены роли');
     assert.equal(await evaluate("document.querySelector('#provider').value"), 'kie');
@@ -182,7 +183,7 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('#grantBalance').textContent"), /7,125/);
     const notes = (await pool.query("SELECT note FROM media_ledger WHERE kind='grant' ORDER BY created_at")).rows.map(row => row.note);
     assert.deepEqual(notes, ['Пополнение своего счёта', 'Проверка UI']);
-    await win.loadURL(origin);
+    await win.loadURL(origin + '/legacy');
     await until("!document.querySelector('#codexModel').disabled");
     await evaluate("document.querySelector('#generationProvider').value='codex';document.querySelector('#generationProvider').dispatchEvent(new Event('change'));document.querySelector('#codexModel').value='gpt-5.6-sol';document.querySelector('#codexModel').dispatchEvent(new Event('change'));document.querySelector('#codexEffort').value='5';document.querySelector('#codexEffort').dispatchEvent(new Event('input'));document.querySelector('#codexSpeed').value='fast';document.querySelector('#codexSpeed').dispatchEvent(new Event('change'));document.querySelector('#codexPrompt').value='Проверка маршрута';void 0");
     await until("!document.querySelector('#codexSubmit').disabled");

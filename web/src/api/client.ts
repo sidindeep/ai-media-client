@@ -1,4 +1,4 @@
-import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus } from '../types';
+import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -31,6 +31,11 @@ export async function rpc<T>(method: string, args: unknown[] = []): Promise<T> {
 
 export async function getCatalog(): Promise<Catalog> {
   return rpc<Catalog>('getCatalog');
+}
+
+export async function getRelease(): Promise<ReleaseInfo> {
+  const response = await fetch('/api/version', { cache: 'no-store' });
+  return parse<ReleaseInfo>(response);
 }
 
 export async function getHistory(): Promise<GenerationRecord[]> {

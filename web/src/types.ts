@@ -96,6 +96,13 @@ export type QueueStatus = {
   concurrency: number;
 };
 
+export type ReleaseInfo = {
+  version: string;
+  channel: string;
+  build: string;
+  builtAt?: string | null;
+};
+
 export type CodexModel = {
   id: string;
   name: string;

@@ -80,7 +80,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       const oauthStartProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/start$/.exec(url.pathname)?.[1];
       const oauthStart = req.method === 'GET' && auth?.providers().some(provider => provider.id === oauthStartProvider);
       const pageNavigation = ['GET', 'HEAD'].includes(req.method)
-        && ['/', '/index.html', '/login'].includes(url.pathname)
+        && ['/', '/index.html', '/app', '/app/', '/legacy', '/legacy/', '/login'].includes(url.pathname)
         && req.headers['sec-fetch-mode'] === 'navigate'
         && req.headers['sec-fetch-dest'] === 'document';
       const allowedTopLevelNavigation = pageNavigation || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
@@ -105,13 +105,15 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
       }
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
-      const isVueApp = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
+      const isVueRoot = ['/', '/index.html'].includes(url.pathname);
+      const isVueApp = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
+      const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp);
+        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
       // Retry only the read-only session lookup for assets, never account/API writes.
       const user = auth ? await assetUser(auth, req, isAsset) : { id: 'local', role: 'admin', name: 'Владелец' };
       if (!user) {
-        if (isVueApp || ['/', '/index.html'].includes(url.pathname)) return redirect('/login');
+        if (isVueApp || isLegacyApp) return redirect('/login');
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
@@ -147,7 +149,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       }
       if (isVueApp && ['GET', 'HEAD'].includes(req.method)) {
         const root = path.join(config.root, 'public', 'vue');
-        const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
+        const relative = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
         const sendVueIndex = async () => {
           let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
@@ -274,7 +276,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       }
       if (user.role !== 'admin' && shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) return json(res, 403, { error: 'Доступ запрещён' });
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
-      const publicFile = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+      const publicFile = isLegacyApp ? 'index.html' : url.pathname.slice(1);
       if (publicFile === 'index.html') {
         let html = await fs.readFile(path.join(config.root, 'public/index.html'), 'utf8');
         html = html.replace('<head>', `<head><meta name="account-id" content="${user.id}"><meta name="account-role" content="${user.role}">`);
@@ -295,7 +297,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       if (res.headersSent) { res.destroy(); return; }
       if (temporaryConnectionFailure(error)) {
         console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
-        if (req.method === 'GET' && ['/', '/index.html', '/admin.html'].includes(req.url?.split('?')[0])) {
+        if (req.method === 'GET' && ['/', '/index.html', '/legacy', '/legacy/', '/admin.html'].includes(req.url?.split('?')[0])) {
           res.writeHead(503, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '5' });
           return res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Временная ошибка подключения</title><h1>Не удалось подключиться к сервису</h1><p>Связь с базой данных временно недоступна. Аккаунт и данные сохранены. Повторите через несколько секунд.</p><a href="/">Повторить</a></html>');
         }

@@ -20,6 +20,15 @@ const groupedChats = computed(() => {
   for (const chat of filteredChats.value) ((chat.updatedAt && new Date(chat.updatedAt).toDateString() === day) ? today : earlier).push(chat);
   return { today, earlier };
 });
+const releaseLabel = computed(() => {
+  const release = studio.release;
+  if (!release) return 'Версия недоступна';
+  const builtAt = release.builtAt ? new Date(release.builtAt) : null;
+  const date = builtAt && !Number.isNaN(builtAt.getTime())
+    ? new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(builtAt).replace(',', '')
+    : null;
+  return `${release.channel === 'debug' ? 'DEBUG · ' : ''}Версия ${release.version}${date ? ` · ${date}` : ''} · сборка ${release.build}`;
+});
 
 function askName(label: string, current = '') {
   const value = window.prompt(label, current);
@@ -43,7 +52,7 @@ function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = nul
 
 <template>
   <aside class="sidebar" :class="{ collapsed }">
-    <div class="sidebar-brand"><span class="brand-mark">ИИ</span><div><strong>Медиастудия</strong><small>WEB · STUDIO</small></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
+    <div class="sidebar-brand"><span class="brand-mark">ИИ</span><div><strong>Медиастудия</strong><small>WEB · STUDIO</small><span class="sidebar-version">{{ releaseLabel }}</span></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Поиск" aria-label="Поиск чатов и проектов" /></label><button class="icon-button" type="button" aria-label="Новый чат" @click="() => addChat()">＋</button></div>
       <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="activeTab = 'chats'">Чаты</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="activeTab = 'projects'">Проекты</button></div>

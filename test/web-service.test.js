@@ -79,11 +79,11 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const runtime = await start({ config, provider: fakeProvider() }); t.after(() => cleanup(dir, runtime));
   const base = `http://127.0.0.1:${runtime.server.address().port}`;
   const rpc = (name, args) => fetch(`${base}/api/rpc/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web' }, body: JSON.stringify(args) });
-  const html = await fetch(base).then(r => r.text());
+  const html = await fetch(base + '/legacy').then(r => r.text());
   assert.ok(html.includes('generationForm')); assert.ok(html.includes('pauseQueue'));
   assert.ok(!html.includes('id="apiKey"')); assert.ok(!html.includes('id="openKieSession"'));
   for (const src of [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1])) assert.equal((await fetch(base + src)).status, 200);
-  const vueApp = await fetch(base + '/app');
+  const vueApp = await fetch(base);
   assert.equal(vueApp.status, 200);
   const vueHtml = await vueApp.text();
   assert.match(vueHtml, /<meta name="account-id" content="local">/);
@@ -91,6 +91,7 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const vueAsset = [...vueHtml.matchAll(/(?:src|href)="(\/app\/assets\/[^"']+)"/g)].map(match => match[1]);
   assert.ok(vueAsset.length >= 2);
   for (const asset of vueAsset) assert.equal((await fetch(base + asset)).status, 200);
+  assert.equal((await fetch(base + '/app')).status, 200);
   assert.equal((await fetch(base + '/app/projects/demo')).status, 200);
   assert.equal((await fetch(base + '/src/main.js')).status, 404);
   assert.equal((await fetch(base + '/.env')).status, 404);
@@ -104,6 +105,7 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   });
   assert.equal(await requestStatus('/'), 200);
   assert.equal(await requestStatus('/index.html', 'HEAD'), 200);
+  assert.equal(await requestStatus('/legacy'), 200);
   assert.equal(await requestStatus('/', 'POST'), 403);
   assert.equal(await requestStatus('/api/health'), 403);
   assert.equal(await requestStatus('/api/events'), 403);

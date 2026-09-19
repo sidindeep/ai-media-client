@@ -178,7 +178,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await result(rpc(alice, 'getBalance'))).balance, 0);
   await result(rpc(alice, 'cancelQueued', [lastReserved.id]));
   assert.equal((await result(rpc(alice, 'getBalance'))).balance, 2.5);
-  const page = await request('/', { headers: { Cookie: alice.cookie } }).then(r => r.text());
+  const page = await request('/legacy', { headers: { Cookie: alice.cookie } }).then(r => r.text());
   assert.match(page, /native-costs.js/); assert.doesNotMatch(page, /src="\/shared\/costs-ui.js"/);
   assert.doesNotMatch(page, /value="510"|Тариф Kie|Стоимость 1000/);
   assert.equal((await request('/shared/tariff-snapshot.js', { headers: { Cookie: alice.cookie } })).status, 403);

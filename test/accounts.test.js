@@ -75,6 +75,22 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request('/api/sources/' + 'a'.repeat(64))).status, 401);
   const alice = await login('alice'), bob = await login('bob'), owner = await login('owner'), otherIdentity = await login('alice', 'vk');
   assert.equal(alice.role, 'user'); assert.equal(owner.role, 'admin'); assert.notEqual(otherIdentity.id, alice.id);
+  const workspaceRequest = (user, path, method = 'GET', body) => request(path, { method, headers: { Cookie: user.cookie, 'X-Media-Client': 'web', 'X-Media-User': user.id, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const workspaceResult = async response => { const r = await response, body = await r.json(); assert.equal(r.status, 200, JSON.stringify(body)); return body.result; };
+  const project = await workspaceResult(workspaceRequest(alice, '/api/projects', 'POST', { name: 'Личный проект' }));
+  const chat = await workspaceResult(workspaceRequest(alice, '/api/chats', 'POST', { name: 'Первый чат', projectId: project.id }));
+  const activeProject = await workspaceResult(workspaceRequest(alice, '/api/projects', 'POST', { name: 'Рабочий проект' }));
+  const activeChat = await workspaceResult(workspaceRequest(alice, '/api/chats', 'POST', { name: 'Рабочий чат', projectId: activeProject.id }));
+  const chatDraft = { version: 1, active: 0, tabs: [{ prompt: 'Черновик рабочего чата' }] };
+  await result(rpc(alice, 'saveDrafts', [chatDraft, { chatId: activeChat.id }]));
+  assert.deepEqual(await result(rpc(alice, 'loadDrafts', [{ chatId: activeChat.id }])), chatDraft);
+  assert.equal((await workspaceResult(workspaceRequest(alice, '/api/chats'))).find(item => item.id === chat.id).projectId, project.id);
+  assert.equal((await workspaceResult(workspaceRequest(bob, '/api/projects'))).some(item => item.id === project.id), false);
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}/move`, 'POST', { projectId: null }))).projectId, null);
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}`, 'GET'))).name, 'Первый чат');
+  assert.equal((await workspaceRequest(bob, `/api/chats/${chat.id}`)).status, 404);
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/archive`, 'POST', {}))).archivedAt !== null, true);
+  assert.equal((await workspaceRequest(alice, `/api/chats/${chat.id}/archive`, 'POST', {})).status, 200);
   assert.equal((await request('/api/admin/accounts', { headers: { Cookie: alice.cookie } })).status, 403);
   assert.equal((await request('/api/admin/codex/status')).status, 401);
   assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: alice.cookie } })).status, 403);
@@ -121,7 +137,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await runtime.accounts.wallet.grant(owner.id, alice.id, 5000, 'grant-once', 'Тестовый баланс');
   await assert.rejects(runtime.accounts.wallet.grant(owner.id, alice.id, 6000, 'grant-once', 'Тестовый баланс'));
   await assert.rejects(runtime.accounts.wallet.grant(bob.id, alice.id, 1000, 'grant-illegal', 'Нет прав'));
-  const payload = { modelId, input, requestId: randomUUID() };
+  const payload = { modelId, input, projectId: activeProject.id, chatId: activeChat.id, requestId: randomUUID() };
   const [first, duplicate] = await Promise.all([result(rpc(alice, 'createTask', [payload])), result(rpc(alice, 'createTask', [payload]))]);
   assert.equal(first.id, duplicate.id); assert.equal(first.nativeQuote.amountUnits, 2500);
   assert.equal((await result(rpc(alice, 'getBalance'))).heldUnits, 2500);
@@ -130,6 +146,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   own.queue.paused = false; await own.queue.tick(); own.queue.pause(); await own.queue.tick();
   const finished = (await result(rpc(alice, 'getHistory')))[0];
   assert.equal(finished.state, 'success'); assert.equal(finished.creditsConsumed, undefined); assert.equal(finished.taskId, first.id);
+  assert.equal(finished.projectId, activeProject.id); assert.equal(finished.chatId, activeChat.id);
   assert.equal((await result(rpc(alice, 'getBalance'))).balanceUnits, 2500);
   assert.equal((await result(rpc(alice, 'getBalance'))).heldUnits, 0);
   await own.history.update(first.id, { state: 'success' }); // Redelivery cannot charge twice.

@@ -109,7 +109,9 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
       await lockWallet(client, account);
       const previous = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, request.requestId)])).rows[0]?.data;
       if (previous) {
-        if (['model', 'effort', 'speed', 'prompt'].some(key => previous[key] !== request[key]) || (previous.kind || 'text') !== (request.kind || 'text')) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
+        if (['model', 'effort', 'speed', 'prompt', 'aspectRatio', 'projectId', 'chatId'].some(key => (previous[key] ?? null) !== (request[key] ?? null))
+          || JSON.stringify(previous.sourceFiles || []) !== JSON.stringify(request.sourceFiles || [])
+          || (previous.kind || 'text') !== (request.kind || 'text')) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
         return previous;
       }
       const nativeQuote = quote(request);

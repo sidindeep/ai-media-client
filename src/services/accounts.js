@@ -8,9 +8,10 @@ const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
 const { generationHistory } = require('./generation-history');
+const { createWorkspaces } = require('./workspaces');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
-  const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs'];
+  const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'projectId', 'chatId'];
   const result = Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]]));
   Object.assign(result, { providerId: 'media', providerName: 'Медиастудия', model: record.modelId,
     taskId: record.id, resultJson: record.resultJson, localFiles: record.localFiles });
@@ -19,7 +20,7 @@ function publicRecord(record) {
   return result;
 }
 function createAccounts({ pool, config, provider, legacy }) {
-  const services = new Map(), wallet = createWallet(pool), pricing = createPricing(config.pricing);
+  const services = new Map(), wallet = createWallet(pool), pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
   const routedProvider = createProviderRouter([provider]);
   async function get(accountId) {
     if (!services.has(accountId)) {
@@ -32,7 +33,7 @@ function createAccounts({ pool, config, provider, legacy }) {
     return services.get(accountId);
   }
   return {
-    pool, wallet, pricing, get,
+    pool, wallet, pricing, workspaces, get,
     async recover() {
       const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('preparing','submitting','waiting','queuing','generating','unknown')")).rows;
       for (const row of rows) await get(row.account_id);
@@ -54,6 +55,7 @@ function createAccounts({ pool, config, provider, legacy }) {
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
+          if (method === 'createTask') return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
           return service.dispatch(method, args);
         }
       };
@@ -71,7 +73,8 @@ function createAccounts({ pool, config, provider, legacy }) {
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
             case 'createTask': {
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
-              return publicRecord(await service.createTask(args[0]));
+              const request = { ...args[0], ...(await workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId)) };
+              return publicRecord(await service.createTask(request));
             }
             case 'getTask': {
               const row = (await service.listHistory()).find(record => record.id === args[1]);
@@ -138,7 +141,7 @@ function createAccounts({ pool, config, provider, legacy }) {
         return true;
       });
     },
-    async close() { for (const operation of services.values()) await (await operation).close(); }
+    async close() { for (const operation of services.values()) await (await operation).close(); await workspaces.close(); }
   };
 }
 module.exports = { createAccounts, publicRecord };

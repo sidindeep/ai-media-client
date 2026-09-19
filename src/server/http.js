@@ -132,8 +132,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         if (!jobPath || !['GET', 'POST'].includes(req.method) || (req.method === 'POST' && url.pathname !== '/api/codex/jobs')) return json(res, 404, { error: 'Не найдено' });
         if (req.method === 'POST') {
           if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-          const body = validateCodexRequest(JSON.parse((await readBody(req, 100000)).toString('utf8')));
-          return json(res, 200, await codex.submit(user.id, body));
+          const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
+          const body = validateCodexRequest(raw);
+          const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
+          return json(res, 200, await codex.submit(user.id, { ...body, ...binding }));
         }
         return json(res, 200, await codex.status(user.id, url.pathname.split('/').pop()));
       }
@@ -147,11 +149,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         const root = path.join(config.root, 'public', 'vue');
         const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
+        const sendVueIndex = async () => {
+          let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
+          html = html.replace('<head>', `<head><meta name="account-id" content="${user.id}"><meta name="account-role" content="${user.role}">`);
+          res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(req.method === 'HEAD' ? '' : html);
+        };
+        if (relative === 'index.html') return await sendVueIndex();
         const filename = path.join(root, relative);
         try { return await sendFile(req, res, filename); }
         catch (error) {
           if (path.extname(relative)) throw error;
-          return await sendFile(req, res, path.join(root, 'index.html'));
+          return await sendVueIndex();
         }
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
@@ -160,6 +169,32 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 200) throw new Error('Укажите имя до 200 символов');
         await accounts.pool.query('UPDATE media_accounts SET display_name=$2 WHERE id=$1', [user.id, body.name.trim()]);
         return json(res, 200, { result: { name: body.name.trim() } });
+      }
+      if (accounts && /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|move))?)?$/.test(url.pathname)) {
+        const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
+        const workspaceAccount = selectedWorkspaceAccount || user.id;
+        await accounts.scope(user, selectedWorkspaceAccount);
+        const workspacePath = url.pathname.split('/').filter(Boolean);
+        const resource = workspacePath[1], resourceId = workspacePath[2], action = workspacePath[3];
+        const workspaceBody = async limit => JSON.parse((await readBody(req, limit)).toString('utf8'));
+        if (resource === 'projects') {
+          if (req.method === 'GET' && !resourceId) return json(res, 200, { result: await accounts.workspaces.listProjects(workspaceAccount, url.searchParams.get('includeArchived') === 'true') });
+          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.createProject(workspaceAccount, (await workspaceBody(4096)).name) });
+          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.renameProject(workspaceAccount, resourceId, (await workspaceBody(4096)).name) });
+          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.archiveProject(workspaceAccount, resourceId) });
+        }
+        if (resource === 'chats') {
+          if (req.method === 'GET' && !resourceId) {
+            const projectFilter = url.searchParams.has('projectId') ? (url.searchParams.get('projectId') || null) : undefined;
+            return json(res, 200, { result: await accounts.workspaces.listChats(workspaceAccount, { projectId: projectFilter, includeArchived: url.searchParams.get('includeArchived') === 'true' }) });
+          }
+          if (req.method === 'GET' && resourceId && !action) return json(res, 200, { result: await accounts.workspaces.getChat(workspaceAccount, resourceId) });
+          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.createChat(workspaceAccount, await workspaceBody(8192)) });
+          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.renameChat(workspaceAccount, resourceId, (await workspaceBody(4096)).name) });
+          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.archiveChat(workspaceAccount, resourceId) });
+          if (req.method === 'POST' && resourceId && action === 'move' && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.moveChat(workspaceAccount, resourceId, (await workspaceBody(4096)).projectId ?? null) });
+        }
+        return json(res, 404, { error: 'Метод не найден' });
       }
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
@@ -203,7 +238,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
           const type = (req.headers['content-type'] || '').split(';')[0];
           if (!/^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/.test(type)) throw new Error('Этот тип исходника не поддерживается');
           const bytes = await readBody(req, config.uploadLimit);
-          const saved = await service.saveSource({ name: url.searchParams.get('name') || 'source', type, bytes });
+          const binding = accounts ? await accounts.workspaces.assertBinding(selected || user.id, url.searchParams.get('projectId') || undefined, url.searchParams.get('chatId') || undefined) : {};
+          const saved = await service.saveSource({ name: url.searchParams.get('name') || 'source', type, bytes, ...binding });
           return json(res, 200, { result: saved });
         }
         const match = /^\/api\/rpc\/([a-zA-Z]+)$/.exec(url.pathname);

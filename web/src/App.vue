@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Sidebar from './components/Sidebar.vue';
 import Composer from './components/Composer.vue';
 import QueuePanel from './components/QueuePanel.vue';
@@ -8,6 +8,9 @@ import { subscribeToChanges } from './api/client';
 import { useStudioStore } from './stores/studio';
 
 const studio = useStudioStore();
+const rightOpen = ref(false);
+const mobileView = ref<'chats' | 'workspace' | 'results'>('workspace');
+const activeChatName = computed(() => studio.activeChatId === 'system:recent' ? 'Ранее' : studio.chats.find(chat => chat.id === studio.activeChatId)?.name || 'Новый чат');
 let unsubscribe = () => {};
 
 onMounted(async () => {
@@ -15,20 +18,23 @@ onMounted(async () => {
   unsubscribe = subscribeToChanges(() => { void studio.refresh(); });
 });
 
-onBeforeUnmount(() => unsubscribe());
+onBeforeUnmount(() => {
+  unsubscribe();
+  studio.stopCodexPolling();
+});
 </script>
 
 <template>
-  <div class="studio-app">
+  <div class="studio-app" :class="[`mobile-view-${mobileView}`, { 'right-panel-open': rightOpen }]">
     <Sidebar />
     <main class="studio-main">
-      <header class="studio-header"><div><span class="eyebrow">AI MEDIA CLIENT</span><h1>Генерация</h1></div><div class="header-actions"><span class="balance-badge">Баланс · синхронизируется</span><a href="/" class="legacy-link">Старая студия</a></div></header>
+      <header class="studio-header"><div><span class="eyebrow">ТЕКУЩИЙ ЧАТ · {{ activeChatName }}</span><h1>Генерация</h1></div><div class="header-actions"><span class="balance-badge">Аккаунт: {{ studio.accountActive.length }} активных</span><button type="button" class="results-toggle" @click="rightOpen = true">Очередь и результаты</button><a href="/" class="legacy-link">Старая студия</a></div></header>
       <div v-if="studio.error" class="global-error" role="alert">{{ studio.error }} <button type="button" @click="studio.initialize">Повторить</button></div>
       <div v-if="studio.loading" class="loading-state">Загружаем каталог и историю…</div>
       <template v-else>
-        <div class="studio-grid"><div class="studio-center"><div class="welcome"><span class="eyebrow">НОВАЯ ГЕНЕРАЦИЯ</span><h2>Соберите идею в один запрос</h2><p>Выберите направление, опишите задачу и следите за результатом справа.</p></div><Composer /></div><div class="studio-right"><QueuePanel /><ResultPanel /></div></div>
-        <section class="recent-section"><div class="section-heading"><div><span class="eyebrow">ИСТОРИЯ</span><h2>Последние генерации</h2></div><button type="button" class="text-button" @click="studio.refresh">Обновить</button></div><div class="recent-grid"><button v-for="item in studio.completed.slice(0, 6)" :key="item.id" type="button" class="recent-item" @click="studio.select(item.id)"><span class="recent-state">{{ item.state === 'success' ? '●' : '○' }}</span><span><strong>{{ item.modelName || item.modelId || item.providerName || 'Генерация' }}</strong><small>{{ item.input?.prompt || item.error || 'Без промпта' }}</small></span></button><p v-if="!studio.completed.length" class="empty-state">Завершённые генерации появятся здесь.</p></div></section>
+        <div class="studio-grid"><div class="studio-center"><div class="welcome"><span class="eyebrow">НОВАЯ ГЕНЕРАЦИЯ</span><h2>{{ activeChatName }}</h2><p>Выберите формат, добавьте исходники и запустите задачу в контексте этого чата.</p></div><Composer /></div><div class="studio-right"><button type="button" class="right-close" aria-label="Закрыть результаты" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel /></div></div>
       </template>
     </main>
+    <nav class="mobile-nav" aria-label="Разделы студии"><button type="button" :class="{ active: mobileView === 'chats' }" @click="mobileView = 'chats'">Чаты</button><button type="button" :class="{ active: mobileView === 'workspace' }" @click="mobileView = 'workspace'">Работа</button><button type="button" :class="{ active: mobileView === 'results' }" @click="mobileView = 'results'">Результаты</button></nav>
   </div>
 </template>

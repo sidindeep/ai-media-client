@@ -19,6 +19,7 @@ app.whenReady().then(async () => {
     let loginState = { state: 'disconnected' };
     codexWorker = require('../src/services/codex-worker').createCodexWorker(async request => {
       codexRequest = request;
+      if (request.prompt === 'Проверка Vue polling') await new Promise(resolve => setTimeout(resolve, 400));
       return { output: 'Тестовый ответ Codex', usage: { input_tokens: 100, output_tokens: 20, cached_input_tokens: 60, reasoning_output_tokens: 5 }, ...(request.kind === 'image' ? { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' } : {}) };
     }, { login: {
       status: async () => loginState,
@@ -52,7 +53,7 @@ app.whenReady().then(async () => {
     const evaluate = code => win.webContents.executeJavaScript(code);
     async function until(code) {
       for (let count = 0; count < 100; count++) { if (await evaluate(code)) return; await new Promise(resolve => setTimeout(resolve, 50)); }
-      throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("document.querySelector('#codexStatus')?.textContent || ''"));
+      throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("location.pathname + ' · ' + (document.querySelector('#codexStatus')?.textContent || document.body.innerText.slice(0,500))"));
     }
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
@@ -117,6 +118,30 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('#tabSpending').click(); void 0");
     assert.equal(await evaluate("document.querySelector('#pageSpending').hidden"), false);
     assert.match(await evaluate("document.querySelector('#spendSummary').textContent"), /Списано за генерации/);
+    const userHeaders = { 'X-Media-Client': 'web', 'X-Media-User': userId, 'Content-Type': 'application/json' };
+    const vueProject = (await (await browserSession.fetch(origin + '/api/projects', { method: 'POST', headers: userHeaders, body: JSON.stringify({ name: 'Vue проект' }) })).json()).result;
+    const vueChat = (await (await browserSession.fetch(origin + '/api/chats', { method: 'POST', headers: userHeaders, body: JSON.stringify({ name: 'Vue чат', projectId: vueProject.id }) })).json()).result;
+    const vueDraft = { version: 1, active: 0, tabs: [{ prompt: 'Черновик Vue чата', mode: 'image', provider: 'codex', quantity: 1 }] };
+    await browserSession.fetch(origin + '/api/rpc/saveDrafts', { method: 'POST', headers: userHeaders, body: JSON.stringify([vueDraft, { chatId: vueChat.id }]) });
+    const workspaceState = JSON.stringify({ chatId: vueChat.id, projectId: vueProject.id });
+    await evaluate(`localStorage.setItem('media-studio-workspace', ${JSON.stringify(workspaceState)});void 0`);
+    await win.loadURL(origin + '/app');
+    await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
+    assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
+    assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
+    assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого') || document.querySelector('.quote')!==null"), true);
+    await evaluate("document.querySelector('.model-pill select').value='codex:gpt-5.6-sol';document.querySelector('.model-pill select').dispatchEvent(new Event('change',{bubbles:true}));void 0");
+    await until("Boolean(Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Рассуждение')?.querySelector('select')?.querySelector('option[value=ultra]'))");
+    await evaluate("const labels=Array.from(document.querySelectorAll('.select-pill'));const set=(name,value)=>{const select=labels.find(label=>label.querySelector('span')?.textContent===name).querySelector('select');select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}))};set('Рассуждение','ultra');set('Скорость','fast');const prompt=document.querySelector('.composer-body textarea');prompt.value='Проверка Vue polling';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
+    await evaluate("document.querySelector('.generate-button').click();void 0");
+    await until("document.querySelector('.result-output')?.textContent==='Тестовый ответ Codex'");
+    assert.match(await evaluate("document.querySelector('.result-facts').textContent"), /Время\s+\d+ с/);
+    assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 3000);
+    win.setSize(390, 844); await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.mobile-nav')).display"), 'grid');
+    win.setSize(1280, 900);
+    await win.loadURL(origin); await until("document.querySelector('#logout')!==null");
     await evaluate("document.querySelector('#logout').click(); void 0");
     await until("location.pathname==='/login' && document.querySelector('#loginProviders')!==null");
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
@@ -150,8 +175,8 @@ app.whenReady().then(async () => {
     await until("document.querySelector('#grantBalance').textContent.includes('7,125') && !document.querySelector('#grantForm button').disabled");
     assert.equal((await runtime.accounts.wallet.get(adminId)).balanceUnits, 7125);
     await evaluate(`document.querySelector('#grantAccount').value=${JSON.stringify(userId)};document.querySelector('#grantAmount').value='1.25';document.querySelector('#grantNote').value='Проверка UI';document.querySelector('#grantForm').requestSubmit();void 0`);
-    await until("document.querySelector('#grantBalance').textContent.includes('5,25') && !document.querySelector('#grantForm button').disabled");
-    assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 5250);
+    await until("document.querySelector('#grantBalance').textContent.includes('4,25') && !document.querySelector('#grantForm button').disabled");
+    assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 4250);
     await evaluate("document.querySelector('#grantSelf').click(); void 0");
     await until(`document.querySelector('#grantAccount').value===${JSON.stringify(adminId)}`);
     assert.match(await evaluate("document.querySelector('#grantBalance').textContent"), /7,125/);

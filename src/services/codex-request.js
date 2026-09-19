@@ -2,7 +2,7 @@ const catalog = require('../../config/codex-models.json');
 function invalid(message) { return Object.assign(new Error(message), { status: 400 }); }
 function validateCodexRequest(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw invalid('Некорректный запрос Codex');
-  if (Object.keys(input).some(key => !['prompt', 'model', 'effort', 'speed', 'requestId', 'kind', 'aspectRatio', 'sourceFiles', 'images'].includes(key))) throw invalid('Недопустимые параметры Codex');
+  if (Object.keys(input).some(key => !['prompt', 'model', 'effort', 'speed', 'requestId', 'kind', 'aspectRatio', 'sourceFiles', 'images', 'projectId', 'chatId'].includes(key))) throw invalid('Недопустимые параметры Codex');
   if (input.kind !== undefined && !['text', 'image'].includes(input.kind)) throw invalid('Некорректный тип результата');
   const model = catalog.models.find(item => item.id === input.model);
   if (!model || !model.efforts.includes(input.effort)) throw invalid('Модель или уровень рассуждения недоступны');
@@ -15,8 +15,10 @@ function validateCodexRequest(input) {
   const images = input.images === undefined ? [] : input.images;
   if (!Array.isArray(images) || images.length > 10 || images.some(item => typeof item !== 'string' || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(item))) throw invalid('Некорректные исходные изображения');
   if (images.reduce((total, item) => total + Buffer.byteLength(item, 'base64'), 0) > 90 * 1024 * 1024) throw invalid('Общий размер исходных изображений слишком большой');
+  for (const [value, label] of [[input.projectId, 'Проект'], [input.chatId, 'Чат']]) if (value !== undefined && value !== null && (typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value))) throw invalid(`${label} не найден`);
   return { prompt: input.prompt.trim(), model: model.id, effort: input.effort, speed: input.speed, requestId: input.requestId,
-    ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}), ...(sourceFiles.length ? { sourceFiles } : {}), ...(images.length ? { images } : {}), ...(input.kind ? { kind: input.kind } : {}) };
+    ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}), ...(sourceFiles.length ? { sourceFiles } : {}), ...(images.length ? { images } : {}), ...(input.kind ? { kind: input.kind } : {}),
+    ...(input.projectId ? { projectId: input.projectId } : {}), ...(input.chatId ? { chatId: input.chatId } : {}) };
 }
 const disabledFeatures = ['shell_tool', 'unified_exec', 'apps', 'browser_use', 'browser_use_external', 'computer_use', 'view_image', 'hooks', 'skill_search', 'workspace_dependencies', 'in_app_browser', 'in_app_chat', 'remote_plugin'];
 const imageFeatures = ['code_mode', 'code_mode_host', 'image_generation'];

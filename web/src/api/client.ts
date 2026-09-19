@@ -1,4 +1,4 @@
-import type { Catalog, CodexCatalog, GenerationRecord, QueueStatus } from '../types';
+import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -37,11 +37,43 @@ export async function getHistory(): Promise<GenerationRecord[]> {
   return rpc<GenerationRecord[]>('getHistory');
 }
 
+async function workspaceRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, { ...init, headers: { ...accountHeaders(), ...(init.headers || {}), ...(init.body ? { 'Content-Type': 'application/json' } : {}) } });
+  const body = await parse<{ result: T }>(response);
+  return body.result;
+}
+
+export const getProjects = (includeArchived = false) => workspaceRequest<Project[]>(`/api/projects?includeArchived=${includeArchived}`);
+export const createProject = (name: string) => workspaceRequest<Project>('/api/projects', { method: 'POST', body: JSON.stringify({ name }) });
+export const renameProject = (id: string, name: string) => workspaceRequest<Project>(`/api/projects/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+export const archiveProject = (id: string) => workspaceRequest<Project>(`/api/projects/${encodeURIComponent(id)}/archive`, { method: 'POST', body: '{}' });
+export const getChats = (projectId?: string | null, includeArchived = false) => workspaceRequest<Chat[]>(`/api/chats?${projectId === undefined ? '' : `projectId=${encodeURIComponent(projectId || '')}&`}includeArchived=${includeArchived}`);
+export const createChat = (name: string, projectId?: string | null) => workspaceRequest<Chat>('/api/chats', { method: 'POST', body: JSON.stringify({ name, projectId: projectId ?? null }) });
+export const renameChat = (id: string, name: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+export const moveChat = (id: string, projectId: string | null) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/move`, { method: 'POST', body: JSON.stringify({ projectId }) });
+export const archiveChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/archive`, { method: 'POST', body: '{}' });
+export const getChat = (id: string) => workspaceRequest<Chat & { records: GenerationRecord[] }>(`/api/chats/${encodeURIComponent(id)}`);
+export const loadDraft = (chatId?: string | null) => rpc<Record<string, unknown> | null>('loadDrafts', chatId ? [{ chatId }] : []);
+export const saveDraft = (draft: Record<string, unknown>, chatId?: string | null) => rpc<boolean>('saveDrafts', [draft, chatId ? { chatId } : {}]);
+
 export async function getQueueStatus(): Promise<QueueStatus> {
   return rpc<QueueStatus>('queueStatus');
 }
 
-export async function createTask(input: { modelId: string; input: Record<string, unknown>; requestId: string }): Promise<GenerationRecord> {
+export async function getMediaQuote(modelId: string, input: Record<string, unknown>): Promise<{ credits: number; amountUnits: number }> {
+  return rpc('nativeQuote', [{ modelId, input }]);
+}
+
+export async function uploadSource(file: File, context: { projectId?: string | null; chatId?: string | null } = {}): Promise<{ ref: string; name?: string; type?: string; [key: string]: unknown }> {
+  const query = new URLSearchParams({ name: file.name });
+  if (context.projectId) query.set('projectId', context.projectId);
+  if (context.chatId) query.set('chatId', context.chatId);
+  const response = await fetch(`/api/source?${query}`, { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+  const body = await parse<RpcResult<{ ref: string; name?: string; type?: string; [key: string]: unknown }>>(response);
+  return body.result;
+}
+
+export async function createTask(input: { modelId: string; input: Record<string, unknown>; requestId: string; projectId?: string | null; chatId?: string | null; sourceFiles?: Array<Record<string, unknown>> }): Promise<GenerationRecord> {
   return rpc<GenerationRecord>('createTask', [input]);
 }
 
@@ -63,6 +95,10 @@ export async function cancelQueued(id: string): Promise<unknown> {
 
 export async function removeQueued(id: string): Promise<unknown> {
   return rpc('removeQueued', [id]);
+}
+
+export async function clearQueue(): Promise<unknown> {
+  return rpc('clearQueue');
 }
 
 export async function getCodexCatalog(): Promise<CodexCatalog> {

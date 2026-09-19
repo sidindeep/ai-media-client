@@ -43,7 +43,7 @@ class TaskQueue {
   }
   async clear() {
     this.pause();
-    for(const record of await this.store.list())if(!record.queueHidden)await this.remove(record.id);
+    for(const record of await this.store.list())if(record.state==='queued'&&!record.queueHidden)await this.remove(record.id);
     this.notify();
   }
   async acknowledge(id) {await this.store.update(id,{state:'unconfirmed'},['unknown']);this.error=null;this.notify();}

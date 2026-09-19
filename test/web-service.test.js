@@ -86,6 +86,8 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const vueApp = await fetch(base + '/app');
   assert.equal(vueApp.status, 200);
   const vueHtml = await vueApp.text();
+  assert.match(vueHtml, /<meta name="account-id" content="local">/);
+  assert.match(vueHtml, /<meta name="account-role" content="admin">/);
   const vueAsset = [...vueHtml.matchAll(/(?:src|href)="(\/app\/assets\/[^"']+)"/g)].map(match => match[1]);
   assert.ok(vueAsset.length >= 2);
   for (const asset of vueAsset) assert.equal((await fetch(base + asset)).status, 200);

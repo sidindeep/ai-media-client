@@ -61,3 +61,30 @@ CREATE TABLE IF NOT EXISTS media_role_audit (
   reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO media_schema_versions(version) VALUES (2) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS media_projects (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES media_accounts(id),
+  owner_id uuid NOT NULL REFERENCES media_accounts(id),
+  name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 200),
+  archived_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS media_projects_account_recent ON media_projects(account_id, archived_at, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS media_chats (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES media_accounts(id),
+  project_id uuid REFERENCES media_projects(id),
+  name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 200),
+  mode text NOT NULL DEFAULT 'chat' CHECK (mode IN ('chat', 'system')),
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  archived_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS media_chats_account_recent ON media_chats(account_id, archived_at, updated_at DESC);
+CREATE INDEX IF NOT EXISTS media_chats_project_recent ON media_chats(account_id, project_id, updated_at DESC);
+
+INSERT INTO media_schema_versions(version) VALUES (3) ON CONFLICT DO NOTHING;

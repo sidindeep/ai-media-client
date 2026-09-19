@@ -15,6 +15,7 @@ function codexRecord(job) {
     generationCompletedAt: job.completedAt,
     generationDurationMs: job.durationMs,
     input: { prompt: job.prompt, effort: job.effort, speed: job.speed },
+    projectId: job.projectId || null, chatId: job.chatId || null,
     output: job.output, usage: job.usage, nativeQuote: job.nativeQuote,
     error: job.error, resultJson: JSON.stringify({ resultUrls: image ? [url] : [] }),
     localFiles: image ? [{ previewUrl: url, url: url + '?download=1', exists: true, name: job.id + '.png' }] : []

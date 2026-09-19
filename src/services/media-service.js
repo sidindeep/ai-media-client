@@ -101,7 +101,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     configured: () => provider.isConfigured(),
     async saveSource(file) {
       const saved = await assets.save(file);
-      await sourceMetadata.update(assets.id(saved.ref), saved);
+      await sourceMetadata.update(assets.id(saved.ref), { ...saved, chatId: file.chatId || null, projectId: file.projectId || null });
       return saved;
     },
     async sourceFile(id) {
@@ -125,7 +125,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         validate(model, request.input);
         if (!Array.isArray(request.sourceFiles || []) || (request.sourceFiles || []).length > 100) throw new Error('Некорректный список исходников');
         if (request.requestId && (typeof request.requestId !== 'string' || request.requestId.length > 150)) throw new Error('Некорректный идентификатор запроса');
-        const digest = createHash('sha256').update(JSON.stringify({ modelId: model.id, input: request.input, sourceFiles: request.sourceFiles || [] })).digest('hex');
+        const binding = { projectId: request.projectId || null, chatId: request.chatId || null };
+        const digest = createHash('sha256').update(JSON.stringify({ modelId: model.id, input: request.input, sourceFiles: request.sourceFiles || [], ...binding })).digest('hex');
         if (request.requestId) {
           const existing = (await history.list()).find(row => row.requestId === request.requestId);
           if (existing) {
@@ -139,6 +140,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           modelId: model.id, providerId: model.providerId, providerName: providers.find(item => item.id === model.providerId)?.name || model.providerId, model: model.apiModel,
           modelName: model.name, kind: model.kind, input: request.input,
           sourceFiles: request.sourceFiles || [], workspace: [1, 2, 3, 4, 5].includes(request.workspace) ? request.workspace : 1,
+          ...binding,
           requestId: request.requestId || null, requestDigest: digest,
           ...(pricing ? { nativeQuote: pricing.quote(model.id, request.input) } : {}),
           rubPerCredit: price.rubPerCredit, estimate: costs.quote(model, request.input, cachedTariffs)
@@ -174,11 +176,12 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         case 'listTemplates': return templates.list();
         case 'saveTemplate': return templates.save(args[0]);
         case 'removeTemplate': return templates.remove(args[0]);
-        case 'loadDrafts': return (await drafts.list()).find(item => item.id === 'workspace')?.data || null;
+        case 'loadDrafts': return (await drafts.list()).find(item => item.id === (args[0]?.chatId ? `chat:${args[0].chatId}` : 'workspace'))?.data || null;
         case 'saveDrafts': {
           const data = args[0];
           if (data?.version !== 1 || !Array.isArray(data.tabs) || data.tabs.length < 1 || data.tabs.length > 5) throw new Error('Некорректный черновик');
-          await drafts.update('workspace', { data }); return true;
+          const draftId = args[1]?.chatId || args[0]?.chatId;
+          await drafts.update(draftId ? `chat:${draftId}` : 'workspace', { data }); return true;
         }
         case 'costSettings': return costSettings();
         case 'setCreditRate': {

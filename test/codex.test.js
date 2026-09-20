@@ -52,13 +52,13 @@ test('Image collection requires this CLI thread and validates PNG instead of mod
   assert.throws(() => validatePng(Buffer.from('not an image')), /корректный PNG/);
 });
 
-test('Every offered Codex mode is priced like Nano Banana 2 Lite', () => {
+test('Every offered Codex mode has the configured four-credit product price', () => {
   const config = require('../config/native-prices.json');
   const pricing = createPricing(config);
-  const expected = pricing.quote('kie:nano-banana-2-lite').amountUnits;
+  assert.throws(() => pricing.quote('kie:nano-banana-2-lite'), /не опубликована/);
   for (const model of require('../config/codex-models.json').models) {
     for (const effort of model.efforts) for (const speed of ['standard', 'fast']) {
-      assert.equal(pricing.quote(priceKey({ model: model.id, effort, speed })).amountUnits, expected);
+      assert.equal(pricing.quote(priceKey({ model: model.id, effort, speed })).amountUnits, 4000);
     }
   }
 });

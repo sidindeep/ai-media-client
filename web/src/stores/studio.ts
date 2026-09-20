@@ -54,6 +54,21 @@ export const useStudioStore = defineStore('studio', () => {
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
 
+  function mediaModelsFor(value: GenerationMode) {
+    return (catalog.value?.models || []).filter(model => (model.kind || 'image') === value);
+  }
+
+  function normalizeMediaControls() {
+    let candidates = mediaModelsFor(mode.value);
+    if (provider.value === 'media' && !candidates.length) {
+      mode.value = 'image';
+      candidates = mediaModelsFor('image');
+    }
+    if (!candidates.some(model => model.id === mediaModelId.value)) {
+      mediaModelId.value = candidates.find(model => model.startupDefault)?.id || candidates[0]?.id || '';
+    }
+  }
+
   function normalizeCodexControls() {
     const models = codexCatalog.value?.models || [];
     if (!models.length) return;
@@ -136,6 +151,7 @@ export const useStudioStore = defineStore('studio', () => {
       if (typeof tab.codexAspectRatio === 'string') codexAspectRatio.value = tab.codexAspectRatio;
     }
     normalizeCodexControls();
+    normalizeMediaControls();
     draftReady.value = true;
   }
   async function saveCurrentDraft() {
@@ -159,8 +175,19 @@ export const useStudioStore = defineStore('studio', () => {
     if (value === 'text') { provider.value = 'codex'; codexKind.value = 'text'; }
     else if (value === 'image') { codexKind.value = 'image'; if (!['codex', 'media'].includes(provider.value)) provider.value = 'codex'; }
     else { provider.value = 'media'; }
-    const first = (catalog.value?.models || []).find(model => (model.kind || 'image') === value);
-    if (first && !mediaModels.value.some(model => model.id === mediaModelId.value)) mediaModelId.value = first.id;
+    normalizeMediaControls();
+  }
+
+  function setProvider(value: 'codex' | 'media') {
+    provider.value = value;
+    if (value === 'codex') {
+      if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
+      codexKind.value = mode.value === 'text' ? 'text' : 'image';
+      normalizeCodexControls();
+    } else {
+      if (!['image', 'video'].includes(mode.value)) mode.value = 'image';
+      normalizeMediaControls();
+    }
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
@@ -188,7 +215,7 @@ export const useStudioStore = defineStore('studio', () => {
       codexSpeed.value = defaults?.speed || 'standard';
       codexKind.value = defaults?.kind === 'text' ? 'text' : 'image';
       normalizeCodexControls();
-      mediaModelId.value = (catalog.value?.models || []).find(model => (model.kind || 'image') === mode.value)?.id || '';
+      mediaModelId.value = mediaModelsFor(mode.value).find(model => model.startupDefault)?.id || mediaModelsFor(mode.value)[0]?.id || '';
       await Promise.all([refresh(), refreshWorkspaces()]);
       await loadDraftForActive();
     } catch (cause) {
@@ -254,7 +281,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   return {
     catalog, codexCatalog, release, history, queue, selectedId, selected, active, accountActive, completed, loading, error,
-    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, quantity, setMode,
+    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, quantity, setMode, setProvider,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject,

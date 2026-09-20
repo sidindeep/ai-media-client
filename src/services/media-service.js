@@ -13,7 +13,7 @@ const costs = require('../costs');
 const { download } = require('../downloads');
 const Ajv = require('ajv');
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 4000, stores, pricing }) {
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 4000, stores, pricing, tariffFetcher }) {
   if (!stores) trace.configure(path.join(directory, 'logs'));
   const history = stores?.history || new History(path.join(directory, 'history.json'));
   const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
@@ -21,13 +21,25 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const sourceMetadata = stores?.sources || new History(path.join(directory, 'source-metadata.json'));
   const assets = new Assets(path.join(directory, 'sources'));
   const templates = new PromptTemplates(path.join(directory, 'templates.json'), stores?.templates);
-  const tariffs = new (require('../tariffs').Tariffs)(preferences);
+  const tariffs = new (require('../tariffs').Tariffs)(preferences, tariffFetcher || fetch);
+  const { quoteKie } = require('../billing/kie-pricing');
   const events = new EventEmitter();
   const ajv = new Ajv({ strict: false, validateFormats: false });
   const pendingSaves = new Map();
+  const providerDiagnostics = [];
+  const diagnosticMessage = error => error instanceof Error ? error.message : String(error || 'Неизвестная ошибка');
+  const addProviderDiagnostic = (step, status, message, durationMs = 0) => {
+    const entry = { time: new Date().toISOString(), step, status, message, durationMs };
+    providerDiagnostics.push(entry);
+    if (providerDiagnostics.length > 50) providerDiagnostics.splice(0, providerDiagnostics.length - 50);
+    return entry;
+  };
   let enqueueChain = Promise.resolve();
   const findModel = id => {
-    const model = models.find(item => item.id === id);
+    const requested = String(id || '');
+    const apiModel = requested.replace(/^(?:kie|media):/, '');
+    const model = models.find(item => item.providerId === provider.id
+      && (item.id === requested || item.apiModel === requested || item.apiModel === apiModel));
     if (!model || model.providerId !== provider.id) throw new Error('Модель не найдена');
     return model;
   };
@@ -99,6 +111,74 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     events, queue, history, preferences, templates, findModel, validate, costSettings, storageSettings, saveResults, listHistory, resultUrls: urls,
     catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id) }),
     configured: () => provider.isConfigured(),
+    async nativeQuote(modelId, input = {}) {
+      const started = Date.now();
+      try {
+        const model = findModel(modelId);
+        if (pricing) {
+          try {
+            const quote = pricing.quote(model.id, input);
+            addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${quote.credits} кредитов`, Date.now() - started);
+            return quote;
+          }
+          catch (error) { if (!/не опубликована/i.test(error.message)) throw error; }
+        }
+        const quote = quoteKie(model, input, await tariffs.get());
+        addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${quote.credits} кредитов`, Date.now() - started);
+        return quote;
+      } catch (error) {
+        addProviderDiagnostic('quote', 'error', diagnosticMessage(error), Date.now() - started);
+        trace.write('pricing.quote.error', { modelId, error });
+        const message = error instanceof Error ? error.message : 'неизвестная ошибка';
+        if (/^(?:Цена|Некоррект|Для расчёта)/.test(message)) throw error;
+        throw new Error(`Цена Kie временно недоступна: ${message}`);
+      }
+    },
+    async diagnoseProvider(modelId, input = {}) {
+      const checkedAt = new Date().toISOString();
+      const checks = [];
+      const add = (step, status, message, started = Date.now()) => {
+        const entry = addProviderDiagnostic(step, status, message, Math.max(0, Date.now() - started));
+        checks.push(entry);
+      };
+      const configured = provider.isConfigured();
+      add('configuration', configured ? 'ok' : 'error', configured ? 'Серверный KIE_API_KEY загружен' : 'Серверный KIE_API_KEY отсутствует');
+      if (configured) {
+        const started = Date.now();
+        try { await provider.balance(); add('authorization', 'ok', 'Kie принял ключ; запрос баланса выполнен', started); }
+        catch (error) { add('authorization', 'error', diagnosticMessage(error), started); }
+      }
+      let tariffData;
+      {
+        const started = Date.now();
+        try {
+          tariffData = await tariffs.get(true);
+          if (!Array.isArray(tariffData.rows) || !tariffData.rows.length) throw new Error(tariffData.error || 'Тарифный каталог пуст');
+          add('tariffs', 'ok', `Получено тарифных строк: ${tariffData.rows.length}`, started);
+        } catch (error) { add('tariffs', 'error', diagnosticMessage(error), started); }
+      }
+      let model = null, quote = null;
+      {
+        const started = Date.now();
+        try {
+          model = findModel(modelId);
+          if (!tariffData) throw new Error('Тарифный каталог недоступен');
+          quote = quoteKie(model, input, tariffData);
+          add('model-price', 'ok', `${model.name}: ${quote.credits} кредитов`, started);
+        } catch (error) { add('model-price', 'error', diagnosticMessage(error), started); }
+      }
+      return {
+        ok: checks.every(item => item.status === 'ok'), configured, checkedAt,
+        provider: 'Kie.ai', model: model ? { id: model.id, name: model.name } : { id: String(modelId || ''), name: '' }, quote,
+        mechanism: {
+          credentials: 'Серверная переменная KIE_API_KEY; значение не передаётся в браузер',
+          authorization: 'GET https://api.kie.ai/api/v1/chat/credit',
+          tariffs: 'POST https://api.kie.ai/client/v1/model-pricing/page',
+          generation: 'Сервер создаёт задачу Kie и опрашивает её статус; тест генерацию не запускает',
+        },
+        checks, recentLogs: providerDiagnostics.slice(-25),
+      };
+    },
     async saveSource(file) {
       const saved = await assets.save(file);
       await sourceMetadata.update(assets.id(saved.ref), { ...saved, chatId: file.chatId || null, projectId: file.projectId || null });
@@ -142,7 +222,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           sourceFiles: request.sourceFiles || [], workspace: [1, 2, 3, 4, 5].includes(request.workspace) ? request.workspace : 1,
           ...binding,
           requestId: request.requestId || null, requestDigest: digest,
-          ...(pricing ? { nativeQuote: pricing.quote(model.id, request.input) } : {}),
+          ...(pricing ? { nativeQuote: await service.nativeQuote(model.id, request.input) } : {}),
           rubPerCredit: price.rubPerCredit, estimate: costs.quote(model, request.input, cachedTariffs)
         });
         return record;
@@ -152,6 +232,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     async dispatch(method, args = []) {
       switch (method) {
         case 'getCatalog': return service.catalog();
+        case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input);
         case 'keyStatus': return service.configured();
         case 'getHistory': return listHistory();
         case 'queueStatus': return { paused: queue.paused, error: queue.error, concurrency: queue.concurrency };

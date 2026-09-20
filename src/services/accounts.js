@@ -13,7 +13,7 @@ function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
   const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'projectId', 'chatId'];
   const result = Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]]));
-  Object.assign(result, { providerId: 'media', providerName: 'Медиастудия', model: record.modelId,
+  Object.assign(result, { providerId: 'media', providerName: record.providerName || 'Медиастудия', model: record.modelId,
     taskId: record.id, resultJson: record.resultJson, localFiles: record.localFiles });
   if (['unknown', 'unconfirmed'].includes(record.state)) result.error = 'Статус уточняется. Резерв сохранён; обратитесь в поддержку.';
   else if (['fail', 'blocked'].includes(record.state)) result.error = 'Генерация не выполнена. Резерв возвращён.';
@@ -65,7 +65,7 @@ function createAccounts({ pool, config, provider, legacy }) {
           switch (method) {
             case 'getCatalog': {
               const catalog = service.catalog();
-              return { providers: [{ id: 'media', name: 'Медиастудия' }], models: catalog.models.map(model => ({
+              return { providers: [{ id: 'media', name: catalog.providers[0]?.name || 'Медиастудия' }], models: catalog.models.map(model => ({
                 id: model.id, apiModel: model.id, providerId: 'media', name: model.name, kind: model.kind,
                 fields: model.fields, inputSchema: model.inputSchema, startupDefault: model.startupDefault
               })) };
@@ -82,7 +82,8 @@ function createAccounts({ pool, config, provider, legacy }) {
               return publicRecord(row);
             }
             case 'getBalance': return wallet.get(accountId);
-            case 'nativeQuote': return pricing.quote(args[0]?.modelId, args[0]?.input);
+            case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input);
+            case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input);
             case 'nativeLedger': return wallet.ledger(accountId);
             case 'queueStatus': return { paused: service.queue.paused, concurrency: service.queue.concurrency, error: service.queue.error ? 'Очередь приостановлена. Проверьте историю.' : null };
             case 'costSettings': return { rubPerCredit: 0, native: true };

@@ -108,7 +108,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   const sourcePath = '/api/sources/' + upload.ref.split('/').at(-1);
   assert.equal((await request(sourcePath, { headers: { Cookie: bob.cookie } })).status, 400);
   assert.equal((await request(sourcePath, { headers: { Cookie: alice.cookie } })).status, 200);
-  const catalog = await result(rpc(alice, 'getCatalog')); assert.equal(catalog.providers[0].id, 'media'); assert.equal(catalog.models[0].pricing, undefined);
+  const catalog = await result(rpc(alice, 'getCatalog')); assert.equal(catalog.providers[0].id, 'media'); assert.equal(catalog.providers[0].name, 'Kie.ai'); assert.equal(catalog.models[0].pricing, undefined);
   const empty = await result(rpc(alice, 'getBalance')); assert.equal(empty.balance, 0);
   const adminPayload = { modelId, input, requestId: randomUUID(), billingExemptActor: owner.id };
   const tariff = config.pricing.models[modelId];

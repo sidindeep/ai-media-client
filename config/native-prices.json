@@ -1,9 +1,6 @@
 {
-  "version": "2026-09-18-codex-nano-lite",
+  "version": "2026-09-20-codex",
   "models": {
-    "kie:nano-banana-2-lite": {
-      "baseUnits": 4000
-    },
     "codex:gpt-6-astra:low:standard": {
       "baseUnits": 4000
     },

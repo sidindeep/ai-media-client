@@ -3,6 +3,7 @@ services:
   media:
     build: .
     image: ai-media-web-tg:local
+    restart: unless-stopped
     init: true
     dns:
       - ${MEDIA_DNS_PRIMARY:-1.1.1.1}

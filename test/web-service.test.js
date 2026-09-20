@@ -132,6 +132,8 @@ test('service deduplicates enqueue, validates exact model id and keeps queue on 
   const dir = await directory(); let sent = 0;
   const provider = fakeProvider(); provider.create = async () => { sent++; return { taskId: 'remote-1' }; };
   const service = await createMediaService({ directory: dir, provider, interval: 5 }); t.after(() => cleanup(dir, service));
+  assert.equal(service.findModel(model.apiModel).id, model.id);
+  assert.equal(service.findModel(`media:${model.apiModel}`).id, model.id);
   const request = { modelId: model.id, input, requestId: 'same-request' };
   const [a, b] = await Promise.all([service.createTask(request), service.createTask(request)]);
   assert.equal(a.id, b.id); assert.equal((await service.listHistory()).length, 1);
@@ -150,6 +152,23 @@ test('unconfigured service starts and refuses paid task without fabricating outp
   assert.equal(service.configured(), false);
   await assert.rejects(service.createTask({ modelId: model.id, input }), /не подключена/);
   assert.equal((await service.listHistory()).length, 0);
+});
+
+test('provider diagnostics checks Kie auth, live tariff and selected model without generation', async t => {
+  const dir = await directory(); let created = 0, balanceChecks = 0;
+  const provider = fakeProvider();
+  provider.create = async () => { created++; return { taskId: 'must-not-run' }; };
+  provider.balance = async () => { balanceChecks++; return 100; };
+  const tariffFetcher = async () => ({ ok: true, async json() { return { code: 200, data: { pages: 1, records: [
+    { modelDescription: 'Google nano banana pro, 1/2K', creditPrice: '18.0', creditUnit: 'per image', anchor: 'https://kie.ai/nano-banana-pro', interfaceType: 'image', provider: 'Google' },
+    { modelDescription: 'Google nano banana pro, 4K', creditPrice: '24.0', creditUnit: 'per image', anchor: 'https://kie.ai/nano-banana-pro', interfaceType: 'image', provider: 'Google' },
+  ] } }; } });
+  const service = await createMediaService({ directory: dir, provider, tariffFetcher }); t.after(() => cleanup(dir, service));
+  const result = await service.diagnoseProvider('nano-banana-pro', { resolution: '1K', aspect_ratio: '1:1' });
+  assert.equal(result.ok, true); assert.equal(result.configured, true); assert.equal(result.quote.credits, 18);
+  assert.equal(balanceChecks, 1); assert.equal(created, 0);
+  assert.deepEqual(result.checks.map(item => item.step), ['configuration', 'authorization', 'tariffs', 'model-price']);
+  assert.doesNotMatch(JSON.stringify(result), /Bearer\s+|test-token|secret-value/i);
 });
 
 test('Telegram accepts new private users and confirms once with durable request id', async t => {

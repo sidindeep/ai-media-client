@@ -11,11 +11,15 @@ const { hash } = require('../src/auth/service');
 app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
   let runtime, win, directory, codexWorker, codexRequest;
+  const originalFetch = global.fetch;
   const pool = testPool();
   const timeout = setTimeout(() => { console.error('FAIL: web UI timeout'); app.exit(1); }, 45000);
   try {
     const artifacts = path.resolve(__dirname, '../artifacts'); await fs.mkdir(artifacts, { recursive: true });
     directory = await fs.mkdtemp(path.join(artifacts, 'web-ui-'));
+    global.fetch = (url, options) => String(url) === 'https://api.kie.ai/client/v1/model-pricing/page'
+      ? Promise.resolve(new Response(JSON.stringify({ code: 200, data: { pages: 1, records: [{ modelDescription: 'nano-banana-2-lite, 1k', creditPrice: '1', creditUnit: 'per image', anchor: 'https://kie.ai/nano-banana-2-lite', interfaceType: 'image', provider: 'Google' }] } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      : originalFetch(url, options);
     let loginState = { state: 'disconnected' };
     codexWorker = require('../src/services/codex-worker').createCodexWorker(async request => {
       codexRequest = request;
@@ -29,8 +33,14 @@ app.whenReady().then(async () => {
     await new Promise(resolve => codexWorker.listen(0, '127.0.0.1', resolve));
     const config = { ...loadConfig({ MEDIA_PORT: '0' }), dataDirectory: directory,
       codex: { url: `http://127.0.0.1:${codexWorker.address().port}` },
-      pricing: { version: 'ui-test', models: { 'kie:nano-banana-2-lite': { baseUnits: 1000 }, 'codex:gpt-5.6-sol:ultra:fast': { baseUnits: 1000 } } } };
-    runtime = await start({ config, pool, provider: { id: 'kie', isConfigured: () => false }, authProviders: new Map() });
+      pricing: { version: 'ui-test', models: { 'codex:gpt-5.6-sol:ultra:fast': { baseUnits: 1000 } } } };
+    runtime = await start({ config, pool, provider: {
+      id: 'kie', isConfigured: () => true,
+      upload: async () => 'https://example.test/source',
+      create: async () => ({ taskId: 'kie-ui-1' }),
+      poll: async () => ({ state: 'success', resultJson: '{"resultUrls":[]}', creditsConsumed: 1 }),
+      balance: async () => 100,
+    }, authProviders: new Map() });
     const originalUser = runtime.auth.user.bind(runtime.auth);
     let fileDropAttempts = 0;
     runtime.auth.user = async req => {
@@ -50,7 +60,10 @@ app.whenReady().then(async () => {
     win = new BrowserWindow({ show: false, webPreferences: { session: browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true } });
     const errors = [];
     win.webContents.on('console-message', (_event, level, message) => { if (level === 3) errors.push(message); });
-    const evaluate = code => win.webContents.executeJavaScript(code);
+    const evaluate = async code => {
+      try { return await win.webContents.executeJavaScript(code); }
+      catch (error) { throw new Error(`${error.message}\nRenderer script: ${code}`); }
+    };
     async function until(code) {
       for (let count = 0; count < 100; count++) { if (await evaluate(code)) return; await new Promise(resolve => setTimeout(resolve, 50)); }
       throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("location.pathname + ' · ' + (document.querySelector('#codexStatus')?.textContent || document.body.innerText.slice(0,500))"));
@@ -131,22 +144,64 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
     assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого') || document.querySelector('.quote')!==null"), true);
-    assert.equal(await evaluate("document.querySelector('.model-pill select').value"), 'codex:gpt-5.5');
+    assert.equal(await evaluate("document.querySelector('.provider-selector button.active').dataset.provider"), 'codex');
+    assert.equal(await evaluate("document.querySelector('.model-pill select').value"), 'gpt-5.5');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.model-pill option')).backgroundColor"), 'rgb(24, 25, 37)');
-    await evaluate("document.querySelector('.model-pill select').value='codex:gpt-5.6-sol';document.querySelector('.model-pill select').dispatchEvent(new Event('change',{bubbles:true}));void 0");
+    await evaluate("document.querySelector('.model-pill select').value='gpt-5.6-sol';document.querySelector('.model-pill select').dispatchEvent(new Event('change',{bubbles:true}));void 0");
     await until("Boolean(Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Рассуждение')?.querySelector('select')?.querySelector('option[value=ultra]'))");
     await evaluate("const labels=Array.from(document.querySelectorAll('.select-pill'));const set=(name,value)=>{const select=labels.find(label=>label.querySelector('span')?.textContent===name).querySelector('select');select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}))};set('Рассуждение','ultra');set('Скорость','fast');const prompt=document.querySelector('.composer-body textarea');prompt.value='Проверка Vue polling';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     await new Promise(resolve => setTimeout(resolve, 700));
     await win.reload();
-    await until("document.querySelector('.composer-body textarea')?.value==='Проверка Vue polling' && document.querySelector('.model-pill select')?.value==='codex:gpt-5.6-sol'");
+    await until("document.querySelector('.composer-body textarea')?.value==='Проверка Vue polling' && document.querySelector('.model-pill select')?.value==='gpt-5.6-sol'");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Рассуждение').querySelector('select').value"), 'ultra');
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Скорость').querySelector('select').value"), 'fast');
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     await evaluate("document.querySelector('.generate-button').click();void 0");
     await until("document.querySelector('.result-output')?.textContent==='Тестовый ответ Codex'");
     assert.match(await evaluate("document.querySelector('.result-facts').textContent"), /Время\s+\d+ с/);
+    assert.match(await evaluate("document.querySelector('.result-receipt').textContent"), /Списано: 1 кредитов\..*Время генерации: \d+ с\..*Токены: 120 \(вход: 100; выход: 20; из входных — кэш: 60; из выходных — рассуждения: 5\)\./);
+    assert.match(await evaluate("document.querySelector('.result-route').textContent"), /Codex CLI.*GPT-5\.6-Sol.*генератор изображений.*Ультра.*Fast/);
+    assert.match(await evaluate("document.querySelector('.token-breakdown').textContent"), /Всего токенов\s*120.*Входные\s*100.*Выходные\s*20.*Кэш из входных\s*60.*Рассуждения из выходных\s*5/);
+    assert.match(await evaluate("document.querySelector('.history-item.selected .history-item-meta').textContent"), /1 кр\..*120 ток\..*Ультра.*Fast/);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 3000);
+    await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.fetch=(...args)=>{
+      if(window.__nativeQuoteFailures>0 && String(args[0]).includes('/api/rpc/nativeQuote')){
+        window.__nativeQuoteFailures--;
+        return Promise.resolve(new Response(JSON.stringify({error:'Не удалось выполнить запрос'}),{status:400,headers:{'Content-Type':'application/json'}}));
+      }
+      return window.__mediaFetch(...args);
+    };const mediaPrompt=document.querySelector('.composer-body textarea');mediaPrompt.value='Проверка генерации Kie';mediaPrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0`);
+    await evaluate("document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
+    await until("document.querySelector('.provider-selector button.active')?.dataset.provider==='media' && document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
+    assert.equal(await evaluate("document.querySelector('.provider-selector button[data-provider=media]').textContent.includes('Kie.ai')"), true);
+    await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
+    assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
+    await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.provider-selector button[data-provider=codex]').click();document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
+    await until("document.querySelector('.quote.error')?.textContent.includes('Не удалось выполнить запрос') && document.querySelector('.generate-button').disabled");
+    await evaluate("document.querySelector('.kie-test-button').click();void 0");
+    await until("document.querySelector('.diagnostic-summary.success')?.textContent.includes('Все проверки пройдены') && !document.querySelector('.generate-button').disabled");
+    assert.equal(await evaluate("document.querySelectorAll('.diagnostic-checks article.ok').length"), 4);
+    assert.match(await evaluate("document.querySelector('.diagnostic-log').textContent"), /Авторизация Kie.*Kie принял ключ/s);
+    assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
+    assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('1')"), true);
+    await evaluate("window.fetch=window.__mediaFetch;delete window.__mediaFetch;delete window.__nativeQuoteFailures;document.querySelector('.dialog-close').click();void 0");
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-pill select option')).every(option=>option.value.startsWith('kie:'))"), true);
+    const kieImageModels = await evaluate("document.querySelectorAll('.model-pill select option').length");
+    await evaluate("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Видео')).click();void 0");
+    await until("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Видео'))?.classList.contains('active') && document.querySelectorAll('.model-pill select option').length>0");
+    const kieVideoModels = await evaluate("document.querySelectorAll('.model-pill select option').length");
+    assert.equal(kieImageModels + kieVideoModels, 149);
+    await evaluate("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Изображение')).click();void 0");
+    await until("document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
+    await evaluate("const prompt=document.querySelector('.composer-body textarea');prompt.value='Проверка генерации Kie';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
+    await evaluate("document.querySelector('.generate-button').click();void 0");
+    await until("document.querySelector('.result-route')?.textContent.includes('Kie.ai') && document.querySelector('.result-receipt')?.textContent.includes('Ответ получен от Kie.ai')");
+    assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 2000);
+    await evaluate("document.querySelector('.provider-selector button[data-provider=codex]').click();void 0");
+    await until("document.querySelector('.provider-selector button.active')?.dataset.provider==='codex'");
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-pill select option')).every(option=>!option.value.startsWith('kie:'))"), true);
     win.setSize(390, 844); await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.mobile-nav')).display"), 'grid');
     win.setSize(1280, 900);
@@ -184,8 +239,8 @@ app.whenReady().then(async () => {
     await until("document.querySelector('#grantBalance').textContent.includes('7,125') && !document.querySelector('#grantForm button').disabled");
     assert.equal((await runtime.accounts.wallet.get(adminId)).balanceUnits, 7125);
     await evaluate(`document.querySelector('#grantAccount').value=${JSON.stringify(userId)};document.querySelector('#grantAmount').value='1.25';document.querySelector('#grantNote').value='Проверка UI';document.querySelector('#grantForm').requestSubmit();void 0`);
-    await until("document.querySelector('#grantBalance').textContent.includes('4,25') && !document.querySelector('#grantForm button').disabled");
-    assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 4250);
+    await until("document.querySelector('#grantBalance').textContent.includes('3,25') && !document.querySelector('#grantForm button').disabled");
+    assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 3250);
     await evaluate("document.querySelector('#grantSelf').click(); void 0");
     await until(`document.querySelector('#grantAccount').value===${JSON.stringify(adminId)}`);
     assert.match(await evaluate("document.querySelector('#grantBalance').textContent"), /7,125/);
@@ -211,6 +266,7 @@ app.whenReady().then(async () => {
     console.log('PASS: web account UI, 149 models, native price and spending, hidden provider finance, logout, admin account list and exact credit grant.');
   } catch (error) { console.error(error); process.exitCode = 1; }
   finally {
+    global.fetch = originalFetch;
     clearTimeout(timeout); win?.destroy();
     if (runtime) await runtime.close(); else await pool.end();
     if (codexWorker) { codexWorker.closeIdleConnections(); await new Promise(resolve => codexWorker.close(resolve)); }

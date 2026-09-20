@@ -21,10 +21,12 @@ export type MediaModel = {
   kind?: string;
   fields?: MediaField[];
   inputSchema?: Record<string, unknown>;
+  startupDefault?: boolean;
 };
 export type MediaField = {
   key: string;
   label?: string;
+  hint?: string;
   type?: string;
   required?: boolean;
   default?: unknown;
@@ -36,6 +38,7 @@ export type MediaField = {
   min?: number;
   max?: number;
   step?: number | string;
+  maxLength?: number;
   schema?: { type?: string; enum?: unknown[] } & Record<string, unknown>;
 };
 export type Catalog = {
@@ -62,7 +65,18 @@ export type GenerationRecord = {
   generationStartedAt?: string;
   generationCompletedAt?: string;
   generationDurationMs?: number;
-  usage?: { total_tokens?: number; totalTokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    cached_input_tokens?: number | null;
+    reasoning_output_tokens?: number | null;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    cachedInputTokens?: number | null;
+    reasoningOutputTokens?: number | null;
+  };
   projectId?: string | null;
   chatId?: string | null;
 };

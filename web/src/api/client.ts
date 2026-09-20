@@ -69,6 +69,23 @@ export async function getMediaQuote(modelId: string, input: Record<string, unkno
   return rpc('nativeQuote', [{ modelId, input }]);
 }
 
+export type ProviderDiagnosticEntry = { time: string; step: string; status: 'ok' | 'error'; message: string; durationMs: number };
+export type ProviderDiagnostics = {
+  ok: boolean;
+  configured: boolean;
+  checkedAt: string;
+  provider: string;
+  model: { id: string; name: string };
+  quote: { credits?: number; version?: string } | null;
+  mechanism: { credentials: string; authorization: string; tariffs: string; generation: string };
+  checks: ProviderDiagnosticEntry[];
+  recentLogs: ProviderDiagnosticEntry[];
+};
+
+export async function diagnoseProvider(modelId: string, input: Record<string, unknown>): Promise<ProviderDiagnostics> {
+  return rpc('diagnoseProvider', [{ modelId, input }]);
+}
+
 export async function uploadSource(file: File, context: { projectId?: string | null; chatId?: string | null } = {}): Promise<{ ref: string; name?: string; type?: string; [key: string]: unknown }> {
   const query = new URLSearchParams({ name: file.name });
   if (context.projectId) query.set('projectId', context.projectId);

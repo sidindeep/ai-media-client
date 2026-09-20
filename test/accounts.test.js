@@ -110,6 +110,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request(sourcePath, { headers: { Cookie: alice.cookie } })).status, 200);
   const catalog = await result(rpc(alice, 'getCatalog')); assert.equal(catalog.providers[0].id, 'media'); assert.equal(catalog.providers[0].name, 'Kie.ai'); assert.equal(catalog.models[0].pricing, undefined);
   const empty = await result(rpc(alice, 'getBalance')); assert.equal(empty.balance, 0);
+  for (const user of [alice, owner]) {
+    const quote = await result(rpc(user, 'nativeQuote', [{ modelId, input }]));
+    assert.equal(quote.amountUnits, 2500);
+    assert.equal(quote.credits, 2.5);
+  }
   const adminPayload = { modelId, input, requestId: randomUUID(), billingExemptActor: owner.id };
   const tariff = config.pricing.models[modelId];
   delete config.pricing.models[modelId];

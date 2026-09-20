@@ -5,23 +5,27 @@ const path = require('node:path');
 const { validateCodexRequest } = require('../services/codex-request');
 const { createCodexBilling } = require('../services/codex-billing');
 const { buildInfo } = require('./build-info');
-const { checkDatabase } = require('../database/database');
+const { checkDatabase, transientConnection } = require('../database/database');
+const trace = require('../generation-log');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
 const vueAppPrefix = '/app';
+const retryableReadRpc = new Set(['nativeQuote', 'diagnoseProvider']);
 function temporaryConnectionFailure(error) {
-  return ['EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', '57P01', '57P03', '53300'].includes(error.code)
-    || /Connection terminated|connection timeout|timeout expired|timeout exceeded when trying to connect/i.test(error.message || '');
+  return transientConnection(error);
 }
-async function assetUser(auth, req, retry) {
+async function withTransientConnectionRetry(action, retry) {
   for (let attempt = 0; ; attempt++) {
-    try { return await auth.user(req); }
+    try { return await action(); }
     catch (error) {
       if (!retry || attempt >= 2 || !temporaryConnectionFailure(error)) throw error;
       await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
     }
   }
+}
+async function assetUser(auth, req, retry) {
+  return withTransientConnectionRetry(() => auth.user(req), retry);
 }
 const headers = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
@@ -59,9 +63,9 @@ async function sendFile(req, res, filename, type, attachment = false) {
   const stream = createReadStream(filename, { start, end });
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, telegramStatus = () => ({ enabled: false }) }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, telegramStatus = () => ({ enabled: false }) }) {
   const release = buildInfo(config.root);
-  const codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
+  let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
@@ -71,6 +75,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       if (config.publicOrigin) allowedHosts.add(new URL(config.publicOrigin).host);
       if (!allowedHosts.has(req.headers.host)) return json(res, 403, { error: 'Недопустимый адрес сервиса' });
       const url = new URL(req.url, `http://${req.headers.host}`);
+      const rpcMatch = req.method === 'POST' ? /^\/api\/rpc\/([a-zA-Z]+)$/.exec(url.pathname) : null;
+      const retryReadOnlyRpc = Boolean(rpcMatch && retryableReadRpc.has(rpcMatch[1]));
       if (auth && config.port !== 0 && req.method === 'GET' && (url.pathname === '/' || /^\/auth\/[a-z][a-z0-9_-]*\/start$/.test(url.pathname)) && req.headers.host !== new URL(config.auth.origin).host) {
         res.writeHead(302, { ...headers, Location: config.auth.origin + url.pathname + url.search, 'Cache-Control': 'no-store' }); res.end(); return;
       }
@@ -86,9 +92,50 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       const allowedTopLevelNavigation = pageNavigation || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
       if (!allowedTopLevelNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
+      const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
+      const isVueRoot = ['/', '/index.html'].includes(url.pathname);
+      const isVueApp = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
+      const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
+      const isAsset = ['GET', 'HEAD'].includes(req.method)
+        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
+      const sendVueApplication = async user => {
+        const root = path.join(config.root, 'public', 'vue');
+        const relative = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
+        if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
+        const sendVueIndex = async () => {
+          let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
+          html = html.replace('<head>', `<head><meta name="account-id" content="${user?.id || 'pending'}"><meta name="account-role" content="${user?.role || 'pending'}">`);
+          res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(req.method === 'HEAD' ? '' : html);
+        };
+        if (relative === 'index.html') return await sendVueIndex();
+        const filename = path.join(root, relative);
+        try { return await sendFile(req, res, filename); }
+        catch (error) {
+          if (path.extname(relative)) throw error;
+          return await sendVueIndex();
+        }
+      };
+      if (req.method === 'GET' && url.pathname === '/api/startup') {
+        let database = accounts ? await checkDatabase(accounts.pool) : (readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        let startupUser = config.auth.enabled ? null : { id: 'local', role: 'admin', name: 'Владелец' };
+        if (auth && database.state === 'connected') {
+          try { startupUser = await assetUser(auth, req, true); }
+          catch (error) {
+            if (!temporaryConnectionFailure(error)) throw error;
+            database = { state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT' };
+          }
+        }
+        return json(res, 200, {
+          database,
+          provider: readiness?.provider || { state: 'idle' },
+          authenticated: config.auth.enabled ? Boolean(startupUser) : true,
+          account: startupUser ? { id: startupUser.id, role: startupUser.role } : null,
+        });
+      }
       if (req.method === 'GET' && url.pathname === '/api/health') {
-        const database = await checkDatabase(accounts?.pool);
-        const status = database.state === 'unavailable' ? 503 : 200;
+        const database = accounts ? await checkDatabase(accounts.pool) : (readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        const status = ['connected', 'disabled'].includes(database.state) ? 200 : 503;
         return json(res, status, { ok: status === 200, version: release.version, build: release.build, database, generationConfigured: Boolean(legacyService.configured?.()), telegram: telegramStatus() });
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
@@ -104,14 +151,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       if (['GET', 'HEAD'].includes(req.method) && ['/login', '/login.js', '/web.css', '/version.js'].includes(url.pathname)) {
         return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
       }
-      const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
-      const isVueRoot = ['/', '/index.html'].includes(url.pathname);
-      const isVueApp = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
-      const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
-      const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
+      if (config.auth.enabled && !auth && isVueApp && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);
+      if (config.auth.enabled && !auth) return json(res, 503, { error: 'Подключаемся к базе данных. Повторите через несколько секунд.' });
       // Retry only the read-only session lookup for assets, never account/API writes.
-      const user = auth ? await assetUser(auth, req, isAsset) : { id: 'local', role: 'admin', name: 'Владелец' };
+      const user = auth ? await assetUser(auth, req, isAsset || retryReadOnlyRpc) : { id: 'local', role: 'admin', name: 'Владелец' };
       if (!user) {
         if (isVueApp || isLegacyApp) return redirect('/login');
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
@@ -148,22 +191,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
         return json(res, 200, { result: true });
       }
       if (isVueApp && ['GET', 'HEAD'].includes(req.method)) {
-        const root = path.join(config.root, 'public', 'vue');
-        const relative = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
-        if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
-        const sendVueIndex = async () => {
-          let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
-          html = html.replace('<head>', `<head><meta name="account-id" content="${user.id}"><meta name="account-role" content="${user.role}">`);
-          res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-          res.end(req.method === 'HEAD' ? '' : html);
-        };
-        if (relative === 'index.html') return await sendVueIndex();
-        const filename = path.join(root, relative);
-        try { return await sendFile(req, res, filename); }
-        catch (error) {
-          if (path.extname(relative)) throw error;
-          return await sendVueIndex();
-        }
+        return await sendVueApplication(user);
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
@@ -233,7 +261,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       // An admin can explicitly select a workspace; ordinary users cannot supply a tenant.
       const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
       // Static scripts need authentication, not account storage/queue initialization.
-      const service = accounts && url.pathname.startsWith('/api/') ? await accounts.scope(user, selected) : legacyService;
+      const service = accounts && url.pathname.startsWith('/api/')
+        ? await withTransientConnectionRetry(() => accounts.scope(user, selected), retryReadOnlyRpc)
+        : legacyService;
       if (req.method === 'POST') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
         if (url.pathname === '/api/source') {
@@ -244,7 +274,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
           const saved = await service.saveSource({ name: url.searchParams.get('name') || 'source', type, bytes, ...binding });
           return json(res, 200, { result: saved });
         }
-        const match = /^\/api\/rpc\/([a-zA-Z]+)$/.exec(url.pathname);
+        const match = rpcMatch;
         if (!match) return json(res, 404, { error: 'Метод не найден' });
         if (!(req.headers['content-type'] || '').startsWith('application/json')) throw new Error('Ожидается JSON');
         const args = JSON.parse((await readBody(req, 4 * 1024 * 1024)).toString('utf8'));
@@ -297,18 +327,39 @@ function createHttpServer({ config, service: legacyService, auth, accounts, tele
       if (res.headersSent) { res.destroy(); return; }
       if (temporaryConnectionFailure(error)) {
         console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
-        if (req.method === 'GET' && ['/', '/index.html', '/legacy', '/legacy/', '/admin.html'].includes(req.url?.split('?')[0])) {
+        if (req.method === 'GET' && ['/', '/index.html'].includes(req.url?.split('?')[0])) {
+          let html = await fs.readFile(path.join(config.root, 'public', 'vue', 'index.html'), 'utf8');
+          html = html.replace('<head>', '<head><meta name="account-id" content="pending"><meta name="account-role" content="pending">');
+          res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+          return res.end(html);
+        }
+        if (req.method === 'GET' && ['/legacy', '/legacy/', '/admin.html'].includes(req.url?.split('?')[0])) {
           res.writeHead(503, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '5' });
           return res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Временная ошибка подключения</title><h1>Не удалось подключиться к сервису</h1><p>Связь с базой данных временно недоступна. Аккаунт и данные сохранены. Повторите через несколько секунд.</p><a href="/">Повторить</a></html>');
         }
         return json(res, 503, { error: 'Связь с базой данных временно недоступна. Повторите через несколько секунд.' });
       }
       const message = error.code?.startsWith('E') || error instanceof SyntaxError ? 'Не удалось обработать запрос' : error.message;
-      json(res, error.status || 400, { error: accounts && !error.status && !['Некоррект', 'Недостаточно', 'Цена', 'Требуется', 'Для расчёта', 'Этот запрос', 'Укажите', 'Начисление', 'Проверьте', 'Генерация'].some(prefix => message.startsWith(prefix)) ? 'Не удалось выполнить запрос' : message });
+      const knownMessage = ['Некоррект', 'Недостаточно', 'Цена', 'Требуется', 'Для расчёта', 'Этот запрос', 'Укажите', 'Начисление', 'Проверьте', 'Генерация'].some(prefix => message.startsWith(prefix));
+      const hiddenUnexpectedError = accounts && !error.status && !knownMessage;
+      if (hiddenUnexpectedError) {
+        const requestPath = req.url?.split('?')[0] || '';
+        const rpc = /^\/api\/rpc\/([a-zA-Z]+)$/.exec(requestPath)?.[1];
+        trace.write('service.request.error', { method: req.method, path: requestPath, rpc, error });
+        console.error('Service request failed:', error.code || error.name || 'UNEXPECTED');
+      }
+      json(res, error.status || 400, { error: hiddenUnexpectedError ? 'Не удалось выполнить запрос' : message });
     }
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;
   server.recoverCodex = () => codex?.recover();
+  server.setAccountServices = async (nextAuth, nextAccounts) => {
+    codex?.close();
+    auth = nextAuth;
+    accounts = nextAccounts;
+    codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
+    await codex?.recover();
+  };
   server.closeEvents = () => { codex?.close(); for (const connection of connections) connection.end(); };
   return server;
 }

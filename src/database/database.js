@@ -1,8 +1,14 @@
 const { Pool } = require('pg');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const transientConnectionCodes = new Set([
+  'EAI_AGAIN', 'ECONNABORTED', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETDOWN', 'ENETUNREACH', 'ENOTFOUND', 'EPIPE', 'ETIMEDOUT',
+  'PROTOCOL_CONNECTION_LOST', 'UND_ERR_CONNECT_TIMEOUT', '53300', '57P01', '57P02', '57P03',
+]);
 function transientConnection(error) {
-  return ['EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', '57P03'].includes(error.code) || /connection timeout|timeout expired|timeout exceeded when trying to connect|Connection terminated/i.test(error.message || '');
+  const code = String(error?.code || '').toUpperCase();
+  return code.startsWith('08') || transientConnectionCodes.has(code)
+    || /connection (?:closed|terminated)|connection timeout|server closed the connection|terminating connection|timeout expired|timeout exceeded when trying to connect/i.test(error?.message || '');
 }
 function retryConnections(pool) {
   const connect = pool.connect.bind(pool);
@@ -59,4 +65,4 @@ async function checkDatabase(pool) {
     return { state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', pool: poolInfo() };
   }
 }
-module.exports = { openDatabase, transaction, retryConnections, checkDatabase };
+module.exports = { openDatabase, transaction, retryConnections, checkDatabase, transientConnection };

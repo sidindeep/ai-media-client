@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { diagnoseProvider, getCodexQuote, getMediaQuote, uploadSource } from '../api/client';
 import type { ProviderDiagnostics } from '../api/client';
@@ -13,12 +13,15 @@ const uploading = ref(false);
 const submitError = ref('');
 const quote = ref<{ credits: number } | null>(null);
 const quoteError = ref('');
+const quoteLoading = ref(false);
 const diagnosticOpen = ref(false);
 const diagnosticLoading = ref(false);
 const diagnosticError = ref('');
 const diagnostics = ref<ProviderDiagnostics | null>(null);
 const fieldErrors = ref<Record<string, string>>({});
 let quoteRevision = 0;
+let quoteTimer: ReturnType<typeof setTimeout> | null = null;
+const QUOTE_DEBOUNCE_MS = 1500;
 const effortOptions = computed(() => studio.currentCodexModel?.efforts || ['low', 'medium', 'high']);
 const currentFields = computed(() => studio.currentMediaModel?.fields || []);
 const fileFields = computed(() => currentFields.value.filter(field => field.type === 'files'));
@@ -90,6 +93,7 @@ const diagnosticMechanismLabel = (key: string) => ({ credentials: 'Ключ', au
 const diagnosticTime = (value: string) => new Date(value).toLocaleTimeString('ru-RU');
 async function openDiagnostics() {
   const modelId = studio.mediaModelId;
+  const revision = quoteRevision;
   diagnosticOpen.value = true;
   diagnosticLoading.value = true;
   diagnosticError.value = '';
@@ -97,10 +101,12 @@ async function openDiagnostics() {
   try {
     const result = await diagnoseProvider(modelId, { ...studio.mediaInput, prompt: studio.prompt });
     diagnostics.value = result;
-    if (result.ok && result.quote?.credits != null && studio.provider === 'media' && studio.mediaModelId === modelId) {
+    if (result.ok && result.quote?.credits != null && revision === quoteRevision && studio.provider === 'media' && studio.mediaModelId === modelId) {
+      stopQuoteTimer();
       quoteRevision++;
       quote.value = { credits: Number(result.quote.credits) };
       quoteError.value = '';
+      quoteLoading.value = false;
     }
   } catch (error) {
     diagnosticError.value = error instanceof Error ? error.message : 'Не удалось получить диагностику';
@@ -119,10 +125,18 @@ watch(() => studio.currentMediaModel?.id, () => {
   fieldErrors.value = Object.fromEntries(Object.entries(fieldErrors.value).filter(([key]) => allowed.has(key)));
 }, { immediate: true });
 
-async function refreshQuote() {
-  const revision = ++quoteRevision;
-  quote.value = null;
-  quoteError.value = '';
+function stopQuoteTimer() {
+  if (quoteTimer === null) return;
+  clearTimeout(quoteTimer);
+  quoteTimer = null;
+}
+
+function quoteRequestReady() {
+  if (studio.provider === 'codex') return Boolean(studio.codexModel && studio.codexEffort);
+  return Boolean(studio.mediaModelId && studio.prompt.trim());
+}
+
+async function refreshQuote(revision: number) {
   try {
     if (studio.provider === 'codex') {
       if (!studio.codexModel || !studio.codexEffort) return;
@@ -142,9 +156,29 @@ async function refreshQuote() {
     }
   } catch (error) {
     if (revision === quoteRevision) { quote.value = null; quoteError.value = error instanceof Error ? error.message : 'Цена недоступна'; }
+  } finally {
+    if (revision === quoteRevision) quoteLoading.value = false;
   }
 }
-watch(() => [studio.provider, studio.codexModel, studio.codexEffort, studio.codexSpeed, studio.mediaModelId, studio.mediaInput], refreshQuote, { immediate: true, deep: true });
+
+function scheduleQuoteRefresh(delay = 0) {
+  stopQuoteTimer();
+  const revision = ++quoteRevision;
+  quote.value = null;
+  quoteError.value = '';
+  quoteLoading.value = quoteRequestReady();
+  if (!quoteLoading.value) return;
+  quoteTimer = setTimeout(() => {
+    quoteTimer = null;
+    if (revision === quoteRevision) void refreshQuote(revision);
+  }, delay);
+}
+
+watch(() => [studio.provider, studio.codexModel, studio.codexEffort, studio.codexSpeed, studio.mediaModelId, studio.mediaInput], () => scheduleQuoteRefresh(), { immediate: true, deep: true });
+watch(() => studio.prompt, () => {
+  if (studio.provider === 'media') scheduleQuoteRefresh(QUOTE_DEBOUNCE_MS);
+});
+onBeforeUnmount(() => { stopQuoteTimer(); quoteRevision++; });
 
 async function addFiles(event: Event, field?: MediaField) {
   const input = event.target as HTMLInputElement;
@@ -212,7 +246,7 @@ async function submit() {
         <label class="select-pill"><span>Количество</span><select v-model.number="studio.quantity"><option v-for="count in 4" :key="count" :value="count">{{ count }} шт.</option></select></label>
         <span v-if="total !== null" class="quote">Итого: {{ total.toLocaleString('ru-RU') }} кредитов</span>
         <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteError }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
-        <button class="generate-button" type="button" :disabled="sending || uploading || !studio.prompt.trim() || !modelOptions.length || total === null || hasFieldErrors || missingRequiredFields.length > 0" @click="submit">{{ sending ? 'Запуск…' : 'Генерировать' }}<span v-if="total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span aria-hidden="true">↗</span></button>
+        <button class="generate-button" :class="{ 'is-loading': quoteLoading || sending }" type="button" :aria-busy="quoteLoading || sending" :disabled="sending || quoteLoading || uploading || !studio.prompt.trim() || !modelOptions.length || total === null || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || sending" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? 'Расчёт…' : sending ? 'Запуск…' : 'Генерировать' }}<span v-if="!quoteLoading && total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span v-if="!quoteLoading && !sending" aria-hidden="true">↗</span></button>
       </div>
       <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldErrors[field.key] }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ option }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldErrors[field.key]" class="field-error">{{ fieldErrors[field.key] }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
       <p v-if="missingRequiredFields.length" class="form-error">Заполните обязательные параметры: {{ missingRequiredFields.map(field => field.label || field.key).join(', ') }}</p>

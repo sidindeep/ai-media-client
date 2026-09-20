@@ -62,11 +62,11 @@ app.whenReady().then(async () => {
     win.webContents.on('console-message', (_event, level, message) => { if (level === 3) errors.push(message); });
     const evaluate = async code => {
       try { return await win.webContents.executeJavaScript(code); }
-      catch (error) { throw new Error(`${error.message}\nRenderer script: ${code}`); }
+      catch (error) { throw new Error(`${error.message}\nRenderer script: ${code}\nRenderer console: ${errors.slice(-5).join(' | ') || 'нет сообщений'}`); }
     };
     async function until(code) {
       for (let count = 0; count < 100; count++) { if (await evaluate(code)) return; await new Promise(resolve => setTimeout(resolve, 50)); }
-      throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("location.pathname + ' · ' + (document.querySelector('#codexStatus')?.textContent || document.body.innerText.slice(0,500))"));
+      throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("location.pathname + ' · ' + (document.querySelector('#codexStatus')?.textContent || document.body.innerText.slice(0,500))") + '\nRenderer console: ' + (errors.slice(-8).join(' | ') || 'нет сообщений'));
     }
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
@@ -138,6 +138,10 @@ app.whenReady().then(async () => {
     await browserSession.fetch(origin + '/api/rpc/saveDrafts', { method: 'POST', headers: userHeaders, body: JSON.stringify([vueDraft, { chatId: vueChat.id }]) });
     const workspaceState = JSON.stringify({ chatId: vueChat.id, projectId: vueProject.id });
     await evaluate(`localStorage.setItem('media-studio-workspace', ${JSON.stringify(workspaceState)});void 0`);
+    const startupStatus = await browserSession.fetch(origin + '/api/startup').then(response => response.json());
+    assert.equal(startupStatus.database.state, 'connected');
+    assert.equal(startupStatus.authenticated, true);
+    assert.equal(startupStatus.account.id, userId);
     await win.loadURL(origin);
     await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
     await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
@@ -165,10 +169,13 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.token-breakdown').textContent"), /Всего токенов\s*120.*Входные\s*100.*Выходные\s*20.*Кэш из входных\s*60.*Рассуждения из выходных\s*5/);
     assert.match(await evaluate("document.querySelector('.history-item.selected .history-item-meta').textContent"), /1 кр\..*120 ток\..*Ультра.*Fast/);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 3000);
-    await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.fetch=(...args)=>{
-      if(window.__nativeQuoteFailures>0 && String(args[0]).includes('/api/rpc/nativeQuote')){
-        window.__nativeQuoteFailures--;
-        return Promise.resolve(new Response(JSON.stringify({error:'Не удалось выполнить запрос'}),{status:400,headers:{'Content-Type':'application/json'}}));
+    await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.__nativeQuoteCalls=0;window.fetch=(...args)=>{
+      if(String(args[0]).includes('/api/rpc/nativeQuote')){
+        window.__nativeQuoteCalls++;
+        if(window.__nativeQuoteFailures>0){
+          window.__nativeQuoteFailures--;
+          return Promise.resolve(new Response(JSON.stringify({error:'Не удалось выполнить запрос'}),{status:400,headers:{'Content-Type':'application/json'}}));
+        }
       }
       return window.__mediaFetch(...args);
     };const mediaPrompt=document.querySelector('.composer-body textarea');mediaPrompt.value='Проверка генерации Kie';mediaPrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0`);
@@ -185,7 +192,12 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.diagnostic-log').textContent"), /Авторизация Kie.*Kie принял ключ/s);
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
     assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('1')"), true);
-    await evaluate("window.fetch=window.__mediaFetch;delete window.__mediaFetch;delete window.__nativeQuoteFailures;document.querySelector('.dialog-close').click();void 0");
+    await evaluate("document.querySelector('.dialog-close').click();window.__nativeQuoteCalls=0;const debouncePrompt=document.querySelector('.composer-body textarea');debouncePrompt.value='Проверка отложенного расчёта';debouncePrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await until("document.querySelector('.generate-button').getAttribute('aria-busy')==='true' && document.querySelector('.generate-spinner')!==null && document.querySelector('.generate-button').textContent.includes('Расчёт')");
+    await new Promise(resolve => setTimeout(resolve, 500));
+    assert.equal(await evaluate("window.__nativeQuoteCalls"), 0);
+    await until("window.__nativeQuoteCalls===1 && !document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').getAttribute('aria-busy')==='false'");
+    await evaluate("window.fetch=window.__mediaFetch;delete window.__mediaFetch;delete window.__nativeQuoteFailures;delete window.__nativeQuoteCalls;void 0");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-pill select option')).every(option=>option.value.startsWith('kie:'))"), true);
     const kieImageModels = await evaluate("document.querySelectorAll('.model-pill select option').length");
     await evaluate("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Видео')).click();void 0");

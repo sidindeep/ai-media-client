@@ -232,6 +232,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     async dispatch(method, args = []) {
       switch (method) {
         case 'getCatalog': return service.catalog();
+        case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input);
         case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input);
         case 'keyStatus': return service.configured();
         case 'getHistory': return listHistory();

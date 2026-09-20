@@ -6,6 +6,10 @@ function accountHeaders(): HeadersInit {
   const account = document.querySelector('meta[name="account-id"]')?.getAttribute('content') || 'local';
   return { 'X-Media-Client': 'web', 'X-Media-User': account };
 }
+export function setAccountContext(account: { id: string; role: string }) {
+  document.querySelector('meta[name="account-id"]')?.setAttribute('content', account.id);
+  document.querySelector('meta[name="account-role"]')?.setAttribute('content', account.role);
+}
 async function parse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { error?: string } | T | null;
   if (response.status === 401) {
@@ -67,6 +71,18 @@ export async function getQueueStatus(): Promise<QueueStatus> {
 
 export async function getMediaQuote(modelId: string, input: Record<string, unknown>): Promise<{ credits: number; amountUnits: number }> {
   return rpc('nativeQuote', [{ modelId, input }]);
+}
+
+export type StartupStatus = {
+  database: { state: 'connecting' | 'connected' | 'unavailable' | 'disabled'; code?: string; attempt?: number; retryInMs?: number; latencyMs?: number };
+  provider: { state: 'idle' | 'checking' | 'ready' | 'error'; checkedAt?: string; model?: { id: string; name: string }; quote?: { credits?: number } | null; checks?: Array<{ step: string; status: string; durationMs: number }> };
+  authenticated: boolean;
+  account: { id: string; role: string } | null;
+};
+
+export async function getStartupStatus(): Promise<StartupStatus> {
+  const response = await fetch('/api/startup', { cache: 'no-store' });
+  return parse<StartupStatus>(response);
 }
 
 export type ProviderDiagnosticEntry = { time: string; step: string; status: 'ok' | 'error'; message: string; durationMs: number };

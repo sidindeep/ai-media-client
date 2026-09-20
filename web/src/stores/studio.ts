@@ -9,6 +9,7 @@ const ACTIVE_STATES = ['queued', 'preparing', 'submitting', 'waiting', 'queuing'
 const COMPLETED_STATES = ['success', 'fail', 'blocked', 'cancelled', 'unknown', 'unconfirmed'] as const;
 const CODEX_POLL_STATES = new Set(['submitting', 'generating', 'running']);
 const CODEX_POLL_INTERVAL_MS = 1500;
+const STARTUP_POLL_INTERVAL_MS = 1000;
 
 export const useStudioStore = defineStore('studio', () => {
   const catalog = ref<Catalog | null>(null);
@@ -23,6 +24,9 @@ export const useStudioStore = defineStore('studio', () => {
   const selectedId = ref<string | null>(null);
   const loading = ref(true);
   const error = ref('');
+  const databaseState = ref<'connecting' | 'connected' | 'unavailable' | 'disabled'>('connecting');
+  const providerReadiness = ref<'idle' | 'checking' | 'ready' | 'error'>('checking');
+  const accountReady = ref(false);
   const prompt = ref('');
   const provider = ref<'codex' | 'media'>('codex');
   const mode = ref<GenerationMode>('image');
@@ -40,6 +44,8 @@ export const useStudioStore = defineStore('studio', () => {
   let draftTimer: ReturnType<typeof setTimeout> | undefined;
   let codexPollTimer: ReturnType<typeof setInterval> | undefined;
   let codexPollInFlight = false;
+  let startupPollTimer: ReturnType<typeof setTimeout> | undefined;
+  let startupPollInFlight = false;
 
   const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: 'Ранее', mode: 'system', projectId: null, context: {}, materialCount: history.value.length }));
   const visibleHistory = computed(() => {
@@ -191,18 +197,21 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
-  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, quantity, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, quantity, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
-  async function initialize() {
+  function restoreWorkspaceSelection() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('media-studio-workspace') || 'null');
+      if (saved?.chatId === 'system:recent' || /^[a-f0-9-]{36}$/.test(saved?.chatId || '')) activeChatId.value = saved.chatId;
+      if (saved?.projectId === null || /^[a-f0-9-]{36}$/.test(saved?.projectId || '')) activeProjectId.value = saved.projectId;
+    } catch { /* ignore damaged browser state */ }
+  }
+
+  async function loadAccountState() {
     loading.value = true;
     error.value = '';
     try {
-      try {
-        const saved = JSON.parse(localStorage.getItem('media-studio-workspace') || 'null');
-        if (saved?.chatId === 'system:recent' || /^[a-f0-9-]{36}$/.test(saved?.chatId || '')) activeChatId.value = saved.chatId;
-        if (saved?.projectId === null || /^[a-f0-9-]{36}$/.test(saved?.projectId || '')) activeProjectId.value = saved.projectId;
-      } catch { /* ignore damaged browser state */ }
       [catalog.value, codexCatalog.value, release.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null)]);
       const defaults = codexCatalog.value?.uiDefaults;
       const models = codexCatalog.value?.models || [];
@@ -218,11 +227,57 @@ export const useStudioStore = defineStore('studio', () => {
       mediaModelId.value = mediaModelsFor(mode.value).find(model => model.startupDefault)?.id || mediaModelsFor(mode.value)[0]?.id || '';
       await Promise.all([refresh(), refreshWorkspaces()]);
       await loadDraftForActive();
+      accountReady.value = true;
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось загрузить студию';
+      accountReady.value = false;
+      const message = cause instanceof Error ? cause.message : 'Не удалось загрузить студию';
+      console.error('Account startup failed:', message);
+      if (/баз|соедин|connection|timeout|временно недоступ/i.test(message)) databaseState.value = 'unavailable';
+      else error.value = message;
     } finally {
       loading.value = false;
     }
+  }
+
+  function scheduleStartupPoll() {
+    if (startupPollTimer) clearTimeout(startupPollTimer);
+    startupPollTimer = setTimeout(() => { startupPollTimer = undefined; void pollStartup(); }, STARTUP_POLL_INTERVAL_MS);
+  }
+
+  async function pollStartup() {
+    if (startupPollInFlight) return;
+    startupPollInFlight = true;
+    try {
+      const status = await api.getStartupStatus();
+      databaseState.value = status.database.state;
+      providerReadiness.value = status.provider.state;
+      if (['connected', 'disabled'].includes(status.database.state)) {
+        if (!status.authenticated) { window.location.assign('/login'); return; }
+        if (status.account) api.setAccountContext(status.account);
+        if (!accountReady.value) await loadAccountState();
+      }
+    } catch {
+      databaseState.value = 'unavailable';
+      accountReady.value = false;
+    } finally {
+      startupPollInFlight = false;
+      if (!accountReady.value || providerReadiness.value === 'checking') scheduleStartupPoll();
+    }
+  }
+
+  async function initialize() {
+    if (startupPollTimer) clearTimeout(startupPollTimer);
+    startupPollTimer = undefined;
+    accountReady.value = false;
+    loading.value = false;
+    error.value = '';
+    restoreWorkspaceSelection();
+    await pollStartup();
+  }
+
+  function stopStartupPolling() {
+    if (startupPollTimer) clearTimeout(startupPollTimer);
+    startupPollTimer = undefined;
   }
 
   async function submit() {
@@ -281,11 +336,12 @@ export const useStudioStore = defineStore('studio', () => {
 
   return {
     catalog, codexCatalog, release, history, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    databaseState, providerReadiness, accountReady,
     prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, quantity, setMode, setProvider,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject,
     loadDraftForActive,
-    pendingCodexId, currentCodexModel, initialize, refresh, stopCodexPolling, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
+    pendingCodexId, currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
   };
 });

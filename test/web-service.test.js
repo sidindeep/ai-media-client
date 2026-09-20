@@ -12,14 +12,16 @@ const { models } = require('../src/catalog');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
-test('temporary database failure gives a retryable page and an unhealthy API status', async t => {
+test('temporary database failure keeps the Vue shell available with startup status and unhealthy API health', async t => {
   const unavailable = async () => { throw Object.assign(new Error('private database details'), { code: 'EAI_AGAIN' }); };
   const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { pool: { query: unavailable } } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const page = await fetch(base); assert.equal(page.status, 503); assert.equal(page.headers.get('retry-after'), '5');
-  const html = await page.text(); assert.match(html, /Повторить/); assert.doesNotMatch(html, /private database details/);
+  const page = await fetch(base); assert.equal(page.status, 200);
+  const html = await page.text(); assert.match(html, /account-id" content="pending/); assert.match(html, /\/app\/assets\//); assert.doesNotMatch(html, /private database details/);
+  const startup = await fetch(base + '/api/startup'); assert.equal(startup.status, 200);
+  assert.deepEqual(await startup.json(), { database: { state: 'unavailable', code: 'EAI_AGAIN', pool: {} }, provider: { state: 'idle' }, authenticated: false, account: null });
   assert.equal((await fetch(base + '/api/health')).status, 503);
   const version = await fetch(base + '/api/version');
   assert.equal(version.status, 200);
@@ -60,6 +62,36 @@ test('protected scripts retry transient session reads without initializing accou
   assert.equal((await fetch(base + '/api/rpc/createTask', { method: 'POST' })).status, 503);
   assert.equal(attempts, 1, 'paid requests must not be retried');
 });
+test('read-only native quote retries transient PostgreSQL session and account lookups', async t => {
+  const user = { id: '11111111-1111-1111-1111-111111111111', role: 'user' };
+  let authAttempts = 0, scopeAttempts = 0;
+  const transient = () => Object.assign(new Error('connection failure'), { code: '08006' });
+  const auth = {
+    providers: () => [],
+    user: async () => { if (++authAttempts === 1) throw transient(); return user; },
+  };
+  const accounts = {
+    scope: async () => {
+      if (++scopeAttempts === 1) throw transient();
+      return { dispatch: async method => {
+        assert.equal(method, 'nativeQuote');
+        return { credits: 4, amountUnits: 4000 };
+      } };
+    },
+  };
+  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth, accounts });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/rpc/nativeQuote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web', 'X-Media-User': user.id },
+    body: JSON.stringify([{ modelId: 'kie:nano-banana-2-lite', input: { prompt: 'Кот' } }]),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { result: { credits: 4, amountUnits: 4000 } });
+  assert.equal(authAttempts, 2);
+  assert.equal(scopeAttempts, 2);
+});
 async function directory() {
   const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });
   const dir = await fs.mkdtemp(path.join(base, 'web-test-'));
@@ -72,6 +104,24 @@ async function cleanup(dir, resource) {
   assert.ok(dir.startsWith(base + path.sep));
   await fs.rm(dir, { recursive: true, force: true, maxRetries: 3 });
 }
+
+test('service starts the Vue shell while the database connects in the background', async t => {
+  const dir = await directory();
+  let attempts = 0;
+  const config = { ...loadConfig({ MEDIA_PORT: '0', DATABASE_URL: 'postgres://startup.invalid/test' }), dataDirectory: dir };
+  const runtime = await start({
+    config, provider: fakeProvider(), startupChecks: false,
+    databaseOpener: async () => { attempts++; throw Object.assign(new Error('not ready'), { code: 'ECONNREFUSED' }); },
+  });
+  t.after(() => cleanup(dir, runtime));
+  const base = `http://127.0.0.1:${runtime.server.address().port}`;
+  assert.equal((await fetch(base)).status, 200);
+  const startup = await fetch(base + '/api/startup').then(response => response.json());
+  assert.ok(['connecting', 'unavailable'].includes(startup.database.state));
+  assert.equal(startup.authenticated, false);
+  assert.equal((await fetch(base + '/api/rpc/getHistory', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web' }, body: '[]' })).status, 503);
+  assert.ok(attempts >= 1);
+});
 
 test('web serves shared forms, no credentials UI, strict API boundary and persistent drafts', async t => {
   const dir = await directory();

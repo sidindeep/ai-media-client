@@ -289,7 +289,7 @@ export const useStudioStore = defineStore('studio', () => {
         const requestId = crypto.randomUUID();
         const job = await api.submitCodex({ prompt: prompt.value, model: codexModel.value, effort: codexEffort.value, speed: codexSpeed.value,
           kind: mode.value === 'text' ? 'text' : 'image', aspectRatio: codexAspectRatio.value,
-          sourceFiles: mode.value === 'image' ? sourceFiles.value.map(item => item.ref) : [], ...context, requestId });
+          sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
         pendingCodexId.value = job.id || requestId; last = job;
       }
       prompt.value = ''; await refresh(); selectedId.value = `codex:${last?.id || pendingCodexId.value}`; return last;

@@ -25,6 +25,8 @@
 | Docker остановка | docker compose down |
 | Проверка diff | git diff --check |
 
+Обязательный порядок после каждой правки: завершить целостный пакет изменений → `docker compose up -d --build` → дождаться готовности сервисов → проверить `docker compose ps` и `Invoke-RestMethod -Uri http://127.0.0.1:3000/api/health` → только затем выполнять и засчитывать итоговые проверки изменённого поведения. Проверки, выполненные до Docker-пересборки или только на host runtime, являются предварительными и должны быть повторены в нужном объёме на свежем контейнере. Если Docker-сборка, сервисы или health не подтверждены, задача остаётся незавершённой с явным blocker.
+
 Единственный output: desktop/dist/queue-header. EXE: desktop/dist/queue-header/win-unpacked/AI Media Client.exe. Не обходить desktop/scripts/single-distribution.cjs. Если EXE занят, закрыть приложение штатно с сохранением черновиков. Для smoke пакета задайте AI_CLIENT_PACKAGED_PATH абсолютным путём к desktop/dist/queue-header/win-unpacked/resources/app.asar и добавьте --packaged к smoke-команде.
 
 Веб: http://127.0.0.1:3000; health: /api/health. Конфиг: .env, образец .env.example. Данные: data/service, включая logs/generation.jsonl. Docker монтирует тот же каталог. Остановка Node: Ctrl+C. Не запускайте одновременно Node и Docker с одними данными.

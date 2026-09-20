@@ -68,6 +68,7 @@ app.whenReady().then(async () => {
       for (let count = 0; count < 100; count++) { if (await evaluate(code)) return; await new Promise(resolve => setTimeout(resolve, 50)); }
       throw new Error('UI condition timeout: ' + code + ' · ' + await evaluate("location.pathname + ' · ' + (document.querySelector('#codexStatus')?.textContent || document.body.innerText.slice(0,500))") + '\nRenderer console: ' + (errors.slice(-8).join(' | ') || 'нет сообщений'));
     }
+    const uploadTinyImage = selector => evaluate(`(() => { const bytes=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='), value => value.charCodeAt(0)); const input=document.querySelector(${JSON.stringify(selector)}); const transfer=new DataTransfer(); transfer.items.add(new File([bytes], 'source.png', { type: 'image/png' })); input.files=transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: userToken, httpOnly: true, sameSite: 'lax' });
     await (await runtime.accounts.get(userId)).dispatch('saveDrafts', [{ version: 1, active: 0, tabs: [{ provider: 'kie', model: 'kie:nano-banana-2-lite', values: { prompt: { value: 'Черновик после смены роли' } }, sourceFiles: [] }] }]);
     await win.loadURL(origin + '/legacy');
@@ -144,6 +145,20 @@ app.whenReady().then(async () => {
     assert.equal(startupStatus.account.id, userId);
     await win.loadURL(origin);
     await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
+    await until("document.querySelector('.account-trigger')?.textContent.includes('Новое имя')");
+    await evaluate("document.querySelector('.account-trigger').click();void 0");
+    await until("document.querySelector('.account-popover')?.textContent.includes('Профиль')");
+    assert.equal(await evaluate("document.querySelector('.account-admin-link')"), null);
+    assert.equal(await evaluate("document.querySelector('.account-balance strong').textContent"), '4 кр.');
+    await evaluate("Array.from(document.querySelectorAll('.account-menu-section button')).find(button=>button.textContent.includes('Профиль')).click();void 0");
+    await until("document.querySelector('.account-modal')?.textContent.includes('Профиль') && document.querySelector('#profileName').value==='Новое имя'");
+    await evaluate("document.querySelector('.account-modal header button').click();void 0");
+    assert.match(await evaluate("document.querySelector('.attach-button').textContent"), /Исходники/);
+    await uploadTinyImage('.attach-button input[type=file]');
+    await until("document.querySelector('.source-preview img')?.complete && document.querySelector('.source-preview img')?.naturalWidth===1");
+    assert.match(await evaluate("document.querySelector('.source-preview').textContent"), /source\.png.*Исходное изображение/s);
+    await evaluate("document.querySelector('.source-remove').click();void 0");
+    assert.equal(await evaluate("document.querySelector('.source-preview')"), null);
     await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
     assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
@@ -182,6 +197,10 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
     await until("document.querySelector('.provider-selector button.active')?.dataset.provider==='media' && document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
     assert.equal(await evaluate("document.querySelector('.provider-selector button[data-provider=media]').textContent.includes('Kie.ai')"), true);
+    assert.match(await evaluate("document.querySelector('.attach-button').textContent"), /Исходники/);
+    await uploadTinyImage('.attach-button input[type=file]');
+    await until("document.querySelector('.source-preview img')?.complete && document.querySelector('.source-preview img')?.naturalWidth===1");
+    assert.match(await evaluate("document.querySelector('.source-preview').textContent"), /source\.png.*Исходные изображения/s);
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
     await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.provider-selector button[data-provider=codex]').click();document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
@@ -221,6 +240,11 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('#logout').click(); void 0");
     await until("location.pathname==='/login' && document.querySelector('#loginProviders')!==null");
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
+    await win.loadURL(origin);
+    await until("document.querySelector('.account-trigger')?.textContent.includes('Администратор')");
+    await evaluate("document.querySelector('.account-trigger').click();void 0");
+    await until("document.querySelector('.account-admin-link')?.textContent.includes('Админка')");
+    assert.equal(await evaluate("document.querySelector('.account-admin-link').getAttribute('href')"), '/admin.html');
     assert.equal((await browserSession.fetch(origin + '/api/codex/jobs/' + userCodexJob)).status, 404);
     assert.equal((await browserSession.fetch(origin + '/api/codex/jobs/' + userCodexJob + '/image')).status, 404);
     await win.loadURL(origin + '/legacy?account=' + userId);

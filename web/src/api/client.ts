@@ -1,4 +1,4 @@
-import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { Account, Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -68,6 +68,12 @@ export const saveDraft = (draft: Record<string, unknown>, chatId?: string | null
 export async function getQueueStatus(): Promise<QueueStatus> {
   return rpc<QueueStatus>('queueStatus');
 }
+
+export const getAccount = () => workspaceRequest<Account>('/api/account');
+export const updateAccountProfile = (name: string) => workspaceRequest<{ name: string }>('/api/account/profile', { method: 'POST', body: JSON.stringify({ name }) });
+export const getStorageSettings = () => rpc<{ autoSave: boolean }>('storageSettings');
+export const setAutoSave = (autoSave: boolean) => rpc<{ autoSave: boolean }>('setAutoSave', [autoSave]);
+export const logout = () => workspaceRequest<boolean>('/auth/logout', { method: 'POST', body: '{}' });
 
 export async function getMediaQuote(modelId: string, input: Record<string, unknown>): Promise<{ credits: number; amountUnits: number }> {
   return rpc('nativeQuote', [{ modelId, input }]);

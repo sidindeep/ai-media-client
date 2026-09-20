@@ -25,6 +25,8 @@ const QUOTE_DEBOUNCE_MS = 1500;
 const effortOptions = computed(() => studio.currentCodexModel?.efforts || ['low', 'medium', 'high']);
 const currentFields = computed(() => studio.currentMediaModel?.fields || []);
 const fileFields = computed(() => currentFields.value.filter(field => field.type === 'files'));
+const codexAcceptsImages = computed(() => studio.currentCodexModel?.inputModalities?.includes('image') === true);
+const hasSourcePicker = computed(() => studio.provider === 'codex' ? codexAcceptsImages.value : fileFields.value.length > 0);
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
 const total = computed(() => quote.value ? quote.value.credits * studio.quantity : null);
@@ -54,6 +56,13 @@ const retryableQuoteError = (error: unknown) => error instanceof Error
   && /^(?:Не удалось выполнить запрос|Некорректный ответ сервиса|Связь с базой данных временно недоступна)/i.test(error.message);
 
 function fieldOptions(field: MediaField) { return mediaFieldOptions(field); }
+function sourceButtonLabel(field: MediaField) { return fileFields.value.length === 1 ? 'Исходники' : (field.label || 'Исходники'); }
+function sourceFieldLabel(fieldKey?: string) { return fileFields.value.find(field => field.key === fieldKey)?.label || ''; }
+function sourcePreviewUrl(ref: string) {
+  const id = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(ref)?.[1];
+  return id ? `/api/sources/${id}` : '';
+}
+function isImageSource(type: string) { return type.startsWith('image/'); }
 function updateField(key: string, value: unknown) {
   const input = { ...studio.mediaInput };
   if (value === undefined) delete input[key]; else input[key] = value;
@@ -229,11 +238,16 @@ async function submit() {
         <span>Проверяет ключ, авторизацию и цену. Генерация не запускается.</span>
       </div>
       <textarea v-model="studio.prompt" maxlength="20000" placeholder="Введите идею для генерации" aria-label="Промпт генерации" @keydown.ctrl.enter="submit"></textarea>
-      <div class="source-strip">
-        <label v-if="studio.provider === 'codex'" class="attach-button">＋ Исходники<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
-        <label v-for="field in fileFields" v-else :key="field.key" class="attach-button">＋ {{ field.label || 'Исходники' }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
+      <div v-if="hasSourcePicker || studio.sourceFiles.length || uploading" class="source-strip">
+        <label v-if="studio.provider === 'codex' && codexAcceptsImages" class="attach-button">＋ Исходники<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
+        <label v-for="field in fileFields" v-else :key="field.key" class="attach-button">＋ {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
         <span v-if="uploading" class="uploading">Загрузка…</span>
-        <button v-for="(file, index) in studio.sourceFiles" :key="file.ref + index" type="button" class="source-chip" @click="removeFile(index)">{{ file.name }} ×</button>
+        <article v-for="(file, index) in studio.sourceFiles" :key="file.ref + index" class="source-preview">
+          <img v-if="isImageSource(file.type)" :src="sourcePreviewUrl(file.ref)" :alt="`Миниатюра ${file.name}`" loading="lazy">
+          <span v-else class="source-file-icon" aria-hidden="true">▧</span>
+          <span class="source-preview-copy"><strong>{{ file.name }}</strong><small>{{ sourceFieldLabel(file.fieldKey) || 'Исходное изображение' }}</small></span>
+          <button type="button" class="source-remove" :aria-label="`Удалить ${file.name}`" @click="removeFile(index)">×</button>
+        </article>
       </div>
       <div class="composer-controls">
         <label class="select-pill model-pill"><span>Модель</span><select v-model="modelChoice"><option v-for="model in modelOptions" :key="model.value" :value="model.value">{{ model.label }}</option></select></label>

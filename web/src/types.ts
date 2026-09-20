@@ -110,6 +110,20 @@ export type QueueStatus = {
   concurrency: number;
 };
 
+export type Account = {
+  id: string;
+  name: string;
+  role: 'user' | 'admin';
+  identities: Array<{ provider: string; subject: string; email?: string }>;
+  wallet: {
+    balanceUnits: number;
+    heldUnits: number;
+    balance: number;
+    currency: 'credits';
+    scale: number;
+  } | null;
+};
+
 export type ReleaseInfo = {
   version: string;
   channel: string;

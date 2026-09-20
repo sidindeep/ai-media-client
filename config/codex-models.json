@@ -12,7 +12,7 @@
     {
       "id": "gpt-6-astra",
       "name": "GPT-6-Astra",
-      "isDefault": true,
+      "isDefault": false,
       "efforts": [
         "low",
         "medium",
@@ -83,7 +83,7 @@
     {
       "id": "gpt-5.5",
       "name": "GPT-5.5",
-      "isDefault": false,
+      "isDefault": true,
       "efforts": [
         "low",
         "medium",

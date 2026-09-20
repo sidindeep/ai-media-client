@@ -131,9 +131,17 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
     assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого') || document.querySelector('.quote')!==null"), true);
+    assert.equal(await evaluate("document.querySelector('.model-pill select').value"), 'codex:gpt-5.5');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.model-pill option')).backgroundColor"), 'rgb(24, 25, 37)');
     await evaluate("document.querySelector('.model-pill select').value='codex:gpt-5.6-sol';document.querySelector('.model-pill select').dispatchEvent(new Event('change',{bubbles:true}));void 0");
     await until("Boolean(Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Рассуждение')?.querySelector('select')?.querySelector('option[value=ultra]'))");
     await evaluate("const labels=Array.from(document.querySelectorAll('.select-pill'));const set=(name,value)=>{const select=labels.find(label=>label.querySelector('span')?.textContent===name).querySelector('select');select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}))};set('Рассуждение','ultra');set('Скорость','fast');const prompt=document.querySelector('.composer-body textarea');prompt.value='Проверка Vue polling';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
+    await new Promise(resolve => setTimeout(resolve, 700));
+    await win.reload();
+    await until("document.querySelector('.composer-body textarea')?.value==='Проверка Vue polling' && document.querySelector('.model-pill select')?.value==='codex:gpt-5.6-sol'");
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Рассуждение').querySelector('select').value"), 'ultra');
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.select-pill')).find(label=>label.querySelector('span')?.textContent==='Скорость').querySelector('select').value"), 'fast');
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     await evaluate("document.querySelector('.generate-button').click();void 0");
     await until("document.querySelector('.result-output')?.textContent==='Тестовый ответ Codex'");

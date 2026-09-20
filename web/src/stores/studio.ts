@@ -54,6 +54,19 @@ export const useStudioStore = defineStore('studio', () => {
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
 
+  function normalizeCodexControls() {
+    const models = codexCatalog.value?.models || [];
+    if (!models.length) return;
+    const model = models.find(item => item.id === codexModel.value)
+      || models.find(item => item.id === 'gpt-5.5')
+      || models.find(item => item.isDefault)
+      || models[0];
+    codexModel.value = model.id;
+    if (!model.efforts.includes(codexEffort.value)) codexEffort.value = model.defaultEffort || model.efforts[0] || 'medium';
+    if (!['standard', 'fast'].includes(codexSpeed.value)) codexSpeed.value = 'fast';
+    if (!['auto', '1:1', '16:9', '9:16', '3:2', '2:3'].includes(codexAspectRatio.value)) codexAspectRatio.value = 'auto';
+  }
+
   async function refresh() {
     const [nextHistory, nextQueue] = await Promise.all([api.getHistory(), api.getQueueStatus()]);
     history.value = nextHistory;
@@ -117,13 +130,18 @@ export const useStudioStore = defineStore('studio', () => {
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
       if (Number.isInteger(tab.quantity) && Number(tab.quantity) >= 1 && Number(tab.quantity) <= 4) quantity.value = Number(tab.quantity);
+      if (typeof tab.codexModel === 'string') codexModel.value = tab.codexModel;
+      if (typeof tab.codexEffort === 'string') codexEffort.value = tab.codexEffort;
+      if (typeof tab.codexSpeed === 'string') codexSpeed.value = tab.codexSpeed;
+      if (typeof tab.codexAspectRatio === 'string') codexAspectRatio.value = tab.codexAspectRatio;
     }
+    normalizeCodexControls();
     draftReady.value = true;
   }
   async function saveCurrentDraft() {
     if (!draftReady.value) return;
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, quantity: quantity.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, quantity: quantity.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
   async function createProject(name: string) { const project = await api.createProject(name); projects.value.unshift(project); return project; }
@@ -145,7 +163,8 @@ export const useStudioStore = defineStore('studio', () => {
     if (first && !mediaModels.value.some(model => model.id === mediaModelId.value)) mediaModelId.value = first.id;
   }
 
-  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, quantity], () => { if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch(codexModel, normalizeCodexControls, { flush: 'sync' });
+  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, quantity, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
   async function initialize() {
@@ -159,10 +178,16 @@ export const useStudioStore = defineStore('studio', () => {
       } catch { /* ignore damaged browser state */ }
       [catalog.value, codexCatalog.value, release.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null)]);
       const defaults = codexCatalog.value?.uiDefaults;
-      codexModel.value = defaults?.model || codexCatalog.value?.models.find(model => model.id === 'gpt-6-astra')?.id || codexCatalog.value?.models[0]?.id || '';
+      const models = codexCatalog.value?.models || [];
+      codexModel.value = models.find(model => model.id === defaults?.model)?.id
+        || models.find(model => model.id === 'gpt-5.5')?.id
+        || models.find(model => model.isDefault)?.id
+        || models[0]?.id
+        || '';
       codexEffort.value = defaults?.effort || currentCodexModel.value?.defaultEffort || 'medium';
       codexSpeed.value = defaults?.speed || 'standard';
       codexKind.value = defaults?.kind === 'text' ? 'text' : 'image';
+      normalizeCodexControls();
       mediaModelId.value = (catalog.value?.models || []).find(model => (model.kind || 'image') === mode.value)?.id || '';
       await Promise.all([refresh(), refreshWorkspaces()]);
       await loadDraftForActive();

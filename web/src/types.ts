@@ -106,6 +106,7 @@ export type ReleaseInfo = {
 export type CodexModel = {
   id: string;
   name: string;
+  isDefault?: boolean;
   efforts: string[];
   defaultEffort: string;
   inputModalities?: string[];

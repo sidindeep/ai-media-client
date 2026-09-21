@@ -84,8 +84,8 @@ const missingRequiredFields = computed(() => studio.provider === 'media' ? curre
   return value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length);
 }) : []);
 const mediaRequestInput = () => ({ ...studio.mediaInput, ...(promptField.value?.key === 'prompt' ? { prompt: studio.prompt } : {}) });
-const retryableQuoteError = (error: unknown) => error instanceof Error
-  && /^(?:Не удалось выполнить запрос|Некорректный ответ сервиса|Связь с базой данных временно недоступна)/i.test(error.message);
+const retryableReadError = (error: unknown) => error instanceof Error
+  && /^(?:Не удалось выполнить запрос|Некорректный ответ сервиса|Подключаемся к базе данных|Связь с базой данных временно недоступна)/i.test(error.message);
 
 function fieldOptions(field: MediaField) { return mediaFieldOptions(field); }
 function fieldOptionLabel(field: MediaField, option: unknown) {
@@ -142,7 +142,14 @@ async function openDiagnostics() {
   diagnosticError.value = '';
   diagnostics.value = null;
   try {
-    const result = await diagnoseProvider(modelId, mediaRequestInput());
+    const requestDiagnostics = () => diagnoseProvider(modelId, mediaRequestInput());
+    let result;
+    try { result = await requestDiagnostics(); }
+    catch (error) {
+      if (!retryableReadError(error)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 750));
+      result = await requestDiagnostics();
+    }
     diagnostics.value = result;
     if (result.ok && result.quote?.credits != null && revision === quoteRevision && studio.provider === 'media' && studio.mediaModelId === modelId) {
       stopQuoteTimer();
@@ -193,7 +200,7 @@ async function refreshQuote(revision: number) {
       let result;
       try { result = await requestQuote(); }
       catch (error) {
-        if (!retryableQuoteError(error)) throw error;
+        if (!retryableReadError(error)) throw error;
         await new Promise(resolve => setTimeout(resolve, 500));
         if (revision !== quoteRevision) return;
         result = await requestQuote();

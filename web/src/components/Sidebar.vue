@@ -3,8 +3,8 @@ import { computed, ref } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import type { Chat, Project } from '../types';
 
-const props = defineProps<{ activeSection: 'workspace' | 'history' }>();
-const emit = defineEmits<{ workspace: []; history: [] }>();
+const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'history' }>();
+const emit = defineEmits<{ landing: []; home: []; workspace: []; history: [] }>();
 const studio = useStudioStore();
 const activeTab = ref<'chats' | 'projects'>('chats');
 const search = ref('');
@@ -80,7 +80,7 @@ async function moveChat(chat: Chat) {
 function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = null; emit('workspace'); }
 function selectTab(tab: 'chats' | 'projects') {
   activeTab.value = tab; search.value = ''; menuId.value = null;
-  if (tab === 'chats') { selectedProjectId.value = null; studio.selectStandalone(); emit('workspace'); }
+  if (tab === 'chats') selectedProjectId.value = null;
 }
 function openProject(project: Project) {
   selectedProjectId.value = selectedProjectId.value === project.id ? null : project.id;
@@ -111,12 +111,16 @@ function diagnoseKie(event: Event) {
 
 <template>
   <aside class="sidebar" :class="{ collapsed }">
-    <div class="sidebar-brand"><a class="brand-mark" href="/" aria-label="На главную" title="На главную">ИИ</a><div><strong>Медиастудия</strong><small>WEB · STUDIO</small><span class="sidebar-version">{{ releaseLabel }}</span></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
+    <div class="sidebar-brand"><a class="brand-mark" href="/" aria-label="На главную" title="На главную" @click.prevent="emit('landing')">ИИ</a><div><strong>Медиастудия</strong><small>WEB · STUDIO</small><span class="sidebar-version">{{ releaseLabel }}</span></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
     <nav class="sidebar-primary-nav" aria-label="Основная навигация">
-      <a class="sidebar-home-link" href="/" aria-label="Главная" title="Главная">
+      <a class="sidebar-home-link sidebar-public-home-link" href="/" aria-label="Главная" title="Главная" @click.prevent="emit('landing')">
         <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><path d="M3.75 10.5 12 3.75l8.25 6.75v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V10.5Z" /><path d="M9 20.25v-6h6v6" /></svg></span>
         <span>Главная</span>
       </a>
+      <button type="button" class="sidebar-home-link sidebar-overview-link" :class="{ active: props.activeSection === 'home' }" aria-label="Обзор" title="Обзор" @click="emit('home')">
+        <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></svg></span>
+        <span>Обзор</span>
+      </button>
       <button type="button" class="sidebar-home-link sidebar-history-link" :class="{ active: props.activeSection === 'history' }" aria-label="История" title="История" @click="emit('history')">
         <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><circle cx="12" cy="12" r="8.25" /><path d="M12 7.5v4.75l3.25 2" /></svg></span>
         <span>История</span>

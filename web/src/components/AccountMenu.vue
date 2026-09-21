@@ -14,7 +14,7 @@ const saving = ref(false);
 const status = ref('');
 const profileName = ref('');
 const autoSave = ref(false);
-const concurrency = ref(3);
+const concurrency = ref(5);
 
 const isAdmin = computed(() => account.value?.role === 'admin' && account.value.id !== 'local');
 const initials = computed(() => account.value?.name.trim().slice(0, 1).toUpperCase() || '•');

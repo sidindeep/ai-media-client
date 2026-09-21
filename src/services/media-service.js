@@ -35,7 +35,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     if (providerDiagnostics.length > 50) providerDiagnostics.splice(0, providerDiagnostics.length - 50);
     return entry;
   };
-  let enqueueChain = Promise.resolve();
+  const enqueueChains = new Map();
   const findModel = id => {
     const requested = String(id || '');
     const apiModel = requested.replace(/^(?:kie|media):/, '');
@@ -83,7 +83,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     pendingSaves.set(id, operation);
     try { return await operation; } finally { pendingSaves.delete(id); events.emit('changed'); }
   }
-  const settings = await preference('queue', { concurrency: 3 });
+  const settings = await preference('queue', { concurrency: 5 });
   const queue = new TaskQueue({
     store: history, concurrency: settings.concurrency, interval, notify: () => events.emit('changed'),
     prepare: async record => {
@@ -99,8 +99,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     }
   });
   await queue.recover();
-  async function listHistory() {
-    return Promise.all((await history.list()).map(async record => {
+  async function presentHistory(records) {
+    return Promise.all(records.map(async record => {
       const localFiles = await Promise.all((record.localFiles || []).map(async (file, index) => ({
         size: file.size, savedAt: file.savedAt, url: file.url, name: path.basename(file.path),
         previewUrl: `/api/results/${encodeURIComponent(record.id)}/${index}`,
@@ -109,8 +109,12 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       return { ...record, resultJson: JSON.stringify({ resultUrls: urls(record) }), localFiles };
     }));
   }
+  async function listHistory() { return presentHistory(await history.list()); }
+  async function listHistorySince(since, before) {
+    return typeof history.listSince === 'function' ? presentHistory(await history.listSince(since, before)) : listHistory();
+  }
   const service = {
-    events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, resultUrls: urls,
+    events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, listHistorySince, resultUrls: urls,
     catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id) }),
     configured: () => provider.isConfigured(),
     async nativeQuote(modelId, input = {}) {
@@ -201,7 +205,11 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       return file;
     },
     async createTask(request) {
-      const operation = enqueueChain.then(()=>trace.request(()=>trace.step('generation.request',{request},async () => {
+      // Serialize only retries of the same request id. Independent generation
+      // requests may validate, reserve and enqueue concurrently.
+      const chainKey = request?.requestId || 'legacy-without-request-id';
+      const previous = enqueueChains.get(chainKey) || Promise.resolve();
+      const operation = previous.then(()=>trace.request(()=>trace.step('generation.request',{request},async () => {
         if (!provider.isConfigured()) throw new Error('Генерация ещё не подключена на сервере');
         const model = findModel(request?.modelId);
         validate(model, request.input);
@@ -227,9 +235,15 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           ...(pricing ? { nativeQuote: await service.nativeQuote(model.id, request.input) } : {}),
           rubPerCredit: price.rubPerCredit, estimate: costs.quote(model, request.input, cachedTariffs)
         });
+        // A generation click always resumed the queue through a second RPC. Wake it
+        // here so the accepted record can start without waiting for another round trip.
+        queue.start();
         return record;
       })));
-      enqueueChain = operation.catch(() => {}); return operation;
+      const settled = operation.catch(() => {});
+      enqueueChains.set(chainKey, settled);
+      try { return await operation; }
+      finally { if (enqueueChains.get(chainKey) === settled) enqueueChains.delete(chainKey); }
     },
     async dispatch(method, args = []) {
       switch (method) {
@@ -290,7 +304,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     },
     async close() {
       queue.close();
-      while (queue.running) await new Promise(resolve => setTimeout(resolve, 20));
+      while (queue.running || queue.polling) await new Promise(resolve => setTimeout(resolve, 20));
       await Promise.allSettled([...pendingSaves.values(), history.queue, preferences.queue, drafts.queue, sourceMetadata.queue]);
     }
   };

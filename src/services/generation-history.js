@@ -10,6 +10,7 @@ function codexRecord(job) {
     modelName: catalog.models.find(model => model.id === job.model)?.name || job.model,
     kind: job.kind || 'text', state: job.state === 'running' ? 'generating' : job.state,
     workspace: -1, queueHidden: true,
+    requestId: job.id, revision: job.revision,
     createdAt: job.createdAt, updatedAt: job.updatedAt,
     generationStartedAt: job.startedAt || job.createdAt,
     generationCompletedAt: job.completedAt,
@@ -29,4 +30,11 @@ async function generationHistory(pool, accountId, service, present = record => r
   return [...media.map(present), ...codex.map(codexRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
-module.exports = { generationHistory };
+async function generationHistorySince(pool, accountId, service, since, before, present = record => record) {
+  const [media, codex] = await Promise.all([
+    service.listHistorySince(since, before), new AccountRecords(pool, accountId, 'codex').listSince(since, before)
+  ]);
+  return [...media.map(present), ...codex.map(codexRecord)]
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
+}
+module.exports = { generationHistory, generationHistorySince };

@@ -64,6 +64,8 @@ export type GenerationPreset = {
 
 export type GenerationRecord = {
   id: string;
+  requestId?: string;
+  revision?: number;
   optimistic?: boolean;
   providerId: string;
   providerName?: string;
@@ -136,6 +138,15 @@ export type QueueStatus = {
   paused: boolean;
   error: string | null;
   concurrency: number;
+};
+
+export type WorkspaceSync = {
+  cursor: string;
+  full: boolean;
+  records: GenerationRecord[];
+  projects: Project[];
+  chats: Chat[];
+  queue: QueueStatus;
 };
 
 export type Account = {

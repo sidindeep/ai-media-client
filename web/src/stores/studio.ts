@@ -9,7 +9,11 @@ const ACTIVE_STATES = ['queued', 'preparing', 'submitting', 'waiting', 'queuing'
 const COMPLETED_STATES = ['success', 'fail', 'blocked', 'cancelled', 'unknown', 'unconfirmed'] as const;
 const CODEX_POLL_STATES = new Set(['submitting', 'generating', 'running']);
 const CODEX_POLL_INTERVAL_MS = 1500;
+const MEDIA_POLL_STATES = new Set(['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating']);
+const MEDIA_POLL_INTERVAL_MS = 2500;
 const STARTUP_POLL_INTERVAL_MS = 1000;
+const TERMINAL_STATES = new Set<string>(COMPLETED_STATES);
+const STATE_ORDER: Record<string, number> = { queued: 0, preparing: 1, submitting: 2, waiting: 3, queuing: 3, generating: 4, running: 4, success: 5, fail: 5, blocked: 5, cancelled: 5, unknown: 5, unconfirmed: 5 };
 
 export const useStudioStore = defineStore('studio', () => {
   const catalog = ref<Catalog | null>(null);
@@ -22,7 +26,7 @@ export const useStudioStore = defineStore('studio', () => {
   const chats = ref<Chat[]>([]);
   const activeChatId = ref<string>('system:recent');
   const activeProjectId = ref<string | null>(null);
-  const queue = ref<QueueStatus>({ paused: false, error: null, concurrency: 3 });
+  const queue = ref<QueueStatus>({ paused: false, error: null, concurrency: 5 });
   const selectedId = ref<string | null>(null);
   const loading = ref(true);
   const error = ref('');
@@ -49,6 +53,9 @@ export const useStudioStore = defineStore('studio', () => {
   let startupStartedAt = 0;
   let dataLoadStartedAt = 0;
   let startupAttempt = 0;
+  let syncCursor: string | null = null;
+  let syncInFlight: Promise<void> | null = null;
+  let syncAgain = false;
 
   function resetStartupTimings() {
     // The first attempt includes document navigation; explicit retries start a new measurement.
@@ -64,6 +71,8 @@ export const useStudioStore = defineStore('studio', () => {
   }
   let codexPollTimer: ReturnType<typeof setInterval> | undefined;
   let codexPollInFlight = false;
+  let mediaPollTimer: ReturnType<typeof setInterval> | undefined;
+  let mediaPollInFlight = false;
   let startupPollTimer: ReturnType<typeof setTimeout> | undefined;
   let startupPollInFlight = false;
 
@@ -73,7 +82,10 @@ export const useStudioStore = defineStore('studio', () => {
     return activeProjectId.value ? item.projectId === activeProjectId.value : true;
   }
   const visibleHistory = computed(() => history.value.filter(recordIsVisible));
-  const visiblePending = computed(() => pendingSubmissions.value.filter(recordIsVisible));
+  const visiblePending = computed(() => {
+    const accepted = new Set(history.value.map(item => item.requestId).filter(Boolean));
+    return pendingSubmissions.value.filter(item => !item.requestId || !accepted.has(item.requestId)).filter(recordIsVisible);
+  });
   const visibleRecords = computed(() => [...visiblePending.value, ...visibleHistory.value]);
   const selected = computed(() => visibleRecords.value.find(item => item.id === selectedId.value) || null);
   const active = computed(() => visibleRecords.value.filter(item => ACTIVE_STATES.includes(item.state as typeof ACTIVE_STATES[number])));
@@ -111,13 +123,109 @@ export const useStudioStore = defineStore('studio', () => {
     if (!['auto', '1:1', '16:9', '9:16', '3:2', '2:3'].includes(codexAspectRatio.value)) codexAspectRatio.value = 'auto';
   }
 
-  async function refresh() {
-    const [nextHistory, nextQueue] = await Promise.all([api.getHistory(), api.getQueueStatus()]);
-    history.value = nextHistory;
-    queue.value = nextQueue;
+  function recomputeWorkspaceCounts() {
+    const chatMaterials = new Map<string, number>();
+    const projectMaterials = new Map<string, number>();
+    for (const record of history.value) {
+      if (record.chatId) chatMaterials.set(record.chatId, (chatMaterials.get(record.chatId) || 0) + 1);
+      if (record.projectId) projectMaterials.set(record.projectId, (projectMaterials.get(record.projectId) || 0) + 1);
+    }
+    chats.value = chats.value.map(chat => ({ ...chat, materialCount: chatMaterials.get(chat.id) || 0 }));
+    projects.value = projects.value.map(project => ({
+      ...project,
+      chatCount: chats.value.filter(chat => chat.projectId === project.id).length,
+      materialCount: projectMaterials.get(project.id) || 0,
+    }));
+  }
+
+  function mergeById<T extends { id: string }>(current: T[], changes: T[]) {
+    const merged = new Map(current.map(item => [item.id, item]));
+    for (const item of changes) merged.set(item.id, item);
+    return [...merged.values()];
+  }
+
+  function recordTime(item: GenerationRecord) {
+    const value = Date.parse(item.updatedAt || item.createdAt || '');
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function newestRecord(current: GenerationRecord, incoming: GenerationRecord) {
+    const currentRevision = Number(current.revision || 0), incomingRevision = Number(incoming.revision || 0);
+    if (currentRevision && incomingRevision && currentRevision !== incomingRevision) return incomingRevision > currentRevision ? incoming : current;
+    const currentTerminal = TERMINAL_STATES.has(current.state), incomingTerminal = TERMINAL_STATES.has(incoming.state);
+    if (currentTerminal !== incomingTerminal) return incomingTerminal ? incoming : current;
+    const currentTime = recordTime(current), incomingTime = recordTime(incoming);
+    if (currentTime !== incomingTime) return incomingTime > currentTime ? incoming : current;
+    return (STATE_ORDER[incoming.state] ?? -1) >= (STATE_ORDER[current.state] ?? -1) ? incoming : current;
+  }
+
+  function mergeGenerationRecords(current: GenerationRecord[], changes: GenerationRecord[], full = false) {
+    const incomingIds = new Set(changes.map(item => item.id));
+    const merged = new Map((full ? current.filter(item => incomingIds.has(item.id)) : current).map(item => [item.id, item]));
+    for (const item of changes) merged.set(item.id, merged.has(item.id) ? newestRecord(merged.get(item.id)!, item) : item);
+    return [...merged.values()];
+  }
+
+  function reconcilePending() {
+    const accepted = new Map(history.value.filter(item => item.requestId).map(item => [item.requestId!, item]));
+    const replacements = new Map<string, string>();
+    pendingSubmissions.value = pendingSubmissions.value.filter(item => {
+      const server = item.requestId ? accepted.get(item.requestId) : undefined;
+      if (!server) return true;
+      replacements.set(item.id, server.id);
+      return false;
+    });
+    const replacement = selectedId.value ? replacements.get(selectedId.value) : undefined;
+    if (replacement) selectedId.value = replacement;
+  }
+
+  function acceptServerRecord(optimisticId: string, record: GenerationRecord) {
+    history.value = mergeGenerationRecords(history.value, [record]);
+    pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
+    if (selectedId.value === optimisticId) selectedId.value = record.id;
+  }
+
+  function applyWorkspaceSync(snapshot: Awaited<ReturnType<typeof api.getWorkspaceSync>>) {
+    syncCursor = snapshot.cursor;
+    queue.value = snapshot.queue;
+    history.value = mergeGenerationRecords(history.value, snapshot.records, snapshot.full)
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')) || left.id.localeCompare(right.id));
+    reconcilePending();
+    const nextProjects = snapshot.full ? snapshot.projects : mergeById(projects.value, snapshot.projects);
+    const nextChats = snapshot.full ? snapshot.chats : mergeById(chats.value, snapshot.chats);
+    projects.value = nextProjects.filter(project => !project.archivedAt)
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')) || left.id.localeCompare(right.id));
+    chats.value = nextChats.filter(chat => !chat.archivedAt)
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')) || left.id.localeCompare(right.id));
+    recomputeWorkspaceCounts();
     if (selectedId.value && !visibleRecords.value.some(item => item.id === selectedId.value)) selectedId.value = null;
     if (!selectedId.value && (active.value[0] || visibleRecords.value[0])) selectedId.value = (active.value[0] || visibleRecords.value[0]).id;
+    if (activeChatId.value !== 'system:recent' && !chats.value.some(chat => chat.id === activeChatId.value)) activeChatId.value = 'system:recent';
+    if (activeChatId.value !== 'system:recent') activeProjectId.value = chats.value.find(chat => chat.id === activeChatId.value)?.projectId || null;
+    else if (activeProjectId.value && !projects.value.some(project => project.id === activeProjectId.value)) activeProjectId.value = null;
     syncCodexPolling();
+    syncMediaPolling();
+  }
+
+  async function refresh() {
+    if (syncInFlight) {
+      syncAgain = true;
+      await syncInFlight;
+      return;
+    }
+    syncInFlight = (async () => {
+      do {
+        syncAgain = false;
+        applyWorkspaceSync(await api.getWorkspaceSync(syncCursor));
+      } while (syncAgain);
+    })();
+    try { await syncInFlight; } finally { syncInFlight = null; }
+  }
+
+  async function refreshFull() {
+    if (syncInFlight) await syncInFlight.catch(() => {});
+    syncCursor = null;
+    await refresh();
   }
 
   function codexJobIdsToPoll() {
@@ -154,12 +262,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   async function refreshWorkspaces() {
-    const [nextProjects, nextChats] = await Promise.all([api.getProjects(), api.getChats()]);
-    projects.value = nextProjects;
-    chats.value = nextChats;
-    if (activeChatId.value !== 'system:recent' && !chats.value.some(chat => chat.id === activeChatId.value)) activeChatId.value = 'system:recent';
-    if (activeChatId.value !== 'system:recent') activeProjectId.value = chats.value.find(chat => chat.id === activeChatId.value)?.projectId || null;
-    else if (activeProjectId.value && !projects.value.some(project => project.id === activeProjectId.value)) activeProjectId.value = null;
+    await refresh();
   }
 
   async function loadDraftForActive() {
@@ -182,19 +285,42 @@ export const useStudioStore = defineStore('studio', () => {
     normalizeMediaControls();
     draftReady.value = true;
   }
+
+  function hasMediaJobsToPoll() {
+    return history.value.some(item => item.providerId !== 'codex' && MEDIA_POLL_STATES.has(item.state));
+  }
+
+  async function pollMediaJobs() {
+    if (mediaPollInFlight || !hasMediaJobsToPoll()) { syncMediaPolling(); return; }
+    mediaPollInFlight = true;
+    try { await refresh(); }
+    catch { /* SSE reconnect/full sync remains the fallback. */ }
+    finally { mediaPollInFlight = false; syncMediaPolling(); }
+  }
+
+  function syncMediaPolling() {
+    if (!hasMediaJobsToPoll()) { stopMediaPolling(); return; }
+    if (!mediaPollTimer) mediaPollTimer = setInterval(() => { void pollMediaJobs(); }, MEDIA_POLL_INTERVAL_MS);
+  }
+
+  function stopMediaPolling() {
+    if (mediaPollTimer) clearInterval(mediaPollTimer);
+    mediaPollTimer = undefined;
+    mediaPollInFlight = false;
+  }
   async function saveCurrentDraft() {
     if (!draftReady.value) return;
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
     await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
-  async function createProject(name: string) { const project = await api.createProject(name); await refreshWorkspaces(); return project; }
-  async function createChat(name: string, projectId: string | null = null) { const chat = await api.createChat(name, projectId); await refreshWorkspaces(); activeChatId.value = chat.id; activeProjectId.value = chat.projectId || null; await loadDraftForActive(); return chat; }
-  async function renameProject(id: string, name: string) { const project = await api.renameProject(id, name); await refreshWorkspaces(); return project; }
+  async function createProject(name: string) { const project = await api.createProject(name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
+  async function createChat(name: string, projectId: string | null = null) { const chat = await api.createChat(name, projectId); chats.value = mergeById(chats.value, [chat]); recomputeWorkspaceCounts(); activeChatId.value = chat.id; activeProjectId.value = chat.projectId || null; await loadDraftForActive(); return chat; }
+  async function renameProject(id: string, name: string) { const project = await api.renameProject(id, name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
   async function renameChat(id: string, name: string) { const chat = await api.renameChat(id, name); const index = chats.value.findIndex(item => item.id === id); if (index >= 0) chats.value[index] = chat; return chat; }
-  async function moveChat(id: string, projectId: string | null) { const chat = await api.moveChat(id, projectId); await refreshWorkspaces(); if (activeChatId.value === id) activeProjectId.value = chat.projectId || null; return chat; }
-  async function archiveChat(id: string) { const wasActive = activeChatId.value === id; await api.archiveChat(id); await refreshWorkspaces(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
-  async function archiveProject(id: string) { const wasActive = activeProjectId.value === id; await api.archiveProject(id); await refreshWorkspaces(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
+  async function moveChat(id: string, projectId: string | null) { const chat = await api.moveChat(id, projectId); chats.value = mergeById(chats.value, [chat]); recomputeWorkspaceCounts(); if (activeChatId.value === id) activeProjectId.value = chat.projectId || null; return chat; }
+  async function archiveChat(id: string) { const wasActive = activeChatId.value === id; await api.archiveChat(id); chats.value = chats.value.filter(chat => chat.id !== id); recomputeWorkspaceCounts(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
+  async function archiveProject(id: string) { const wasActive = activeProjectId.value === id; await api.archiveProject(id); projects.value = projects.value.filter(project => project.id !== id); chats.value = chats.value.filter(chat => chat.projectId !== id); recomputeWorkspaceCounts(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
   function selectChat(id: string) { activeChatId.value = id; activeProjectId.value = chats.value.find(chat => chat.id === id)?.projectId || null; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
   function selectProject(id: string) { activeProjectId.value = id; activeChatId.value = chats.value.find(chat => chat.projectId === id)?.id || 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
   function selectStandalone() { activeProjectId.value = null; if (activeChatId.value !== 'system:recent' && chats.value.find(chat => chat.id === activeChatId.value)?.projectId) activeChatId.value = 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
@@ -328,7 +454,8 @@ export const useStudioStore = defineStore('studio', () => {
       codexKind.value = defaults?.kind === 'text' ? 'text' : 'image';
       normalizeCodexControls();
       mediaModelId.value = mediaModelsFor(mode.value).find(model => model.startupDefault)?.id || mediaModelsFor(mode.value)[0]?.id || '';
-      await Promise.all([refresh(), refreshWorkspaces()]);
+      syncCursor = null;
+      await refresh();
       await loadDraftForActive();
       const readyAt = performance.now();
       dataLoadElapsedMs.value = Math.max(0, Math.round(readyAt - dataLoadStartedAt));
@@ -410,7 +537,7 @@ export const useStudioStore = defineStore('studio', () => {
     let optimistic: GenerationRecord;
     if (provider.value === 'codex') {
       const input = { prompt: submittedPrompt, effort: codexEffort.value, speed: codexSpeed.value, aspectRatio: codexAspectRatio.value };
-      optimistic = { id: optimisticId, optimistic: true, providerId: 'codex', providerName: 'Codex CLI', modelId: codexModel.value,
+      optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'codex', providerName: 'Codex CLI', modelId: codexModel.value,
         modelName: currentCodexModel.value?.name || codexModel.value, kind: mode.value === 'text' ? 'text' : 'image', state: 'queued',
         createdAt, queuedAt: createdAt, input, ...context };
       pendingSubmissions.value.unshift(optimistic);
@@ -418,11 +545,14 @@ export const useStudioStore = defineStore('studio', () => {
       try {
         const job = await api.submitCodex({ ...input, prompt: submittedPrompt, model: codexModel.value,
           kind: mode.value === 'text' ? 'text' : 'image', sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
-        await refresh().catch(() => {});
         pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
         if (selectedId.value === optimisticId) selectedId.value = `codex:${job.id || requestId}`;
+        await refresh().catch(() => {});
         return job;
       } catch (error) {
+        await refreshFull().catch(() => {});
+        const accepted = history.value.find(item => item.requestId === requestId);
+        if (accepted) { acceptServerRecord(optimisticId, accepted); return accepted; }
         pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
         if (selectedId.value === optimisticId) selectedId.value = active.value[0]?.id || visibleHistory.value[0]?.id || null;
         throw error;
@@ -432,19 +562,20 @@ export const useStudioStore = defineStore('studio', () => {
     if (!model) throw new Error('Каталог моделей недоступен');
     const input = { ...mediaInput.value };
     if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
-    optimistic = { id: optimisticId, optimistic: true, providerId: model.providerId || 'media',
+    optimistic = { id: optimisticId, requestId, optimistic: true, providerId: model.providerId || 'media',
       providerName: catalog.value?.providers.find(item => item.id === model.providerId)?.name || 'Kie.ai', modelId: model.id,
       modelName: model.name, kind: model.kind || mode.value, state: 'queued', createdAt, queuedAt: createdAt, input, ...context };
     pendingSubmissions.value.unshift(optimistic);
     selectedId.value = optimisticId;
     try {
       const task = await api.createTask({ modelId: model.id, input, sourceFiles: sourceFiles.value, ...context, requestId });
-      await api.startQueue().catch(() => {});
+      acceptServerRecord(optimisticId, task);
       await refresh().catch(() => {});
-      pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
-      if (selectedId.value === optimisticId) selectedId.value = task.id;
       return task;
     } catch (error) {
+      await refreshFull().catch(() => {});
+      const accepted = history.value.find(item => item.requestId === requestId);
+      if (accepted) { acceptServerRecord(optimisticId, accepted); return accepted; }
       pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
       if (selectedId.value === optimisticId) selectedId.value = active.value[0]?.id || visibleHistory.value[0]?.id || null;
       throw error;
@@ -494,6 +625,6 @@ export const useStudioStore = defineStore('studio', () => {
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,
     loadDraftForActive,
-    currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom, requestProviderDiagnostics,
+    currentCodexModel, initialize, refresh, refreshFull, stopCodexPolling, stopMediaPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom, requestProviderDiagnostics,
   };
 });

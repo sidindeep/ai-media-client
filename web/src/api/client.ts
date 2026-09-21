@@ -1,4 +1,4 @@
-import type { Account, Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { Account, Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, WorkspaceSync } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -62,6 +62,7 @@ export const renameChat = (id: string, name: string) => workspaceRequest<Chat>(`
 export const moveChat = (id: string, projectId: string | null) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/move`, { method: 'POST', body: JSON.stringify({ projectId }) });
 export const archiveChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/archive`, { method: 'POST', body: '{}' });
 export const getChat = (id: string) => workspaceRequest<Chat & { records: GenerationRecord[] }>(`/api/chats/${encodeURIComponent(id)}`);
+export const getWorkspaceSync = (since?: string | null) => workspaceRequest<WorkspaceSync>(`/api/workspace/sync${since ? `?since=${encodeURIComponent(since)}` : ''}`);
 export const loadDraft = (chatId?: string | null) => rpc<Record<string, unknown> | null>('loadDrafts', chatId ? [{ chatId }] : []);
 export const saveDraft = (draft: Record<string, unknown>, chatId?: string | null) => rpc<boolean>('saveDrafts', [draft, chatId ? { chatId } : {}]);
 export const listGenerationPresets = () => rpc<GenerationPreset[]>('listGenerationPresets');
@@ -173,9 +174,11 @@ export async function getCodexJob(id: string): Promise<GenerationRecord> {
   return parse(response);
 }
 
-export function subscribeToChanges(onChange: () => void): () => void {
+export function subscribeToChanges(onChange: (event: 'ready' | 'changed') => void): () => void {
   const events = new EventSource('/api/events');
-  const handler = () => onChange();
+  const handler = (event: MessageEvent) => {
+    if (event.data === 'ready' || event.data === 'changed') onChange(event.data);
+  };
   events.addEventListener('message', handler);
   events.onerror = () => { /* native EventSource reconnects; the next message refreshes state */ };
   return () => { events.removeEventListener('message', handler); events.close(); };

@@ -9,6 +9,7 @@ const { createMediaService } = require('../src/services/media-service');
 const { createTelegramBot } = require('../src/services/telegram-bot');
 const { createTelegramGateway } = require('../src/services/telegram-gateway');
 const { models } = require('../src/catalog');
+const { createDatabaseAvailability } = require('../src/database/availability');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
@@ -21,7 +22,7 @@ test('temporary database failure keeps the public landing and Vue shell availabl
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
   const page = await fetch(base); assert.equal(page.status, 200);
-  const landing = await page.text(); assert.match(landing, /Идея\. Кадр\./); assert.match(landing, /\/landing\.css/); assert.doesNotMatch(landing, /private database details/);
+  const landing = await page.text(); assert.match(landing, /account-id" content="pending/); assert.match(landing, /\/app\/assets\//); assert.doesNotMatch(landing, /private database details/);
   const legal = await fetch(base + '/legal/privacy'); assert.equal(legal.status, 200);
   assert.match(await legal.text(), /Политика обработки персональных данных/);
   assert.equal(databaseQueries.length, 0, 'public legal pages must not read the database');
@@ -102,6 +103,84 @@ test('read-only native quote retries transient PostgreSQL session and account lo
   assert.equal(authAttempts, 2);
   assert.equal(scopeAttempts, 2);
 });
+test('read-only provider diagnostics waits for the database services to recover', async t => {
+  const user = { id: '11111111-1111-1111-1111-111111111111', role: 'user' };
+  const databaseAvailability = createDatabaseAvailability({ state: 'connecting' });
+  const service = { dispatch: async method => {
+    assert.equal(method, 'diagnoseProvider');
+    return { ok: true, provider: 'Kie.ai', checks: [] };
+  } };
+  const server = require('../src/server/http').createHttpServer({
+    config: loadConfig({ MEDIA_PORT: '0' }), service: {}, databaseAvailability, databaseWaitMs: 1000,
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { databaseAvailability.close(); server.closeIdleConnections(); server.close(resolve); }));
+  const response = fetch(`http://127.0.0.1:${server.address().port}/api/rpc/diagnoseProvider`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web', 'X-Media-User': user.id },
+    body: JSON.stringify([{ modelId: 'kie:nano-banana-2-lite', input: { prompt: 'Кот' } }]),
+  });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await server.setAccountServices(
+    { providers: () => [], user: async () => user },
+    { scope: async () => service },
+  );
+  databaseAvailability.update({ state: 'connected' });
+  const result = await response;
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { result: { ok: true, provider: 'Kie.ai', checks: [] } });
+});
+test('workspace sync returns one full snapshot and then only cursor-bounded deltas', async t => {
+  const user = { id: '11111111-1111-1111-1111-111111111111', role: 'user' };
+  const calls = [];
+  const cursorValues = ['2026-09-21T10:00:00.000Z', '2026-09-21T10:00:05.000Z'];
+  const service = {
+    events: new EventEmitter(),
+    dispatch: async (method, args = []) => {
+      calls.push({ method, args });
+      if (method === 'getHistory') return [{ id: 'first', state: 'success' }];
+      if (method === 'getHistoryDelta') return [{ id: 'second', state: 'success' }];
+      if (method === 'queueStatus') return { paused: false, error: null, concurrency: 3 };
+      throw new Error(`Unexpected ${method}`);
+    },
+  };
+  const accounts = {
+    pool: { query: async text => {
+      assert.match(text, /clock_timestamp/);
+      return { rows: [{ cursor: new Date(cursorValues.shift()) }] };
+    } },
+    scope: async () => service,
+    workspaces: {
+      listProjects: async () => [{ id: 'project-full' }],
+      listChats: async () => [{ id: 'chat-full' }],
+      listProjectChanges: async (_account, since, before) => [{ id: `project:${since}:${before}` }],
+      listChatChanges: async (_account, since, before) => [{ id: `chat:${since}:${before}` }],
+    },
+  };
+  const auth = { providers: () => [], user: async () => user };
+  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service, auth, accounts });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const full = await fetch(base + '/api/workspace/sync').then(response => response.json()).then(body => body.result);
+  assert.equal(full.full, true);
+  assert.equal(full.cursor, '2026-09-21T10:00:00.000Z');
+  assert.deepEqual(full.records.map(item => item.id), ['first']);
+  assert.deepEqual(full.projects.map(item => item.id), ['project-full']);
+  assert.deepEqual(full.chats.map(item => item.id), ['chat-full']);
+
+  const delta = await fetch(base + `/api/workspace/sync?since=${encodeURIComponent(full.cursor)}`).then(response => response.json()).then(body => body.result);
+  assert.equal(delta.full, false);
+  assert.equal(delta.cursor, '2026-09-21T10:00:05.000Z');
+  assert.deepEqual(delta.records.map(item => item.id), ['second']);
+  assert.match(delta.projects[0].id, /^project:2026-09-21T10:00:00.000Z:2026-09-21T10:00:05.000Z$/);
+  assert.match(delta.chats[0].id, /^chat:2026-09-21T10:00:00.000Z:2026-09-21T10:00:05.000Z$/);
+  assert.deepEqual(calls.filter(call => call.method.startsWith('getHistory')), [
+    { method: 'getHistory', args: [] },
+    { method: 'getHistoryDelta', args: [{ since: '2026-09-21T10:00:00.000Z', before: '2026-09-21T10:00:05.000Z' }] },
+  ]);
+});
 async function directory() {
   const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });
   const dir = await fs.mkdtemp(path.join(base, 'web-test-'));
@@ -146,20 +225,24 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const landing = await fetch(base);
   assert.equal(landing.status, 200);
   const landingHtml = await landing.text();
-  assert.match(landingHtml, /AI Media Client — создавайте изображения и видео с AI/);
-  assert.match(landingHtml, /href="\/app"/);
-  assert.match(landingHtml, /href="\/legal\/terms"/);
-    assert.match(landingHtml, /data-theme-toggle/);
-    assert.match(landingHtml, /src="\/theme\.js"/);
-    assert.match(landingHtml, /src="\/landing\.js"/);
-    assert.equal((await fetch(base + '/landing.css')).status, 200);
-    assert.equal((await fetch(base + '/landing.js')).status, 200);
-    const landingIcon = await fetch(base + '/landing-model-icons/openai.svg');
-    assert.equal(landingIcon.status, 200);
-    assert.match(landingIcon.headers.get('content-type'), /^image\/svg\+xml/);
-    assert.equal((await fetch(base + '/landing-model-icons/unknown.svg')).status, 404);
-    assert.equal((await fetch(base + '/theme.css')).status, 200);
-  assert.equal((await fetch(base + '/theme.js')).status, 200);
+  assert.match(landingHtml, /<meta name="account-id" content="local">/);
+  assert.match(landingHtml, /<meta name="account-role" content="admin">/);
+  assert.match(landingHtml, /\/app\/assets\//);
+  assert.match(landingHtml, /src="\/theme\.js"/);
+  assert.equal((await fetch(base + '/landing.css')).status, 200);
+  assert.equal((await fetch(base + '/landing.js')).status, 200);
+  const landingIcon = await fetch(base + '/landing-model-icons/openai.svg');
+  assert.equal(landingIcon.status, 200);
+  assert.match(landingIcon.headers.get('content-type'), /^image\/svg\+xml/);
+  assert.equal((await fetch(base + '/landing-model-icons/unknown.svg')).status, 404);
+  const themeStyles = await fetch(base + '/theme.css');
+  assert.equal(themeStyles.status, 200);
+  const themeCss = await themeStyles.text();
+  assert.match(themeCss, /site-boot-orbit/);
+  assert.match(themeCss, /conic-gradient/);
+  const themeScript = await fetch(base + '/theme.js');
+  assert.equal(themeScript.status, 200);
+  assert.match(await themeScript.text(), /ai-media-boot-motion/);
   for (const route of ['/legal/terms', '/legal/privacy', '/legal/personal-data-consent', '/legal/offer']) {
     const legal = await fetch(base + route);
     assert.equal(legal.status, 200);
@@ -233,6 +316,23 @@ test('service deduplicates enqueue, validates exact model id and keeps queue on 
   assert.equal((await service.listHistory())[0].state, 'success'); assert.equal(sent, 1);
   const other = await service.createTask({ ...request, requestId: 'second' }); service.queue.pause();
   assert.equal(other.state, 'queued');
+});
+
+test('service does not serialize independent request ids in one global enqueue chain', async t => {
+  const dir = await directory();
+  const service = await createMediaService({ directory: dir, provider: fakeProvider() }); t.after(() => cleanup(dir, service));
+  service.queue.schedule = () => {};
+  const originalEnqueue = service.queue.enqueue.bind(service.queue);
+  let started = 0, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  service.queue.enqueue = async request => { started += 1; await gate; return originalEnqueue(request); };
+  const first = service.createTask({ modelId: model.id, input, requestId: 'parallel-request-1' });
+  const second = service.createTask({ modelId: model.id, input, requestId: 'parallel-request-2' });
+  for (let attempt = 0; attempt < 100 && started < 2; attempt += 1) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(started, 2);
+  release();
+  const records = await Promise.all([first, second]);
+  assert.notEqual(records[0].id, records[1].id);
 });
 
 test('unconfigured service starts and refuses paid task without fabricating output', async t => {

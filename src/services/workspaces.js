@@ -25,7 +25,7 @@ function chat(row) {
     materialCount: Number(row.material_count || 0) };
 }
 function publicMaterial(record, namespace) {
-  const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'projectId', 'chatId',
+  const fields = ['id', 'requestId', 'revision', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'projectId', 'chatId',
     'queuedAt', 'preparingAt', 'submittingAt', 'providerAcceptedAt', 'providerFirstCheckedAt', 'providerStateChangedAt', 'lastCheckedAt', 'resultReceivedAt', 'resultSavedAt',
     'progress', 'providerDurationMs', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'output', 'error', 'localFiles', 'usage'];
   return { namespace, ...Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]])) };
@@ -71,6 +71,14 @@ function createWorkspaces(pool) {
         WHERE p.account_id=$1${filter} GROUP BY p.id ORDER BY p.archived_at NULLS FIRST,p.updated_at DESC,p.id`, [accountId]);
       return result.rows.map(project);
     },
+    async listProjectChanges(accountId, since, before) {
+      const result = await pool.query(`SELECT p.*, count(DISTINCT c.id)::int AS chat_count,
+        (SELECT count(*) FROM media_records r WHERE r.account_id=p.account_id AND r.data->>'projectId'=p.id::text)::int AS material_count
+        FROM media_projects p LEFT JOIN media_chats c ON c.project_id=p.id AND c.archived_at IS NULL
+        WHERE p.account_id=$1 AND p.updated_at>$2::timestamptz AND p.updated_at<=$3::timestamptz
+        GROUP BY p.id ORDER BY p.updated_at DESC,p.id`, [accountId, since, before]);
+      return result.rows.map(project);
+    },
     async createProject(accountId, name) {
       const value = cleanName(name), projectId = randomUUID();
       await pool.query('INSERT INTO media_projects(id,account_id,owner_id,name) VALUES($1,$2,$2,$3)', [projectId, accountId, value]);
@@ -97,6 +105,13 @@ function createWorkspaces(pool) {
       const result = await pool.query(`SELECT c.*,
         (SELECT count(*) FROM media_records r WHERE r.account_id=c.account_id AND r.data->>'chatId'=c.id::text)::int AS material_count
         FROM media_chats c WHERE ${filters.join(' AND ')} ORDER BY c.archived_at NULLS FIRST,c.updated_at DESC,c.id`, params);
+      return result.rows.map(chat);
+    },
+    async listChatChanges(accountId, since, before) {
+      const result = await pool.query(`SELECT c.*,
+        (SELECT count(*) FROM media_records r WHERE r.account_id=c.account_id AND r.data->>'chatId'=c.id::text)::int AS material_count
+        FROM media_chats c WHERE c.account_id=$1 AND c.updated_at>$2::timestamptz AND c.updated_at<=$3::timestamptz
+        ORDER BY c.updated_at DESC,c.id`, [accountId, since, before]);
       return result.rows.map(chat);
     },
     async createChat(accountId, { name, projectId = null, context = {} } = {}) {

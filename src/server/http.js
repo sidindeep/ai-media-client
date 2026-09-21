@@ -71,7 +71,7 @@ async function sendFile(req, res, filename, type, attachment = false) {
   const stream = createReadStream(filename, { start, end });
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, telegramStatus = () => ({ enabled: false }) }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }) }) {
   const release = buildInfo(config.root);
   let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
   const connections = new Set();
@@ -106,12 +106,13 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const landingModelIcon = /^\/landing-model-icons\/([a-z0-9-]+\.svg)$/.exec(url.pathname)?.[1];
       const isLanding = ['/', '/index.html'].includes(url.pathname);
       const isVueApp = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
+      const isVuePublicAsset = isVueApp && Boolean(path.extname(url.pathname));
       const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
         && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || landingModelIcons.has(landingModelIcon) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
       const sendVueApplication = async user => {
         const root = path.join(config.root, 'public', 'vue');
-        const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
+        const relative = isLanding || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
         const sendVueIndex = async () => {
           let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
@@ -130,7 +131,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'GET' && url.pathname === '/api/startup') {
         // Page navigation reuses the process-wide pool. This is only a liveness
         // probe; pg reconnects the pool when the previous connection was lost.
-        let database = accounts ? await checkDatabase(accounts.pool, { diagnostics: false }) : (readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        let database = accounts ? await checkDatabase(accounts.pool, { diagnostics: false }) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         let startupUser = config.auth.enabled ? null : { id: 'local', role: 'admin', name: 'Владелец' };
         if (auth && database.state === 'connected') {
           try { startupUser = await assetUser(auth, req, true); }
@@ -147,7 +148,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         });
       }
       if (req.method === 'GET' && url.pathname === '/api/health') {
-        const database = accounts ? await checkDatabase(accounts.pool) : (readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        const database = accounts ? await checkDatabase(accounts.pool) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         const status = ['connected', 'disabled'].includes(database.state) ? 200 : 503;
         return json(res, status, { ok: status === 200, version: release.version, build: release.build, database, generationConfigured: Boolean(legacyService.configured?.()), telegram: telegramStatus() });
       }
@@ -161,18 +162,21 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         try { return redirect('/app', await auth.finish(req, authRoute[1], url.searchParams)); }
         catch { return redirect('/login?error=oauth'); }
       }
-      if (['GET', 'HEAD'].includes(req.method) && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || url.pathname === '/login')) {
-        const publicFile = isLanding ? 'landing.html' : legalPage ? path.join('legal', legalPage) : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
+      if (['GET', 'HEAD'].includes(req.method) && (Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || url.pathname === '/login')) {
+        const publicFile = legalPage ? path.join('legal', legalPage) : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
         return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       }
       if (['GET', 'HEAD'].includes(req.method) && landingModelIcons.has(landingModelIcon)) {
         return await sendFile(req, res, path.join(config.root, 'public', 'vue', 'model-icons', landingModelIcon));
       }
-      if (config.auth.enabled && !auth && isVueApp && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);
-      if (config.auth.enabled && !auth) return json(res, 503, { error: 'Подключаемся к базе данных. Повторите через несколько секунд.' });
+      if (['GET', 'HEAD'].includes(req.method) && isVuePublicAsset) return await sendVueApplication(null);
+      if (config.auth.enabled && !auth && (isLanding || isVueApp) && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);
+      if (config.auth.enabled && !auth && retryReadOnlyRpc) await databaseAvailability?.waitUntilAvailable(databaseWaitMs);
+      if (config.auth.enabled && !auth) return json(res, 503, { error: 'Подключаемся к базе данных. Повторите через несколько секунд.', code: 'DATABASE_UNAVAILABLE', retryable: true });
       // Retry only the read-only session lookup for assets, never account/API writes.
       const user = auth ? await assetUser(auth, req, isAsset || retryReadOnlyRpc) : { id: 'local', role: 'admin', name: 'Владелец' };
       if (!user) {
+        if (isLanding) return await sendVueApplication(null);
         if (isVueApp || isLegacyApp) return redirect('/login');
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
       }
@@ -207,7 +211,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         for (const connection of connections) if (connection.accountId === user.id) connection.end();
         return json(res, 200, { result: true });
       }
-      if (isVueApp && ['GET', 'HEAD'].includes(req.method)) {
+      if ((isLanding || isVueApp) && ['GET', 'HEAD'].includes(req.method)) {
         return await sendVueApplication(user);
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
@@ -217,18 +221,36 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         await accounts.pool.query('UPDATE media_accounts SET display_name=$2 WHERE id=$1', [user.id, body.name.trim()]);
         return json(res, 200, { result: { name: body.name.trim() } });
       }
+      if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/sync') {
+        const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
+        const workspaceAccount = selectedWorkspaceAccount || user.id;
+        const scopedService = await accounts.scope(user, selectedWorkspaceAccount);
+        const rawSince = url.searchParams.get('since');
+        const since = rawSince ? new Date(rawSince) : null;
+        if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
+        const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
+        const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
+        const [records, projects, chats, queue] = await Promise.all([
+          scopedService.dispatch(since ? 'getHistoryDelta' : 'getHistory', since ? [{ since: since.toISOString(), before: cursor }] : []),
+          since ? accounts.workspaces.listProjectChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listProjects(workspaceAccount),
+          since ? accounts.workspaces.listChatChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listChats(workspaceAccount),
+          scopedService.dispatch('queueStatus'),
+        ]);
+        return json(res, 200, { result: { cursor, full: !since, records, projects, chats, queue } });
+      }
       if (accounts && /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|move))?)?$/.test(url.pathname)) {
         const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
         const workspaceAccount = selectedWorkspaceAccount || user.id;
-        await accounts.scope(user, selectedWorkspaceAccount);
+        const workspaceService = await accounts.scope(user, selectedWorkspaceAccount);
         const workspacePath = url.pathname.split('/').filter(Boolean);
         const resource = workspacePath[1], resourceId = workspacePath[2], action = workspacePath[3];
         const workspaceBody = async limit => JSON.parse((await readBody(req, limit)).toString('utf8'));
+        const workspaceChanged = result => { workspaceService.events?.emit('changed'); return json(res, 200, { result }); };
         if (resource === 'projects') {
           if (req.method === 'GET' && !resourceId) return json(res, 200, { result: await accounts.workspaces.listProjects(workspaceAccount, url.searchParams.get('includeArchived') === 'true') });
-          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.createProject(workspaceAccount, (await workspaceBody(4096)).name) });
-          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.renameProject(workspaceAccount, resourceId, (await workspaceBody(4096)).name) });
-          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.archiveProject(workspaceAccount, resourceId) });
+          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.createProject(workspaceAccount, (await workspaceBody(4096)).name));
+          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameProject(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
+          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveProject(workspaceAccount, resourceId));
         }
         if (resource === 'chats') {
           if (req.method === 'GET' && !resourceId) {
@@ -236,10 +258,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
             return json(res, 200, { result: await accounts.workspaces.listChats(workspaceAccount, { projectId: projectFilter, includeArchived: url.searchParams.get('includeArchived') === 'true' }) });
           }
           if (req.method === 'GET' && resourceId && !action) return json(res, 200, { result: await accounts.workspaces.getChat(workspaceAccount, resourceId) });
-          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.createChat(workspaceAccount, await workspaceBody(8192)) });
-          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.renameChat(workspaceAccount, resourceId, (await workspaceBody(4096)).name) });
-          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.archiveChat(workspaceAccount, resourceId) });
-          if (req.method === 'POST' && resourceId && action === 'move' && req.headers['x-media-client'] === 'web') return json(res, 200, { result: await accounts.workspaces.moveChat(workspaceAccount, resourceId, (await workspaceBody(4096)).projectId ?? null) });
+          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.createChat(workspaceAccount, await workspaceBody(8192)));
+          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameChat(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
+          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveChat(workspaceAccount, resourceId));
+          if (req.method === 'POST' && resourceId && action === 'move' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.moveChat(workspaceAccount, resourceId, (await workspaceBody(4096)).projectId ?? null));
         }
         return json(res, 404, { error: 'Метод не найден' });
       }
@@ -345,7 +367,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (temporaryConnectionFailure(error)) {
         console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
         const requestPath = req.url?.split('?')[0] || '';
-        if (req.method === 'GET' && (requestPath === '/app' || requestPath === '/app/' || (requestPath.startsWith('/app/') && !path.extname(requestPath)))) {
+        if (req.method === 'GET' && (requestPath === '/' || requestPath === '/index.html' || requestPath === '/app' || requestPath === '/app/' || (requestPath.startsWith('/app/') && !path.extname(requestPath)))) {
           let html = await fs.readFile(path.join(config.root, 'public', 'vue', 'index.html'), 'utf8');
           html = html.replace('<head>', '<head><meta name="account-id" content="pending"><meta name="account-role" content="pending">');
           res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -355,7 +377,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           res.writeHead(503, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '5' });
           return res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Временная ошибка подключения</title><h1>Не удалось подключиться к сервису</h1><p>Связь с базой данных временно недоступна. Аккаунт и данные сохранены. Повторите через несколько секунд.</p><a href="/app">Повторить</a></html>');
         }
-        return json(res, 503, { error: 'Связь с базой данных временно недоступна. Повторите через несколько секунд.' });
+        return json(res, 503, { error: 'Связь с базой данных временно недоступна. Повторите через несколько секунд.', code: 'DATABASE_UNAVAILABLE', retryable: true });
       }
       const message = error.code?.startsWith('E') || error instanceof SyntaxError ? 'Не удалось обработать запрос' : error.message;
       const knownMessage = ['Некоррект', 'Недостаточно', 'Цена', 'Требуется', 'Для расчёта', 'Этот запрос', 'Укажите', 'Начисление', 'Проверьте', 'Генерация'].some(prefix => message.startsWith(prefix));

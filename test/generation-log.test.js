@@ -21,7 +21,7 @@ test('generation journal correlates lifecycle, raw provider timeout and retries 
     }});
   t.after(()=>queue.close());
   const job = await trace.request(()=>queue.enqueue({model:'nano-banana-pro',input:{prompt:'Проверка',image_input:[]}}));
-  queue.start(); await queue.tick(); await queue.tick(); queue.close();
+  queue.start(); await queue.tick(); await queue.pollTick(); queue.close();
   let attempts=0;
   await require('../src/network').request('https://api.example.test/read',{}, {safeToRetry:true,delay:async()=>{},fetcher:async()=>{if(++attempts===1)throw new Error('temporary');return new Response('{}',{headers:{'content-type':'application/json'}});}});
   assert.equal(attempts,2);

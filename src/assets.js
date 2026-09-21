@@ -4,7 +4,7 @@ const path = require('node:path');
 const {createHash,randomUUID} = require('node:crypto');
 const prefix = 'https://local-assets.invalid/';
 class Assets {
-  constructor(directory) { this.directory=directory; }
+  constructor(directory) { this.directory=directory; this.uploads=new Map(); }
   id(value) { return typeof value==='string' && /^https:\/\/local-assets\.invalid\/[a-f0-9]{64}$/.test(value) ? value.slice(prefix.length) : null; }
   async save(file) {
     const bytes=Buffer.from(file.bytes);
@@ -28,11 +28,25 @@ class Assets {
         if(!cache.has(id)) cache.set(id,(async()=>{
           const meta=metadata.find(item=>item.ref===value);
           if(!meta)throw new Error('Не найдены сведения о сохранённом исходнике');
-          trace.write('source.read',{ref:value,name:meta.name,size:meta.size,type:meta.type});
-          let bytes;try{bytes=await fs.readFile(path.join(this.directory,id));}catch(error){if(error.code==='ENOENT')throw new Error(`Исходник «${meta.name}» не найден. Выберите файл заново.`);throw error;}
-          if(createHash('sha256').update(bytes).digest('hex')!==id)throw new Error(`Исходник «${meta.name}» повреждён. Выберите файл заново.`);
-          trace.write('source.verified',{ref:value,bytes:bytes.length});
-          return trace.step('source.upload',{ref:value,name:meta.name,size:bytes.length,type:meta.type},()=>upload({...meta,bytes}));
+          const key=`${id}:${meta.type}:${path.extname(meta.name).toLowerCase()}`;
+          const cached=this.uploads.get(key);
+          if(cached) {
+            trace.write('source.upload.cache_hit',{ref:value,name:meta.name,size:meta.size,type:meta.type});
+            return cached;
+          }
+          // Register the whole read/verify/upload operation before its first
+          // await. Otherwise two queue items can both finish reading and start
+          // duplicate provider uploads before either one enters the map.
+          const operation=(async()=>{
+            trace.write('source.read',{ref:value,name:meta.name,size:meta.size,type:meta.type});
+            let bytes;try{bytes=await fs.readFile(path.join(this.directory,id));}catch(error){if(error.code==='ENOENT')throw new Error(`Исходник «${meta.name}» не найден. Выберите файл заново.`);throw error;}
+            if(createHash('sha256').update(bytes).digest('hex')!==id)throw new Error(`Исходник «${meta.name}» повреждён. Выберите файл заново.`);
+            trace.write('source.verified',{ref:value,bytes:bytes.length});
+            return trace.step('source.upload',{ref:value,name:meta.name,size:bytes.length,type:meta.type},()=>upload({...meta,bytes}));
+          })();
+          this.uploads.set(key,operation);
+          try { return await operation; }
+          finally { if(this.uploads.get(key)===operation)this.uploads.delete(key); }
         })());
         return cache.get(id);
       }

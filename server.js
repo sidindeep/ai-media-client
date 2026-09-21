@@ -6,6 +6,7 @@ const { createKieGeneration } = require('./src/services/kie-generation');
 const { createMediaService } = require('./src/services/media-service');
 const { createTelegramGateway } = require('./src/services/telegram-gateway');
 const { openDatabase } = require('./src/database/database');
+const { createDatabaseAvailability } = require('./src/database/availability');
 const { createAuth } = require('./src/auth/service');
 const { createAccounts } = require('./src/services/accounts');
 const { createCodexWorker } = require('./src/services/codex-worker');
@@ -57,16 +58,18 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
   }
   let service, telegram, server, pool, accounts, auth, codexWorker, databaseTask;
   let closing = false, retryTimer, wakeRetry;
+  const databaseAvailability = createDatabaseAvailability({ state: config.auth.enabled ? 'connecting' : 'disabled' });
   const readiness = {
-    database: { state: config.auth.enabled ? 'connecting' : 'disabled' },
     provider: { state: startupChecks ? 'checking' : 'idle' },
   };
+  Object.defineProperty(readiness, 'database', { enumerable: true, get: () => databaseAvailability.snapshot() });
   const waitForRetry = delay => new Promise(resolve => {
     wakeRetry = resolve;
     retryTimer = setTimeout(() => { retryTimer = undefined; wakeRetry = undefined; resolve(); }, delay);
   });
   const cleanup = async () => {
     closing = true;
+    databaseAvailability.close();
     if (retryTimer) clearTimeout(retryTimer);
     wakeRetry?.();
     await telegram?.stop();
@@ -89,7 +92,7 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
       auth = createAuth({ pool, config: config.auth, providers: authProviders });
       accounts = createAccounts({ pool, config, provider, legacy: service });
       await accounts.recover();
-      readiness.database = { state: 'connected', connectedAt: new Date().toISOString() };
+      databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
     }
     if (config.codex?.embedded) {
       codexWorker = createCodexWorker();
@@ -103,7 +106,7 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
     const telegramConfig = config.auth.enabled ? { ...config.telegram, enabled: false } : config.telegram;
     telegram = createTelegramGateway({ service, config: telegramConfig, directory: config.dataDirectory });
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled ? { disabledReason: 'account-linking-required' } : {}) });
-    server = createHttpServer({ config, service, auth, accounts, readiness, telegramStatus });
+    server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus });
     await server.recoverCodex();
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     telegram.start();
@@ -113,7 +116,7 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
         let attempt = 0;
         while (!closing && !accounts) {
           attempt++;
-          readiness.database = { state: 'connecting', attempt, startedAt: new Date().toISOString() };
+          databaseAvailability.update({ state: 'connecting', attempt, startedAt: new Date().toISOString() });
           let nextPool, nextAccounts;
           try {
             nextPool = await databaseOpener(config.database);
@@ -123,12 +126,12 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
             if (closing) { await nextAccounts.close(); await nextPool.end(); return; }
             pool = nextPool; auth = nextAuth; accounts = nextAccounts;
             await server.setAccountServices(auth, accounts);
-            readiness.database = { state: 'connected', connectedAt: new Date().toISOString() };
+            databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
           } catch (error) {
             if (nextAccounts) await nextAccounts.close().catch(() => {});
             if (nextPool) await nextPool.end().catch(() => {});
             const retryInMs = Math.min(10000, 1000 * (2 ** Math.min(attempt - 1, 4)));
-            readiness.database = { state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', attempt, retryInMs };
+            databaseAvailability.update({ state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', attempt, retryInMs });
             console.error('Database background retry:', error.code || error.message || 'CONNECTION_TIMEOUT');
             if (!closing) await waitForRetry(retryInMs);
           }

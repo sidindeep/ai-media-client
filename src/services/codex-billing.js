@@ -20,7 +20,7 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
       if (!row) throw Object.assign(new Error('Запрос не найден'), { status: 404 });
       if (['success', 'fail'].includes(row.data.state)) return row.data;
       const now = new Date();
-      const next = { ...row.data, ...patch, updatedAt: now.toISOString() };
+      const next = { ...row.data, ...patch, revision: Number(row.data.revision || 0) + 1, updatedAt: now.toISOString() };
       if (['success', 'fail'].includes(next.state) && next.durationMs == null) {
         const started = Date.parse(next.startedAt || next.createdAt);
         if (Number.isFinite(started)) {
@@ -117,7 +117,7 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
       const nativeQuote = quote(request);
       await reserve(client, account, id(account, request.requestId), nativeQuote);
       const createdAt = new Date().toISOString();
-      const record = { ...request, id: request.requestId, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, startedAt: createdAt };
+      const record = { ...request, id: request.requestId, revision: 1, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, updatedAt: createdAt, startedAt: createdAt };
       await client.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'codex',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
       fresh = true; return record;
     });
@@ -146,7 +146,7 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
           if (!current || !['running', 'submitting', 'unknown'].includes(current.data.state)) return;
           const now = new Date();
           const started = Date.parse(current.data.startedAt || current.data.createdAt);
-          const next = { ...current.data, state: 'cancelled', stage: 'cancelled', error: 'Генерация отменена при обновлении сервиса. Резерв возвращён.', completedAt: now.toISOString(), updatedAt: now.toISOString() };
+          const next = { ...current.data, state: 'cancelled', stage: 'cancelled', error: 'Генерация отменена при обновлении сервиса. Резерв возвращён.', completedAt: now.toISOString(), revision: Number(current.data.revision || 0) + 1, updatedAt: now.toISOString() };
           if (Number.isFinite(started)) next.durationMs = Math.max(0, now.getTime() - started);
           await settle(client, row.account_id, row.id, 'cancelled');
           await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [row.account_id, row.id, JSON.stringify(next)]);

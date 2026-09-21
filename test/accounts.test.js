@@ -70,7 +70,8 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   }
   const rpc = (user, method, args = [], extra = {}) => request(`/api/rpc/${method}`, { method: 'POST', headers: { Cookie: user.cookie, 'X-Media-Client': 'web', 'X-Media-User': user.id, 'Content-Type': 'application/json', ...extra }, body: JSON.stringify(args) });
   const result = async response => { const r = await response, body = await r.json(); assert.equal(r.status, 200, JSON.stringify(body)); return body.result; };
-  const landing = await request('/'); assert.equal(landing.status, 200); assert.match(await landing.text(), /Идея\. Кадр\./);
+  const landing = await request('/'); assert.equal(landing.status, 200);
+  const landingHtml = await landing.text(); assert.match(landingHtml, /account-id" content="pending/); assert.match(landingHtml, /\/app\/assets\//);
   assert.equal((await request('/app')).headers.get('location'), '/login');
   assert.equal((await request('/api/events')).status, 401);
   assert.equal((await request('/api/sources/' + 'a'.repeat(64))).status, 401);
@@ -143,7 +144,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(adminJob.nativeQuote.amountUnits, 2500);
   assert.equal((await runtime.accounts.wallet.get(owner.id)).heldUnits, 2500);
   const adminService = await runtime.accounts.get(owner.id);
-  adminService.queue.paused = false; await adminService.queue.tick(); adminService.queue.pause(); await adminService.queue.tick();
+  adminService.queue.paused = false; await adminService.queue.tick(); adminService.queue.pause(); await adminService.queue.pollTick();
   assert.equal((await adminService.history.list())[0].state, 'success');
   assert.equal((await runtime.accounts.wallet.get(owner.id)).balanceUnits, 2500);
   assert.equal((await runtime.accounts.wallet.get(owner.id)).heldUnits, 0);
@@ -160,9 +161,10 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await result(rpc(alice, 'getBalance'))).heldUnits, 2500);
   assert.equal((await result(rpc(bob, 'getHistory'))).length, 0);
   const own = await runtime.accounts.get(alice.id);
-  own.queue.paused = false; await own.queue.tick(); own.queue.pause(); await own.queue.tick();
+  own.queue.paused = false; await own.queue.tick(); own.queue.pause(); await own.queue.pollTick();
   const finished = (await result(rpc(alice, 'getHistory')))[0];
   assert.equal(finished.state, 'success'); assert.equal(finished.creditsConsumed, undefined); assert.equal(finished.taskId, first.id);
+  assert.equal(finished.requestId, payload.requestId); assert.ok(finished.revision >= 1);
   assert.equal(finished.projectId, activeProject.id); assert.equal(finished.chatId, activeChat.id);
   assert.equal((await result(rpc(alice, 'getBalance'))).balanceUnits, 2500);
   assert.equal((await result(rpc(alice, 'getBalance'))).heldUnits, 0);

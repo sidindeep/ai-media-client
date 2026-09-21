@@ -174,6 +174,21 @@ app.whenReady().then(async () => {
     await until("document.documentElement.dataset.theme==='light'");
     assert.equal(await evaluate("localStorage.getItem('ai-media-studio-theme')"), 'light');
     assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'light');
+    assert.equal(await evaluate("window.AiMediaMotion.current()"), 'on', 'boot animation is enabled by default');
+    const bootMotion = await evaluate(`(()=>{
+      const rings=document.createElement('div');rings.className='site-boot-rings';rings.innerHTML='<span></span><span></span><span></span>';
+      const button=document.createElement('button');button.dataset.bootMotionToggle='';
+      document.body.append(rings,button);
+      window.AiMediaMotion.apply('off');button.click();
+      const enabled={ mode:document.documentElement.dataset.bootMotion, label:button.textContent, animation:getComputedStyle(rings,'::before').animationName };
+      button.click();
+      const disabled={ mode:document.documentElement.dataset.bootMotion, label:button.textContent, animation:getComputedStyle(rings,'::before').animationName };
+      window.AiMediaMotion.apply('on');rings.remove();button.remove();
+      return { enabled, disabled, stored:localStorage.getItem('ai-media-boot-motion') };
+    })()`);
+    assert.deepEqual(bootMotion.enabled, { mode: 'on', label: 'Анимация: включена', animation: 'site-boot-orbit' });
+    assert.deepEqual(bootMotion.disabled, { mode: 'off', label: 'Анимация: выключена', animation: 'none' });
+    assert.equal(bootMotion.stored, 'on');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.model-picker-trigger strong')).color"), 'rgb(49, 45, 56)');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.sidebar-tabs button.active')).color"), 'rgb(92, 67, 181)');
     assert.notEqual(await evaluate("getComputedStyle(document.querySelector('.composer-card')).backgroundColor"), 'rgb(14, 15, 23)');
@@ -205,20 +220,51 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.source-remove').click();void 0");
     assert.equal(await evaluate("document.querySelector('.source-preview')"), null);
     await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
-    assert.equal(await evaluate("document.querySelector('.brand-mark')?.getAttribute('href')"), '/');
-    assert.equal(await evaluate("document.querySelector('.brand-mark')?.getAttribute('aria-label')"), 'На главную');
-    assert.equal(await evaluate("document.querySelector('a.sidebar-home-link')?.getAttribute('href')"), '/');
-    assert.equal(await evaluate("document.querySelector('a.sidebar-home-link')?.textContent.trim()"), 'Главная');
+    assert.equal(await evaluate("document.querySelector('.sidebar .brand-mark')?.tagName"), 'A');
+    assert.equal(await evaluate("document.querySelector('.sidebar .brand-mark')?.getAttribute('href')"), '/');
+    assert.equal(await evaluate("document.querySelector('.sidebar .brand-mark')?.getAttribute('aria-label')"), 'На главную');
+    assert.equal(await evaluate("document.querySelector('.sidebar-public-home-link')?.tagName"), 'A');
+    assert.equal(await evaluate("document.querySelector('.sidebar-public-home-link')?.getAttribute('href')"), '/');
+    assert.equal(await evaluate("document.querySelector('.sidebar-public-home-link')?.textContent.trim()"), 'Главная');
+    assert.equal(await evaluate("document.querySelector('.sidebar-overview-link')?.tagName"), 'BUTTON');
+    assert.equal(await evaluate("document.querySelector('.sidebar-overview-link')?.textContent.trim()"), 'Обзор');
     assert.equal(await evaluate("document.querySelector('.sidebar-history-link')?.textContent.trim()"), 'История');
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const fullSyncCount = await evaluate("performance.getEntriesByType('resource').filter(entry=>{const url=new URL(entry.name);return url.pathname==='/api/workspace/sync'&&!url.search}).length");
+    const syncCountBeforeHome = await evaluate("performance.getEntriesByType('resource').filter(entry=>new URL(entry.name).pathname==='/api/workspace/sync').length");
+    assert.equal(fullSyncCount, 1, 'workspace receives one full bootstrap snapshot');
+    const navigationCount = await evaluate("performance.getEntriesByType('navigation').length");
+    await evaluate("document.querySelector('.sidebar-public-home-link').click();void 0");
+    await until("location.pathname==='/' && getComputedStyle(document.querySelector('.public-landing')).display!=='none'");
+    assert.equal(await evaluate("performance.getEntriesByType('navigation').length"), navigationCount, 'public home opens without document navigation');
+    assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>{const url=new URL(entry.name);return url.pathname==='/api/workspace/sync'&&!url.search}).length"), fullSyncCount, 'public home must not repeat the full workspace snapshot');
+    assert.equal(await evaluate("document.querySelector('.site-boot-screen')"), null, 'public home transition must not show startup again');
+    await evaluate("document.querySelector('.public-landing .button[href=\"/app\"]').click();void 0");
+    await until("location.pathname==='/app' && getComputedStyle(document.querySelector('.studio-app')).display!=='none'");
+    assert.equal(await evaluate("performance.getEntriesByType('navigation').length"), navigationCount, 'returning from public home keeps the same document');
+    assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>{const url=new URL(entry.name);return url.pathname==='/api/workspace/sync'&&!url.search}).length"), fullSyncCount, 'returning from public home reuses the loaded workspace');
+    await evaluate("document.querySelector('.sidebar-overview-link').click();void 0");
+    await until("location.pathname==='/app/home' && document.querySelector('.app-home')");
+    assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>new URL(entry.name).pathname==='/api/workspace/sync').length"), syncCountBeforeHome, 'home navigation must not reload workspace data');
+    await evaluate("document.querySelector('.app-home-action').click();void 0");
+    await until("location.pathname==='/app' && document.querySelector('.composer-card')");
+    assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>new URL(entry.name).pathname==='/api/workspace/sync').length"), syncCountBeforeHome, 'returning to studio must reuse loaded workspace data');
     assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
     assert.equal(await evaluate("document.querySelector('.sidebar-list').textContent.includes('Vue чат')"), false, 'project chats must not appear in the standalone chat list');
+    const activeChatBeforeSidebarNavigation = await evaluate("JSON.parse(localStorage.getItem('media-studio-workspace')).chatId");
     await evaluate("Array.from(document.querySelectorAll('.sidebar-tabs button')).find(button=>button.textContent.trim()==='Проекты').click();void 0");
     await until("document.querySelector('.project-list-view')?.textContent.includes('Vue проект')");
+    assert.equal(await evaluate("JSON.parse(localStorage.getItem('media-studio-workspace')).chatId"), activeChatBeforeSidebarNavigation, 'switching sidebar tabs must preserve the active chat');
     await evaluate("Array.from(document.querySelectorAll('.project-list-view .list-item')).find(button=>button.textContent.includes('Vue проект')).click();void 0");
     await until("document.querySelector('.project-children')?.textContent.includes('Vue чат')");
     assert.equal(await evaluate("document.querySelectorAll('.project-children .sidebar-entry').length"), 1);
     assert.equal(await evaluate("document.querySelector('.project-list-view')?.textContent.includes('Vue проект')"), true, 'expanded chats must stay inside the project list');
+    assert.equal(await evaluate("JSON.parse(localStorage.getItem('media-studio-workspace')).chatId"), activeChatBeforeSidebarNavigation, 'expanding a project must preserve the active chat');
+    await evaluate("Array.from(document.querySelectorAll('.sidebar-tabs button')).find(button=>button.textContent.trim()==='Чаты').click();void 0");
+    await until("document.querySelector('.sidebar-list') && !document.querySelector('.project-list-view')");
+    assert.equal(await evaluate("JSON.parse(localStorage.getItem('media-studio-workspace')).chatId"), activeChatBeforeSidebarNavigation, 'returning to the chats tab must preserve the active chat');
+    assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     await until("document.querySelector('.generate-button')");
     assert.equal(await evaluate("document.querySelector('.composer-controls > .quote')"), null);
     assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого')"), false);
@@ -285,12 +331,19 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.history-page-back').click();void 0");
     await until(`!document.querySelector('.history-page') && document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}]')`);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 2000);
-    await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.__nativeQuoteCalls=0;window.fetch=(...args)=>{
+    await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.__nativeQuoteCalls=0;window.__providerDiagnosticFailures=0;window.__providerDiagnosticCalls=0;window.fetch=(...args)=>{
       if(String(args[0]).includes('/api/rpc/nativeQuote')){
         window.__nativeQuoteCalls++;
         if(window.__nativeQuoteFailures>0){
           window.__nativeQuoteFailures--;
           return Promise.resolve(new Response(JSON.stringify({error:'Не удалось выполнить запрос'}),{status:400,headers:{'Content-Type':'application/json'}}));
+        }
+      }
+      if(String(args[0]).includes('/api/rpc/diagnoseProvider')){
+        window.__providerDiagnosticCalls++;
+        if(window.__providerDiagnosticFailures>0){
+          window.__providerDiagnosticFailures--;
+          return Promise.resolve(new Response(JSON.stringify({error:'Подключаемся к базе данных. Повторите через несколько секунд.',code:'DATABASE_UNAVAILABLE',retryable:true}),{status:503,headers:{'Content-Type':'application/json'}}));
         }
       }
       return window.__mediaFetch(...args);
@@ -337,8 +390,9 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
     await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.sidebar-provider-option[data-provider=codex]').click();document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
     await until("document.querySelector('.quote.error')?.textContent.includes('Не удалось выполнить запрос') && document.querySelector('.generate-button').disabled");
-    await evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-check').click();void 0");
+    await evaluate("window.__providerDiagnosticFailures=1;document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-check').click();void 0");
     await until("document.querySelector('.diagnostic-summary.success')?.textContent.includes('Все проверки пройдены') && !document.querySelector('.generate-button').disabled");
+    assert.equal(await evaluate("window.__providerDiagnosticCalls"), 2, 'provider diagnostics retries one temporary database failure');
     assert.equal(await evaluate("document.querySelectorAll('.diagnostic-checks article.ok').length"), 4);
     assert.match(await evaluate("document.querySelector('.diagnostic-log').textContent"), /Авторизация Kie.*Kie принял ключ/s);
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
@@ -348,7 +402,7 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
     assert.equal(await evaluate("window.__nativeQuoteCalls"), 0);
     await until("window.__nativeQuoteCalls===1 && !document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').getAttribute('aria-busy')==='false'");
-    await evaluate("window.fetch=window.__mediaFetch;delete window.__mediaFetch;delete window.__nativeQuoteFailures;delete window.__nativeQuoteCalls;void 0");
+    await evaluate("window.fetch=window.__mediaFetch;delete window.__mediaFetch;delete window.__nativeQuoteFailures;delete window.__nativeQuoteCalls;delete window.__providerDiagnosticFailures;delete window.__providerDiagnosticCalls;void 0");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-pill select option')).every(option=>option.value.startsWith('kie:'))"), true);
     const kieImageModels = await evaluate("document.querySelectorAll('.model-pill select option').length");
     await evaluate("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Видео')).click();void 0");
@@ -382,8 +436,23 @@ app.whenReady().then(async () => {
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     await evaluate("document.querySelector('.generate-button').click();void 0");
     await until("document.querySelector('.result-route')?.textContent.includes('Kie.ai') && document.querySelector('.result-receipt')?.textContent.includes('Ответ получен от Kie.ai')");
-    assert.equal(await evaluate("document.querySelectorAll('.generation-timeline li').length"), 5);
-    assert.match(await evaluate("document.querySelector('.generation-timeline').textContent"), /Принято приложением.*Отправка в Kie\.ai.*Kie\.ai принял задачу.*Генерация в Kie\.ai.*Получение результата/s);
+    assert.equal(await evaluate("document.querySelectorAll('.generation-timeline li').length"), 6);
+    assert.match(await evaluate("document.querySelector('.generation-timeline').textContent"), /Принято приложением.*Ожидание свободного слота.*Отправка в Kie\.ai.*Kie\.ai принял задачу.*Генерация в Kie\.ai.*Получение результата/s);
+    const stableKieItem = await evaluate(`(async()=>{
+      const original=window.fetch;
+      const payload=await original('/api/workspace/sync').then(response=>response.json());
+      const record=payload.result.records.find(item=>item.input?.prompt==='Проверка генерации Kie');
+      const stale={...record,state:'queued',revision:Math.max(0,Number(record.revision||0)-1),updatedAt:new Date(Date.parse(record.updatedAt)-1000).toISOString()};
+      window.__stableItemFetch=original;window.__staleSyncServed=0;
+      window.fetch=(input,init)=>{const url=new URL(typeof input==='string'?input:input.url,location.origin);if(url.pathname==='/api/workspace/sync'&&url.searchParams.has('since')&&!window.__staleSyncServed++){return Promise.resolve(new Response(JSON.stringify({result:{...payload.result,full:false,cursor:new Date().toISOString(),records:[stale],projects:[],chats:[]}}),{status:200,headers:{'Content-Type':'application/json'}}));}return original(input,init)};
+      return {id:record.id,revision:record.revision};
+    })()`);
+    assert.ok(stableKieItem.revision >= 1);
+    (await runtime.accounts.get(userId)).events.emit('changed');
+    await until("window.__staleSyncServed===1");
+    assert.equal(await evaluate("document.querySelector('.result-receipt').textContent.includes('Ответ получен от Kie.ai')"), true, 'stale item snapshot must not rewind success');
+    assert.equal(await evaluate("document.querySelectorAll('.queue-item').length"), 0, 'accepted item must not leave an optimistic duplicate');
+    await evaluate("window.fetch=window.__stableItemFetch;delete window.__stableItemFetch;delete window.__staleSyncServed;void 0");
     await evaluate("document.querySelector('.theme-button').click();void 0");
     await until("document.documentElement.dataset.theme==='light'");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.generation-timeline .is-done .timeline-marker')).every(marker=>getComputedStyle(marker).backgroundColor==='rgb(75, 157, 112)')"), true);
@@ -416,6 +485,10 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('[data-theme-toggle]').click();void 0");
     await until("document.documentElement.dataset.theme==='dark'");
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
+    await win.loadURL(origin + '/');
+    await until("location.pathname==='/' && document.querySelector('.site-header') && !document.documentElement.classList.contains('site-booting')");
+    assert.equal(await evaluate("location.pathname"), '/', 'authenticated visitors stay on the public home page');
+    assert.equal(await evaluate("document.querySelector('.button[href=\"/app\"]')?.textContent.includes('Открыть студию')"), true);
     await win.loadURL(origin + '/app');
     await until("document.querySelector('.account-trigger')?.textContent.includes('Администратор')");
     await evaluate("document.querySelector('.account-trigger').click();void 0");

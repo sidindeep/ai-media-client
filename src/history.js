@@ -16,7 +16,8 @@ class History {
       const records = await this.read();
       const index = records.findIndex(item => item.id === id);
       if (expectedStates && !expectedStates.includes(records[index]?.state)) throw new Error('Состояние задачи уже изменилось');
-      const record = { ...(index < 0 ? { id } : records[index]), ...changes, updatedAt: new Date().toISOString() };
+      const previous = index < 0 ? null : records[index];
+      const record = { ...(previous || { id }), ...changes, revision: Number(previous?.revision || 0) + 1, updatedAt: new Date().toISOString() };
       if (index < 0) records.unshift(record); else records[index] = record;
       await fs.mkdir(path.dirname(this.file), { recursive: true });
       await fs.writeFile(this.file + '.tmp', JSON.stringify(records, null, 2));

@@ -7,11 +7,11 @@ const { createPricing } = require('../billing/pricing');
 const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
-const { generationHistory } = require('./generation-history');
+const { generationHistory, generationHistorySince } = require('./generation-history');
 const { createWorkspaces } = require('./workspaces');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
-  const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote',
+  const fields = ['id', 'requestId', 'revision', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote',
     'queuedAt', 'preparingAt', 'submittingAt', 'providerAcceptedAt', 'providerFirstCheckedAt', 'providerStateChangedAt', 'lastCheckedAt', 'resultReceivedAt', 'resultSavedAt',
     'progress', 'providerDurationMs', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'projectId', 'chatId'];
   const result = Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]]));
@@ -37,7 +37,7 @@ function createAccounts({ pool, config, provider, legacy }) {
   return {
     pool, wallet, pricing, workspaces, get,
     async recover() {
-      const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('preparing','submitting','waiting','queuing','generating','unknown')")).rows;
+      const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('queued','preparing','submitting','waiting','queuing','generating','unknown')")).rows;
       for (const row of rows) await get(row.account_id);
     },
     async scope(user, selected) {
@@ -57,6 +57,7 @@ function createAccounts({ pool, config, provider, legacy }) {
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
+          if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before);
           if (method === 'createTask') return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
           return service.dispatch(method, args);
         }
@@ -73,6 +74,7 @@ function createAccounts({ pool, config, provider, legacy }) {
               })) };
             }
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
+            case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord);
             case 'createTask': {
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
               const request = { ...args[0], ...(await workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId)) };
@@ -139,7 +141,7 @@ function createAccounts({ pool, config, provider, legacy }) {
         if (!['unknown', 'unconfirmed'].includes(row?.data.state)) throw new Error('Задача не требует ручной сверки');
         await settle(client, accountId, jobId, outcome);
         await client.query('INSERT INTO media_reconciliations(job_id,account_id,actor_id,outcome,evidence) VALUES($1,$2,$3,$4,$5)', [jobId, accountId, actorId, outcome, evidence]);
-        const record = { ...row.data, state: outcome, error: null, errorInfo: null, reconciled: true, generationCompletedAt: new Date().toISOString() };
+        const record = { ...row.data, state: outcome, error: null, errorInfo: null, reconciled: true, generationCompletedAt: new Date().toISOString(), revision: Number(row.data.revision || 0) + 1, updatedAt: new Date().toISOString() };
         await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace=$4 AND id=$2", [accountId, jobId, JSON.stringify(record), row.namespace]);
         return true;
       });

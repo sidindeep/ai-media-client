@@ -1,4 +1,28 @@
 (() => {
+  const boot = document.querySelector('[data-site-boot]');
+  const bootStatus = document.querySelector('[data-site-boot-status]');
+  const startedAt = performance.now();
+  const minimumDuration = 2200;
+  let finished = false;
+
+  document.documentElement.classList.add('site-booting');
+
+  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+  async function revealLanding() {
+    if (finished) return;
+    finished = true;
+    await wait(Math.max(0, minimumDuration - (performance.now() - startedAt)));
+    boot?.classList.add('is-finished');
+    document.documentElement.classList.remove('site-booting');
+    setTimeout(() => boot?.remove(), 450);
+  }
+
+  async function resolveStartup() {
+    if (bootStatus) bootStatus.textContent = 'Добро пожаловать';
+    await revealLanding();
+  }
+  void resolveStartup();
+
   document.addEventListener('click', event => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target.closest?.('a[href*="#"]');

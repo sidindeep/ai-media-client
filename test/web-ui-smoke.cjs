@@ -143,7 +143,7 @@ app.whenReady().then(async () => {
     assert.equal(startupStatus.database.state, 'connected');
     assert.equal(startupStatus.authenticated, true);
     assert.equal(startupStatus.account.id, userId);
-    await win.loadURL(origin);
+    await win.loadURL(origin + '/app');
     await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
     await until("document.querySelector('.account-trigger')?.textContent.includes('Новое имя')");
     await evaluate("document.querySelector('.account-trigger').click();void 0");
@@ -268,7 +268,7 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('#logout').click(); void 0");
     await until("location.pathname==='/login' && document.querySelector('#loginProviders')!==null");
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
-    await win.loadURL(origin);
+    await win.loadURL(origin + '/app');
     await until("document.querySelector('.account-trigger')?.textContent.includes('Администратор')");
     await evaluate("document.querySelector('.account-trigger').click();void 0");
     await until("document.querySelector('.account-admin-link')?.textContent.includes('Админка')");

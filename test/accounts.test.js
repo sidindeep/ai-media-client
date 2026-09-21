@@ -61,7 +61,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
     const callback = `/auth/${providerName}/callback?state=${state}&code=${subject}`;
     const wrongBrowser = await request(callback); assert.equal(wrongBrowser.headers.get('location'), '/login?error=oauth');
     const result = await request(callback, { headers: { Cookie: cookie, 'Sec-Fetch-Site': 'cross-site' } });
-    assert.equal(result.status, 302); assert.equal(result.headers.get('location'), '/');
+    assert.equal(result.status, 302); assert.equal(result.headers.get('location'), '/app');
     const session = result.headers.getSetCookie()[0]; assert.match(session, /HttpOnly; SameSite=Lax/);
     const replay = await request(callback, { headers: { Cookie: cookie } }); assert.equal(replay.headers.get('location'), '/login?error=oauth');
     const authCookie = session.split(';')[0];
@@ -70,7 +70,8 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   }
   const rpc = (user, method, args = [], extra = {}) => request(`/api/rpc/${method}`, { method: 'POST', headers: { Cookie: user.cookie, 'X-Media-Client': 'web', 'X-Media-User': user.id, 'Content-Type': 'application/json', ...extra }, body: JSON.stringify(args) });
   const result = async response => { const r = await response, body = await r.json(); assert.equal(r.status, 200, JSON.stringify(body)); return body.result; };
-  assert.equal((await request('/')).headers.get('location'), '/login');
+  const landing = await request('/'); assert.equal(landing.status, 200); assert.match(await landing.text(), /Идея\. Кадр\./);
+  assert.equal((await request('/app')).headers.get('location'), '/login');
   assert.equal((await request('/api/events')).status, 401);
   assert.equal((await request('/api/sources/' + 'a'.repeat(64))).status, 401);
   const alice = await login('alice'), bob = await login('bob'), owner = await login('owner'), otherIdentity = await login('alice', 'vk');

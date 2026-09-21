@@ -12,14 +12,16 @@ const { models } = require('../src/catalog');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
-test('temporary database failure keeps the Vue shell available with startup status and unhealthy API health', async t => {
+test('temporary database failure keeps the public landing and Vue shell available with startup status and unhealthy API health', async t => {
   const unavailable = async () => { throw Object.assign(new Error('private database details'), { code: 'EAI_AGAIN' }); };
   const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { pool: { query: unavailable } } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
   const page = await fetch(base); assert.equal(page.status, 200);
-  const html = await page.text(); assert.match(html, /account-id" content="pending/); assert.match(html, /\/app\/assets\//); assert.doesNotMatch(html, /private database details/);
+  const landing = await page.text(); assert.match(landing, /Идея\. Кадр\./); assert.match(landing, /\/landing\.css/); assert.doesNotMatch(landing, /private database details/);
+  const app = await fetch(base + '/app'); assert.equal(app.status, 200);
+  const html = await app.text(); assert.match(html, /account-id" content="pending/); assert.match(html, /\/app\/assets\//); assert.doesNotMatch(html, /private database details/);
   const startup = await fetch(base + '/api/startup'); assert.equal(startup.status, 200);
   assert.deepEqual(await startup.json(), { database: { state: 'unavailable', code: 'EAI_AGAIN', pool: {} }, provider: { state: 'idle' }, authenticated: false, account: null });
   assert.equal((await fetch(base + '/api/health')).status, 503);
@@ -133,7 +135,13 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   assert.ok(html.includes('generationForm')); assert.ok(html.includes('pauseQueue'));
   assert.ok(!html.includes('id="apiKey"')); assert.ok(!html.includes('id="openKieSession"'));
   for (const src of [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1])) assert.equal((await fetch(base + src)).status, 200);
-  const vueApp = await fetch(base);
+  const landing = await fetch(base);
+  assert.equal(landing.status, 200);
+  const landingHtml = await landing.text();
+  assert.match(landingHtml, /AI Media Client — создавайте изображения и видео с AI/);
+  assert.match(landingHtml, /href="\/app"/);
+  assert.equal((await fetch(base + '/landing.css')).status, 200);
+  const vueApp = await fetch(base + '/app');
   assert.equal(vueApp.status, 200);
   const vueHtml = await vueApp.text();
   assert.match(vueHtml, /<meta name="account-id" content="local">/);
@@ -141,7 +149,6 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const vueAsset = [...vueHtml.matchAll(/(?:src|href)="(\/app\/assets\/[^"']+)"/g)].map(match => match[1]);
   assert.ok(vueAsset.length >= 2);
   for (const asset of vueAsset) assert.equal((await fetch(base + asset)).status, 200);
-  assert.equal((await fetch(base + '/app')).status, 200);
   assert.equal((await fetch(base + '/app/projects/demo')).status, 200);
   assert.equal((await fetch(base + '/src/main.js')).status, 404);
   assert.equal((await fetch(base + '/.env')).status, 404);

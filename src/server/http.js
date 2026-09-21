@@ -10,6 +10,7 @@ const trace = require('../generation-log');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
+const publicPageAssets = new Set(['landing.css', 'login.js', 'web.css', 'version.js']);
 const vueAppPrefix = '/app';
 const retryableReadRpc = new Set(['nativeQuote', 'diagnoseProvider']);
 function temporaryConnectionFailure(error) {
@@ -77,7 +78,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const url = new URL(req.url, `http://${req.headers.host}`);
       const rpcMatch = req.method === 'POST' ? /^\/api\/rpc\/([a-zA-Z]+)$/.exec(url.pathname) : null;
       const retryReadOnlyRpc = Boolean(rpcMatch && retryableReadRpc.has(rpcMatch[1]));
-      if (auth && config.port !== 0 && req.method === 'GET' && (url.pathname === '/' || /^\/auth\/[a-z][a-z0-9_-]*\/start$/.test(url.pathname)) && req.headers.host !== new URL(config.auth.origin).host) {
+      if (auth && config.port !== 0 && req.method === 'GET' && /^\/auth\/[a-z][a-z0-9_-]*\/start$/.test(url.pathname) && req.headers.host !== new URL(config.auth.origin).host) {
         res.writeHead(302, { ...headers, Location: config.auth.origin + url.pathname + url.search, 'Cache-Control': 'no-store' }); res.end(); return;
       }
       const sameOrigin = !req.headers.origin || req.headers.origin === `http://${req.headers.host}` || (config.publicOrigin && req.headers.origin === config.publicOrigin);
@@ -93,14 +94,14 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (!allowedTopLevelNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
-      const isVueRoot = ['/', '/index.html'].includes(url.pathname);
-      const isVueApp = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
+      const isLanding = ['/', '/index.html'].includes(url.pathname);
+      const isVueApp = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
       const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
+        && (isLanding || publicPageAssets.has(url.pathname.slice(1)) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
       const sendVueApplication = async user => {
         const root = path.join(config.root, 'public', 'vue');
-        const relative = isVueRoot || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
+        const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
         const sendVueIndex = async () => {
           let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
@@ -145,11 +146,12 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
         if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
         if (authRoute[2] === 'start') { const result = await auth.begin(authRoute[1]); return redirect(result.location, result.cookie); }
-        try { return redirect('/', await auth.finish(req, authRoute[1], url.searchParams)); }
+        try { return redirect('/app', await auth.finish(req, authRoute[1], url.searchParams)); }
         catch { return redirect('/login?error=oauth'); }
       }
-      if (['GET', 'HEAD'].includes(req.method) && ['/login', '/login.js', '/web.css', '/version.js'].includes(url.pathname)) {
-        return await sendFile(req, res, path.join(config.root, 'public', url.pathname === '/login' ? 'login.html' : url.pathname.slice(1)));
+      if (['GET', 'HEAD'].includes(req.method) && (isLanding || publicPageAssets.has(url.pathname.slice(1)) || url.pathname === '/login')) {
+        const publicFile = isLanding ? 'landing.html' : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
+        return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       }
       if (config.auth.enabled && !auth && isVueApp && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);
       if (config.auth.enabled && !auth) return json(res, 503, { error: 'Подключаемся к базе данных. Повторите через несколько секунд.' });
@@ -327,7 +329,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (res.headersSent) { res.destroy(); return; }
       if (temporaryConnectionFailure(error)) {
         console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
-        if (req.method === 'GET' && ['/', '/index.html'].includes(req.url?.split('?')[0])) {
+        const requestPath = req.url?.split('?')[0] || '';
+        if (req.method === 'GET' && (requestPath === '/app' || requestPath === '/app/' || (requestPath.startsWith('/app/') && !path.extname(requestPath)))) {
           let html = await fs.readFile(path.join(config.root, 'public', 'vue', 'index.html'), 'utf8');
           html = html.replace('<head>', '<head><meta name="account-id" content="pending"><meta name="account-role" content="pending">');
           res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -335,7 +338,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         }
         if (req.method === 'GET' && ['/legacy', '/legacy/', '/admin.html'].includes(req.url?.split('?')[0])) {
           res.writeHead(503, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '5' });
-          return res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Временная ошибка подключения</title><h1>Не удалось подключиться к сервису</h1><p>Связь с базой данных временно недоступна. Аккаунт и данные сохранены. Повторите через несколько секунд.</p><a href="/">Повторить</a></html>');
+          return res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Временная ошибка подключения</title><h1>Не удалось подключиться к сервису</h1><p>Связь с базой данных временно недоступна. Аккаунт и данные сохранены. Повторите через несколько секунд.</p><a href="/app">Повторить</a></html>');
         }
         return json(res, 503, { error: 'Связь с базой данных временно недоступна. Повторите через несколько секунд.' });
       }

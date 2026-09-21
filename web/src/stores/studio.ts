@@ -351,6 +351,17 @@ export const useStudioStore = defineStore('studio', () => {
     loading.value = false;
     error.value = '';
     restoreWorkspaceSelection();
+    const accountId = document.querySelector('meta[name="account-id"]')?.getAttribute('content') || '';
+    const accountRole = document.querySelector('meta[name="account-role"]')?.getAttribute('content') || '';
+    if (accountId && accountId !== 'pending' && accountRole && accountRole !== 'pending') {
+      // The server already verified this session while serving /app. Reuse that
+      // result instead of running the database startup probe again on navigation.
+      databaseState.value = 'connected';
+      api.setAccountContext({ id: accountId, role: accountRole });
+      await loadAccountState();
+      if (!accountReady.value) scheduleStartupPoll();
+      return;
+    }
     await pollStartup();
   }
 

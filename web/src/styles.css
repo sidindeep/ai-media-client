@@ -19,9 +19,14 @@ button { cursor: pointer; }
 .brand-mark { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 12px; color: #fff; background: #7256e8; font-weight: 800; }
 .sidebar-brand strong { display: block; font-size: 15px; letter-spacing: .02em; }
 .collapse-button { margin-left: auto; border: 0; color: #8f8ba6; background: transparent; font-size: 22px; }
-.sidebar.collapsed { grid-column: 1; width: 82px; padding-inline: 14px; }.sidebar.collapsed .sidebar-brand { border-bottom: 0; padding-inline: 0; }.sidebar.collapsed .sidebar-brand > div, .sidebar.collapsed .sidebar-bottom span:last-child { display: none; }.sidebar.collapsed .collapse-button { transform: rotate(180deg); }
+.sidebar.collapsed { grid-column: 1; width: 82px; padding-inline: 14px; }.sidebar.collapsed .sidebar-brand { border-bottom: 0; padding-inline: 0; }.sidebar.collapsed .sidebar-brand > div, .sidebar.collapsed .sidebar-home-link > span:last-child, .sidebar.collapsed .sidebar-bottom span:last-child { display: none; }.sidebar.collapsed .sidebar-home-link { justify-content: center; padding-inline: 0; }.sidebar.collapsed .collapse-button { transform: rotate(180deg); }
 .sidebar-brand small { display: block; margin-top: 4px; color: #8e8ba5; font-size: 10px; letter-spacing: .16em; }
 .sidebar-version { display: block; max-width: 160px; margin-top: 5px; overflow: hidden; color: #706b88; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-home-link { display: flex; align-items: center; gap: 10px; margin: 12px 0 3px; padding: 8px; border: 1px solid transparent; border-radius: 11px; color: #a8a4b5; font-size: 12px; font-weight: 650; text-decoration: none; transition: color .18s ease, background .18s ease, border-color .18s ease; }
+.sidebar-home-link:hover, .sidebar-home-link:focus-visible { color: #fff; background: #181827; border-color: #302f4c; outline: none; }
+.sidebar-home-icon { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 9px; color: #a995ff; background: #211c3e; }
+.sidebar-home-icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.sidebar-home-link + .sidebar-toolbar { margin-top: 8px; }
 .sidebar-toolbar { display: grid; grid-template-columns: 1fr 42px; gap: 8px; margin: 22px 0 14px; }
 .search { display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #2d2e40; border-radius: 11px; color: #9592ab; background: #13141e; }
 .search input { width: 100%; border: 0; outline: 0; color: #eee; background: transparent; padding: 10px 0; }

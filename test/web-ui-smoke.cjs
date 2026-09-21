@@ -145,6 +145,7 @@ app.whenReady().then(async () => {
     assert.equal(startupStatus.account.id, userId);
     await win.loadURL(origin + '/app');
     await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
+    assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>entry.name.endsWith('/api/startup')).length"), 0, 'verified /app navigation must reuse the server session check');
     await until("document.querySelector('.account-trigger')?.textContent.includes('Новое имя')");
     await evaluate("document.querySelector('.account-trigger').click();void 0");
     await until("document.querySelector('.account-popover')?.textContent.includes('Профиль')");
@@ -160,6 +161,8 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.source-remove').click();void 0");
     assert.equal(await evaluate("document.querySelector('.source-preview')"), null);
     await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
+    assert.equal(await evaluate("document.querySelector('.sidebar-home-link')?.getAttribute('href')"), '/');
+    assert.equal(await evaluate("document.querySelector('.sidebar-home-link')?.textContent.trim()"), 'Главная');
     assert.match(await evaluate("document.querySelector('.studio-header').textContent"), /Vue чат/);
     assert.equal(await evaluate("document.querySelectorAll('.sidebar-tabs button').length"), 2);
     assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого') || document.querySelector('.quote')!==null"), true);

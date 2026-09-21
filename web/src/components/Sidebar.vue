@@ -53,6 +53,10 @@ function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = nul
 <template>
   <aside class="sidebar" :class="{ collapsed }">
     <div class="sidebar-brand"><span class="brand-mark">ИИ</span><div><strong>Медиастудия</strong><small>WEB · STUDIO</small><span class="sidebar-version">{{ releaseLabel }}</span></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
+    <a class="sidebar-home-link" href="/" aria-label="Главная" title="Главная">
+      <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><path d="M3.75 10.5 12 3.75l8.25 6.75v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V10.5Z" /><path d="M9 20.25v-6h6v6" /></svg></span>
+      <span>Главная</span>
+    </a>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Поиск" aria-label="Поиск чатов и проектов" /></label><button class="icon-button" type="button" aria-label="Новый чат" @click="() => addChat()">＋</button></div>
       <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="activeTab = 'chats'">Чаты</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="activeTab = 'projects'">Проекты</button></div>

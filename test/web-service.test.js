@@ -13,8 +13,10 @@ const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-prev
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
 test('temporary database failure keeps the public landing and Vue shell available with startup status and unhealthy API health', async t => {
+  const databaseQueries = [];
   const unavailable = async () => { throw Object.assign(new Error('private database details'), { code: 'EAI_AGAIN' }); };
-  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { pool: { query: unavailable } } });
+  const query = async request => { databaseQueries.push(request?.text || request); return unavailable(); };
+  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { pool: { query } } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -24,7 +26,10 @@ test('temporary database failure keeps the public landing and Vue shell availabl
   const html = await app.text(); assert.match(html, /account-id" content="pending/); assert.match(html, /\/app\/assets\//); assert.doesNotMatch(html, /private database details/);
   const startup = await fetch(base + '/api/startup'); assert.equal(startup.status, 200);
   assert.deepEqual(await startup.json(), { database: { state: 'unavailable', code: 'EAI_AGAIN', pool: {} }, provider: { state: 'idle' }, authenticated: false, account: null });
+  assert.equal(databaseQueries.length, 1);
+  assert.match(databaseQueries[0], /^SELECT 1 AS connected$/);
   assert.equal((await fetch(base + '/api/health')).status, 503);
+  assert.match(databaseQueries.at(-1), /pg_stat_activity/);
   const version = await fetch(base + '/api/version');
   assert.equal(version.status, 200);
   assert.equal(version.headers.get('cache-control'), 'no-store');

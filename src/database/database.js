@@ -53,14 +53,16 @@ async function openDatabase(config, suppliedPool) {
     }
   }
 }
-async function checkDatabase(pool) {
+async function checkDatabase(pool, { diagnostics = true } = {}) {
   if (!pool) return { state: 'disabled' };
   const poolInfo = () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount });
   const started = Date.now();
   try {
-    const result = await pool.query({ text: "SELECT current_setting('max_connections') AS max_connections, (SELECT count(*) FROM pg_stat_activity) AS sessions, (SELECT rolconnlimit FROM pg_roles WHERE rolname=current_user) AS role_connection_limit, (SELECT count(*) FROM pg_stat_activity WHERE usename=current_user) AS role_sessions", query_timeout: 3000 });
+    const result = await pool.query({ text: diagnostics
+      ? "SELECT current_setting('max_connections') AS max_connections, (SELECT count(*) FROM pg_stat_activity) AS sessions, (SELECT rolconnlimit FROM pg_roles WHERE rolname=current_user) AS role_connection_limit, (SELECT count(*) FROM pg_stat_activity WHERE usename=current_user) AS role_sessions"
+      : 'SELECT 1 AS connected', query_timeout: 3000 });
     const row = result.rows[0] || {};
-    return { state: 'connected', latencyMs: Date.now() - started, pool: poolInfo(), server: { maxConnections: Number(row.max_connections) || null, sessions: Number(row.sessions) || null, roleConnectionLimit: Number(row.role_connection_limit), roleSessions: Number(row.role_sessions) || null } };
+    return { state: 'connected', latencyMs: Date.now() - started, pool: poolInfo(), ...(diagnostics ? { server: { maxConnections: Number(row.max_connections) || null, sessions: Number(row.sessions) || null, roleConnectionLimit: Number(row.role_connection_limit), roleSessions: Number(row.role_sessions) || null } } : {}) };
   } catch (error) {
     return { state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', pool: poolInfo() };
   }

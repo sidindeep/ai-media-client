@@ -118,7 +118,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         }
       };
       if (req.method === 'GET' && url.pathname === '/api/startup') {
-        let database = accounts ? await checkDatabase(accounts.pool) : (readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        // Page navigation reuses the process-wide pool. This is only a liveness
+        // probe; pg reconnects the pool when the previous connection was lost.
+        let database = accounts ? await checkDatabase(accounts.pool, { diagnostics: false }) : (readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         let startupUser = config.auth.enabled ? null : { id: 'local', role: 'admin', name: 'Владелец' };
         if (auth && database.state === 'connected') {
           try { startupUser = await assetUser(auth, req, true); }

@@ -104,6 +104,13 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await result(rpc(alice, 'saveDrafts', [draft]));
   assert.deepEqual(await result(rpc(alice, 'loadDrafts')), draft);
   assert.equal(await result(rpc(bob, 'loadDrafts')), null);
+  const savedPreset = await result(rpc(alice, 'saveGenerationPreset', [{ name: 'Мой Grok', provider: 'media', mode: 'video', quantity: 2, mediaModelId: modelId, mediaInput: { ...input, prompt: 'не сохранять', image_urls: ['https://example.test/private.png'] } }]));
+  assert.equal(savedPreset.name, 'Мой Grok');
+  assert.deepEqual(savedPreset.mediaInput, { duration: 8, aspect_ratio: '16:9', resolution: '720p' });
+  assert.equal((await result(rpc(alice, 'listGenerationPresets'))).length, 1);
+  assert.equal((await result(rpc(bob, 'listGenerationPresets'))).length, 0);
+  await result(rpc(alice, 'removeGenerationPreset', [savedPreset.id]));
+  assert.deepEqual(await result(rpc(alice, 'listGenerationPresets')), []);
   const upload = await result(request('/api/source?name=x.png', { method: 'POST', headers: { Cookie: alice.cookie, 'X-Media-User': alice.id, 'X-Media-Client': 'web', 'Content-Type': 'image/png' }, body: 'image' }));
   const sourcePath = '/api/sources/' + upload.ref.split('/').at(-1);
   assert.equal((await request(sourcePath, { headers: { Cookie: bob.cookie } })).status, 400);

@@ -1,4 +1,4 @@
-import type { Account, Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { Account, Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -64,6 +64,9 @@ export const archiveChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${
 export const getChat = (id: string) => workspaceRequest<Chat & { records: GenerationRecord[] }>(`/api/chats/${encodeURIComponent(id)}`);
 export const loadDraft = (chatId?: string | null) => rpc<Record<string, unknown> | null>('loadDrafts', chatId ? [{ chatId }] : []);
 export const saveDraft = (draft: Record<string, unknown>, chatId?: string | null) => rpc<boolean>('saveDrafts', [draft, chatId ? { chatId } : {}]);
+export const listGenerationPresets = () => rpc<GenerationPreset[]>('listGenerationPresets');
+export const saveGenerationPreset = (preset: Omit<GenerationPreset, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => rpc<GenerationPreset>('saveGenerationPreset', [preset]);
+export const removeGenerationPreset = (id: string) => rpc<boolean>('removeGenerationPreset', [id]);
 
 export async function getQueueStatus(): Promise<QueueStatus> {
   return rpc<QueueStatus>('queueStatus');

@@ -24,7 +24,7 @@ function createAccounts({ pool, config, provider, legacy }) {
   const routedProvider = createProviderRouter([provider]);
   async function get(accountId) {
     if (!services.has(accountId)) {
-      const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates'].map(name => [name, new AccountRecords(pool, accountId, name)]));
+      const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates', 'presets'].map(name => [name, new AccountRecords(pool, accountId, name)]));
       const operation = createMediaService({ directory: path.join(config.dataDirectory, 'accounts', accountId), provider: routedProvider,
         rubPerCredit: config.rubPerCredit, stores, pricing });
       services.set(accountId, operation);
@@ -91,7 +91,7 @@ function createAccounts({ pool, config, provider, legacy }) {
             case 'getTariffDescriptions': return { entries: {} };
             case 'keyStatus': case 'startQueue': case 'pauseQueue': case 'setConcurrency': case 'cancelQueued':
             case 'removeQueued': case 'clearQueue': case 'acknowledgeTask': case 'getFavoriteModels': case 'setFavoriteModels':
-            case 'listTemplates': case 'saveTemplate': case 'removeTemplate': case 'loadDrafts': case 'saveDrafts':
+            case 'listTemplates': case 'saveTemplate': case 'removeTemplate': case 'listGenerationPresets': case 'saveGenerationPreset': case 'removeGenerationPreset': case 'loadDrafts': case 'saveDrafts':
             case 'storageSettings': case 'setAutoSave': case 'saveResults': return service.dispatch(method, args);
             default: throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
           }

@@ -7,6 +7,7 @@ const { History } = require('../history');
 const { Assets } = require('../assets');
 const { TaskQueue } = require('../task-queue');
 const { PromptTemplates } = require('../prompt-templates');
+const { GenerationPresets } = require('../generation-presets');
 const { models, providers } = require('../catalog');
 const { buildRequest } = require('../adapters');
 const costs = require('../costs');
@@ -43,6 +44,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     if (!model || model.providerId !== provider.id) throw new Error('Модель не найдена');
     return model;
   };
+  const presets = new GenerationPresets(stores?.presets || new History(path.join(directory, 'presets.json')), findModel);
   const preference = async (id, fallback) => (await preferences.list()).find(item => item.id === id) || fallback;
   const costSettings = () => preference('cost-settings', { rubPerCredit });
   const storageSettings = async () => ({ directory: 'Хранилище сервиса', autoSave: (await preference('storage', {})).autoSave === true });
@@ -108,7 +110,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     }));
   }
   const service = {
-    events, queue, history, preferences, templates, findModel, validate, costSettings, storageSettings, saveResults, listHistory, resultUrls: urls,
+    events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, resultUrls: urls,
     catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id) }),
     configured: () => provider.isConfigured(),
     async nativeQuote(modelId, input = {}) {
@@ -258,6 +260,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         case 'listTemplates': return templates.list();
         case 'saveTemplate': return templates.save(args[0]);
         case 'removeTemplate': return templates.remove(args[0]);
+        case 'listGenerationPresets': return presets.list();
+        case 'saveGenerationPreset': return presets.save(args[0]);
+        case 'removeGenerationPreset': return presets.remove(args[0]);
         case 'loadDrafts': return (await drafts.list()).find(item => item.id === (args[0]?.chatId ? `chat:${args[0].chatId}` : 'workspace'))?.data || null;
         case 'saveDrafts': {
           const data = args[0];

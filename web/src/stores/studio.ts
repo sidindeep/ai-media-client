@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
-import type { Catalog, Chat, CodexCatalog, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
@@ -16,6 +16,7 @@ export const useStudioStore = defineStore('studio', () => {
   const codexCatalog = ref<CodexCatalog | null>(null);
   const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
+  const presets = ref<GenerationPreset[]>([]);
   const projects = ref<Project[]>([]);
   const chats = ref<Chat[]>([]);
   const activeChatId = ref<string>('system:recent');
@@ -196,6 +197,84 @@ export const useStudioStore = defineStore('studio', () => {
     }
   }
 
+  function currentPresetPayload(name: string): Omit<GenerationPreset, 'id' | 'createdAt' | 'updatedAt'> | null {
+    const base = { name, provider: provider.value, mode: mode.value, quantity: quantity.value };
+    if (provider.value === 'codex') return {
+      ...base,
+      provider: 'codex',
+      codexModel: codexModel.value,
+      codexEffort: codexEffort.value,
+      codexSpeed: codexSpeed.value,
+      codexAspectRatio: codexAspectRatio.value,
+    };
+    const model = currentMediaModel.value;
+    if (!model) return null;
+    const allowed = new Set((model.fields || []).filter(field => field.type !== 'files' && !/prompt/i.test(field.key)).map(field => field.key));
+    return {
+      ...base,
+      provider: 'media',
+      mediaModelId: model.id,
+      mediaInput: Object.fromEntries(Object.entries(mediaInput.value).filter(([key]) => allowed.has(key))),
+    };
+  }
+
+  async function saveCurrentPreset(name: string) {
+    const payload = currentPresetPayload(name.trim());
+    if (!payload) throw new Error('Сначала выберите модель');
+    const saved = await api.saveGenerationPreset(payload);
+    presets.value = [saved, ...presets.value.filter(item => item.id !== saved.id)];
+    return saved;
+  }
+
+  async function removePreset(id: string) {
+    await api.removeGenerationPreset(id);
+    presets.value = presets.value.filter(item => item.id !== id);
+  }
+
+  function applyPreset(preset: GenerationPreset) {
+    if (preset.provider === 'media') {
+      const available = mediaModelsFor(preset.mode).find(model => model.id === preset.mediaModelId);
+      if (!available) throw new Error('Модель этого пресета больше недоступна');
+      mode.value = preset.mode;
+      provider.value = 'media';
+      mediaModelId.value = available.id;
+      mediaInput.value = JSON.parse(JSON.stringify(preset.mediaInput || {}));
+    } else {
+      const available = codexCatalog.value?.models.find(model => model.id === preset.codexModel);
+      if (!available) throw new Error('Модель Codex этого пресета больше недоступна');
+      mode.value = preset.mode === 'text' ? 'text' : 'image';
+      provider.value = 'codex';
+      codexKind.value = mode.value === 'text' ? 'text' : 'image';
+      codexModel.value = available.id;
+      codexEffort.value = preset.codexEffort || available.defaultEffort;
+      codexSpeed.value = preset.codexSpeed || 'standard';
+      codexAspectRatio.value = preset.codexAspectRatio || 'auto';
+      normalizeCodexControls();
+    }
+    quantity.value = Math.min(4, Math.max(1, Number(preset.quantity) || 1));
+    sourceFiles.value = [];
+  }
+
+  function stable(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, stable(child)]));
+    return value;
+  }
+
+  function presetMatchesCurrent(preset: GenerationPreset) {
+    const current = currentPresetPayload('');
+    if (!current) return false;
+    const comparable = (value: Partial<GenerationPreset>) => stable(value.provider === 'media' ? {
+      provider: value.provider, mode: value.mode, quantity: value.quantity,
+      mediaModelId: value.mediaModelId, mediaInput: value.mediaInput || {},
+    } : {
+      provider: value.provider, mode: value.mode, quantity: value.quantity,
+      codexModel: value.codexModel, codexEffort: value.codexEffort,
+      codexSpeed: value.codexSpeed, codexAspectRatio: value.codexAspectRatio,
+    });
+    return JSON.stringify(comparable(current)) === JSON.stringify(comparable(preset));
+  }
+
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
   watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, quantity, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
@@ -212,7 +291,7 @@ export const useStudioStore = defineStore('studio', () => {
     loading.value = true;
     error.value = '';
     try {
-      [catalog.value, codexCatalog.value, release.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null)]);
+      [catalog.value, codexCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
       const defaults = codexCatalog.value?.uiDefaults;
       const models = codexCatalog.value?.models || [];
       codexModel.value = models.find(model => model.id === defaults?.model)?.id
@@ -335,13 +414,13 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, release, history, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, release, history, presets, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, accountReady,
     prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, quantity, setMode, setProvider,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject,
     loadDraftForActive,
-    pendingCodexId, currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
+    pendingCodexId, currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
   };
 });

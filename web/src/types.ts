@@ -47,6 +47,22 @@ export type Catalog = {
   models: MediaModel[];
 };
 
+export type GenerationPreset = {
+  id: string;
+  name: string;
+  provider: 'codex' | 'media';
+  mode: 'text' | 'image' | 'video' | 'audio';
+  quantity: number;
+  mediaModelId?: string;
+  mediaInput?: Record<string, unknown>;
+  codexModel?: string;
+  codexEffort?: string;
+  codexSpeed?: string;
+  codexAspectRatio?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type GenerationRecord = {
   id: string;
   providerId: string;

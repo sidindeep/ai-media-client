@@ -6,8 +6,11 @@ import type { ProviderDiagnostics } from '../api/client';
 import type { MediaField } from '../types';
 import ProviderSelector from './ProviderSelector.vue';
 import ModelCatalogPicker from './ModelCatalogPicker.vue';
+import AspectRatioPicker from './AspectRatioPicker.vue';
+import PresetBar from './PresetBar.vue';
 import { formatMediaFieldValue, mediaFieldOptions, parseMediaFieldValue } from '../domain/media-fields';
 import { mediaModelBrandId } from '../domain/model-catalog';
+import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
 
 const studio = useStudioStore();
 const sending = ref(false);
@@ -59,6 +62,10 @@ const retryableQuoteError = (error: unknown) => error instanceof Error
   && /^(?:Не удалось выполнить запрос|Некорректный ответ сервиса|Связь с базой данных временно недоступна)/i.test(error.message);
 
 function fieldOptions(field: MediaField) { return mediaFieldOptions(field); }
+function fieldOptionLabel(field: MediaField, option: unknown) {
+  const name = isAspectRatioField(field.key) ? aspectRatioName(option) : '';
+  return name ? `${option} — ${name}` : String(option);
+}
 function sourceButtonLabel(field: MediaField) { return fileFields.value.length === 1 ? 'Исходники' : (field.label || 'Исходники'); }
 function sourceFieldLabel(fieldKey?: string) { return fileFields.value.find(field => field.key === fieldKey)?.label || ''; }
 function sourcePreviewUrl(ref: string) {
@@ -81,7 +88,9 @@ function updateTypedField(field: MediaField, raw: unknown) {
   }
 }
 function updateSelect(field: MediaField, event: Event) {
-  const raw = (event.target as HTMLSelectElement).value;
+  updateSelectValue(field, (event.target as HTMLSelectElement).value);
+}
+function updateSelectValue(field: MediaField, raw: string) {
   const option = fieldOptions(field).find(value => String(value) === raw);
   updateTypedField(field, option === undefined ? raw : option);
 }
@@ -231,6 +240,7 @@ async function submit() {
 
 <template>
   <section class="composer-card">
+    <PresetBar />
     <div class="composer-tabs">
       <button v-for="item in [{ id: 'text', label: 'Текст', icon: '▢' }, { id: 'image', label: 'Изображение', icon: '▧' }, { id: 'video', label: 'Видео', icon: '▹' }, { id: 'audio', label: 'Аудио', icon: '⌁' }]" :key="item.id" type="button" :class="{ active: studio.mode === item.id }" @click="changeMode(item.id as 'text' | 'image' | 'video' | 'audio')">{{ item.icon }} {{ item.label }}</button>
     </div>
@@ -256,16 +266,19 @@ async function submit() {
         <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice" />
         <template v-if="studio.provider === 'codex'">
           <label class="select-pill"><span>Рассуждение</span><select v-model="studio.codexEffort"><option v-for="effort in effortOptions" :key="effort" :value="effort">{{ effort }}</option></select></label>
-          <label v-if="studio.mode === 'image'" class="select-pill"><span>Формат</span><select v-model="studio.codexAspectRatio"><option value="auto">Авто</option><option value="1:1">1:1</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="3:2">3:2</option><option value="2:3">2:3</option></select></label>
+          <AspectRatioPicker v-if="studio.mode === 'image'" v-model="studio.codexAspectRatio" label="Формат" :options="['auto', '1:1', '16:9', '9:16', '3:2', '2:3']" />
           <label class="select-pill"><span>Скорость</span><select v-model="studio.codexSpeed"><option value="standard">Обычная</option><option value="fast">⚡ Fast</option></select></label>
         </template>
-        <label v-for="field in primaryFields" v-else :key="field.key" class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ option }}</option></select></label>
+        <template v-for="field in primaryFields" v-else :key="field.key">
+          <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || 'Формат'" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
+          <label v-else class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select></label>
+        </template>
         <label class="select-pill"><span>Количество</span><select v-model.number="studio.quantity"><option v-for="count in 4" :key="count" :value="count">{{ count }} шт.</option></select></label>
         <span v-if="total !== null" class="quote">Итого: {{ total.toLocaleString('ru-RU') }} кредитов</span>
         <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteError }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
         <button class="generate-button" :class="{ 'is-loading': quoteLoading || sending }" type="button" :aria-busy="quoteLoading || sending" :disabled="sending || quoteLoading || uploading || !studio.prompt.trim() || !modelOptions.length || total === null || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || sending" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? 'Расчёт…' : sending ? 'Запуск…' : 'Генерировать' }}<span v-if="!quoteLoading && total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span v-if="!quoteLoading && !sending" aria-hidden="true">↗</span></button>
       </div>
-      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldErrors[field.key] }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ option }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldErrors[field.key]" class="field-error">{{ fieldErrors[field.key] }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
+      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldErrors[field.key] }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldErrors[field.key]" class="field-error">{{ fieldErrors[field.key] }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
       <p v-if="missingRequiredFields.length" class="form-error">Заполните обязательные параметры: {{ missingRequiredFields.map(field => field.label || field.key).join(', ') }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>
       <p class="composer-hint">Ctrl + Enter — запустить · черновик сохраняется в текущем чате</p>

@@ -58,6 +58,7 @@ HTTP-сервер и Vue-оболочка запускаются до готов
 | `getFavoriteModels` / `setFavoriteModels` | список id для записи | читает/сохраняет избранные модели |
 | `listTemplates` / `saveTemplate` / `removeTemplate` | данные шаблона | операции с шаблонами промптов |
 | `loadDrafts` / `saveDrafts` | draft v1 | общий workspace-черновик; текущая форма допускает 1–5 вкладок |
+| `listGenerationPresets` / `saveGenerationPreset` / `removeGenerationPreset` | account-scoped preset | сохранённая модель, режим, количество и параметры без prompt и исходных файлов |
 | `getBalance` | нет | баланс аккаунта |
 | `diagnoseProvider` | `{ modelId, input }` | read-only проверка серверного ключа Kie, авторизации через баланс, живого тарифного каталога и цены модели; генерацию не запускает и секреты не возвращает |
 | `saveResults` | `recordId` | скачивает внешние result URL в хранилище сервиса |

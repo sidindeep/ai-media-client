@@ -10,7 +10,8 @@ const trace = require('../generation-log');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
-const publicPageAssets = new Set(['landing.css', 'legal.css', 'login.js', 'web.css', 'version.js']);
+const publicPageAssets = new Set(['landing.css', 'landing.js', 'legal.css', 'login.js', 'web.css', 'version.js', 'theme.css', 'theme.js']);
+const landingModelIcons = new Set(['openai.svg', 'google.svg', 'bytedance.svg', 'kling.svg', 'grok.svg', 'flux.svg']);
 const legalPages = new Map([
   ['/legal/terms', 'terms.html'],
   ['/legal/privacy', 'privacy.html'],
@@ -102,11 +103,12 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (!allowedTopLevelNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
+      const landingModelIcon = /^\/landing-model-icons\/([a-z0-9-]+\.svg)$/.exec(url.pathname)?.[1];
       const isLanding = ['/', '/index.html'].includes(url.pathname);
       const isVueApp = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
       const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
+        && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || landingModelIcons.has(landingModelIcon) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
       const sendVueApplication = async user => {
         const root = path.join(config.root, 'public', 'vue');
         const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
@@ -162,6 +164,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (['GET', 'HEAD'].includes(req.method) && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || url.pathname === '/login')) {
         const publicFile = isLanding ? 'landing.html' : legalPage ? path.join('legal', legalPage) : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
         return await sendFile(req, res, path.join(config.root, 'public', publicFile));
+      }
+      if (['GET', 'HEAD'].includes(req.method) && landingModelIcons.has(landingModelIcon)) {
+        return await sendFile(req, res, path.join(config.root, 'public', 'vue', 'model-icons', landingModelIcon));
       }
       if (config.auth.enabled && !auth && isVueApp && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);
       if (config.auth.enabled && !auth) return json(res, 503, { error: 'Подключаемся к базе данных. Повторите через несколько секунд.' });

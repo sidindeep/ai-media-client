@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import type { GenerationRecord } from '../types';
 
+const emit = defineEmits<{ history: []; workspace: [] }>();
 const studio = useStudioStore();
 const labels: Record<string, string> = {
   success: 'Готово', fail: 'Ошибка', unknown: 'Статус уточняется', unconfirmed: 'Статус уточняется',
@@ -122,22 +123,16 @@ const receipt = computed(() => {
   return parts.join(' ');
 });
 function timestamp(value?: string) { return value ? new Date(value).toLocaleString('ru-RU') : '—'; }
-function historyMeta(record: GenerationRecord) {
-  const total = record.usage?.total_tokens ?? record.usage?.totalTokens;
-  const effort = typeof record.input?.effort === 'string' ? effortLabels[record.input.effort] || record.input.effort : '';
-  const speed = record.input?.speed === 'fast' ? 'Fast' : record.input?.speed === 'standard' ? 'Обычная' : '';
-  return [timestamp(record.createdAt), durationFor(record), record.nativeQuote?.credits != null ? `${formatCount(record.nativeQuote.credits)} кр.` : '', total != null ? `${formatCount(total)} ток.` : '', effort, speed].filter(Boolean).join(' · ');
-}
-
 onMounted(() => { timer = setInterval(() => { now.value = Date.now(); }, 1000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
 
 function prepare(record: GenerationRecord) {
   studio.prepareFrom(record);
+  emit('workspace');
   requestAnimationFrame(() => { document.querySelector<HTMLTextAreaElement>('.composer-body textarea')?.focus(); });
 }
 function openHistory() {
-  document.getElementById('chat-history')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  emit('history');
 }
 async function refreshStatus() {
   refreshing.value = true;
@@ -166,6 +161,5 @@ async function refreshStatus() {
     <div v-if="studio.selected" class="timing-details"><span>Запуск <strong>{{ timestamp(studio.selected.generationStartedAt || studio.selected.createdAt) }}</strong></span><span>Завершение <strong>{{ timestamp(studio.selected.generationCompletedAt) }}</strong></span></div>
     <div v-if="studio.selected" class="result-actions"><a v-if="resultUrls[0]" class="action-button" :href="(studio.selected.localFiles?.[0]?.url || resultUrls[0])" download>Скачать</a><button v-if="isActive || ['unknown', 'unconfirmed'].includes(studio.selected.state)" type="button" class="action-button" :disabled="refreshing" @click="refreshStatus">{{ refreshing ? 'Проверяю…' : 'Проверить статус' }}</button><button type="button" class="action-button" @click="prepare(studio.selected)">Повторить</button><button type="button" class="action-button" @click="prepare(studio.selected)">Изменить промпт</button><button type="button" class="action-button" @click="openHistory">Открыть в истории</button></div>
     <div v-if="studio.selected" class="result-footer"><span>{{ studio.selected.input?.prompt || 'Без промпта' }}</span><span>{{ timestamp(studio.selected.createdAt) }}</span></div>
-    <div id="chat-history" class="result-history"><div class="history-heading"><strong>Завершённые</strong><span>{{ studio.completed.length }}</span></div><button v-for="item in studio.completed.slice(0, 12)" :key="item.id" type="button" class="history-item" :class="{ selected: studio.selectedId === item.id }" @click="studio.select(item.id)"><span>{{ item.state === 'success' ? '●' : '○' }}</span><span><strong>{{ item.modelName || item.modelId || 'Генерация' }}</strong><small>{{ item.input?.prompt || item.error || 'Без промпта' }}</small><small class="history-item-meta">{{ historyMeta(item) }}</small></span></button><p v-if="!studio.completed.length" class="empty-state">Завершённые результаты появятся здесь.</p></div>
   </section>
 </template>

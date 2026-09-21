@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import type { Chat, Project } from '../types';
 
+const props = defineProps<{ activeSection: 'workspace' | 'history' }>();
+const emit = defineEmits<{ workspace: []; history: [] }>();
 const studio = useStudioStore();
 const activeTab = ref<'chats' | 'projects'>('chats');
 const search = ref('');
@@ -17,6 +19,14 @@ const mediaProviderName = computed(() => studio.catalog?.providers.find(provider
 const providerItems = computed(() => providers.map(item => item.id === 'media' ? { ...item, label: mediaProviderName.value } : item));
 const activeProvider = computed(() => providerItems.value.find(item => item.id === studio.provider) || providerItems.value[0]);
 const debugToolsVisible = computed(() => studio.release?.channel === 'debug');
+const formatStartupDuration = (milliseconds: number | null) => {
+  if (milliseconds === null) return '—';
+  if (milliseconds < 1000) return `${milliseconds} мс`;
+  return `${new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(milliseconds / 1000)} с`;
+};
+const startupTimingLabel = computed(() => studio.accountReady && studio.readyElapsedMs !== null
+  ? `Подключение: ${formatStartupDuration(studio.connectionElapsedMs)} · данные: ${formatStartupDuration(studio.dataLoadElapsedMs)} · готово: ${formatStartupDuration(studio.readyElapsedMs)}`
+  : '');
 
 const filteredProjects = computed(() => {
   const term = search.value.trim().toLowerCase();
@@ -67,10 +77,10 @@ async function moveChat(chat: Chat) {
   const project = studio.projects.find(item => item.name.toLowerCase() === choice.trim().toLowerCase());
   await studio.moveChat(chat.id, project?.id || null); menuId.value = null;
 }
-function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = null; }
+function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = null; emit('workspace'); }
 function selectTab(tab: 'chats' | 'projects') {
   activeTab.value = tab; search.value = ''; menuId.value = null;
-  if (tab === 'chats') { selectedProjectId.value = null; studio.selectStandalone(); }
+  if (tab === 'chats') { selectedProjectId.value = null; studio.selectStandalone(); emit('workspace'); }
 }
 function openProject(project: Project) {
   selectedProjectId.value = selectedProjectId.value === project.id ? null : project.id;
@@ -101,11 +111,17 @@ function diagnoseKie(event: Event) {
 
 <template>
   <aside class="sidebar" :class="{ collapsed }">
-    <div class="sidebar-brand"><span class="brand-mark">ИИ</span><div><strong>Медиастудия</strong><small>WEB · STUDIO</small><span class="sidebar-version">{{ releaseLabel }}</span></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
-    <a class="sidebar-home-link" href="/" aria-label="Главная" title="Главная">
-      <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><path d="M3.75 10.5 12 3.75l8.25 6.75v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V10.5Z" /><path d="M9 20.25v-6h6v6" /></svg></span>
-      <span>Главная</span>
-    </a>
+    <div class="sidebar-brand"><a class="brand-mark" href="/" aria-label="На главную" title="На главную">ИИ</a><div><strong>Медиастудия</strong><small>WEB · STUDIO</small><span class="sidebar-version">{{ releaseLabel }}</span></div><button type="button" class="collapse-button" aria-label="Свернуть панель" @click="collapsed = !collapsed">‹</button></div>
+    <nav class="sidebar-primary-nav" aria-label="Основная навигация">
+      <a class="sidebar-home-link" href="/" aria-label="Главная" title="Главная">
+        <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><path d="M3.75 10.5 12 3.75l8.25 6.75v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V10.5Z" /><path d="M9 20.25v-6h6v6" /></svg></span>
+        <span>Главная</span>
+      </a>
+      <button type="button" class="sidebar-home-link sidebar-history-link" :class="{ active: props.activeSection === 'history' }" aria-label="История" title="История" @click="emit('history')">
+        <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><circle cx="12" cy="12" r="8.25" /><path d="M12 7.5v4.75l3.25 2" /></svg></span>
+        <span>История</span>
+      </button>
+    </nav>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Поиск" aria-label="Поиск чатов и проектов" /></label><button class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>
       <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="selectTab('chats')">Чаты</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="selectTab('projects')">Проекты</button></div>
@@ -136,6 +152,6 @@ function diagnoseKie(event: Event) {
         </div>
       </details>
     </template>
-    <div class="sidebar-bottom"><span class="connection-dot" :class="{ ready: studio.accountReady && !studio.error }"></span><span>{{ studio.error ? 'Нет связи с сервисом' : studio.accountReady ? 'Сервис подключён' : 'Подключаемся к БД' }}</span></div>
+    <div class="sidebar-bottom"><span class="connection-dot" :class="{ ready: studio.accountReady && !studio.error }"></span><div class="sidebar-status-copy"><span>{{ studio.error ? 'Нет связи с сервисом' : studio.accountReady ? 'Сервис подключён' : 'Подключаемся к БД' }}</span><small v-if="startupTimingLabel" class="sidebar-startup-timing">{{ startupTimingLabel }}</small></div></div>
   </aside>
 </template>

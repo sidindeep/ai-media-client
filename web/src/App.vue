@@ -3,21 +3,26 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import Sidebar from './components/Sidebar.vue';
 import Composer from './components/Composer.vue';
 import ChatResults from './components/ChatResults.vue';
+import HistoryPage from './components/HistoryPage.vue';
 import QueuePanel from './components/QueuePanel.vue';
 import ResultPanel from './components/ResultPanel.vue';
 import AccountMenu from './components/AccountMenu.vue';
+import HeaderAccountActions from './components/HeaderAccountActions.vue';
 import { subscribeToChanges } from './api/client';
 import { mediaModelBrandId, modelBrand } from './domain/model-catalog';
 import { useStudioStore } from './stores/studio';
+import type { GenerationRecord } from './types';
 
 const studio = useStudioStore();
 const rightOpen = ref(false);
-const COMPOSER_HEIGHT_KEY = 'media-studio-composer-height-v2';
-const savedComposerHeight = Number(localStorage.getItem(COMPOSER_HEIGHT_KEY));
-const composerHeight = ref<number | null>(Number.isFinite(savedComposerHeight) && savedComposerHeight > 0 ? savedComposerHeight : null);
-const composerResizing = ref(false);
+const activeSection = ref<'workspace' | 'history'>('workspace');
 const mobileView = ref<'chats' | 'workspace' | 'results'>('workspace');
 const activeChatName = computed(() => studio.activeChatId === 'system:recent' ? 'Ранее' : studio.chats.find(chat => chat.id === studio.activeChatId)?.name || 'Новый чат');
+const showPromptSuggestions = computed(() => {
+  const activeChat = studio.chats.find(chat => chat.id === studio.activeChatId);
+  return studio.activeChatId !== 'system:recent' && Boolean(activeChat)
+    && (activeChat?.materialCount || 0) === 0 && studio.visibleRecords.length === 0;
+});
 const modeLabels = { text: 'Text → Text', image: 'Text → Image', video: 'Text → Video', audio: 'Text → Audio' } as const;
 const promptSuggestions = computed(() => ({
   text: [
@@ -69,65 +74,17 @@ const startupTitle = computed(() => studio.databaseState === 'unavailable'
     ? 'Проверяем соединение с базой данных…'
     : 'Загружаем рабочее пространство…');
 let unsubscribe = () => {};
-let stopComposerResize = () => {};
-const composerStyle = computed(() => composerHeight.value ? { height: `${composerHeight.value}px`, maxHeight: 'none' } : undefined);
 
-function clampComposerHeight(value: number) {
-  const center = document.querySelector<HTMLElement>('.studio-center');
-  const welcome = center?.querySelector<HTMLElement>('.welcome');
-  const handle = center?.querySelector<HTMLElement>('.composer-resize-handle');
-  const feedReserve = center?.classList.contains('has-chat-results') ? 120 : 0;
-  const workspaceHeight = center?.parentElement?.getBoundingClientRect().height || center?.getBoundingClientRect().height || 0;
-  const available = workspaceHeight
-    ? workspaceHeight - (welcome?.offsetHeight || 0) - (handle?.offsetHeight || 0) - feedReserve - 24
-    : window.innerHeight - 170;
-  return Math.round(Math.max(168, Math.min(value, Math.max(168, available))));
-}
-function setComposerHeight(value: number) {
-  composerHeight.value = clampComposerHeight(value);
-  localStorage.setItem(COMPOSER_HEIGHT_KEY, String(composerHeight.value));
-}
-function startComposerResize(event: PointerEvent) {
-  if (event.button !== 0 || window.matchMedia('(max-width: 720px)').matches) return;
-  const card = document.querySelector<HTMLElement>('.composer-card');
-  if (!card) return;
-  event.preventDefault();
-  stopComposerResize();
-  const startY = event.clientY;
-  const startHeight = card.getBoundingClientRect().height;
-  composerResizing.value = true;
-  const move = (next: PointerEvent) => { composerHeight.value = clampComposerHeight(startHeight + startY - next.clientY); };
-  const finish = () => {
-    if (composerHeight.value) localStorage.setItem(COMPOSER_HEIGHT_KEY, String(composerHeight.value));
-    composerResizing.value = false;
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', finish);
-    window.removeEventListener('pointercancel', finish);
-  };
-  stopComposerResize = finish;
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', finish);
-  window.addEventListener('pointercancel', finish);
-}
-function resizeComposerWithKeyboard(event: KeyboardEvent) {
-  if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-  event.preventDefault();
-  const current = document.querySelector<HTMLElement>('.composer-card')?.getBoundingClientRect().height || 420;
-  setComposerHeight(current + (event.key === 'ArrowUp' ? 24 : -24));
-}
-function resetComposerHeight() {
-  composerHeight.value = null;
-  localStorage.removeItem(COMPOSER_HEIGHT_KEY);
-}
-function fitComposerHeight() {
-  if (composerHeight.value) composerHeight.value = clampComposerHeight(composerHeight.value);
+function showHistory() {
+  activeSection.value = 'history';
+  rightOpen.value = false;
+  mobileView.value = 'workspace';
 }
 
-async function showHistory() {
-  rightOpen.value = true;
-  mobileView.value = 'results';
-  await nextTick();
-  document.getElementById('chat-history')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+function showWorkspace() {
+  activeSection.value = 'workspace';
+  rightOpen.value = false;
+  mobileView.value = 'workspace';
 }
 
 function usePromptSuggestion(prompt: string) {
@@ -141,31 +98,33 @@ function selectResult(id: string) {
   else if (window.matchMedia('(max-width: 1050px)').matches) rightOpen.value = true;
 }
 
+function selectHistoryResult(record: GenerationRecord) {
+  studio.selectChat(record.chatId || 'system:recent');
+  studio.select(record.id);
+  if (window.matchMedia('(max-width: 720px)').matches) mobileView.value = 'results';
+  else if (window.matchMedia('(max-width: 1050px)').matches) rightOpen.value = true;
+}
+
 onMounted(async () => {
   await studio.initialize();
-  await nextTick();
-  fitComposerHeight();
-  window.addEventListener('resize', fitComposerHeight);
   unsubscribe = subscribeToChanges(() => { void studio.refresh(); });
 });
 
 onBeforeUnmount(() => {
   unsubscribe();
-  stopComposerResize();
-  window.removeEventListener('resize', fitComposerHeight);
   studio.stopCodexPolling();
   studio.stopStartupPolling();
 });
 </script>
 
 <template>
-  <div class="studio-app" :class="[`mobile-view-${mobileView}`, { 'right-panel-open': rightOpen, 'composer-resizing': composerResizing }]">
-    <Sidebar />
+  <div class="studio-app" :class="[`mobile-view-${mobileView}`, { 'right-panel-open': rightOpen }]">
+    <Sidebar :active-section="activeSection" @workspace="showWorkspace" @history="showHistory" />
     <main class="studio-main">
-      <header class="studio-header"><div><span class="eyebrow">ТЕКУЩИЙ ЧАТ · {{ activeChatName }}</span><h1>Генерация</h1></div><div class="header-actions"><span class="balance-badge">Аккаунт: {{ studio.accountActive.length }} активных</span><button type="button" class="results-toggle" @click="rightOpen = true">Очередь и результаты</button><a href="/legacy" class="legacy-link">Старая студия</a><AccountMenu :ready="studio.accountReady" @history="showHistory" /></div></header>
+      <header class="studio-header"><div><span class="eyebrow">{{ activeSection === 'history' ? 'БИБЛИОТЕКА РЕЗУЛЬТАТОВ' : `ТЕКУЩИЙ ЧАТ · ${activeChatName}` }}</span><h1>{{ activeSection === 'history' ? 'История' : 'Генерация' }}</h1></div><div class="header-actions"><HeaderAccountActions :ready="studio.accountReady" @select-notification="selectHistoryResult" /><button type="button" class="results-toggle" @click="rightOpen = true">Очередь и результаты</button><AccountMenu :ready="studio.accountReady" @history="showHistory" /></div></header>
       <div v-if="!studio.accountReady" class="database-connecting" role="status" aria-live="polite"><span class="database-spinner" aria-hidden="true"></span><div><strong>{{ startupTitle }}</strong><span>{{ studio.providerReadiness === 'checking' ? 'Параллельно проверяем Kie.ai' : studio.providerReadiness === 'ready' ? 'Kie.ai проверен и готов' : studio.providerReadiness === 'error' ? 'Kie.ai требует проверки' : 'Подготавливаем сервисы' }}</span></div></div>
       <div v-if="studio.error" class="global-error" role="alert">{{ studio.error }} <button type="button" @click="studio.initialize">Повторить</button></div>
-      <div class="studio-grid" :class="{ 'account-loading': !studio.accountReady }"><div class="studio-center" :class="{ 'has-chat-results': studio.visibleRecords.length }"><section class="welcome" :class="{ 'welcome-compact': studio.visibleRecords.length }" aria-label="Текущая модель"><span class="welcome-model-icon" :style="{ '--brand-accent': welcomeModel.brand.accent }"><img v-if="welcomeModel.brand.icon" :src="welcomeModel.brand.icon" alt=""><span v-else>{{ welcomeModel.brand.label.slice(0, 1) }}</span></span><h2>{{ welcomeModel.name }}</h2><p>{{ welcomeModel.provider }} · {{ modeLabels[studio.mode] }}</p><div class="welcome-suggestions" aria-label="Идеи для промпта"><button v-for="suggestion in promptSuggestions" :key="suggestion[0]" type="button" @click="usePromptSuggestion(suggestion[1])">{{ suggestion[0] }}</button></div></section><ChatResults v-if="studio.visibleRecords.length" @select="selectResult" /><button type="button" class="composer-resize-handle" aria-label="Изменить высоту формы" title="Потяните, чтобы изменить высоту. Двойной щелчок — сбросить" @pointerdown="startComposerResize" @keydown="resizeComposerWithKeyboard" @dblclick="resetComposerHeight"><span></span></button><Composer :style="composerStyle" /></div><div class="studio-right"><button type="button" class="right-close" aria-label="Закрыть результаты" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel /></div></div>
+      <div class="studio-grid" :class="{ 'account-loading': !studio.accountReady, 'history-mode': activeSection === 'history' }"><HistoryPage v-if="activeSection === 'history'" @select="selectHistoryResult" @workspace="showWorkspace" /><div v-else class="studio-center" :class="{ 'has-chat-results': studio.visibleRecords.length }"><section class="welcome" :class="{ 'welcome-compact': studio.visibleRecords.length }" aria-label="Текущая модель"><span class="welcome-model-icon" :style="{ '--brand-accent': welcomeModel.brand.accent }"><img v-if="welcomeModel.brand.icon" :src="welcomeModel.brand.icon" alt=""><span v-else>{{ welcomeModel.brand.label.slice(0, 1) }}</span></span><h2>{{ welcomeModel.name }}</h2><p>{{ welcomeModel.provider }} · {{ modeLabels[studio.mode] }}</p><div v-if="showPromptSuggestions" class="welcome-suggestions" aria-label="Идеи для промпта"><button v-for="suggestion in promptSuggestions" :key="suggestion[0]" type="button" @click="usePromptSuggestion(suggestion[1])">{{ suggestion[0] }}</button></div></section><ChatResults v-if="studio.visibleRecords.length" @select="selectResult" /><Composer /></div><div class="studio-right"><button type="button" class="right-close" aria-label="Закрыть результаты" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel @history="showHistory" @workspace="showWorkspace" /></div></div>
     </main>
     <nav class="mobile-nav" aria-label="Разделы студии"><button type="button" :class="{ active: mobileView === 'chats' }" @click="mobileView = 'chats'">Чаты</button><button type="button" :class="{ active: mobileView === 'workspace' }" @click="mobileView = 'workspace'">Работа</button><button type="button" :class="{ active: mobileView === 'results' }" @click="mobileView = 'results'">Результаты</button></nav>
   </div>

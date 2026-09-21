@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
     "dev": "node --env-file-if-exists=.env --watch server.js",
-    "check": "node --check server.js && node --check src/server/http.js && node --check src/services/media-service.js && node --check src/services/telegram-bot.js && node --check src/services/telegram-gateway.js && node --check public/web.js",
+    "check": "node --check server.js && node --check src/server/http.js && node --check src/services/media-service.js && node --check src/services/telegram-bot.js && node --check src/services/telegram-gateway.js && node --check public/theme.js && node --check public/landing.js && node --check public/web.js",
     "test": "node --test test/*.test.js",
     "start:web": "pnpm start",
     "dev:web": "pnpm dev",

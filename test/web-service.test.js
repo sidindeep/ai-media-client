@@ -149,20 +149,34 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   assert.match(landingHtml, /AI Media Client — создавайте изображения и видео с AI/);
   assert.match(landingHtml, /href="\/app"/);
   assert.match(landingHtml, /href="\/legal\/terms"/);
-  assert.equal((await fetch(base + '/landing.css')).status, 200);
+    assert.match(landingHtml, /data-theme-toggle/);
+    assert.match(landingHtml, /src="\/theme\.js"/);
+    assert.match(landingHtml, /src="\/landing\.js"/);
+    assert.equal((await fetch(base + '/landing.css')).status, 200);
+    assert.equal((await fetch(base + '/landing.js')).status, 200);
+    const landingIcon = await fetch(base + '/landing-model-icons/openai.svg');
+    assert.equal(landingIcon.status, 200);
+    assert.match(landingIcon.headers.get('content-type'), /^image\/svg\+xml/);
+    assert.equal((await fetch(base + '/landing-model-icons/unknown.svg')).status, 404);
+    assert.equal((await fetch(base + '/theme.css')).status, 200);
+  assert.equal((await fetch(base + '/theme.js')).status, 200);
   for (const route of ['/legal/terms', '/legal/privacy', '/legal/personal-data-consent', '/legal/offer']) {
     const legal = await fetch(base + route);
     assert.equal(legal.status, 200);
-    assert.match(await legal.text(), /AI Media Client/);
+    const legalHtml = await legal.text();
+    assert.match(legalHtml, /AI Media Client/);
+    assert.match(legalHtml, /data-theme-toggle/);
   }
   assert.equal((await fetch(base + '/legal.css')).status, 200);
   const loginHtml = await fetch(base + '/login').then(response => response.text());
   assert.match(loginHtml, /\/legal\/privacy/);
+  assert.match(loginHtml, /data-theme-toggle/);
   const vueApp = await fetch(base + '/app');
   assert.equal(vueApp.status, 200);
   const vueHtml = await vueApp.text();
   assert.match(vueHtml, /<meta name="account-id" content="local">/);
   assert.match(vueHtml, /<meta name="account-role" content="admin">/);
+  assert.match(vueHtml, /src="\/theme\.js"/);
   const vueAsset = [...vueHtml.matchAll(/(?:src|href)="(\/app\/assets\/[^"']+)"/g)].map(match => match[1]);
   assert.ok(vueAsset.length >= 2);
   for (const asset of vueAsset) assert.equal((await fetch(base + asset)).status, 200);

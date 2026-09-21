@@ -30,6 +30,9 @@ export const useStudioStore = defineStore('studio', () => {
   const providerReadiness = ref<'idle' | 'checking' | 'ready' | 'error'>('checking');
   const providerDiagnosticRequest = ref(0);
   const accountReady = ref(false);
+  const connectionElapsedMs = ref<number | null>(null);
+  const dataLoadElapsedMs = ref<number | null>(null);
+  const readyElapsedMs = ref<number | null>(null);
   const prompt = ref('');
   const provider = ref<'codex' | 'media'>('codex');
   const mode = ref<GenerationMode>('image');
@@ -43,6 +46,22 @@ export const useStudioStore = defineStore('studio', () => {
   const codexAspectRatio = ref('auto');
   const draftReady = ref(false);
   let draftTimer: ReturnType<typeof setTimeout> | undefined;
+  let startupStartedAt = 0;
+  let dataLoadStartedAt = 0;
+  let startupAttempt = 0;
+
+  function resetStartupTimings() {
+    // The first attempt includes document navigation; explicit retries start a new measurement.
+    startupStartedAt = startupAttempt++ === 0 ? 0 : performance.now();
+    dataLoadStartedAt = 0;
+    connectionElapsedMs.value = null;
+    dataLoadElapsedMs.value = null;
+    readyElapsedMs.value = null;
+  }
+
+  function markDatabaseConnected() {
+    if (connectionElapsedMs.value === null) connectionElapsedMs.value = Math.max(0, Math.round(performance.now() - startupStartedAt));
+  }
   let codexPollTimer: ReturnType<typeof setInterval> | undefined;
   let codexPollInFlight = false;
   let startupPollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -294,6 +313,7 @@ export const useStudioStore = defineStore('studio', () => {
   async function loadAccountState() {
     loading.value = true;
     error.value = '';
+    if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
       [catalog.value, codexCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
       const defaults = codexCatalog.value?.uiDefaults;
@@ -310,6 +330,9 @@ export const useStudioStore = defineStore('studio', () => {
       mediaModelId.value = mediaModelsFor(mode.value).find(model => model.startupDefault)?.id || mediaModelsFor(mode.value)[0]?.id || '';
       await Promise.all([refresh(), refreshWorkspaces()]);
       await loadDraftForActive();
+      const readyAt = performance.now();
+      dataLoadElapsedMs.value = Math.max(0, Math.round(readyAt - dataLoadStartedAt));
+      readyElapsedMs.value = Math.max(0, Math.round(readyAt - startupStartedAt));
       accountReady.value = true;
     } catch (cause) {
       accountReady.value = false;
@@ -335,6 +358,7 @@ export const useStudioStore = defineStore('studio', () => {
       databaseState.value = status.database.state;
       providerReadiness.value = status.provider.state;
       if (['connected', 'disabled'].includes(status.database.state)) {
+        markDatabaseConnected();
         if (!status.authenticated) { window.location.assign('/login'); return; }
         if (status.account) api.setAccountContext(status.account);
         if (!accountReady.value) await loadAccountState();
@@ -354,6 +378,7 @@ export const useStudioStore = defineStore('studio', () => {
     accountReady.value = false;
     loading.value = false;
     error.value = '';
+    resetStartupTimings();
     restoreWorkspaceSelection();
     const accountId = document.querySelector('meta[name="account-id"]')?.getAttribute('content') || '';
     const accountRole = document.querySelector('meta[name="account-role"]')?.getAttribute('content') || '';
@@ -361,6 +386,7 @@ export const useStudioStore = defineStore('studio', () => {
       // The server already verified this session while serving /app. Reuse that
       // result instead of running the database startup probe again on navigation.
       databaseState.value = 'connected';
+      markDatabaseConnected();
       api.setAccountContext({ id: accountId, role: accountRole });
       await loadAccountState();
       if (!accountReady.value) scheduleStartupPoll();
@@ -462,7 +488,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   return {
     catalog, codexCatalog, release, history, presets, queue, selectedId, selected, active, accountActive, completed, loading, error,
-    databaseState, providerReadiness, providerDiagnosticRequest, accountReady,
+    databaseState, providerReadiness, providerDiagnosticRequest, accountReady, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,

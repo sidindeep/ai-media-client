@@ -10,6 +10,7 @@ const end = landingDocument.lastIndexOf('</body>');
 const markup = landingDocument.slice(start, end);
 
 type ThemeBridge = { current: () => 'light' | 'dark'; apply: (theme: 'light' | 'dark') => void };
+type MotionBridge = { current: () => 'on' | 'off' };
 
 function landingStyles() {
   let link = document.querySelector<HTMLLinkElement>('link[data-landing-styles]');
@@ -30,6 +31,19 @@ function applySurface(active: boolean) {
     const theme = (window as Window & { AiMediaTheme?: ThemeBridge }).AiMediaTheme;
     if (theme) theme.apply(theme.current());
   }
+  void nextTick().then(() => syncHeroVideo());
+}
+
+function syncHeroVideo(event?: Event) {
+  const detail = event instanceof CustomEvent ? event.detail as { motion?: 'on' | 'off' } : undefined;
+  const motion = detail?.motion ?? (window as Window & { AiMediaMotion?: MotionBridge }).AiMediaMotion?.current();
+  const video = root.value?.querySelector<HTMLVideoElement>('[data-hero-video]');
+  if (!video) return;
+  if (!props.active || motion === 'off') {
+    video.pause();
+    return;
+  }
+  void video.play().catch(() => { /* The poster remains visible when autoplay is unavailable. */ });
 }
 
 function handleClick(event: MouseEvent) {
@@ -72,8 +86,15 @@ async function updateVersion() {
 }
 
 watch(() => props.active, applySurface, { immediate: true, flush: 'sync' });
-onMounted(() => { void updateVersion(); });
-onBeforeUnmount(() => applySurface(false));
+onMounted(() => {
+  window.addEventListener('ai-media-motion-change', syncHeroVideo);
+  void updateVersion();
+  syncHeroVideo();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('ai-media-motion-change', syncHeroVideo);
+  applySurface(false);
+});
 </script>
 
 <template>

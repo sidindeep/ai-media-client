@@ -42,6 +42,12 @@
 
   <main id="content">
     <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-video-layer" aria-hidden="true">
+        <!-- Mixkit 51214, free for commercial use: https://mixkit.co/license/#videoFree -->
+        <video class="hero-video" data-hero-video autoplay muted loop playsinline preload="metadata" poster="https://assets.mixkit.co/videos/51214/51214-thumb-720-0.jpg">
+          <source src="https://assets.mixkit.co/videos/51214/51214-720.mp4" type="video/mp4">
+        </video>
+      </div>
       <div class="hero-glow hero-glow-one" aria-hidden="true"></div>
       <div class="hero-glow hero-glow-two" aria-hidden="true"></div>
       <div class="hero-copy">
@@ -58,56 +64,35 @@
           <div><dt>1</dt><dd>единая студия</dd></div>
         </dl>
       </div>
-
-      <div class="hero-visual" aria-label="Пример рабочего пространства AI Media Client">
-        <div class="visual-grid" aria-hidden="true"></div>
-        <div class="visual-orbit orbit-one" aria-hidden="true"></div>
-        <div class="visual-orbit orbit-two" aria-hidden="true"></div>
-        <div class="logo-orbit" aria-hidden="true">
-          <div class="logo-orbit-track">
-            <span class="orbit-logo"><span class="orbit-logo-face"><img class="orbit-logo-monochrome" src="/landing-model-icons/openai.svg" alt="" draggable="false"></span></span>
-            <span class="orbit-logo"><span class="orbit-logo-face"><img src="/landing-model-icons/google.svg" alt="" draggable="false"></span></span>
-            <span class="orbit-logo"><span class="orbit-logo-face"><img src="/landing-model-icons/bytedance.svg" alt="" draggable="false"></span></span>
-            <span class="orbit-logo"><span class="orbit-logo-face"><img src="/landing-model-icons/kling.svg" alt="" draggable="false"></span></span>
-            <span class="orbit-logo"><span class="orbit-logo-face"><img class="orbit-logo-monochrome" src="/landing-model-icons/grok.svg" alt="" draggable="false"></span></span>
-            <span class="orbit-logo"><span class="orbit-logo-face"><img class="orbit-logo-monochrome" src="/landing-model-icons/flux.svg" alt="" draggable="false"></span></span>
-          </div>
-        </div>
-        <article class="studio-preview">
-          <header class="preview-bar">
-            <span class="preview-brand"><i aria-hidden="true">A</i> AI MEDIA</span>
-            <span class="preview-status"><b></b> Студия готова</span>
-          </header>
-          <div class="preview-canvas">
-            <div class="generated-scene" aria-hidden="true">
-              <span class="scene-sun"></span>
-              <span class="scene-arc scene-arc-one"></span>
-              <span class="scene-arc scene-arc-two"></span>
-              <span class="scene-figure"></span>
-              <span class="scene-reflection"></span>
-            </div>
-            <div class="generation-chip"><span></span> ИЗОБРАЖЕНИЕ ГОТОВО</div>
-            <div class="canvas-meta"><strong>Future / Fashion</strong><span>2048 × 2048</span></div>
-          </div>
-          <div class="preview-prompt">
-            <div><span class="prompt-label">ПРОМПТ</span><p>Editorial portrait, warm chrome, cinematic light…</p></div>
-            <span class="ratio-chip">1:1</span>
-            <span class="send-chip" aria-hidden="true">↑</span>
-          </div>
-        </article>
-        <aside class="result-float">
-          <span class="result-kicker">СЛЕДУЮЩИЙ ШАГ</span>
-          <strong>Оживить кадр</strong>
-          <span>Изображение → видео</span>
-          <i aria-hidden="true">▶</i>
-        </aside>
-      </div>
+      <button class="hero-motion-toggle" type="button" data-hero-motion-toggle aria-pressed="true">
+        <span class="hero-motion-icon" aria-hidden="true"></span>
+        <span data-hero-motion-label>Пауза видео</span>
+      </button>
     </section>
 
     <section class="model-ticker" aria-label="Доступные модели">
       <p>МОДЕЛИ В ОДНОМ ИНТЕРФЕЙСЕ</p>
-      <div class="ticker-row">
-        <span>NANO BANANA 2</span><i></i><span>SEEDANCE 2.5</span><i></i><span>FLUX 2</span><i></i><span>KLING 3</span><i></i><span>VEO 3.1</span><i></i><span>GPT IMAGE</span><i></i><span>GROK IMAGINE</span>
+      <div class="ticker-viewport">
+        <div class="ticker-row">
+          <div class="ticker-set">
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/google.svg" alt="" draggable="false"></span>NANO BANANA 2</span>
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/bytedance.svg" alt="" draggable="false"></span>SEEDANCE 2.5</span>
+            <span class="ticker-item"><span class="ticker-logo"><img class="ticker-icon-monochrome" src="/landing-model-icons/flux.svg" alt="" draggable="false"></span>FLUX 2</span>
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/kling.svg" alt="" draggable="false"></span>KLING 3</span>
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/google.svg" alt="" draggable="false"></span>VEO 3.1</span>
+            <span class="ticker-item"><span class="ticker-logo"><img class="ticker-icon-monochrome" src="/landing-model-icons/openai.svg" alt="" draggable="false"></span>GPT IMAGE</span>
+            <span class="ticker-item"><span class="ticker-logo"><img class="ticker-icon-monochrome" src="/landing-model-icons/grok.svg" alt="" draggable="false"></span>GROK IMAGINE</span>
+          </div>
+          <div class="ticker-set" aria-hidden="true">
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/google.svg" alt="" draggable="false"></span>NANO BANANA 2</span>
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/bytedance.svg" alt="" draggable="false"></span>SEEDANCE 2.5</span>
+            <span class="ticker-item"><span class="ticker-logo"><img class="ticker-icon-monochrome" src="/landing-model-icons/flux.svg" alt="" draggable="false"></span>FLUX 2</span>
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/kling.svg" alt="" draggable="false"></span>KLING 3</span>
+            <span class="ticker-item"><span class="ticker-logo"><img src="/landing-model-icons/google.svg" alt="" draggable="false"></span>VEO 3.1</span>
+            <span class="ticker-item"><span class="ticker-logo"><img class="ticker-icon-monochrome" src="/landing-model-icons/openai.svg" alt="" draggable="false"></span>GPT IMAGE</span>
+            <span class="ticker-item"><span class="ticker-logo"><img class="ticker-icon-monochrome" src="/landing-model-icons/grok.svg" alt="" draggable="false"></span>GROK IMAGINE</span>
+          </div>
+        </div>
       </div>
     </section>
 

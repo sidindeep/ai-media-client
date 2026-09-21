@@ -5,6 +5,20 @@
   const minimumDuration = 2200;
   let finished = false;
 
+  function syncHeroVideo(motion = window.AiMediaMotion?.current?.()) {
+    const video = document.querySelector('[data-hero-video]');
+    if (!video) return;
+    if (motion === 'off') {
+      video.pause();
+      return;
+    }
+    const playback = video.play();
+    playback?.catch?.(() => { /* The poster remains visible when autoplay is unavailable. */ });
+  }
+
+  window.addEventListener('ai-media-motion-change', event => syncHeroVideo(event.detail?.motion));
+  document.addEventListener('DOMContentLoaded', () => syncHeroVideo(), { once: true });
+
   document.documentElement.classList.add('site-booting');
 
   const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));

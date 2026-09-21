@@ -64,6 +64,13 @@
       button.setAttribute('title', enabled ? 'Выключить анимацию' : 'Включить анимацию');
       button.setAttribute('aria-pressed', String(enabled));
     });
+    document.querySelectorAll('[data-hero-motion-toggle]').forEach(button => {
+      const label = button.querySelector('[data-hero-motion-label]');
+      if (label) label.textContent = enabled ? 'Пауза видео' : 'Включить видео';
+      button.setAttribute('aria-label', enabled ? 'Приостановить фоновое видео' : 'Включить фоновое видео');
+      button.setAttribute('title', enabled ? 'Пауза видео' : 'Включить видео');
+      button.setAttribute('aria-pressed', String(enabled));
+    });
   }
 
   function applyTheme(theme, persist = false) {
@@ -90,6 +97,7 @@
     if (persist) {
       try { localStorage.setItem(MOTION_STORAGE_KEY, next); } catch { /* The selected motion still applies for this page. */ }
     }
+    window.dispatchEvent(new CustomEvent('ai-media-motion-change', { detail: { motion: next } }));
     return next;
   }
 
@@ -104,6 +112,7 @@
   document.addEventListener('click', event => {
     if (event.target.closest?.('[data-theme-toggle]')) toggleTheme();
     if (event.target.closest?.('[data-boot-motion-toggle]')) toggleMotion();
+    if (event.target.closest?.('[data-hero-motion-toggle]')) toggleMotion();
   });
   document.addEventListener('DOMContentLoaded', () => { updateControls(currentTheme()); updateMotionControls(currentMotion()); }, { once: true });
   window.addEventListener('storage', event => {

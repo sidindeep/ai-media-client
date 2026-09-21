@@ -477,9 +477,19 @@ app.whenReady().then(async () => {
     await until("document.querySelector('.site-header [data-theme-toggle]') && document.documentElement.dataset.theme==='light'");
     assert.equal(await evaluate("document.querySelector('meta[name=theme-color]').content"), '#f7f5f0');
     assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()"), '#f7f5f0');
-    assert.equal(await evaluate("document.querySelectorAll('.logo-orbit .orbit-logo img').length"), 6);
-    assert.equal(await evaluate("Array.from(document.querySelectorAll('.logo-orbit img')).every(image=>image.complete && image.naturalWidth>0)"), true);
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.logo-orbit-track')).animationName"), 'logo-orbit-spin');
+    const landingMotion = await evaluate(`(async()=>{
+      const video=document.querySelector('[data-hero-video]');const source=video.querySelector('source');const button=document.querySelector('[data-hero-motion-toggle]');const ticker=document.querySelector('.ticker-row');let plays=0;let pauses=0;
+      video.play=()=>{plays+=1;return Promise.resolve()};video.pause=()=>{pauses+=1};
+      window.AiMediaMotion.apply('on');await Promise.resolve();const running={plays,pauses,label:button.textContent.trim(),pressed:button.getAttribute('aria-pressed'),tickerName:getComputedStyle(ticker).animationName,tickerDuration:getComputedStyle(ticker).animationDuration,source:source.src,autoplay:video.autoplay,muted:video.muted,loop:video.loop,playsInline:video.playsInline,objectFit:getComputedStyle(video).objectFit,titleColor:getComputedStyle(document.querySelector('#hero-title')).color};
+      window.AiMediaMotion.apply('off');const stopped={plays,pauses,label:button.textContent.trim(),pressed:button.getAttribute('aria-pressed'),ticker:getComputedStyle(ticker).animationName};
+      window.AiMediaMotion.apply('on');return{running,stopped};
+    })()`);
+    assert.deepEqual(landingMotion.running, { plays: 1, pauses: 0, label: 'Пауза видео', pressed: 'true', tickerName: 'ticker-carousel', tickerDuration: '48s', source: 'https://assets.mixkit.co/videos/51214/51214-720.mp4', autoplay: true, muted: true, loop: true, playsInline: true, objectFit: 'cover', titleColor: 'rgb(245, 241, 233)' });
+    assert.deepEqual(landingMotion.stopped, { plays: 1, pauses: 1, label: 'Включить видео', pressed: 'false', ticker: 'none' });
+    assert.equal(await evaluate("document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item').length"), 7);
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item'),item=>item.textContent.trim())"), ['NANO BANANA 2','SEEDANCE 2.5','FLUX 2','KLING 3','VEO 3.1','GPT IMAGE','GROK IMAGINE']);
+    assert.equal(await evaluate("document.querySelectorAll('.ticker-row img').length"), 14);
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.ticker-row img')).every(image=>image.complete&&image.naturalWidth>0)"), true);
     await evaluate("window.__landingScrollOptions=null;const original=Element.prototype.scrollIntoView;Element.prototype.scrollIntoView=function(options){window.__landingScrollOptions=options;return original.call(this,options)};document.querySelector('.site-nav a[href=\"#models\"]').click();void 0");
     await until("location.hash==='#models' && window.__landingScrollOptions?.behavior==='smooth'");
     await evaluate("document.querySelector('[data-theme-toggle]').click();void 0");

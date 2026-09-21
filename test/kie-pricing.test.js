@@ -22,6 +22,27 @@ test('Kie dynamic pricing resolves an exact model id from an anchor path', () =>
   assert.equal(quoteKie(model, { aspect_ratio: 'auto' }, { fetchedAt: '2026-09-20T00:00:00Z', rows: [row] }).credits, 4);
 });
 
+test('Kie dynamic pricing resolves provider-prefixed models from a short official anchor', () => {
+  const model = { id: 'kie:bytedance/seedance-2-5', apiModel: 'bytedance/seedance-2-5', providerId: 'kie' };
+  const seedanceRows = [
+    { modelDescription: 'bytedance/seedance-2-5, 720p with video', creditPrice: '38', creditUnit: 'per second', anchor: 'https://kie.ai/seedance-2-5' },
+    { modelDescription: 'bytedance/seedance-2-5, 720p no video', creditPrice: '63', creditUnit: 'per second', anchor: 'https://kie.ai/seedance-2-5' },
+  ];
+  const tariffData = { fetchedAt: '2026-09-21T00:00:00Z', rows: seedanceRows };
+  const input = { resolution: '720p', duration: 10, reference_video_urls: ['https://example.test/reference.mp4'] };
+  const context = { sourceFiles: [{ ref: input.reference_video_urls[0], type: 'video/mp4', durationSeconds: 18.143125 }] };
+  assert.equal(quoteKie(model, input, tariffData, context).credits, 1069.439);
+  assert.throws(() => quoteKie(model, input, tariffData), /длительность исходного видео/);
+});
+
+test('Kie explicit anchor model id wins over a matching short path suffix', () => {
+  const model = { id: 'kie:vendor/demo', apiModel: 'vendor/demo', providerId: 'kie' };
+  const tariffData = { rows: [
+    { modelDescription: 'Other demo', creditPrice: '1', creditUnit: 'per request', anchor: 'https://kie.ai/demo?model=other%2Fdemo' },
+  ] };
+  assert.throws(() => quoteKie(model, {}, tariffData), /не опубликована/);
+});
+
 test('Kie dynamic pricing treats the published 1/2K tier as both 1K and 2K', () => {
   const model = { id: 'kie:nano-banana-pro', apiModel: 'nano-banana-pro', providerId: 'kie' };
   const tierRows = [

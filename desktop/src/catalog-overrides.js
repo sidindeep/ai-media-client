@@ -2,6 +2,7 @@
 // Kept separate from generated OpenAPI imports so refreshes preserve these fixes.
 function applyOverrides(models) {
   const result=structuredClone(models);
+  const durationRules=require('./duration');
   const fileLabels={video_url:'Исходное видео',video_urls:'Исходные видео',reference_video_urls:'Референсные видео',audio_url:'Исходное аудио',audio_urls:'Исходное аудио',reference_audio_urls:'Референсное аудио',driving_audio_url:'Управляющее аудио',upload_url:'Исходное аудио',upload_url_list:'Исходные аудиофайлы',verify_url:'Запись для проверки',voice_url:'Запись голоса',mask_url:'Маска',reference_mask_urls:'Референсные маски'};
   for(const model of result)for(const field of model.fields){
     const schema=field.schema;
@@ -17,6 +18,15 @@ function applyOverrides(models) {
   for(const model of result.filter(item=>item.kind==='audio')){
     if(audioNames[model.apiModel])model.name=audioNames[model.apiModel];
     for(const field of model.fields)if(audioLabels[field.key])field.label=audioLabels[field.key];
+  }
+  // Generated schemas sometimes describe duration ranges only in prose. Keep
+  // the catalog form on the same explicit allow-list used by server validation
+  // so a value cannot look accepted in the UI and then fail before enqueue.
+  for(const model of result){
+    const field=model.fields.find(item=>item.key==='duration');
+    if(!field||field.options?.length)continue;
+    const allowed=durationRules.values(model,field);
+    if(allowed?.length&&allowed.length<=120)field.options=allowed;
   }
   // Some Kie schemas describe file limits in prose but omit maxItems.
   for(const model of result)for(const field of model.fields.filter(f=>f.type==='files'&&!f.scalar)){

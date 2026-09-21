@@ -3,13 +3,21 @@ const assert = require('node:assert/strict');
 const { TaskQueue } = require('../src/task-queue');
 
 class Store {
-  constructor() { this.rows = []; }
+  constructor() { this.rows = []; this.removals = []; }
   async list() { return structuredClone(this.rows); }
   async update(id, changes, expected) {
     const index = this.rows.findIndex(row => row.id === id);
     if (expected && !expected.includes(this.rows[index]?.state)) throw new Error('Changed');
     const row = { ...(this.rows[index] || { id }), ...structuredClone(changes) };
     if (index < 0) this.rows.unshift(row); else this.rows[index] = row;
+    return structuredClone(row);
+  }
+  async remove(id, settlementState, expectedStates) {
+    const index = this.rows.findIndex(row => row.id === id);
+    if (index < 0) return null;
+    if (expectedStates && !expectedStates.includes(this.rows[index].state)) return null;
+    const [row] = this.rows.splice(index, 1);
+    this.removals.push({ id, settlementState });
     return structuredClone(row);
   }
 }
@@ -189,5 +197,57 @@ test('pause never rewinds an item that already owns a preparation slot', async (
   queue.pause(); release(); await running;
   assert.equal(store.rows[0].state, 'waiting');
   assert.equal(queue.paused, true);
+  queue.close();
+});
+
+test('removing an unsent item deletes it and prevents a preparation race from recreating it', async () => {
+  const store = new Store(); let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const queue = new TaskQueue({ store, prepare: async row => { await gate; return row.input; }, create: async () => ({ taskId: 'provider' }), poll: async () => ({ state: 'waiting' }) });
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  const item = await queue.enqueue({ input: {} }); queue.start();
+  const running = queue.tick(); await waitFor(() => store.rows[0]?.state === 'preparing');
+  assert.deepEqual(await queue.remove(item.id), { removed: true, providerMayHaveCharged: false });
+  release(); await running;
+  assert.deepEqual(await store.list(), []);
+  assert.deepEqual(store.removals, [{ id: item.id, settlementState: 'cancelled' }]);
+  queue.close();
+});
+
+test('clearing deletes every queue item, preserves completed history and marks submitted work as chargeable', async () => {
+  const store = new Store();
+  store.rows = [
+    { id: 'queued', state: 'queued' },
+    { id: 'remote', state: 'generating', taskId: 'kie-job' },
+    { id: 'unknown', state: 'unknown' },
+    { id: 'complete', state: 'success' },
+  ];
+  const queue = new TaskQueue({ store, prepare: async row => row.input, create: async () => ({ taskId: 'provider' }), poll: async () => ({ state: 'waiting' }) });
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  assert.deepEqual(await queue.clear(), { removed: 3, providerMayHaveCharged: true });
+  assert.deepEqual((await store.list()).map(row => row.id), ['complete']);
+  assert.deepEqual(store.removals, [
+    { id: 'queued', settlementState: 'cancelled' },
+    { id: 'remote', settlementState: 'success' },
+    { id: 'unknown', settlementState: 'success' },
+  ]);
+  queue.close();
+});
+
+test('clear retries a state transition and settles from the locked current state', async () => {
+  class RacingStore extends Store {
+    async remove(id, settlementState, expectedStates) {
+      if (!this.changed) {
+        this.changed = true;
+        this.rows[0] = { ...this.rows[0], state: 'submitting' };
+      }
+      return super.remove(id, settlementState, expectedStates);
+    }
+  }
+  const store = new RacingStore(); store.rows = [{ id: 'racing', state: 'preparing' }];
+  const queue = new TaskQueue({ store, prepare: async row => row.input, create: async () => ({ taskId: 'provider' }), poll: async () => ({ state: 'waiting' }) });
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  assert.deepEqual(await queue.clear(), { removed: 1, providerMayHaveCharged: true });
+  assert.deepEqual(store.removals, [{ id: 'racing', settlementState: 'success' }]);
   queue.close();
 });

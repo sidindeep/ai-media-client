@@ -13,6 +13,11 @@ const { createDatabaseAvailability } = require('../src/database/availability');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
+function mp4Bytes(seconds, timescale = 8000) {
+  const mvhdPayload = Buffer.alloc(20); mvhdPayload.writeUInt32BE(timescale, 12); mvhdPayload.writeUInt32BE(Math.round(seconds * timescale), 16);
+  const box = (type, payload) => { const value = Buffer.alloc(8 + payload.length); value.writeUInt32BE(value.length, 0); value.write(type, 4, 4, 'ascii'); payload.copy(value, 8); return value; };
+  return Buffer.concat([box('ftyp', Buffer.from('isom')), box('moov', box('mvhd', mvhdPayload))]);
+}
 test('temporary database failure keeps the public landing and Vue shell available with startup status and unhealthy API health', async t => {
   const databaseQueries = [];
   const unavailable = async () => { throw Object.assign(new Error('private database details'), { code: 'EAI_AGAIN' }); };
@@ -341,6 +346,19 @@ test('unconfigured service starts and refuses paid task without fabricating outp
   assert.equal(service.configured(), false);
   await assert.rejects(service.createTask({ modelId: model.id, input }), /не подключена/);
   assert.equal((await service.listHistory()).length, 0);
+});
+
+test('media quote falls back to a refreshed official Kie tariff when local and cached prices are missing', async t => {
+  const dir = await directory(); let fetches = 0;
+  const published = { modelDescription: 'bytedance/seedance-2-5, 720p with video', creditPrice: '38', creditUnit: 'per second', anchor: 'https://kie.ai/seedance-2-5', interfaceType: 'video', provider: 'ByteDance' };
+  const irrelevant = { modelDescription: 'Other model', creditPrice: '1', creditUnit: 'per request', anchor: 'https://kie.ai/other-model', interfaceType: 'image', provider: 'Other' };
+  const tariffFetcher = async () => ({ ok: true, async json() { return { code: 200, data: { pages: 1, records: [++fetches === 1 ? irrelevant : published] } }; } });
+  const pricing = { quote() { throw new Error('Цена модели ещё не опубликована'); } };
+  const service = await createMediaService({ directory: dir, provider: fakeProvider(), pricing, tariffFetcher }); t.after(() => cleanup(dir, service));
+  const source = await service.saveSource({ name: 'reference.mp4', type: 'video/mp4', bytes: mp4Bytes(18.143125) });
+  const quote = await service.nativeQuote('bytedance/seedance-2-5', { prompt: 'Тест', resolution: '720p', duration: 10, reference_video_urls: [source.ref] }, [{ ...source, fieldKey: 'reference_video_urls', durationSeconds: 1 }]);
+  assert.equal(quote.credits, 1069.439, 'server metadata wins over forged browser duration');
+  assert.equal(fetches, 2, 'a cache miss refreshes the official Kie list once');
 });
 
 test('provider diagnostics checks Kie auth, live tariff and selected model without generation', async t => {

@@ -32,5 +32,26 @@ class History {
     this.queue = operation.catch(() => {});
     return operation;
   }
+  remove(id, _settlementState, expectedStates) {
+    const operation = this.queue.then(async () => {
+      const records = await this.read();
+      const index = records.findIndex(item => item.id === id);
+      if (index < 0) return null;
+      if (expectedStates && !expectedStates.includes(records[index].state)) return null;
+      const [record] = records.splice(index, 1);
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      await fs.writeFile(this.file + '.tmp', JSON.stringify(records, null, 2));
+      for (let attempt = 0; ; attempt++) {
+        try { await fs.rename(this.file + '.tmp', this.file); break; }
+        catch (error) {
+          if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 5) throw error;
+          await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+        }
+      }
+      return record;
+    });
+    this.queue = operation.catch(() => {});
+    return operation;
+  }
 }
 module.exports = { History };

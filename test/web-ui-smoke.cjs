@@ -389,7 +389,7 @@ app.whenReady().then(async () => {
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
     await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.sidebar-provider-option[data-provider=codex]').click();document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
-    await until("document.querySelector('.quote.error')?.textContent.includes('Не удалось выполнить запрос') && document.querySelector('.generate-button').disabled");
+    await until("document.querySelector('.quote.error')?.textContent.includes('официальный прайс Kie') && !document.querySelector('.generate-button').disabled");
     await evaluate("window.__providerDiagnosticFailures=1;document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-check').click();void 0");
     await until("document.querySelector('.diagnostic-summary.success')?.textContent.includes('Все проверки пройдены') && !document.querySelector('.generate-button').disabled");
     assert.equal(await evaluate("window.__providerDiagnosticCalls"), 2, 'provider diagnostics retries one temporary database failure');
@@ -408,6 +408,9 @@ app.whenReady().then(async () => {
     await evaluate("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Видео')).click();void 0");
     await until("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Видео'))?.classList.contains('active') && document.querySelectorAll('.model-pill select option').length>0");
     const kieVideoModels = await evaluate("document.querySelectorAll('.model-pill select option').length");
+    await evaluate("(()=>{const select=document.querySelector('.model-pill select');select.value='kie:bytedance/seedance-2';select.dispatchEvent(new Event('change',{bubbles:true}))})()");
+    await until("document.querySelector('.model-pill select')?.value==='kie:bytedance/seedance-2' && Array.from(document.querySelectorAll('.advanced-grid label')).some(label=>label.querySelector('span')?.textContent.includes('Длительность') && label.querySelector('select'))");
+    assert.deepEqual(await evaluate("Array.from(Array.from(document.querySelectorAll('.advanced-grid label')).find(label=>label.querySelector('span')?.textContent.includes('Длительность')).querySelector('select').options,option=>Number(option.value))"), [-1,4,5,6,7,8,9,10,11,12,13,14,15]);
     assert.equal(kieImageModels + kieVideoModels, 149);
     await evaluate("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Аудио')).click();void 0");
     await until("Array.from(document.querySelectorAll('.composer-tabs button')).find(button=>button.textContent.includes('Аудио'))?.classList.contains('active') && document.querySelectorAll('.model-pill select option').length===27");
@@ -434,6 +437,10 @@ app.whenReady().then(async () => {
     await until("document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
     await evaluate("const prompt=document.querySelector('.composer-body textarea');prompt.value='Проверка генерации Kie';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
+    await evaluate(`window.__acceptedCreateTaskFetch=window.fetch.bind(window);window.__rejectNextCreateTask=true;window.fetch=(input,init)=>{const url=new URL(typeof input==='string'?input:input.url,location.origin);if(window.__rejectNextCreateTask&&url.pathname==='/api/rpc/createTask'){window.__rejectNextCreateTask=false;return Promise.resolve(new Response(JSON.stringify({error:'Тестовый отказ до постановки в очередь'}),{status:400,headers:{'Content-Type':'application/json'}}))}return window.__acceptedCreateTaskFetch(input,init)};document.querySelector('.generate-button').click();void 0`);
+    await until("document.querySelector('.chat-result-item.selected .chat-result-state.state-fail') && document.querySelector('.result-receipt')?.textContent.includes('Тестовый отказ до постановки в очередь')");
+    assert.match(await evaluate("document.querySelector('.chat-result-item.selected').textContent"), /Ошибка.*Тестовый отказ до постановки в очередь/s);
+    await evaluate("window.fetch=window.__acceptedCreateTaskFetch;delete window.__acceptedCreateTaskFetch;delete window.__rejectNextCreateTask;void 0");
     await evaluate("document.querySelector('.generate-button').click();void 0");
     await until("document.querySelector('.result-route')?.textContent.includes('Kie.ai') && document.querySelector('.result-receipt')?.textContent.includes('Ответ получен от Kie.ai')");
     assert.equal(await evaluate("document.querySelectorAll('.generation-timeline li').length"), 6);
@@ -453,6 +460,36 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('.result-receipt').textContent.includes('Ответ получен от Kie.ai')"), true, 'stale item snapshot must not rewind success');
     assert.equal(await evaluate("document.querySelectorAll('.queue-item').length"), 0, 'accepted item must not leave an optimistic duplicate');
     await evaluate("window.fetch=window.__stableItemFetch;delete window.__stableItemFetch;delete window.__staleSyncServed;void 0");
+    const queueService = await runtime.accounts.get(userId);
+    const queueRecord = (id, state, prompt, extra = {}) => ({ id, state, providerId: 'kie', providerName: 'Kie.ai', modelId: 'kie:nano-banana-2-lite', modelName: 'Nano Banana 2 Lite', kind: 'image', input: { prompt }, chatId: vueChat.id, projectId: vueProject.id, createdAt: new Date().toISOString(), ...extra });
+    await queueService.history.update('ui-local-remove', queueRecord('ui-local-remove', 'queued', 'Удалить локально'));
+    queueService.events.emit('reset');
+    await until("Array.from(document.querySelectorAll('.queue-row')).some(row=>row.textContent.includes('Удалить локально'))");
+    assert.equal(await evaluate("document.querySelector('.queue-actions .danger').textContent"), 'Очистить всё');
+    await evaluate("window.__queueConfirmMessages=[];window.confirm=message=>{window.__queueConfirmMessages.push(message);return false};Array.from(document.querySelectorAll('.queue-row')).find(row=>row.textContent.includes('Удалить локально')).querySelector('.queue-remove').click();void 0");
+    await until("!Array.from(document.querySelectorAll('.queue-row')).some(row=>row.textContent.includes('Удалить локально'))");
+    assert.equal(await evaluate("window.__queueConfirmMessages.length"), 0, 'unsent item is deleted without confirmation');
+    assert.equal((await queueService.history.list()).some(row => row.id === 'ui-local-remove'), false);
+
+    await queueService.history.update('ui-sent-remove', queueRecord('ui-sent-remove', 'waiting', 'Удалить отправленное', { taskId: 'kie-ui-sent', providerAcceptedAt: new Date().toISOString() }));
+    queueService.events.emit('reset');
+    await until("Array.from(document.querySelectorAll('.queue-row')).some(row=>row.textContent.includes('Удалить отправленное'))");
+    await evaluate("Array.from(document.querySelectorAll('.queue-row')).find(row=>row.textContent.includes('Удалить отправленное')).querySelector('.queue-remove').click();void 0");
+    assert.match(await evaluate("window.__queueConfirmMessages.at(-1)"), /Токены Kie могли быть списаны/);
+    assert.equal((await queueService.history.list()).some(row => row.id === 'ui-sent-remove'), true, 'cancelled warning keeps the submitted item');
+    await evaluate("window.confirm=message=>{window.__queueConfirmMessages.push(message);return true};Array.from(document.querySelectorAll('.queue-row')).find(row=>row.textContent.includes('Удалить отправленное')).querySelector('.queue-remove').click();void 0");
+    await until("!Array.from(document.querySelectorAll('.queue-row')).some(row=>row.textContent.includes('Удалить отправленное'))");
+    assert.equal((await queueService.history.list()).some(row => row.id === 'ui-sent-remove'), false);
+
+    await queueService.history.update('ui-clear-local', queueRecord('ui-clear-local', 'queued', 'Очистить локальное'));
+    await queueService.history.update('ui-clear-sent', queueRecord('ui-clear-sent', 'generating', 'Очистить отправленное', { taskId: 'kie-ui-clear', providerAcceptedAt: new Date().toISOString() }));
+    queueService.events.emit('reset');
+    await until("document.querySelectorAll('.queue-row').length===2");
+    await evaluate("document.querySelector('.queue-actions .danger').click();void 0");
+    await until("document.querySelectorAll('.queue-row').length===0");
+    assert.match(await evaluate("window.__queueConfirmMessages.at(-1)"), /Удалить все записи очереди полностью/);
+    assert.equal((await queueService.history.list()).some(row => ['ui-clear-local', 'ui-clear-sent'].includes(row.id)), false);
+    await evaluate("delete window.__queueConfirmMessages;void 0");
     await evaluate("document.querySelector('.theme-button').click();void 0");
     await until("document.documentElement.dataset.theme==='light'");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.generation-timeline .is-done .timeline-marker')).every(marker=>getComputedStyle(marker).backgroundColor==='rgb(75, 157, 112)')"), true);

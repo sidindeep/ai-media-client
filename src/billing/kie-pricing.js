@@ -9,6 +9,27 @@ function modelIdFromAnchor(anchor) {
   } catch { return ''; }
 }
 
+function pathModelIdFromAnchor(anchor) {
+  try {
+    const url = new URL(anchor);
+    if (url.searchParams.has('model')) return '';
+    return decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, '');
+  } catch { return ''; }
+}
+
+function modelCandidates(model, rows) {
+  const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
+  const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
+  if (exact.length) return exact;
+
+  // Some Kie price-list pages omit the provider namespace from their anchor
+  // (for example bytedance/seedance-2-5 is published at /seedance-2-5).
+  // Only use this suffix fallback when the anchor has no explicit ?model= id;
+  // an explicit id remains authoritative and must match exactly.
+  const suffixes = new Set([...aliases].map(alias => alias.split('/').pop()).filter(Boolean));
+  return rows.filter(row => suffixes.has(pathModelIdFromAnchor(row.anchor)));
+}
+
 function normalized(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -75,8 +96,7 @@ function characterCount(value) {
 }
 
 function selectTariff(model, input, rows) {
-  const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
-  const candidates = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
+  const candidates = modelCandidates(model, rows);
   if (!candidates.length) throw new Error('Цена этой модели Kie ещё не опубликована');
   const scored = candidates.map(row => ({ row, score: candidateScore(row, input) })).sort((a, b) => b.score - a.score);
   const best = scored.filter(item => item.score === scored[0].score).map(item => item.row);
@@ -85,12 +105,35 @@ function selectTariff(model, input, rows) {
   return [...variants.values()][0];
 }
 
-function multiplier(row, input) {
+function inputReferences(value, result = new Set()) {
+  if (typeof value === 'string') result.add(value);
+  else if (Array.isArray(value)) value.forEach(item => inputReferences(item, result));
+  else if (value && typeof value === 'object') Object.values(value).forEach(item => inputReferences(item, result));
+  return result;
+}
+
+function referencedVideoDuration(input, context) {
+  const references = inputReferences(input);
+  const videos = (context?.sourceFiles || []).filter(file => references.has(file.ref) && String(file.type || '').startsWith('video/'));
+  if (!videos.length) throw new Error('Для расчёта цены нужна длительность исходного видео');
+  let total = 0;
+  for (const video of videos) {
+    const duration = Number(video.durationSeconds);
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Не удалось определить длительность исходного видео');
+    total += duration;
+  }
+  return total;
+}
+
+function multiplier(row, input, context) {
   const unit = String(row.creditUnit || '').trim().toLowerCase();
   if (unit === 'per second') {
     const duration = Number(input?.duration);
     if (!Number.isSafeInteger(duration) || duration <= 0) throw new Error('Для расчёта цены нужна длительность в секундах');
-    return duration;
+    // Kie publishes Seedance reference-video tariffs as Price × (Input +
+    // Output), not merely Price × Output. Use server-verified media metadata.
+    return duration + (/\bwith video(?:\s+input)?\b/i.test(String(row.modelDescription || '')) && hasInput(input, 'video')
+      ? referencedVideoDuration(input, context) : 0);
   }
   if (unit === 'per image') {
     const count = Number(input?.num_images ?? input?.number_of_images ?? input?.output_count ?? input?.image_count ?? 1);
@@ -111,11 +154,11 @@ function multiplier(row, input) {
   throw new Error('Единица тарифа Kie пока не поддерживается');
 }
 
-function quoteKie(model, input, tariffData) {
+function quoteKie(model, input, tariffData, context = {}) {
   if (!model || model.providerId !== 'kie') throw new Error('Модель Kie не найдена');
   if (!Array.isArray(tariffData?.rows) || !tariffData.rows.length) throw new Error('Цена Kie временно недоступна');
   const row = selectTariff(model, input || {}, tariffData.rows);
-  const amountUnits = units(decimalUnits(row.creditPrice) * multiplier(row, input || {}));
+  const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context)));
   return {
     amountUnits,
     credits: amountUnits / SCALE,

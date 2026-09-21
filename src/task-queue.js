@@ -4,6 +4,8 @@ const costs = require('./costs');
 const {randomUUID}=require('node:crypto');
 const {insufficientCredits,creditErrorMessage}=require('./api-errors');
 const remoteStates=['waiting','queuing','generating'];
+const queueStates=new Set(['queued','preparing','submitting',...remoteStates,'unknown','blocked']);
+const providerMayHaveCharged=record=>Boolean(record?.taskId||record?.providerAcceptedAt||['submitting',...remoteStates,'unknown'].includes(record?.state));
 class TaskQueue {
   constructor({store,prepare,create,poll,complete=async()=>{},notify=()=>{},interval=2000,concurrency=5}) {
     Object.assign(this,{store,prepare,create,poll,complete,notify,interval});
@@ -36,20 +38,24 @@ class TaskQueue {
   start() { trace.write('queue.start',{concurrency:this.concurrency});this.paused=false;this.error=null;this.schedule(0);this.schedulePoll();this.notify(); }
   pause() { trace.write('queue.pause');this.paused=true;this.notify(); }
   async cancel(id) {await this.store.update(id,{state:'cancelled'},['queued']);this.notify();}
-  async remove(id) {
+  async remove(id, notify=true) {
     const record=(await this.store.list()).find(item=>item.id===id);
-    if(!record)return;
-    await this.store.update(id,{queueHidden:true});
-    if(record.state==='queued'){
-      try{await this.store.update(id,{state:'cancelled'},['queued']);}catch{/* Preparation may have started; it checks queueHidden before submitting. */}
-    }
-    if(record.state==='unknown')await this.acknowledge(id);
-    this.notify();
+    if(!record||!queueStates.has(record.state))return {removed:false,providerMayHaveCharged:false};
+    const charged=providerMayHaveCharged(record);
+    const removed=await this.store.remove(id,charged?'success':'cancelled',[record.state]);
+    if(notify)this.notify(removed?{full:true}:undefined);
+    return {removed:Boolean(removed),providerMayHaveCharged:Boolean(removed)&&charged};
   }
   async clear() {
     this.pause();
-    for(const record of await this.store.list())if(record.state==='queued'&&!record.queueHidden)await this.remove(record.id);
-    this.notify();
+    const results=[];
+    for(let attempt=0;attempt<5;attempt++){
+      const records=(await this.store.list()).filter(record=>queueStates.has(record.state));
+      if(!records.length)break;
+      for(const record of records)results.push(await this.remove(record.id,false));
+    }
+    this.notify({full:true});
+    return {removed:results.filter(result=>result?.removed).length,providerMayHaveCharged:results.some(result=>result?.providerMayHaveCharged)};
   }
   async acknowledge(id) {await this.store.update(id,{state:'unconfirmed'},['unknown']);this.error=null;this.notify();}
   schedule(delay=this.interval) {if(this.closed||this.timer)return;this.timer=setTimeout(()=>{this.timer=null;this.tick().catch(error=>{this.error=error.message;this.notify();if(!this.closed&&!this.paused)this.schedule();});},delay);}
@@ -62,7 +68,7 @@ class TaskQueue {
     } catch(error) {
       // A provider/status failure belongs to this item. Other submissions and
       // provider polls continue; this item is retried by the polling loop.
-      try {await this.store.update(job.id,{lastCheckedAt:new Date().toISOString(),statusError:error.message,errorInfo:errors.classify({code:error.errorInfo?.providerCode??error.status??error.code,message:trace.clean(error.errorInfo?.providerMessage||error.message),taskId:job.taskId,stage:'poll'})},remoteStates);} catch {/* Item already changed state. */}
+      try {await this.store.update(job.id,{lastCheckedAt:new Date().toISOString(),statusError:error.message,errorInfo:errors.classify({code:error.errorInfo?.providerCode??error.status??error.code,message:trace.clean(error.errorInfo?.providerMessage||error.message),taskId:job.taskId,stage:'poll'})},remoteStates);} catch {/* Item already changed state or was removed. */}
       this.notify();return;
     }
     if(![...remoteStates,'success','fail'].includes(data.state)){try{await this.store.update(job.id,{statusError:'Неизвестный статус задачи'},remoteStates);}catch{}return;}
@@ -98,7 +104,7 @@ class TaskQueue {
     let input;
     try {input=await this.prepare(record);}
     catch(error){try{await this.store.update(record.id,{state:'blocked',error:error.message,errorInfo:error.errorInfo||errors.classify({code:error.code,message:trace.clean(error.message),stage:'prepare'})},['preparing']);}catch{}this.notify();return;}
-    if((await this.store.list()).find(item=>item.id===record.id)?.queueHidden){try{await this.store.update(record.id,{state:'cancelled'},['preparing']);}catch{}return;}
+    if(!(await this.store.list()).some(item=>item.id===record.id)){return;}
     // Pause stops selecting new items. An item that already owns a slot keeps
     // moving forward, so its visible state never rewinds to queued.
     if(this.closed){try{await this.store.update(record.id,{state:'queued'},['preparing']);}catch{}return;}

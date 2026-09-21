@@ -90,7 +90,7 @@ function startLiveUpdates() {
       eventStreamReady = true;
       return;
     }
-    void studio.refresh().catch(() => {});
+    void (event === 'reset' ? studio.refreshFull() : studio.refresh()).catch(() => {});
   });
 }
 

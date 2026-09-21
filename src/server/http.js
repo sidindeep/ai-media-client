@@ -328,9 +328,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         res.writeHead(200, { ...headers, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
         res.write('data: ready\n\n'); res.accountId = user.id; connections.add(res);
         const notify = () => { if (!res.destroyed && res.writableLength < 65536) res.write('data: changed\n\n'); };
+        const reset = () => { if (!res.destroyed && res.writableLength < 65536) res.write('data: reset\n\n'); };
         service.events.on('changed', notify);
+        service.events.on('reset', reset);
         const heartbeat = setInterval(async () => { try { if (auth && (await auth.user(req))?.id !== user.id) { res.end(); return; } if (!res.destroyed) res.write(': keepalive\n\n'); } catch { res.end(); } }, 15000);
-        res.on('close', () => { clearInterval(heartbeat); connections.delete(res); service.events.off('changed', notify); });
+        res.on('close', () => { clearInterval(heartbeat); connections.delete(res); service.events.off('changed', notify); service.events.off('reset', reset); });
         return;
       }
       const source = /^\/api\/sources\/([a-f0-9]{64})$/.exec(url.pathname);

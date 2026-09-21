@@ -25,5 +25,16 @@ class AccountRecords {
       return record;
     });
   }
+  async remove(id, settlementState = 'cancelled', expectedStates) {
+    return transaction(this.pool, async client => {
+      await lockWallet(client, this.accountId);
+      const old = (await client.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3 FOR UPDATE', [this.accountId, this.namespace, id])).rows[0]?.data;
+      if (!old) return null;
+      if (expectedStates && !expectedStates.includes(old.state)) return null;
+      if (this.namespace === 'history') await settle(client, this.accountId, id, settlementState);
+      await client.query('DELETE FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3', [this.accountId, this.namespace, id]);
+      return old;
+    });
+  }
 }
 module.exports = { AccountRecords };

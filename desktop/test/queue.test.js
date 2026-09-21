@@ -2,19 +2,17 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {TaskQueue}=require('../src/task-queue');
 const {responseError}=require('../src/api-errors');
-test('clearing cancels queued work, keeps remote results and persists hidden history',async()=>{
-  const {q,store,created}=setup();const a=await q.enqueue({});const b=await q.enqueue({});q.start();await q.tick();
-  await store.update('uncertain',{state:'unknown'});await q.clear();
-  assert.equal((await store.list()).find(r=>r.id===b.id).state,'cancelled');
-  assert.equal((await store.list()).find(r=>r.id==='uncertain').state,'unconfirmed');
-  assert.ok((await store.list()).every(r=>r.queueHidden));
-  await q.tick();assert.equal((await store.list()).find(r=>r.id===a.id).state,'success');assert.equal(created.length,1);q.close();
+test('clearing deletes all queue work while preserving completed history',async()=>{
+  const {q,store}=setup();await q.enqueue({});await q.enqueue({});q.start();await q.tick();
+  await store.update('uncertain',{state:'unknown'});await store.update('complete',{state:'success'});
+  assert.deepEqual(await q.clear(),{removed:3,providerMayHaveCharged:true});
+  assert.deepEqual((await store.list()).map(r=>r.id),['complete']);q.close();
 });
 test('removing during preparation prevents the provider request',async()=>{
   let release,begin;const gate=new Promise(r=>release=r);const started=new Promise(r=>begin=r);
   const {q,store,created}=setup({prepare:async()=>{begin();await gate;return {};}});
   const task=await q.enqueue({});q.start();const tick=q.tick();await started;await q.remove(task.id);release();await tick;
-  assert.equal(created.length,0);assert.equal((await store.list())[0].state,'cancelled');q.close();
+  assert.equal(created.length,0);assert.deepEqual(await store.list(),[]);q.close();
 });
 test('insufficient credits fail the task, retain following jobs and allow manual continuation',async()=>{
   let insufficient=true;
@@ -68,9 +66,10 @@ test('concurrent ticks do not duplicate submission and downloads do not hold a g
   await q.tick();assert.equal(created.length,3);release();q.close();
 });
 class Store {
-  constructor(){this.rows=[];}
+  constructor(){this.rows=[];this.removals=[];}
   async list(){return structuredClone(this.rows);}
   async update(id,changes,expected){const i=this.rows.findIndex(r=>r.id===id);if(expected&&!expected.includes(this.rows[i]?.state))throw new Error('Changed');const row={...(this.rows[i]||{id}),...structuredClone(changes)};if(i<0)this.rows.unshift(row);else this.rows[i]=row;return structuredClone(row);}
+  async remove(id,settlementState,expectedStates){const i=this.rows.findIndex(r=>r.id===id);if(i<0||expectedStates&&!expectedStates.includes(this.rows[i].state))return null;const [row]=this.rows.splice(i,1);this.removals.push({id,settlementState});return structuredClone(row);}
 }
 function setup(overrides={}){
   const store=new Store();const created=[];

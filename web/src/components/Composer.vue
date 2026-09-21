@@ -7,7 +7,7 @@ import type { MediaField } from '../types';
 import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import AspectRatioPicker from './AspectRatioPicker.vue';
 import PresetBar from './PresetBar.vue';
-import { formatMediaFieldValue, mediaFieldOptions, parseMediaFieldValue } from '../domain/media-fields';
+import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, mediaSourceDurationRange, parseMediaFieldValue } from '../domain/media-fields';
 import { mediaModelBrandId } from '../domain/model-catalog';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
 
@@ -51,6 +51,9 @@ const dropDescription = computed(() => {
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
 const total = computed(() => quote.value?.credits ?? null);
+const quoteErrorMessage = computed(() => studio.provider === 'media' && quoteError.value
+  ? `${quoteError.value}. При запуске сервер повторно запросит официальный прайс Kie.`
+  : quoteError.value);
 const modelChoice = computed({
   get: () => studio.provider === 'codex' ? studio.codexModel : studio.mediaModelId,
   set: value => {
@@ -76,7 +79,13 @@ const promptPlaceholder = computed(() => studio.mode === 'audio'
   ? promptField.value?.key === 'text' ? 'Введите текст для озвучивания' : 'Опишите музыку или звук'
   : 'Введите идею для генерации');
 const selectedModelPrice = computed(() => quote.value ? `${quote.value.credits.toLocaleString('ru-RU')} кр.` : undefined);
-const hasFieldErrors = computed(() => Object.keys(fieldErrors.value).length > 0);
+const valueErrors = computed(() => Object.fromEntries(currentFields.value.flatMap(field => {
+  if (field.type === 'files' || /prompt/i.test(field.key)) return [];
+  const message = mediaFieldValueError(field, studio.mediaInput[field.key] ?? field.default);
+  return message ? [[field.key, message]] : [];
+})));
+const allFieldErrors = computed(() => ({ ...valueErrors.value, ...fieldErrors.value }));
+const hasFieldErrors = computed(() => Object.keys(allFieldErrors.value).length > 0);
 const missingRequiredFields = computed(() => studio.provider === 'media' ? currentFields.value.filter(field => {
   if (!field.required) return false;
   if (field.key === 'prompt') return !studio.prompt.trim();
@@ -89,6 +98,7 @@ const retryableReadError = (error: unknown) => error instanceof Error
 
 function fieldOptions(field: MediaField) { return mediaFieldOptions(field); }
 function fieldOptionLabel(field: MediaField, option: unknown) {
+  if (field.key === 'duration' && Number(option) <= 0) return 'Авто';
   const name = isAspectRatioField(field.key) ? aspectRatioName(option) : '';
   return name ? `${option} — ${name}` : String(option);
 }
@@ -105,6 +115,7 @@ function updateField(key: string, value: unknown) {
   studio.mediaInput = input;
 }
 function fieldValue(field: MediaField) { return formatMediaFieldValue(field, studio.mediaInput[field.key] ?? field.default); }
+function fieldError(field: MediaField) { return allFieldErrors.value[field.key] || ''; }
 function updateTypedField(field: MediaField, raw: unknown) {
   try {
     updateField(field.key, parseMediaFieldValue(field, raw));
@@ -142,7 +153,7 @@ async function openDiagnostics() {
   diagnosticError.value = '';
   diagnostics.value = null;
   try {
-    const requestDiagnostics = () => diagnoseProvider(modelId, mediaRequestInput());
+    const requestDiagnostics = () => diagnoseProvider(modelId, mediaRequestInput(), studio.sourceFiles);
     let result;
     try { result = await requestDiagnostics(); }
     catch (error) {
@@ -196,7 +207,7 @@ async function refreshQuote(revision: number) {
       const result = await getCodexQuote(studio.codexModel, studio.codexEffort, studio.codexSpeed);
       if (revision === quoteRevision) { quote.value = result.quote; quoteError.value = result.error || ''; }
     } else if (studio.mediaModelId) {
-      const requestQuote = () => getMediaQuote(studio.mediaModelId, mediaRequestInput());
+      const requestQuote = () => getMediaQuote(studio.mediaModelId, mediaRequestInput(), studio.sourceFiles);
       let result;
       try { result = await requestQuote(); }
       catch (error) {
@@ -227,7 +238,7 @@ function scheduleQuoteRefresh(delay = 0) {
   }, delay);
 }
 
-watch(() => [studio.provider, studio.codexModel, studio.codexEffort, studio.codexSpeed, studio.mediaModelId, studio.mediaInput], () => scheduleQuoteRefresh(), { immediate: true, deep: true });
+watch(() => [studio.provider, studio.codexModel, studio.codexEffort, studio.codexSpeed, studio.mediaModelId, studio.mediaInput, studio.sourceFiles], () => scheduleQuoteRefresh(), { immediate: true, deep: true });
 watch(() => studio.prompt, () => {
   if (studio.provider === 'media') scheduleQuoteRefresh(QUOTE_DEBOUNCE_MS);
 });
@@ -323,13 +334,62 @@ async function uploadFiles(files: File[], field?: MediaField) {
     for (const file of files) {
       const maxSizeMb = field?.maxSizeMb || (field ? undefined : 30);
       if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) throw new Error(file.name + ': превышен лимит ' + maxSizeMb + ' МБ');
+      const durationSeconds = await checkedSourceDuration(file, field);
       const saved = await uploadSource(file, { projectId: studio.activeProjectId, chatId: studio.activeChatId === 'system:recent' ? null : studio.activeChatId });
-      const item = { ...saved, ref: saved.ref, name: file.name, type: file.type, fieldKey: field?.key };
+      const item = { ...saved, ref: saved.ref, name: file.name, type: file.type, fieldKey: field?.key, ...(durationSeconds === null ? {} : { durationSeconds }) };
       studio.sourceFiles.push(item); added.push(item.ref);
     }
     if (field) updateField(field.key, field.scalar || field.maxFiles === 1 ? added.at(-1) : [...(Array.isArray(studio.mediaInput[field.key]) ? studio.mediaInput[field.key] as string[] : []), ...added]);
   } catch (error) { submitError.value = error instanceof Error ? error.message : 'Не удалось загрузить исходник'; }
   finally { uploading.value = false; }
+}
+function sourceDuration(source: File | string, kind: 'audio' | 'video') {
+  return new Promise<number>((resolve, reject) => {
+    const media = document.createElement(kind);
+    const objectUrl = source instanceof File ? URL.createObjectURL(source) : '';
+    let settled = false;
+    let timer = 0;
+    const finish = (error?: Error, duration = media.duration) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      media.removeAttribute('src'); media.load();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (error) reject(error); else resolve(duration);
+    };
+    timer = window.setTimeout(() => finish(new Error('Не удалось проверить длительность исходника')), 8000);
+    media.preload = 'metadata';
+    media.onloadedmetadata = () => Number.isFinite(media.duration) && media.duration > 0 ? finish(undefined, media.duration) : finish(new Error('Не удалось определить длительность исходника'));
+    media.onerror = () => finish(new Error('Не удалось прочитать исходник как медиафайл'));
+    media.src = source instanceof File ? objectUrl : source;
+  });
+}
+function sourceDurationError(name: string, duration: number, range: { min: number; max: number }) {
+  const value = duration.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+  return `${name}: длительность ${value} с; выбранная модель принимает ${range.min}–${range.max} с. Сократите исходник или выберите модель с большим лимитом.`;
+}
+async function checkedSourceDuration(source: File | string, field?: MediaField, name = source instanceof File ? source.name : 'Исходник') {
+  const range = mediaSourceDurationRange(field);
+  if (!range) return null;
+  const kind = /audio/i.test(field?.accept || field?.key || '') ? 'audio' : 'video';
+  const duration = await sourceDuration(source, kind);
+  if (duration < range.min || duration > range.max) throw new Error(sourceDurationError(name, duration, range));
+  return duration;
+}
+async function validateSavedSourceDurations() {
+  for (const item of studio.sourceFiles) {
+    const field = fileFields.value.find(candidate => candidate.key === item.fieldKey);
+    const range = mediaSourceDurationRange(field);
+    if (!range) continue;
+    let duration = Number(item.durationSeconds);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const url = sourcePreviewUrl(item.ref);
+      if (!url) continue;
+      duration = await checkedSourceDuration(url, field, item.name || 'Исходник') || 0;
+      item.durationSeconds = duration;
+    }
+    if (duration < range.min || duration > range.max) throw new Error(sourceDurationError(item.name || 'Исходник', duration, range));
+  }
 }
 function removeFile(index: number) {
   const item = studio.sourceFiles[index]; studio.sourceFiles.splice(index, 1);
@@ -370,11 +430,20 @@ function animateToQueue(event?: Event) {
   });
 }
 async function submit(event?: Event) {
-  if (hasFieldErrors.value) { submitError.value = 'Исправьте параметры с ошибками'; return; }
+  if (hasFieldErrors.value) {
+    const [key, message] = Object.entries(allFieldErrors.value)[0] || [];
+    const field = currentFields.value.find(item => item.key === key);
+    submitError.value = field && message ? `${field.label || field.key}: ${message}` : 'Исправьте параметры с ошибками';
+    return;
+  }
   if (missingRequiredFields.value.length) { submitError.value = 'Заполните обязательные параметры'; return; }
-  if (!quote.value) { submitError.value = quoteError.value || 'Дождитесь расчёта стоимости'; return; }
+  if (studio.provider === 'codex' && !quote.value) { submitError.value = quoteError.value || 'Дождитесь расчёта стоимости'; return; }
   if (!studio.prompt.trim()) { submitError.value = 'Введите промпт'; return; }
   submitError.value = '';
+  uploading.value = true;
+  try { await validateSavedSourceDurations(); }
+  catch (error) { submitError.value = error instanceof Error ? error.message : 'Проверьте исходные файлы'; return; }
+  finally { uploading.value = false; }
   animateToQueue(event);
   try { await studio.submit(); } catch (error) { submitError.value = error instanceof Error ? error.message : 'Не удалось запустить генерацию'; }
 }
@@ -411,10 +480,10 @@ async function submit(event?: Event) {
           <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || 'Формат'" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
           <label v-else class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select></label>
         </template>
-        <span v-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteError }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
-        <button class="generate-button" :class="{ 'is-loading': quoteLoading }" type="button" :aria-busy="quoteLoading" :disabled="quoteLoading || uploading || !modelOptions.length || total === null || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? 'Расчёт…' : 'Генерировать' }}<span v-if="!quoteLoading && total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span v-if="!quoteLoading" aria-hidden="true">↗</span></button>
+        <span v-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
+        <button class="generate-button" :class="{ 'is-loading': quoteLoading }" type="button" :aria-busy="quoteLoading" :disabled="quoteLoading || uploading || !modelOptions.length || (studio.provider === 'codex' && total === null) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? 'Расчёт…' : 'Генерировать' }}<span v-if="!quoteLoading && total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span v-if="!quoteLoading" aria-hidden="true">↗</span></button>
       </div>
-      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldErrors[field.key] }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldErrors[field.key]" class="field-error">{{ fieldErrors[field.key] }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
+      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldError(field) }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldError(field)" class="field-error">{{ fieldError(field) }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
       <p v-if="missingRequiredFields.length" class="form-error">Заполните обязательные параметры: {{ missingRequiredFields.map(field => field.label || field.key).join(', ') }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>
       <p class="composer-hint">Ctrl + Enter — запустить · черновик сохраняется в текущем чате</p>

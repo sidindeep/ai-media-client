@@ -36,3 +36,16 @@ test('corrupt history is reported and never silently overwritten', async () => {
     assert.equal(await fs.readFile(file, 'utf8'), 'broken');
   } finally { await fs.unlink(file); await fs.rmdir(dir); }
 });
+
+test('remove deletes a record from persistent history', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-history-remove-test-'));
+  const file = path.join(dir, 'history.json');
+  try {
+    const store = new History(file);
+    await store.update('one', { state: 'queued' });
+    await store.update('two', { state: 'success' });
+    assert.equal((await store.remove('one')).id, 'one');
+    assert.deepEqual((await new History(file).list()).map(record => record.id), ['two']);
+    assert.equal(await store.remove('missing'), null);
+  } finally { await fs.unlink(file); await fs.rmdir(dir); }
+});

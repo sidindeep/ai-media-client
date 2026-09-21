@@ -21,14 +21,14 @@ function publicRecord(record) {
   else if (['fail', 'blocked'].includes(record.state)) result.error = 'Генерация не выполнена. Резерв возвращён.';
   return result;
 }
-function createAccounts({ pool, config, provider, legacy }) {
+function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
   const services = new Map(), wallet = createWallet(pool), pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
   const routedProvider = createProviderRouter([provider]);
   async function get(accountId) {
     if (!services.has(accountId)) {
       const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates', 'presets'].map(name => [name, new AccountRecords(pool, accountId, name)]));
       const operation = createMediaService({ directory: path.join(config.dataDirectory, 'accounts', accountId), provider: routedProvider,
-        rubPerCredit: config.rubPerCredit, stores, pricing });
+        rubPerCredit: config.rubPerCredit, stores, pricing, tariffFetcher });
       services.set(accountId, operation);
       operation.catch(() => services.delete(accountId));
     }
@@ -86,8 +86,8 @@ function createAccounts({ pool, config, provider, legacy }) {
               return publicRecord(row);
             }
             case 'getBalance': return wallet.get(accountId);
-            case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input);
-            case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input);
+            case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+            case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'nativeLedger': return wallet.ledger(accountId);
             case 'queueStatus': return { paused: service.queue.paused, concurrency: service.queue.concurrency, error: service.queue.error ? 'Очередь приостановлена. Проверьте историю.' : null };
             case 'costSettings': return { rubPerCredit: 0, native: true };

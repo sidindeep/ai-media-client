@@ -12,6 +12,7 @@ const { models, providers } = require('../catalog');
 const { buildRequest } = require('../adapters');
 const costs = require('../costs');
 const { download } = require('../downloads');
+const { mediaDurationSeconds } = require('../media-duration');
 const Ajv = require('ajv');
 
 async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, tariffFetcher }) {
@@ -28,6 +29,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const ajv = new Ajv({ strict: false, validateFormats: false });
   const pendingSaves = new Map();
   const providerDiagnostics = [];
+  // `pricing` only marks account mode, where a quote must be reserved. Kie
+  // price values themselves always come from Kie's live public tariff API.
+  const nativeBilling = Boolean(pricing);
   const diagnosticMessage = error => error instanceof Error ? error.message : String(error || 'Неизвестная ошибка');
   const addProviderDiagnostic = (step, status, message, durationMs = 0) => {
     const entry = { time: new Date().toISOString(), step, status, message, durationMs };
@@ -85,7 +89,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   }
   const settings = await preference('queue', { concurrency: 5 });
   const queue = new TaskQueue({
-    store: history, concurrency: settings.concurrency, interval, notify: () => events.emit('changed'),
+    store: history, concurrency: settings.concurrency, interval, notify: change => events.emit(change?.full ? 'reset' : 'changed'),
     prepare: async record => {
       if (!provider.isConfigured()) throw new Error('Генерация ещё не подключена на сервере');
       const input = await assets.resolve(record.input, record.sourceFiles || [], file => provider.upload(file));
@@ -109,6 +113,26 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       return { ...record, resultJson: JSON.stringify({ resultUrls: urls(record) }), localFiles };
     }));
   }
+  async function trustedSourceFiles(files = []) {
+    if (!Array.isArray(files) || files.length > 100) throw new Error('Некорректный список исходников');
+    const metadata = await sourceMetadata.list();
+    return Promise.all(files.map(async item => {
+      const id = assets.id(item?.ref);
+      const stored = id && metadata.find(entry => entry.id === id);
+      if (!stored) throw new Error('Не найдены сведения о сохранённом исходнике');
+      let durationSeconds = Number(stored.durationSeconds);
+      if (String(stored.type || '').startsWith('video/') && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) {
+        const bytes = await fs.readFile(path.join(assets.directory, id)).catch(error => {
+          if (error.code === 'ENOENT') throw new Error(`Исходник «${stored.name}» не найден. Выберите файл заново.`);
+          throw error;
+        });
+        durationSeconds = mediaDurationSeconds(bytes, stored.type);
+        if (!durationSeconds) throw new Error(`Не удалось определить длительность исходника «${stored.name}»`);
+        await sourceMetadata.update(id, { durationSeconds });
+      }
+      return { ref: item.ref, fieldKey: item.fieldKey, type: stored.type, durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null };
+    }));
+  }
   async function listHistory() { return presentHistory(await history.list()); }
   async function listHistorySince(since, before) {
     return typeof history.listSince === 'function' ? presentHistory(await history.listSince(since, before)) : listHistory();
@@ -117,19 +141,22 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, listHistorySince, resultUrls: urls,
     catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id) }),
     configured: () => provider.isConfigured(),
-    async nativeQuote(modelId, input = {}) {
+    async nativeQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
       const started = Date.now();
       try {
         const model = findModel(modelId);
-        if (pricing) {
-          try {
-            const quote = pricing.quote(model.id, input);
-            addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${quote.credits} кредитов`, Date.now() - started);
-            return quote;
-          }
-          catch (error) { if (!/не опубликована/i.test(error.message)) throw error; }
+        const pricingContext = { sourceFiles: await trustedSourceFiles(sourceFiles) };
+        let tariffData = await tariffs.get(forceRefresh);
+        let quote;
+        try { quote = quoteKie(model, input, tariffData, pricingContext); }
+        catch (error) {
+          // A newly published model or price variant may not be present in the
+          // 24-hour account cache. Refresh the official Kie list once before
+          // rejecting the paid request.
+          if (!/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error;
+          tariffData = await tariffs.get(true);
+          quote = quoteKie(model, input, tariffData, pricingContext);
         }
-        const quote = quoteKie(model, input, await tariffs.get());
         addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${quote.credits} кредитов`, Date.now() - started);
         return quote;
       } catch (error) {
@@ -140,7 +167,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         throw new Error(`Цена Kie временно недоступна: ${message}`);
       }
     },
-    async diagnoseProvider(modelId, input = {}) {
+    async diagnoseProvider(modelId, input = {}, sourceFiles = []) {
       const checkedAt = new Date().toISOString();
       const checks = [];
       const add = (step, status, message, started = Date.now()) => {
@@ -169,7 +196,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         try {
           model = findModel(modelId);
           if (!tariffData) throw new Error('Тарифный каталог недоступен');
-          quote = quoteKie(model, input, tariffData);
+          quote = quoteKie(model, input, tariffData, { sourceFiles: await trustedSourceFiles(sourceFiles) });
           add('model-price', 'ok', `${model.name}: ${quote.credits} кредитов`, started);
         } catch (error) { add('model-price', 'error', diagnosticMessage(error), started); }
       }
@@ -187,6 +214,10 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     },
     async saveSource(file) {
       const saved = await assets.save(file);
+      if (String(saved.type).startsWith('video/')) {
+        const durationSeconds = mediaDurationSeconds(file.bytes, saved.type);
+        if (durationSeconds) saved.durationSeconds = durationSeconds;
+      }
       await sourceMetadata.update(assets.id(saved.ref), { ...saved, chatId: file.chatId || null, projectId: file.projectId || null });
       return saved;
     },
@@ -232,7 +263,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           sourceFiles: request.sourceFiles || [], workspace: [1, 2, 3, 4, 5].includes(request.workspace) ? request.workspace : 1,
           ...binding,
           requestId: request.requestId || null, requestDigest: digest,
-          ...(pricing ? { nativeQuote: await service.nativeQuote(model.id, request.input) } : {}),
+          // Refresh the official Kie list at the paid-submit boundary. The UI
+          // quote may be cached to avoid a provider request on every field edit.
+          ...(nativeBilling ? { nativeQuote: await service.nativeQuote(model.id, request.input, request.sourceFiles, true) } : {}),
           rubPerCredit: price.rubPerCredit, estimate: costs.quote(model, request.input, cachedTariffs)
         });
         // A generation click always resumed the queue through a second RPC. Wake it
@@ -248,8 +281,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     async dispatch(method, args = []) {
       switch (method) {
         case 'getCatalog': return service.catalog();
-        case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input);
-        case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input);
+        case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+        case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
         case 'keyStatus': return service.configured();
         case 'getHistory': return listHistory();
         case 'queueStatus': return { paused: queue.paused, error: queue.error, concurrency: queue.concurrency };

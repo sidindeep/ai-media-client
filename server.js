@@ -42,7 +42,7 @@ async function checkProviderReadiness(service, readiness) {
   }
 }
 
-async function start({ config = loadConfig(), provider, pool: suppliedPool, authProviders, startupChecks = !suppliedPool, databaseOpener = openDatabase } = {}) {
+async function start({ config = loadConfig(), provider, pool: suppliedPool, authProviders, startupChecks = !suppliedPool, databaseOpener = openDatabase, tariffFetcher } = {}) {
   if (config.auth.enabled && !config.database.url && !suppliedPool) throw new Error('Для аккаунтов настройте DATABASE_URL. Локальный режим владельца: MEDIA_AUTH_ENABLED=false');
   await fs.mkdir(config.dataDirectory, { recursive: true });
   // Hosting mounts /app/data after image build, hiding directories created there.
@@ -86,11 +86,11 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
   };
   try {
     provider = provider || await createKieGeneration({ apiKey: config.kieKey });
-    service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit });
+    service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher });
     if (config.auth.enabled && suppliedPool) {
       pool = await databaseOpener(config.database, suppliedPool);
       auth = createAuth({ pool, config: config.auth, providers: authProviders });
-      accounts = createAccounts({ pool, config, provider, legacy: service });
+      accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher });
       await accounts.recover();
       databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
     }
@@ -121,7 +121,7 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
           try {
             nextPool = await databaseOpener(config.database);
             const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders });
-            nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service });
+            nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher });
             await nextAccounts.recover();
             if (closing) { await nextAccounts.close(); await nextPool.end(); return; }
             pool = nextPool; auth = nextAuth; accounts = nextAccounts;

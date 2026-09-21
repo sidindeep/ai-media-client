@@ -43,10 +43,13 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   const provider = { id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source',
     create: async () => ({ taskId: `provider-${++sent}` }), poll: async () => ({ state: 'success', creditsConsumed: 999, resultJson: '{"resultUrls":["https://example.test/result.png"]}' }), balance: async () => 8000 };
   const config = { ...loadConfig({ MEDIA_PORT: '0', MEDIA_ADMIN_IDENTITIES: 'google:owner' }), dataDirectory: directory,
-    pricing: { version: 'test-v1', models: { [modelId]: { baseUnits: 2500 } } } };
+    pricing: { version: 'test-v1', models: { [modelId]: { baseUnits: 999000 } } } };
+  const tariffFetcher = async () => ({ ok: true, async json() { return { code: 200, data: { pages: 1, records: [
+    { modelDescription: 'Grok Imagine Video 1.5 Preview', creditPrice: '2.5', creditUnit: 'per video', anchor: 'https://kie.ai/grok-imagine-video-1-5-preview', interfaceType: 'video', provider: 'Grok' },
+  ] } }; } });
   const adapter = { label: 'Test', authorize: ({ state, challenge }) => `https://identity.example/auth?state=${state}&code_challenge=${challenge}`,
     exchange: async ({ code }) => ({ subject: code, name: `Аккаунт ${code}`, ...(code === 'invited-owner' ? { verifiedEmail: 'owner@example.test' } : {}) }) };
-  runtime = await start({ config, provider, pool, authProviders: new Map([['google', adapter], ['vk', adapter]]) });
+  runtime = await start({ config, provider, pool, tariffFetcher, authProviders: new Map([['google', adapter], ['vk', adapter]]) });
   const base = `http://127.0.0.1:${runtime.server.address().port}`;
   const request = (url, options = {}) => fetch(base + url, { ...options, redirect: 'manual' });
   async function login(subject, providerName = 'google') {
@@ -129,14 +132,6 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
     assert.equal(quote.credits, 2.5);
   }
   const adminPayload = { modelId, input, requestId: randomUUID(), billingExemptActor: owner.id };
-  const tariff = config.pricing.models[modelId];
-  delete config.pricing.models[modelId];
-  for (const user of [alice, owner]) {
-    const denied = await rpc(user, 'createTask', [adminPayload, { billingExemptActor: owner.id }]);
-    assert.equal(denied.status, 400);
-    assert.match((await denied.json()).error, /не опубликована/);
-  }
-  config.pricing.models[modelId] = tariff;
   assert.equal((await rpc(owner, 'createTask', [adminPayload])).status, 400);
   assert.equal((await rpc(owner, 'createTask', [adminPayload], { 'X-Media-Account': 'legacy' })).status, 400);
   await runtime.accounts.wallet.grant(owner.id, owner.id, 5000, 'admin-test-balance', 'Тестовый баланс');

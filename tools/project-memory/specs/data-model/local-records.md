@@ -19,7 +19,7 @@ History хранит JSON-массив. Нет файла => пустой мас
 
 ## Контракт задачи
 
-Локальный id существует до taskId. model содержит API-имя; modelName/providerName — снимок отображения. resultJson может быть строкой JSON с resultUrls. queueHidden не удаляет историю. downloadError не заменяет итог генерации. estimate и creditsConsumed имеют разный смысл; отсутствие creditsConsumed не равно нулю.
+Локальный id существует до taskId. model содержит API-имя; modelName/providerName — снимок отображения. resultJson может быть строкой JSON с resultUrls. `queueHidden` поддерживается только как старое поле совместимости; актуальное удаление item очереди физически исключает запись из JSON/PostgreSQL. downloadError не заменяет итог генерации. estimate и creditsConsumed имеют разный смысл; отсутствие creditsConsumed не равно нулю.
 
 Исторические записи без новых полей поддерживаются точечными fallback и recover, формального общего версионирования history нет. Не изменять формат или удалять записи как часть обычного документационного обновления.
 

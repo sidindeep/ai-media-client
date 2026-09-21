@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
 import type { Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import { normalizeMediaInput } from '../domain/media-fields';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
@@ -110,6 +111,11 @@ export const useStudioStore = defineStore('studio', () => {
     }
   }
 
+  function normalizeCurrentMediaInput() {
+    const model = currentMediaModel.value;
+    if (model?.fields) mediaInput.value = normalizeMediaInput(model.fields, mediaInput.value);
+  }
+
   function normalizeCodexControls() {
     const models = codexCatalog.value?.models || [];
     if (!models.length) return;
@@ -183,6 +189,16 @@ export const useStudioStore = defineStore('studio', () => {
     history.value = mergeGenerationRecords(history.value, [record]);
     pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
     if (selectedId.value === optimisticId) selectedId.value = record.id;
+  }
+
+  function failOptimisticRecord(optimisticId: string, cause: unknown) {
+    const completedAt = new Date().toISOString();
+    const message = cause instanceof Error ? cause.message : 'Не удалось запустить генерацию';
+    pendingSubmissions.value = pendingSubmissions.value.map(item => item.id === optimisticId ? {
+      ...item, optimistic: false, state: 'fail', error: message, updatedAt: completedAt,
+      generationCompletedAt: completedAt, generationDurationMs: Math.max(0, Date.parse(completedAt) - Date.parse(item.createdAt || completedAt)),
+    } : item);
+    selectedId.value = optimisticId;
   }
 
   function applyWorkspaceSync(snapshot: Awaited<ReturnType<typeof api.getWorkspaceSync>>) {
@@ -283,6 +299,7 @@ export const useStudioStore = defineStore('studio', () => {
     }
     normalizeCodexControls();
     normalizeMediaControls();
+    normalizeCurrentMediaInput();
     draftReady.value = true;
   }
 
@@ -389,6 +406,7 @@ export const useStudioStore = defineStore('studio', () => {
       provider.value = 'media';
       mediaModelId.value = available.id;
       mediaInput.value = JSON.parse(JSON.stringify(preset.mediaInput || {}));
+      normalizeCurrentMediaInput();
     } else {
       const available = codexCatalog.value?.models.find(model => model.id === preset.codexModel);
       if (!available) throw new Error('Модель Codex этого пресета больше недоступна');
@@ -553,13 +571,13 @@ export const useStudioStore = defineStore('studio', () => {
         await refreshFull().catch(() => {});
         const accepted = history.value.find(item => item.requestId === requestId);
         if (accepted) { acceptServerRecord(optimisticId, accepted); return accepted; }
-        pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
-        if (selectedId.value === optimisticId) selectedId.value = active.value[0]?.id || visibleHistory.value[0]?.id || null;
+        failOptimisticRecord(optimisticId, error);
         throw error;
       }
     }
     const model = currentMediaModel.value;
     if (!model) throw new Error('Каталог моделей недоступен');
+    normalizeCurrentMediaInput();
     const input = { ...mediaInput.value };
     if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
     optimistic = { id: optimisticId, requestId, optimistic: true, providerId: model.providerId || 'media',
@@ -576,8 +594,7 @@ export const useStudioStore = defineStore('studio', () => {
       await refreshFull().catch(() => {});
       const accepted = history.value.find(item => item.requestId === requestId);
       if (accepted) { acceptServerRecord(optimisticId, accepted); return accepted; }
-      pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
-      if (selectedId.value === optimisticId) selectedId.value = active.value[0]?.id || visibleHistory.value[0]?.id || null;
+      failOptimisticRecord(optimisticId, error);
       throw error;
     }
   }
@@ -590,10 +607,14 @@ export const useStudioStore = defineStore('studio', () => {
   async function remove(id: string) {
     await api.removeQueued(id);
     if (selectedId.value === id) selectedId.value = null;
-    await refresh();
+    await refreshFull();
   }
 
-  async function clearWaiting() { await api.clearQueue(); await refresh(); }
+  async function clearWaiting() {
+    await api.clearQueue();
+    if (selectedId.value && accountActive.value.some(item => item.id === selectedId.value && item.providerId !== 'codex')) selectedId.value = null;
+    await refreshFull();
+  }
 
   function prepareFrom(record: GenerationRecord) {
     prompt.value = typeof record.input?.prompt === 'string' ? record.input.prompt : '';
@@ -607,6 +628,7 @@ export const useStudioStore = defineStore('studio', () => {
       provider.value = 'media';
       if (record.modelId) mediaModelId.value = record.modelId;
       mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
+      normalizeCurrentMediaInput();
     }
   }
 

@@ -79,8 +79,8 @@ export const getStorageSettings = () => rpc<{ autoSave: boolean }>('storageSetti
 export const setAutoSave = (autoSave: boolean) => rpc<{ autoSave: boolean }>('setAutoSave', [autoSave]);
 export const logout = () => workspaceRequest<boolean>('/auth/logout', { method: 'POST', body: '{}' });
 
-export async function getMediaQuote(modelId: string, input: Record<string, unknown>): Promise<{ credits: number; amountUnits: number }> {
-  return rpc('nativeQuote', [{ modelId, input }]);
+export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number; amountUnits: number }> {
+  return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }
 
 export type StartupStatus = {
@@ -108,8 +108,8 @@ export type ProviderDiagnostics = {
   recentLogs: ProviderDiagnosticEntry[];
 };
 
-export async function diagnoseProvider(modelId: string, input: Record<string, unknown>): Promise<ProviderDiagnostics> {
-  return rpc('diagnoseProvider', [{ modelId, input }]);
+export async function diagnoseProvider(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<ProviderDiagnostics> {
+  return rpc('diagnoseProvider', [{ modelId, input, sourceFiles }]);
 }
 
 export async function uploadSource(file: File, context: { projectId?: string | null; chatId?: string | null } = {}): Promise<{ ref: string; name?: string; type?: string; [key: string]: unknown }> {
@@ -174,10 +174,10 @@ export async function getCodexJob(id: string): Promise<GenerationRecord> {
   return parse(response);
 }
 
-export function subscribeToChanges(onChange: (event: 'ready' | 'changed') => void): () => void {
+export function subscribeToChanges(onChange: (event: 'ready' | 'changed' | 'reset') => void): () => void {
   const events = new EventSource('/api/events');
   const handler = (event: MessageEvent) => {
-    if (event.data === 'ready' || event.data === 'changed') onChange(event.data);
+    if (event.data === 'ready' || event.data === 'changed' || event.data === 'reset') onChange(event.data);
   };
   events.addEventListener('message', handler);
   events.onerror = () => { /* native EventSource reconnects; the next message refreshes state */ };

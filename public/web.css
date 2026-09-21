@@ -83,6 +83,7 @@ button,input,select { min-height:40px; }
 .account-back:hover { color:#fff !important; }
 .account-card h1 { line-height:1.2; font-size:32px; }
 .account-card a { color:#a7c9ff; }
+.account-card .legal-notice { margin:24px 0 0; padding-top:18px; border-top:1px solid #344056; color:#aeb8cc; font-size:12px; line-height:1.65; }
 .account-actions { display:grid; gap:12px; margin:28px 0; }
 .account-button,.account-card button { padding:12px 20px; border-radius:10px; border:1px solid #627a9b; background:#263953; color:#fff; font:inherit; cursor:pointer; text-decoration:none; text-align:center; }
 .account-card label { display:grid; gap:5px; margin:15px 0; }

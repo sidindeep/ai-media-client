@@ -10,7 +10,13 @@ const trace = require('../generation-log');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
-const publicPageAssets = new Set(['landing.css', 'login.js', 'web.css', 'version.js']);
+const publicPageAssets = new Set(['landing.css', 'legal.css', 'login.js', 'web.css', 'version.js']);
+const legalPages = new Map([
+  ['/legal/terms', 'terms.html'],
+  ['/legal/privacy', 'privacy.html'],
+  ['/legal/personal-data-consent', 'personal-data-consent.html'],
+  ['/legal/offer', 'offer.html'],
+]);
 const vueAppPrefix = '/app';
 const retryableReadRpc = new Set(['nativeQuote', 'diagnoseProvider']);
 function temporaryConnectionFailure(error) {
@@ -76,6 +82,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (config.publicOrigin) allowedHosts.add(new URL(config.publicOrigin).host);
       if (!allowedHosts.has(req.headers.host)) return json(res, 403, { error: 'Недопустимый адрес сервиса' });
       const url = new URL(req.url, `http://${req.headers.host}`);
+      const normalizedPath = url.pathname.length > 1 ? url.pathname.replace(/\/$/, '') : url.pathname;
+      const legalPage = legalPages.get(normalizedPath);
       const rpcMatch = req.method === 'POST' ? /^\/api\/rpc\/([a-zA-Z]+)$/.exec(url.pathname) : null;
       const retryReadOnlyRpc = Boolean(rpcMatch && retryableReadRpc.has(rpcMatch[1]));
       if (auth && config.port !== 0 && req.method === 'GET' && /^\/auth\/[a-z][a-z0-9_-]*\/start$/.test(url.pathname) && req.headers.host !== new URL(config.auth.origin).host) {
@@ -87,7 +95,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const oauthStartProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/start$/.exec(url.pathname)?.[1];
       const oauthStart = req.method === 'GET' && auth?.providers().some(provider => provider.id === oauthStartProvider);
       const pageNavigation = ['GET', 'HEAD'].includes(req.method)
-        && ['/', '/index.html', '/app', '/app/', '/legacy', '/legacy/', '/login'].includes(url.pathname)
+        && (['/', '/index.html', '/app', '/app/', '/legacy', '/legacy/', '/login'].includes(url.pathname) || Boolean(legalPage))
         && req.headers['sec-fetch-mode'] === 'navigate'
         && req.headers['sec-fetch-dest'] === 'document';
       const allowedTopLevelNavigation = pageNavigation || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
@@ -98,7 +106,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const isVueApp = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` || url.pathname.startsWith(`${vueAppPrefix}/`);
       const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (isLanding || publicPageAssets.has(url.pathname.slice(1)) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
+        && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
       const sendVueApplication = async user => {
         const root = path.join(config.root, 'public', 'vue');
         const relative = url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
@@ -151,8 +159,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         try { return redirect('/app', await auth.finish(req, authRoute[1], url.searchParams)); }
         catch { return redirect('/login?error=oauth'); }
       }
-      if (['GET', 'HEAD'].includes(req.method) && (isLanding || publicPageAssets.has(url.pathname.slice(1)) || url.pathname === '/login')) {
-        const publicFile = isLanding ? 'landing.html' : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
+      if (['GET', 'HEAD'].includes(req.method) && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || url.pathname === '/login')) {
+        const publicFile = isLanding ? 'landing.html' : legalPage ? path.join('legal', legalPage) : url.pathname === '/login' ? 'login.html' : url.pathname.slice(1);
         return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       }
       if (config.auth.enabled && !auth && isVueApp && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);

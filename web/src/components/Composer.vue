@@ -4,7 +4,6 @@ import { useStudioStore } from '../stores/studio';
 import { diagnoseProvider, getCodexQuote, getMediaQuote, uploadSource } from '../api/client';
 import type { ProviderDiagnostics } from '../api/client';
 import type { MediaField } from '../types';
-import ProviderSelector from './ProviderSelector.vue';
 import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import AspectRatioPicker from './AspectRatioPicker.vue';
 import PresetBar from './PresetBar.vue';
@@ -52,7 +51,6 @@ const dropDescription = computed(() => {
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
 const total = computed(() => quote.value?.credits ?? null);
-const mediaProviderName = computed(() => studio.catalog?.providers.find(provider => provider.id === 'media')?.name || 'Kie.ai');
 const modelChoice = computed({
   get: () => studio.provider === 'codex' ? studio.codexModel : studio.mediaModelId,
   set: value => {
@@ -123,15 +121,10 @@ function updateSelectValue(field: MediaField, raw: string) {
   updateTypedField(field, option === undefined ? raw : option);
 }
 
-function changeProvider(value: 'codex' | 'media') {
-  studio.setProvider(value);
-  submitError.value = '';
-}
-
 function changeMode(value: 'text' | 'image' | 'video' | 'audio') {
-  const previousModel = studio.mediaModelId;
   studio.setMode(value);
-  if (previousModel !== studio.mediaModelId) { studio.mediaInput = {}; studio.sourceFiles = []; fieldErrors.value = {}; }
+  submitError.value = '';
+  fieldErrors.value = {};
 }
 
 const diagnosticStepLabel = (step: string) => ({
@@ -141,6 +134,7 @@ const diagnosticStepLabel = (step: string) => ({
 const diagnosticMechanismLabel = (key: string) => ({ credentials: 'Ключ', authorization: 'Проверка доступа', tariffs: 'Тарифы', generation: 'Генерация' }[key] || key);
 const diagnosticTime = (value: string) => new Date(value).toLocaleTimeString('ru-RU');
 async function openDiagnostics() {
+  if (diagnosticLoading.value) return;
   const modelId = studio.mediaModelId;
   const revision = quoteRevision;
   diagnosticOpen.value = true;
@@ -174,6 +168,8 @@ watch(() => studio.currentMediaModel?.id, () => {
   studio.mediaInput = { ...defaults, ...current };
   fieldErrors.value = Object.fromEntries(Object.entries(fieldErrors.value).filter(([key]) => allowed.has(key)));
 }, { immediate: true });
+watch(() => [studio.mode, studio.provider], () => { submitError.value = ''; fieldErrors.value = {}; });
+watch(() => studio.providerDiagnosticRequest, (request, previous) => { if (request > previous) void openDiagnostics(); });
 
 function stopQuoteTimer() {
   if (quoteTimer === null) return;
@@ -379,17 +375,11 @@ async function submit(event?: Event) {
 
 <template>
   <section class="composer-card">
-    <PresetBar />
     <div class="composer-tabs">
       <button v-for="item in [{ id: 'text', label: 'Текст', icon: '▢' }, { id: 'image', label: 'Изображение', icon: '▧' }, { id: 'video', label: 'Видео', icon: '▹' }, { id: 'audio', label: 'Аудио', icon: '⌁' }]" :key="item.id" type="button" :class="{ active: studio.mode === item.id }" @click="changeMode(item.id as 'text' | 'image' | 'video' | 'audio')">{{ item.icon }} {{ item.label }}</button>
     </div>
     <div class="composer-body">
-      <ProviderSelector :model-value="studio.provider" :media-label="mediaProviderName" @update:model-value="changeProvider" />
       <p v-if="studio.provider === 'media' && studio.mode === 'audio' && !modelOptions.length" class="notice" role="status">Аудиомодели пока недоступны.</p>
-      <div v-else-if="studio.provider === 'media'" class="provider-diagnostic-actions">
-        <button type="button" class="kie-test-button" :disabled="diagnosticLoading" @click="openDiagnostics">{{ diagnosticLoading ? 'Проверка…' : 'Проверить Kie' }}</button>
-        <span>Проверяет ключ, авторизацию и цену. Генерация не запускается.</span>
-      </div>
       <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" aria-label="Промпт генерации" @keydown.ctrl.enter="submit"></textarea>
       <div v-if="hasSourcePicker || studio.sourceFiles.length || uploading" class="source-strip">
         <label v-if="studio.provider === 'codex' && codexAcceptsImages" class="attach-button">＋ Исходники<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
@@ -403,6 +393,7 @@ async function submit(event?: Event) {
         </article>
       </div>
       <div class="composer-controls">
+        <PresetBar />
         <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice" />
         <template v-if="studio.provider === 'codex'">
           <label class="select-pill"><span>Рассуждение</span><select v-model="studio.codexEffort"><option v-for="effort in effortOptions" :key="effort" :value="effort">{{ effort }}</option></select></label>
@@ -413,8 +404,7 @@ async function submit(event?: Event) {
           <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || 'Формат'" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
           <label v-else class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select></label>
         </template>
-        <span v-if="total !== null" class="quote">Итого: {{ total.toLocaleString('ru-RU') }} кредитов</span>
-        <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteError }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
+        <span v-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteError }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
         <button class="generate-button" :class="{ 'is-loading': quoteLoading }" type="button" :aria-busy="quoteLoading" :disabled="quoteLoading || uploading || !modelOptions.length || total === null || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? 'Расчёт…' : 'Генерировать' }}<span v-if="!quoteLoading && total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span v-if="!quoteLoading" aria-hidden="true">↗</span></button>
       </div>
       <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldErrors[field.key] }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldErrors[field.key]" class="field-error">{{ fieldErrors[field.key] }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>

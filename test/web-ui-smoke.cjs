@@ -149,7 +149,25 @@ app.whenReady().then(async () => {
     assert.equal(startupStatus.authenticated, true);
     assert.equal(startupStatus.account.id, userId);
     await win.loadURL(origin + '/app');
-    await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
+    await until("document.querySelectorAll('.composer-tabs button').length===4 && document.querySelectorAll('.sidebar-provider-option').length===2 && document.querySelector('.composer-body textarea').value==='Черновик Vue чата'");
+    assert.equal(await evaluate("document.querySelector('.provider-selector')"), null);
+    assert.equal(await evaluate("document.querySelector('.provider-diagnostic-actions')"), null);
+    assert.equal(await evaluate("document.querySelector('.sidebar-provider-check').textContent"), 'Проверить Kie');
+    assert.equal(await evaluate("Boolean(document.querySelector('.composer-controls > .preset-bar'))"), true);
+    assert.ok(Number(await evaluate("document.querySelector('.composer-body textarea').getBoundingClientRect().height")) <= 100);
+    await evaluate("document.querySelector('.preset-summary').click();void 0");
+    await until("document.querySelector('.preset-bar').open && document.querySelector('.preset-popover')");
+    await evaluate("document.querySelector('.preset-summary').click();void 0");
+    const composerHeightBefore = await evaluate("document.querySelector('.composer-card').getBoundingClientRect().height");
+    await evaluate("const handle=document.querySelector('.composer-resize-handle');handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientY:400}));window.dispatchEvent(new PointerEvent('pointermove',{clientY:440}));window.dispatchEvent(new PointerEvent('pointerup',{clientY:440}));void 0");
+    await until(`${composerHeightBefore}>document.querySelector('.composer-card').getBoundingClientRect().height`);
+    const composerHeightAfterPointer = await evaluate("document.querySelector('.composer-card').getBoundingClientRect().height");
+    await evaluate("document.querySelector('.composer-resize-handle').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));void 0");
+    await until(`${composerHeightAfterPointer}<document.querySelector('.composer-card').getBoundingClientRect().height`);
+    const composerHeightAfterReset = await evaluate("document.querySelector('.composer-card').getBoundingClientRect().height");
+    await evaluate("document.querySelector('.composer-resize-handle').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));void 0");
+    await until(`${composerHeightAfterReset}>document.querySelector('.composer-card').getBoundingClientRect().height`);
+    assert.ok(Number(await evaluate("localStorage.getItem('media-studio-composer-height-v2')")) > 0);
     assert.equal(await evaluate("document.querySelector('.composer-controls').textContent.includes('Количество') || document.querySelector('.composer-controls').textContent.includes('шт.')"), false);
     assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>entry.name.endsWith('/api/startup')).length"), 0, 'verified /app navigation must reuse the server session check');
     await until("document.querySelector('.account-trigger')?.textContent.includes('Новое имя')");
@@ -181,8 +199,10 @@ app.whenReady().then(async () => {
     await until("document.querySelector('.project-children')?.textContent.includes('Vue чат')");
     assert.equal(await evaluate("document.querySelectorAll('.project-children .sidebar-entry').length"), 1);
     assert.equal(await evaluate("document.querySelector('.project-list-view')?.textContent.includes('Vue проект')"), true, 'expanded chats must stay inside the project list');
-    await until("document.querySelector('.generate-button').textContent.includes('Итого') || document.querySelector('.quote')!==null");
-    assert.equal(await evaluate("document.querySelector('.provider-selector button.active').dataset.provider"), 'codex');
+    await until("document.querySelector('.generate-button')");
+    assert.equal(await evaluate("document.querySelector('.composer-controls > .quote')"), null);
+    assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('Итого')"), false);
+    assert.equal(await evaluate("document.querySelector('.sidebar-provider-option.active').dataset.provider"), 'codex');
     assert.equal(await evaluate("document.querySelector('.model-pill select').value"), 'gpt-5.5');
     assert.equal(await evaluate("document.querySelector('.welcome h2').textContent"), 'GPT-5.5');
     assert.equal(await evaluate("document.querySelector('.welcome p').textContent"), 'Codex · Text → Image');
@@ -230,6 +250,13 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.result-route').textContent"), /Codex CLI.*GPT-5\.6-Sol.*генератор изображений.*Ультра.*Fast/);
     assert.match(await evaluate("document.querySelector('.token-breakdown').textContent"), /Всего токенов\s*120.*Входные\s*100.*Выходные\s*20.*Кэш из входных\s*60.*Рассуждения из выходных\s*5/);
     assert.match(await evaluate("document.querySelector('.history-item.selected .history-item-meta').textContent"), /1 кр\..*120 ток\..*Ультра.*Fast/);
+    await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.chat-result-item.selected')?.dataset.recordId`);
+    assert.match(await evaluate(`document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}]').textContent`), /GPT-5\.6-Sol.*Проверка Vue polling.*1 кр\..*120 ток\..*Ультра.*Fast/s);
+    const centralSelection = await evaluate(`(()=>{const current=${JSON.stringify(newestCodexId)};const item=Array.from(document.querySelectorAll('.chat-result-item')).find(entry=>entry.dataset.recordId!==current);if(!item)return null;item.querySelector('.chat-result-card').click();return item.dataset.recordId})()`);
+    assert.ok(centralSelection, 'the central chat feed contains another selectable result');
+    await until(`${JSON.stringify(centralSelection)}===document.querySelector('.result-card')?.dataset.recordId`);
+    await evaluate(`document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}] .chat-result-card').click();void 0`);
+    await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.result-card')?.dataset.recordId`);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 2000);
     await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.__nativeQuoteCalls=0;window.fetch=(...args)=>{
       if(String(args[0]).includes('/api/rpc/nativeQuote')){
@@ -241,8 +268,8 @@ app.whenReady().then(async () => {
       }
       return window.__mediaFetch(...args);
     };const mediaPrompt=document.querySelector('.composer-body textarea');mediaPrompt.value='Проверка генерации Kie';mediaPrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0`);
-    await evaluate("document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
-    await until("document.querySelector('.provider-selector button.active')?.dataset.provider==='media' && document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
+    await evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
+    await until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='media' && document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
     assert.match(await evaluate("document.querySelector('.welcome h2').textContent"), /Nano Banana 2 Lite/i);
     assert.equal(await evaluate("document.querySelector('.welcome p').textContent"), 'Kie.ai · Text → Image');
     assert.equal(await evaluate("document.querySelector('.welcome-model-icon img').getAttribute('src')"), '/app/model-icons/nano-banana.webp');
@@ -274,16 +301,16 @@ app.whenReady().then(async () => {
     await until(`document.querySelector('.aspect-native-select').value!==${JSON.stringify(savedPresetRatio)}`);
     await evaluate("Array.from(document.querySelectorAll('.preset-apply')).find(button=>button.textContent==='Nano тест').click();void 0");
     await until(`document.querySelector('.aspect-native-select').value===${JSON.stringify(savedPresetRatio)} && document.querySelector('.preset-chip.active .preset-apply')?.textContent==='Nano тест'`);
-    assert.equal(await evaluate("document.querySelector('.provider-selector button[data-provider=media]').textContent.includes('Kie.ai')"), true);
+    assert.equal(await evaluate("document.querySelector('.sidebar-provider-option[data-provider=media]').textContent.includes('Kie.ai')"), true);
     assert.match(await evaluate("document.querySelector('.attach-button').textContent"), /Исходники/);
     await uploadTinyImage('.attach-button input[type=file]');
     await until("document.querySelector('.source-preview img')?.complete && document.querySelector('.source-preview img')?.naturalWidth===1");
     assert.match(await evaluate("document.querySelector('.source-preview').textContent"), /source\.png.*Исходные изображения/s);
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
-    await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.provider-selector button[data-provider=codex]').click();document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
+    await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.sidebar-provider-option[data-provider=codex]').click();document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
     await until("document.querySelector('.quote.error')?.textContent.includes('Не удалось выполнить запрос') && document.querySelector('.generate-button').disabled");
-    await evaluate("document.querySelector('.kie-test-button').click();void 0");
+    await evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-check').click();void 0");
     await until("document.querySelector('.diagnostic-summary.success')?.textContent.includes('Все проверки пройдены') && !document.querySelector('.generate-button').disabled");
     assert.equal(await evaluate("document.querySelectorAll('.diagnostic-checks article.ok').length"), 4);
     assert.match(await evaluate("document.querySelector('.diagnostic-log').textContent"), /Авторизация Kie.*Kie принял ключ/s);
@@ -307,7 +334,7 @@ app.whenReady().then(async () => {
     await evaluate("(()=>{const select=document.querySelector('.model-pill select');select.value='kie:elevenlabs/text-to-speech-turbo-2-5';select.dispatchEvent(new Event('change',{bubbles:true}))})()");
     await until("document.querySelector('.composer-body textarea')?.placeholder==='Введите текст для озвучивания'");
     await evaluate("(()=>{const text=document.querySelector('.composer-body textarea');text.value='Тест озвучивания';text.dispatchEvent(new Event('input',{bubbles:true}))})()");
-    await until("document.querySelector('.composer-body textarea')?.placeholder==='Введите текст для озвучивания' && document.querySelector('.quote')?.textContent.includes('6') && !document.querySelector('.generate-button').disabled");
+    await until("document.querySelector('.composer-body textarea')?.placeholder==='Введите текст для озвучивания' && document.querySelector('.generate-button')?.textContent.includes('6') && !document.querySelector('.generate-button').disabled");
     await beginTinyImageDrag();
     await until("document.querySelector('.chat-drop-panel')?.textContent.includes('Текущая модель не принимает файлы')");
     await finishTinyImageDrop('.chat-drop-overlay');
@@ -331,8 +358,8 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelectorAll('.generation-timeline li').length"), 5);
     assert.match(await evaluate("document.querySelector('.generation-timeline').textContent"), /Принято приложением.*Отправка в Kie\.ai.*Kie\.ai принял задачу.*Генерация в Kie\.ai.*Получение результата/s);
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 1000);
-    await evaluate("document.querySelector('.provider-selector button[data-provider=codex]').click();void 0");
-    await until("document.querySelector('.provider-selector button.active')?.dataset.provider==='codex'");
+    await evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=codex]').click();void 0");
+    await until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='codex'");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-pill select option')).every(option=>!option.value.startsWith('kie:'))"), true);
     win.setSize(390, 844); await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.mobile-nav')).display"), 'grid');

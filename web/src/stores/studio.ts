@@ -28,6 +28,7 @@ export const useStudioStore = defineStore('studio', () => {
   const error = ref('');
   const databaseState = ref<'connecting' | 'connected' | 'unavailable' | 'disabled'>('connecting');
   const providerReadiness = ref<'idle' | 'checking' | 'ready' | 'error'>('checking');
+  const providerDiagnosticRequest = ref(0);
   const accountReady = ref(false);
   const prompt = ref('');
   const provider = ref<'codex' | 'media'>('codex');
@@ -180,11 +181,13 @@ export const useStudioStore = defineStore('studio', () => {
   function selectStandalone() { activeProjectId.value = null; if (activeChatId.value !== 'system:recent' && chats.value.find(chat => chat.id === activeChatId.value)?.projectId) activeChatId.value = 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
 
   function setMode(value: GenerationMode) {
+    const previousMediaModel = mediaModelId.value;
     mode.value = value;
     if (value === 'text') { provider.value = 'codex'; codexKind.value = 'text'; }
     else if (value === 'image') { codexKind.value = 'image'; if (!['codex', 'media'].includes(provider.value)) provider.value = 'codex'; }
     else { provider.value = 'media'; }
     normalizeMediaControls();
+    if (previousMediaModel !== mediaModelId.value) { mediaInput.value = {}; sourceFiles.value = []; }
   }
 
   function setProvider(value: 'codex' | 'media') {
@@ -453,15 +456,18 @@ export const useStudioStore = defineStore('studio', () => {
   function select(id: string) {
     selectedId.value = id;
   }
+  function requestProviderDiagnostics() {
+    providerDiagnosticRequest.value++;
+  }
 
   return {
     catalog, codexCatalog, release, history, presets, queue, selectedId, selected, active, accountActive, completed, loading, error,
-    databaseState, providerReadiness, accountReady,
+    databaseState, providerReadiness, providerDiagnosticRequest, accountReady,
     prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
-    projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, refreshWorkspaces,
+    projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,
     loadDraftForActive,
-    currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
+    currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom, requestProviderDiagnostics,
   };
 });

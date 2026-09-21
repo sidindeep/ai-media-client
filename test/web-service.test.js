@@ -22,6 +22,9 @@ test('temporary database failure keeps the public landing and Vue shell availabl
   const base = `http://127.0.0.1:${server.address().port}`;
   const page = await fetch(base); assert.equal(page.status, 200);
   const landing = await page.text(); assert.match(landing, /Идея\. Кадр\./); assert.match(landing, /\/landing\.css/); assert.doesNotMatch(landing, /private database details/);
+  const legal = await fetch(base + '/legal/privacy'); assert.equal(legal.status, 200);
+  assert.match(await legal.text(), /Политика обработки персональных данных/);
+  assert.equal(databaseQueries.length, 0, 'public legal pages must not read the database');
   const app = await fetch(base + '/app'); assert.equal(app.status, 200);
   const html = await app.text(); assert.match(html, /account-id" content="pending/); assert.match(html, /\/app\/assets\//); assert.doesNotMatch(html, /private database details/);
   const startup = await fetch(base + '/api/startup'); assert.equal(startup.status, 200);
@@ -145,7 +148,16 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const landingHtml = await landing.text();
   assert.match(landingHtml, /AI Media Client — создавайте изображения и видео с AI/);
   assert.match(landingHtml, /href="\/app"/);
+  assert.match(landingHtml, /href="\/legal\/terms"/);
   assert.equal((await fetch(base + '/landing.css')).status, 200);
+  for (const route of ['/legal/terms', '/legal/privacy', '/legal/personal-data-consent', '/legal/offer']) {
+    const legal = await fetch(base + route);
+    assert.equal(legal.status, 200);
+    assert.match(await legal.text(), /AI Media Client/);
+  }
+  assert.equal((await fetch(base + '/legal.css')).status, 200);
+  const loginHtml = await fetch(base + '/login').then(response => response.text());
+  assert.match(loginHtml, /\/legal\/privacy/);
   const vueApp = await fetch(base + '/app');
   assert.equal(vueApp.status, 200);
   const vueHtml = await vueApp.text();
@@ -168,6 +180,7 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   assert.equal(await requestStatus('/'), 200);
   assert.equal(await requestStatus('/index.html', 'HEAD'), 200);
   assert.equal(await requestStatus('/legacy'), 200);
+  assert.equal(await requestStatus('/legal/terms'), 200);
   assert.equal(await requestStatus('/', 'POST'), 403);
   assert.equal(await requestStatus('/api/health'), 403);
   assert.equal(await requestStatus('/api/events'), 403);

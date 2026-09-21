@@ -9,6 +9,14 @@ const search = ref('');
 const collapsed = ref(false);
 const menuId = ref<string | null>(null);
 const selectedProjectId = ref<string | null>(null);
+const providers = [
+  { id: 'codex', label: 'Codex CLI', detail: 'GPT · текст и изображения', icon: 'C' },
+  { id: 'media', label: 'Kie.ai', detail: 'Изображения, видео и аудио', icon: 'K' },
+] as const;
+const mediaProviderName = computed(() => studio.catalog?.providers.find(provider => provider.id === 'media')?.name || 'Kie.ai');
+const providerItems = computed(() => providers.map(item => item.id === 'media' ? { ...item, label: mediaProviderName.value } : item));
+const activeProvider = computed(() => providerItems.value.find(item => item.id === studio.provider) || providerItems.value[0]);
+const debugToolsVisible = computed(() => studio.release?.channel === 'debug');
 
 const filteredProjects = computed(() => {
   const term = search.value.trim().toLowerCase();
@@ -78,6 +86,17 @@ async function primaryAdd() {
   return addProject();
 }
 const primaryActionLabel = computed(() => activeTab.value === 'chats' ? 'Новый чат' : 'Новый проект');
+function selectProvider(value: typeof providers[number]['id'], event: Event) {
+  studio.setProvider(value);
+  const details = (event.currentTarget as HTMLElement).closest('details') as HTMLDetailsElement | null;
+  if (details) details.open = false;
+}
+function diagnoseKie(event: Event) {
+  studio.setProvider('media');
+  studio.requestProviderDiagnostics();
+  const details = (event.currentTarget as HTMLElement).closest('details') as HTMLDetailsElement | null;
+  if (details) details.open = false;
+}
 </script>
 
 <template>
@@ -110,6 +129,12 @@ const primaryActionLabel = computed(() => activeTab.value === 'chats' ? 'Нов�
         </div>
         <p v-if="!filteredProjects.length" class="empty-copy">Проектов пока нет</p>
       </div>
+      <details v-if="debugToolsVisible" class="sidebar-provider-menu">
+        <summary><span class="sidebar-provider-icon" aria-hidden="true">{{ activeProvider.icon }}</span><span><small>Поставщик</small><strong>{{ activeProvider.label }}</strong></span><span class="sidebar-provider-chevron" aria-hidden="true">⌃</span></summary>
+        <div class="sidebar-provider-options" role="menu">
+          <div v-for="item in providerItems" :key="item.id" class="sidebar-provider-row"><button type="button" class="sidebar-provider-option" :class="{ active: studio.provider === item.id }" :data-provider="item.id" role="menuitem" @click="selectProvider(item.id, $event)"><span class="provider-option-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span><span v-if="studio.provider === item.id" aria-hidden="true">✓</span></button><button v-if="item.id === 'media'" type="button" class="sidebar-provider-check" @click="diagnoseKie">Проверить Kie</button></div>
+        </div>
+      </details>
     </template>
     <div class="sidebar-bottom"><span class="connection-dot" :class="{ ready: studio.accountReady && !studio.error }"></span><span>{{ studio.error ? 'Нет связи с сервисом' : studio.accountReady ? 'Сервис подключён' : 'Подключаемся к БД' }}</span></div>
   </aside>

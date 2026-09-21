@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Макеты компактной панели генерации</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; color: #f2eff8; background: #080910; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px; background: radial-gradient(circle at 80% 0, #241b4933, transparent 34%), #080910; }
+    main { width: min(1120px, 100%); margin: auto; }
+    h1 { margin: 0; font-size: 22px; } .lead { margin: 7px 0 22px; color: #8d899f; font-size: 13px; }
+    .variants { display: grid; gap: 16px; }
+    .variant { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 18px; align-items: center; border: 1px solid #242637; border-radius: 16px; padding: 15px; background: #0e0f18d9; }
+    .variant.selected { border-color: #735cdf; box-shadow: 0 16px 55px #0004; }
+    .tag { color: #817b95; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .tag span { margin-left: 6px; border-radius: 99px; padding: 3px 6px; color: #d9d0ff; background: #302751; }
+    h2 { margin: 8px 0 5px; font-size: 16px; } .copy p { margin: 0; color: #858196; font-size: 11px; line-height: 1.5; }
+    .metric { display: block; margin-top: 10px; color: #5bd7a4; font-size: 10px; font-weight: 700; }
+    .composer { overflow: hidden; border: 1px solid #343548; border-radius: 16px; background: linear-gradient(160deg, #141520, #0b0c13); }
+    .tabs, .presets, .controls { display: flex; align-items: center; gap: 7px; }
+    .tabs { height: 40px; padding: 0 12px; border-bottom: 1px solid #292b3a; }
+    .tab { height: 100%; padding: 12px 11px 0; color: #858196; font-size: 11px; } .tab.active { color: #fff; box-shadow: inset 0 -2px #8f75ff; }
+    .presets { height: 34px; padding: 7px 12px 0; color: #696578; font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .chip, .control { border: 1px solid #37384a; border-radius: 999px; padding: 6px 9px; color: #c4bfce; background: #151620; font-size: 10px; font-weight: 650; white-space: nowrap; }
+    .prompt { padding: 14px; color: #eeebf4; font-size: 13px; line-height: 1.5; }
+    .controls { padding: 8px 12px 11px; border-top: 1px solid #292b3a; }
+    .send { margin-left: auto; border: 0; border-radius: 999px; padding: 9px 15px; color: #fff; background: linear-gradient(135deg, #7454df, #956ef4); font-size: 11px; font-weight: 750; }
+    .a .prompt { min-height: 70px; } .a .presets .chip { text-transform: none; letter-spacing: 0; }
+    .b { position: relative; } .b .prompt { min-height: 80px; padding-top: 16px; } .b .control.preset { min-width: 132px; border-color: #6857ae; background: #201b35; }
+    .c { display: grid; grid-template-columns: minmax(200px, 1fr) auto; } .c .tabs { grid-column: 1 / -1; height: 34px; } .c .prompt { min-height: 61px; display: flex; align-items: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .c .controls { border: 0; padding-left: 0; }
+    @media (max-width: 760px) { body { padding: 14px; } .variant { grid-template-columns: 1fr; } .c { grid-template-columns: 1fr; } .c .controls { padding: 0 12px 10px; } .tab { padding-inline: 7px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Компактная панель генерации</h1>
+    <p class="lead">Три сохранённых направления. Вариант B выбран для реализации.</p>
+    <div class="variants">
+      <section class="variant">
+        <div class="copy"><div class="tag">Вариант A</div><h2>Бережное сжатие</h2><p>Пресеты остаются отдельной строкой, уменьшаются только вертикальные интервалы.</p><span class="metric">≈ −30% высоты</span></div>
+        <div class="composer a">
+          <div class="presets">Пресеты <span class="chip">Qwen2 · Text to Image</span><span class="chip">Nano Banana 2 Lite</span><span class="chip">＋</span></div>
+          <div class="tabs"><span class="tab active">▢ Текст</span><span class="tab">▧ Изображение</span><span class="tab">▹ Видео</span><span class="tab">⌁ Аудио</span></div>
+          <div class="prompt">Кинематографичная киберпанк-сцена ночью, неоновые отражения и объёмный туман…</div>
+          <div class="controls"><span class="control">DeepSeek V4-Flash⌄</span><span class="control">Думать⌄</span><button class="send">Отправить · 3 ↗</button></div>
+        </div>
+      </section>
+      <section class="variant selected">
+        <div class="copy"><div class="tag">Вариант B <span>выбран</span></div><h2>Сбалансированный</h2><p>Вкладки встроены в рамку, пресеты перенесены в один компактный выпадающий контрол.</p><span class="metric">≈ −45% высоты</span></div>
+        <div class="composer b">
+          <div class="tabs"><span class="tab active">▢ Текст</span><span class="tab">▧ Изображение</span><span class="tab">▹ Видео</span><span class="tab">⌁ Аудио</span></div>
+          <div class="prompt">Кинематографичная киберпанк-сцена ночью, неоновые отражения и объёмный туман…</div>
+          <div class="controls"><span class="control preset">✦ Пресет⌄</span><span class="control">DeepSeek V4-Flash⌄</span><span class="control">Думать⌄</span><button class="send">Отправить · 3 ↗</button></div>
+        </div>
+      </section>
+      <section class="variant">
+        <div class="copy"><div class="tag">Вариант C</div><h2>Строка быстрого ввода</h2><p>Почти всё пространство отдаётся чату, вторичные параметры открываются отдельно.</p><span class="metric">≈ −60% высоты</span></div>
+        <div class="composer c">
+          <div class="tabs"><span class="tab active">▢ Текст</span><span class="tab">▧ Изображение</span><span class="tab">▹ Видео</span><span class="tab">⌁ Аудио</span></div>
+          <div class="prompt">Кинематографичная киберпанк-сцена ночью, неоновые отражения…</div>
+          <div class="controls"><span class="control">DeepSeek⌄</span><span class="control">⚙</span><button class="send">↗</button></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

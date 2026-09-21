@@ -30,6 +30,7 @@
   function values(model,field,durationApi){
     if(IGNORED_KEY.test(field.key))return [];
     if(field.key==='duration'){
+      if(model.kind==='audio')return [field.min,field.default,field.max].filter(v=>v!==undefined);
       const allowed=durationApi?.values?.(model,field);
       return allowed?.length?allowed:field.options||[field.min,field.default,field.max].filter(v=>v!==undefined);
     }

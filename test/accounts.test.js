@@ -86,8 +86,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await result(rpc(alice, 'saveDrafts', [chatDraft, { chatId: activeChat.id }]));
   assert.deepEqual(await result(rpc(alice, 'loadDrafts', [{ chatId: activeChat.id }])), chatDraft);
   assert.equal((await workspaceResult(workspaceRequest(alice, '/api/chats'))).find(item => item.id === chat.id).projectId, project.id);
+  assert.deepEqual((await workspaceResult(workspaceRequest(alice, `/api/chats?projectId=${activeProject.id}`))).map(item => item.id), [activeChat.id]);
+  assert.deepEqual(await workspaceResult(workspaceRequest(alice, '/api/chats?projectId=')), []);
   assert.equal((await workspaceResult(workspaceRequest(bob, '/api/projects'))).some(item => item.id === project.id), false);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}/move`, 'POST', { projectId: null }))).projectId, null);
+  assert.deepEqual((await workspaceResult(workspaceRequest(alice, '/api/chats?projectId='))).map(item => item.id), [chat.id]);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}`, 'GET'))).name, 'Первый чат');
   assert.equal((await workspaceRequest(bob, `/api/chats/${chat.id}`)).status, 404);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/archive`, 'POST', {}))).archivedAt !== null, true);
@@ -107,6 +110,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(await result(rpc(bob, 'loadDrafts')), null);
   const savedPreset = await result(rpc(alice, 'saveGenerationPreset', [{ name: 'Мой Grok', provider: 'media', mode: 'video', quantity: 2, mediaModelId: modelId, mediaInput: { ...input, prompt: 'не сохранять', image_urls: ['https://example.test/private.png'] } }]));
   assert.equal(savedPreset.name, 'Мой Grok');
+  assert.equal(Object.hasOwn(savedPreset, 'quantity'), false);
   assert.deepEqual(savedPreset.mediaInput, { duration: 8, aspect_ratio: '16:9', resolution: '720p' });
   assert.equal((await result(rpc(alice, 'listGenerationPresets'))).length, 1);
   assert.equal((await result(rpc(bob, 'listGenerationPresets'))).length, 0);

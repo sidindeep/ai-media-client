@@ -25,7 +25,9 @@ function chat(row) {
     materialCount: Number(row.material_count || 0) };
 }
 function publicMaterial(record, namespace) {
-  const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'projectId', 'chatId', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'output', 'error', 'localFiles', 'usage'];
+  const fields = ['id', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'projectId', 'chatId',
+    'queuedAt', 'preparingAt', 'submittingAt', 'providerAcceptedAt', 'providerFirstCheckedAt', 'providerStateChangedAt', 'lastCheckedAt', 'resultReceivedAt', 'resultSavedAt',
+    'progress', 'providerDurationMs', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'output', 'error', 'localFiles', 'usage'];
   return { namespace, ...Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]])) };
 }
 
@@ -89,7 +91,8 @@ function createWorkspaces(pool) {
     },
     async listChats(accountId, { projectId, includeArchived = false } = {}) {
       const params = [accountId], filters = ['c.account_id=$1'];
-      if (projectId !== undefined) { params.push(projectId === null ? null : id(projectId, 'Проект')); filters.push(`c.project_id ${projectId === null ? 'IS NULL' : '= $' + params.length}`); }
+      if (projectId === null) filters.push('c.project_id IS NULL');
+      else if (projectId !== undefined) { params.push(id(projectId, 'Проект')); filters.push(`c.project_id = $${params.length}`); }
       if (!includeArchived) filters.push('c.archived_at IS NULL');
       const result = await pool.query(`SELECT c.*,
         (SELECT count(*) FROM media_records r WHERE r.account_id=c.account_id AND r.data->>'chatId'=c.id::text)::int AS material_count

@@ -37,6 +37,8 @@ export const MODEL_BRANDS: ModelBrand[] = [
   { id: 'happyhorse', label: 'HappyHorse', icon: `${ICON_ROOT}/happy-horse.webp`, accent: '#ffb24d' },
   { id: 'bytedance', label: 'ByteDance', icon: `${ICON_ROOT}/seedance.webp`, accent: '#5cc8ff' },
   { id: 'volcengine', label: 'Volcengine', icon: `${ICON_ROOT}/volcengine.svg`, accent: '#3377ff' },
+  { id: 'elevenlabs', label: 'ElevenLabs', accent: '#f2f2f2' },
+  { id: 'suno', label: 'Suno', accent: '#ff7a45' },
   { id: 'zimage', label: 'Z-Image', accent: '#9e83ff' },
   { id: 'other', label: 'Другие', accent: '#8f8aa3' },
 ];
@@ -49,6 +51,8 @@ export function modelBrand(id: string) {
 
 export function mediaModelBrandId(id: string, name: string) {
   const value = `${id} ${name}`.toLowerCase();
+  if (value.includes('elevenlabs')) return 'elevenlabs';
+  if (/suno|ai-music-api/.test(value)) return 'suno';
   if (value.includes('kling')) return 'kling';
   if (value.includes('seedance')) return 'seedance';
   if (/veo\s?3|veo3|gemini[ -]omni/.test(value)) return 'veo';

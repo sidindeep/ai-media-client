@@ -2,13 +2,21 @@
 // Kept separate from generated OpenAPI imports so refreshes preserve these fixes.
 function applyOverrides(models) {
   const result=structuredClone(models);
-  const fileLabels={video_url:'Исходное видео',video_urls:'Исходные видео',reference_video_urls:'Референсные видео',audio_url:'Исходное аудио',audio_urls:'Исходное аудио',reference_audio_urls:'Референсное аудио',driving_audio_url:'Управляющее аудио',mask_url:'Маска',reference_mask_urls:'Референсные маски'};
+  const fileLabels={video_url:'Исходное видео',video_urls:'Исходные видео',reference_video_urls:'Референсные видео',audio_url:'Исходное аудио',audio_urls:'Исходное аудио',reference_audio_urls:'Референсное аудио',driving_audio_url:'Управляющее аудио',upload_url:'Исходное аудио',upload_url_list:'Исходные аудиофайлы',verify_url:'Запись для проверки',voice_url:'Запись голоса',mask_url:'Маска',reference_mask_urls:'Референсные маски'};
   for(const model of result)for(const field of model.fields){
-    const schema=field.schema;if(!schema||field.type==='files'||!/(image|video|audio|mask).*url|url.*(image|video|audio|mask)/i.test(field.key)||!['string','array'].includes(schema.type))continue;
-    const kind=/audio/i.test(field.key)?'audio':/video/i.test(field.key)?'video':'image';
+    const schema=field.schema;
+    const genericAudio=model.kind==='audio'&&/^(upload_url|upload_url_list|verify_url|voice_url)$/.test(field.key);
+    if(!schema||field.type==='files'||(!genericAudio&&!/(image|video|audio|mask).*url|url.*(image|video|audio|mask)/i.test(field.key))||!['string','array'].includes(schema.type))continue;
+    const kind=genericAudio||/audio/i.test(field.key)?'audio':/video/i.test(field.key)?'video':'image';
     const accept=kind==='audio'?'audio/*':kind==='video'?'video/mp4,video/quicktime,video/webm':'image/*';
     const size=(schema.description||'').match(/(?:max(?:imum)?(?: file)? size:?|not exceed(?:ing)?|no larger than|less than)\s*`?([\d.]+)\s*MB/i)?.[1];
-    Object.assign(field,{type:'files',scalar:schema.type==='string',maxFiles:schema.type==='string'?1:schema.maxItems,maxSizeMb:size?Number(size):undefined,accept,label:fileLabels[field.key]||field.label});
+    Object.assign(field,{type:'files',scalar:schema.type==='string',maxFiles:schema.type==='string'?1:field.key==='upload_url_list'?2:schema.maxItems,maxSizeMb:size?Number(size):undefined,accept,label:fileLabels[field.key]||field.label});
+  }
+  const audioLabels={prompt:'Описание или текст',text:'Текст для озвучивания',voice:'Голос',dialogue:'Реплики',language_code:'Язык',style:'Стиль',title:'Название',model:'Версия модели',instrumental:'Инструментальная музыка',custom_mode:'Расширенные настройки',negative_tags:'Исключить стили',lyrics:'Текст песни',duration:'Длительность, сек.',sound_loop:'Зациклить звук',sound_tempo:'Темп, BPM',sound_key:'Тональность',grab_lyrics:'Получить субтитры',task_id:'ID исходной задачи',audio_id:'ID аудио'};
+  const audioNames={'elevenlabs/text-to-dialogue-v3':'ElevenLabs · Диалог','elevenlabs/text-to-speech-multilingual-v2':'ElevenLabs · Многоязычная речь','elevenlabs/text-to-speech-turbo-2-5':'ElevenLabs · Быстрая речь','elevenlabs/audio-isolation':'ElevenLabs · Очистка аудио','ai-music-api/generate':'Suno · Создать музыку','ai-music-api/sounds':'Suno · Создать звук','google/gemini-2-5-pro-tts':'Gemini 2.5 Pro · Озвучивание','google/gemini-3-1-flash-tts':'Gemini 3.1 Flash · Озвучивание'};
+  for(const model of result.filter(item=>item.kind==='audio')){
+    if(audioNames[model.apiModel])model.name=audioNames[model.apiModel];
+    for(const field of model.fields)if(audioLabels[field.key])field.label=audioLabels[field.key];
   }
   // Some Kie schemas describe file limits in prose but omit maxItems.
   for(const model of result)for(const field of model.fields.filter(f=>f.type==='files'&&!f.scalar)){
@@ -16,6 +24,8 @@ function applyOverrides(models) {
     const match=text.match(/(?:maximum of|max(?:imum)?(?: number of)?|up to|only)\s*`?(\d+)`?\s*(?:images?|files?)?/i);
     if(!Number.isInteger(max)&&match)max=Number(match[1]);
     if(!Number.isInteger(max)&&/(?:include|url of) (?:an|the) image|include (?:a|an) video url|currently only 1 image/i.test(text))max=1;
+    if(!Number.isInteger(max)&&model.kind==='audio'&&field.key==='audio_urls')max=10;
+    if(!Number.isInteger(max)&&model.kind==='audio'&&field.key==='upload_url_list')max=2;
     if(!Number.isInteger(max)&&model.apiModel==='ideogram/character-remix'&&field.key==='image_urls')max=5;
     if(Number.isInteger(max)){field.maxFiles=max;if(field.schema)field.schema.maxItems=max;if(model.inputSchema?.properties?.[field.key])model.inputSchema.properties[field.key].maxItems=max;}
   }

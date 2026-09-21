@@ -16,6 +16,7 @@ export const useStudioStore = defineStore('studio', () => {
   const codexCatalog = ref<CodexCatalog | null>(null);
   const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
+  const pendingSubmissions = ref<GenerationRecord[]>([]);
   const presets = ref<GenerationPreset[]>([]);
   const projects = ref<Project[]>([]);
   const chats = ref<Chat[]>([]);
@@ -34,13 +35,11 @@ export const useStudioStore = defineStore('studio', () => {
   const mediaModelId = ref('');
   const mediaInput = ref<Record<string, unknown>>({});
   const sourceFiles = ref<SourceAttachment[]>([]);
-  const quantity = ref(1);
   const codexModel = ref('');
   const codexEffort = ref('');
   const codexSpeed = ref('standard');
   const codexKind = ref<'image' | 'text'>('image');
   const codexAspectRatio = ref('auto');
-  const pendingCodexId = ref<string | null>(null);
   const draftReady = ref(false);
   let draftTimer: ReturnType<typeof setTimeout> | undefined;
   let codexPollTimer: ReturnType<typeof setInterval> | undefined;
@@ -49,13 +48,16 @@ export const useStudioStore = defineStore('studio', () => {
   let startupPollInFlight = false;
 
   const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: 'Ранее', mode: 'system', projectId: null, context: {}, materialCount: history.value.length }));
-  const visibleHistory = computed(() => {
-    if (activeChatId.value !== 'system:recent') return history.value.filter(item => item.chatId === activeChatId.value);
-    return activeProjectId.value ? history.value.filter(item => item.projectId === activeProjectId.value) : history.value;
-  });
-  const selected = computed(() => visibleHistory.value.find(item => item.id === selectedId.value) || null);
-  const active = computed(() => visibleHistory.value.filter(item => ACTIVE_STATES.includes(item.state as typeof ACTIVE_STATES[number])));
-  const accountActive = computed(() => history.value.filter(item => ACTIVE_STATES.includes(item.state as typeof ACTIVE_STATES[number])));
+  function recordIsVisible(item: GenerationRecord) {
+    if (activeChatId.value !== 'system:recent') return item.chatId === activeChatId.value;
+    return activeProjectId.value ? item.projectId === activeProjectId.value : true;
+  }
+  const visibleHistory = computed(() => history.value.filter(recordIsVisible));
+  const visiblePending = computed(() => pendingSubmissions.value.filter(recordIsVisible));
+  const visibleRecords = computed(() => [...visiblePending.value, ...visibleHistory.value]);
+  const selected = computed(() => visibleRecords.value.find(item => item.id === selectedId.value) || null);
+  const active = computed(() => visibleRecords.value.filter(item => ACTIVE_STATES.includes(item.state as typeof ACTIVE_STATES[number])));
+  const accountActive = computed(() => [...pendingSubmissions.value, ...history.value].filter(item => ACTIVE_STATES.includes(item.state as typeof ACTIVE_STATES[number])));
   const completed = computed(() => visibleHistory.value.filter(item => COMPLETED_STATES.includes(item.state as typeof COMPLETED_STATES[number])));
   const currentCodexModel = computed(() => codexCatalog.value?.models.find(model => model.id === codexModel.value) || codexCatalog.value?.models[0]);
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
@@ -66,10 +68,10 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function normalizeMediaControls() {
-    let candidates = mediaModelsFor(mode.value);
-    if (provider.value === 'media' && !candidates.length) {
-      mode.value = 'image';
-      candidates = mediaModelsFor('image');
+    const candidates = mediaModelsFor(mode.value);
+    if (!candidates.length) {
+      mediaModelId.value = '';
+      return;
     }
     if (!candidates.some(model => model.id === mediaModelId.value)) {
       mediaModelId.value = candidates.find(model => model.startupDefault)?.id || candidates[0]?.id || '';
@@ -93,8 +95,8 @@ export const useStudioStore = defineStore('studio', () => {
     const [nextHistory, nextQueue] = await Promise.all([api.getHistory(), api.getQueueStatus()]);
     history.value = nextHistory;
     queue.value = nextQueue;
-    if (selectedId.value && !visibleHistory.value.some(item => item.id === selectedId.value)) selectedId.value = null;
-    if (!selectedId.value && (active.value[0] || visibleHistory.value[0])) selectedId.value = (active.value[0] || visibleHistory.value[0]).id;
+    if (selectedId.value && !visibleRecords.value.some(item => item.id === selectedId.value)) selectedId.value = null;
+    if (!selectedId.value && (active.value[0] || visibleRecords.value[0])) selectedId.value = (active.value[0] || visibleRecords.value[0]).id;
     syncCodexPolling();
   }
 
@@ -151,7 +153,6 @@ export const useStudioStore = defineStore('studio', () => {
       if (typeof tab.mediaModelId === 'string') mediaModelId.value = tab.mediaModelId;
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
-      if (Number.isInteger(tab.quantity) && Number(tab.quantity) >= 1 && Number(tab.quantity) <= 4) quantity.value = Number(tab.quantity);
       if (typeof tab.codexModel === 'string') codexModel.value = tab.codexModel;
       if (typeof tab.codexEffort === 'string') codexEffort.value = tab.codexEffort;
       if (typeof tab.codexSpeed === 'string') codexSpeed.value = tab.codexSpeed;
@@ -164,18 +165,19 @@ export const useStudioStore = defineStore('studio', () => {
   async function saveCurrentDraft() {
     if (!draftReady.value) return;
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, quantity: quantity.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
-  async function createProject(name: string) { const project = await api.createProject(name); projects.value.unshift(project); return project; }
-  async function createChat(name: string, projectId: string | null = null) { const chat = await api.createChat(name, projectId); chats.value.unshift(chat); activeChatId.value = chat.id; activeProjectId.value = chat.projectId || null; await loadDraftForActive(); return chat; }
-  async function renameProject(id: string, name: string) { const project = await api.renameProject(id, name); const index = projects.value.findIndex(item => item.id === id); if (index >= 0) projects.value[index] = project; return project; }
+  async function createProject(name: string) { const project = await api.createProject(name); await refreshWorkspaces(); return project; }
+  async function createChat(name: string, projectId: string | null = null) { const chat = await api.createChat(name, projectId); await refreshWorkspaces(); activeChatId.value = chat.id; activeProjectId.value = chat.projectId || null; await loadDraftForActive(); return chat; }
+  async function renameProject(id: string, name: string) { const project = await api.renameProject(id, name); await refreshWorkspaces(); return project; }
   async function renameChat(id: string, name: string) { const chat = await api.renameChat(id, name); const index = chats.value.findIndex(item => item.id === id); if (index >= 0) chats.value[index] = chat; return chat; }
-  async function moveChat(id: string, projectId: string | null) { const chat = await api.moveChat(id, projectId); const index = chats.value.findIndex(item => item.id === id); if (index >= 0) chats.value[index] = chat; if (activeChatId.value === id) activeProjectId.value = chat.projectId || null; return chat; }
-  async function archiveChat(id: string) { await api.archiveChat(id); chats.value = chats.value.filter(item => item.id !== id); if (activeChatId.value === id) { activeChatId.value = 'system:recent'; activeProjectId.value = null; } }
-  async function archiveProject(id: string) { await api.archiveProject(id); projects.value = projects.value.filter(item => item.id !== id); chats.value = chats.value.filter(item => item.projectId !== id); if (activeProjectId.value === id) { activeChatId.value = 'system:recent'; activeProjectId.value = null; } }
-  function selectChat(id: string) { activeChatId.value = id; activeProjectId.value = chats.value.find(chat => chat.id === id)?.projectId || null; selectedId.value = visibleHistory.value[0]?.id || null; void loadDraftForActive(); }
-  function selectProject(id: string) { activeProjectId.value = id; activeChatId.value = chats.value.find(chat => chat.projectId === id)?.id || 'system:recent'; selectedId.value = visibleHistory.value[0]?.id || null; void loadDraftForActive(); }
+  async function moveChat(id: string, projectId: string | null) { const chat = await api.moveChat(id, projectId); await refreshWorkspaces(); if (activeChatId.value === id) activeProjectId.value = chat.projectId || null; return chat; }
+  async function archiveChat(id: string) { const wasActive = activeChatId.value === id; await api.archiveChat(id); await refreshWorkspaces(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
+  async function archiveProject(id: string) { const wasActive = activeProjectId.value === id; await api.archiveProject(id); await refreshWorkspaces(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
+  function selectChat(id: string) { activeChatId.value = id; activeProjectId.value = chats.value.find(chat => chat.id === id)?.projectId || null; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
+  function selectProject(id: string) { activeProjectId.value = id; activeChatId.value = chats.value.find(chat => chat.projectId === id)?.id || 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
+  function selectStandalone() { activeProjectId.value = null; if (activeChatId.value !== 'system:recent' && chats.value.find(chat => chat.id === activeChatId.value)?.projectId) activeChatId.value = 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
 
   function setMode(value: GenerationMode) {
     mode.value = value;
@@ -192,13 +194,13 @@ export const useStudioStore = defineStore('studio', () => {
       codexKind.value = mode.value === 'text' ? 'text' : 'image';
       normalizeCodexControls();
     } else {
-      if (!['image', 'video'].includes(mode.value)) mode.value = 'image';
+      if (!['image', 'video', 'audio'].includes(mode.value)) mode.value = 'image';
       normalizeMediaControls();
     }
   }
 
   function currentPresetPayload(name: string): Omit<GenerationPreset, 'id' | 'createdAt' | 'updatedAt'> | null {
-    const base = { name, provider: provider.value, mode: mode.value, quantity: quantity.value };
+    const base = { name, provider: provider.value, mode: mode.value };
     if (provider.value === 'codex') return {
       ...base,
       provider: 'codex',
@@ -251,7 +253,6 @@ export const useStudioStore = defineStore('studio', () => {
       codexAspectRatio.value = preset.codexAspectRatio || 'auto';
       normalizeCodexControls();
     }
-    quantity.value = Math.min(4, Math.max(1, Number(preset.quantity) || 1));
     sourceFiles.value = [];
   }
 
@@ -265,10 +266,10 @@ export const useStudioStore = defineStore('studio', () => {
     const current = currentPresetPayload('');
     if (!current) return false;
     const comparable = (value: Partial<GenerationPreset>) => stable(value.provider === 'media' ? {
-      provider: value.provider, mode: value.mode, quantity: value.quantity,
+      provider: value.provider, mode: value.mode,
       mediaModelId: value.mediaModelId, mediaInput: value.mediaInput || {},
     } : {
-      provider: value.provider, mode: value.mode, quantity: value.quantity,
+      provider: value.provider, mode: value.mode,
       codexModel: value.codexModel, codexEffort: value.codexEffort,
       codexSpeed: value.codexSpeed, codexAspectRatio: value.codexAspectRatio,
     });
@@ -276,7 +277,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
-  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, quantity, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
   function restoreWorkspaceSelection() {
@@ -371,25 +372,54 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   async function submit() {
-    if (!prompt.value.trim()) throw new Error('Введите промпт');
+    const submittedPrompt = prompt.value.trim();
+    if (!submittedPrompt) throw new Error('Введите промпт');
     const context = { projectId: activeProjectId.value, chatId: activeChatId.value === 'system:recent' ? null : activeChatId.value };
-    let last: GenerationRecord | null = null;
+    const requestId = crypto.randomUUID();
+    const optimisticId = `pending:${requestId}`;
+    const createdAt = new Date().toISOString();
+    let optimistic: GenerationRecord;
     if (provider.value === 'codex') {
-      for (let index = 0; index < quantity.value; index++) {
-        const requestId = crypto.randomUUID();
-        const job = await api.submitCodex({ prompt: prompt.value, model: codexModel.value, effort: codexEffort.value, speed: codexSpeed.value,
-          kind: mode.value === 'text' ? 'text' : 'image', aspectRatio: codexAspectRatio.value,
-          sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
-        pendingCodexId.value = job.id || requestId; last = job;
+      const input = { prompt: submittedPrompt, effort: codexEffort.value, speed: codexSpeed.value, aspectRatio: codexAspectRatio.value };
+      optimistic = { id: optimisticId, optimistic: true, providerId: 'codex', providerName: 'Codex CLI', modelId: codexModel.value,
+        modelName: currentCodexModel.value?.name || codexModel.value, kind: mode.value === 'text' ? 'text' : 'image', state: 'queued',
+        createdAt, queuedAt: createdAt, input, ...context };
+      pendingSubmissions.value.unshift(optimistic);
+      selectedId.value = optimisticId;
+      try {
+        const job = await api.submitCodex({ ...input, prompt: submittedPrompt, model: codexModel.value,
+          kind: mode.value === 'text' ? 'text' : 'image', sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
+        await refresh().catch(() => {});
+        pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
+        if (selectedId.value === optimisticId) selectedId.value = `codex:${job.id || requestId}`;
+        return job;
+      } catch (error) {
+        pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
+        if (selectedId.value === optimisticId) selectedId.value = active.value[0]?.id || visibleHistory.value[0]?.id || null;
+        throw error;
       }
-      prompt.value = ''; await refresh(); selectedId.value = `codex:${last?.id || pendingCodexId.value}`; return last;
     }
     const model = currentMediaModel.value;
     if (!model) throw new Error('Каталог моделей недоступен');
-    for (let index = 0; index < quantity.value; index++) {
-      last = await api.createTask({ modelId: model.id, input: { ...mediaInput.value, prompt: prompt.value }, sourceFiles: sourceFiles.value, ...context, requestId: crypto.randomUUID() });
+    const input = { ...mediaInput.value };
+    if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
+    optimistic = { id: optimisticId, optimistic: true, providerId: model.providerId || 'media',
+      providerName: catalog.value?.providers.find(item => item.id === model.providerId)?.name || 'Kie.ai', modelId: model.id,
+      modelName: model.name, kind: model.kind || mode.value, state: 'queued', createdAt, queuedAt: createdAt, input, ...context };
+    pendingSubmissions.value.unshift(optimistic);
+    selectedId.value = optimisticId;
+    try {
+      const task = await api.createTask({ modelId: model.id, input, sourceFiles: sourceFiles.value, ...context, requestId });
+      await api.startQueue().catch(() => {});
+      await refresh().catch(() => {});
+      pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
+      if (selectedId.value === optimisticId) selectedId.value = task.id;
+      return task;
+    } catch (error) {
+      pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
+      if (selectedId.value === optimisticId) selectedId.value = active.value[0]?.id || visibleHistory.value[0]?.id || null;
+      throw error;
     }
-    prompt.value = ''; await api.startQueue(); await refresh(); selectedId.value = last?.id || null; return last;
   }
 
   async function toggleQueue() {
@@ -427,11 +457,11 @@ export const useStudioStore = defineStore('studio', () => {
   return {
     catalog, codexCatalog, release, history, presets, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, accountReady,
-    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, quantity, setMode, setProvider,
+    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, refreshWorkspaces,
-    createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject,
+    createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,
     loadDraftForActive,
-    pendingCodexId, currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
+    currentCodexModel, initialize, refresh, stopCodexPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom,
   };
 });

@@ -92,3 +92,11 @@ test('Kie pricing supports request-like media units and two-image bundles', () =
   assert.equal(quoteKie(model, {}, tariff('per vedio')).credits, 4);
   assert.equal(quoteKie(model, { num_images: 3 }, tariff('per 2 images')).credits, 8);
 });
+
+test('Kie pricing supports audio tariffs per thousand characters', () => {
+  const model = { id: 'kie:elevenlabs/text-to-speech-turbo-2-5', apiModel: 'elevenlabs/text-to-speech-turbo-2-5', providerId: 'kie' };
+  const tariff = { fetchedAt: '2026-09-21T00:00:00Z', rows: [{ modelDescription: 'Elevenlabs Text to Speech, turbo 2.5', creditPrice: '6', creditUnit: 'per 1000 characters', anchor: 'https://kie.ai/elevenlabs-tts?model=elevenlabs%2Ftext-to-speech-turbo-2-5' }] };
+  assert.equal(quoteKie(model, { text: 'Озвучь этот текст' }, tariff).credits, 6);
+  assert.equal(quoteKie(model, { text: 'a'.repeat(1001) }, tariff).credits, 12);
+  assert.throws(() => quoteKie(model, { text: '' }, tariff), /нужен текст/);
+});

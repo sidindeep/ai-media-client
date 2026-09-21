@@ -5,7 +5,7 @@ const {randomUUID}=require('node:crypto');
 const {insufficientCredits,creditErrorMessage}=require('./api-errors');
 const remoteStates=['waiting','queuing','generating'];
 class TaskQueue {
-  constructor({store,prepare,create,poll,complete=async()=>{},notify=()=>{},interval=4000,concurrency=3}) {
+  constructor({store,prepare,create,poll,complete=async()=>{},notify=()=>{},interval=2000,concurrency=3}) {
     Object.assign(this,{store,prepare,create,poll,complete,notify,interval});
     for(const phase of ['prepare','create','poll','complete']){const action=this[phase];this[phase]=(...args)=>trace.run(args[0],()=>trace.step('task.'+phase,{state:args[0].state,input:phase==='prepare'?args[0].input:phase==='create'?args[1]:undefined},()=>action(...args)));}
     this.paused=true;this.running=false;this.timer=null;this.error=null;this.closed=false;
@@ -25,7 +25,8 @@ class TaskQueue {
     if((await this.store.list()).some(record=>record.taskId&&remoteStates.includes(record.state)))this.schedule(0);
   }
   async enqueue(request) {
-    const record=await this.store.update(randomUUID(),{...request,traceRequestId:trace.current()?.requestId,taskId:null,state:'queued',createdAt:new Date().toISOString(),error:null});
+    const queuedAt=new Date().toISOString();
+    const record=await this.store.update(randomUUID(),{...request,traceRequestId:trace.current()?.requestId,taskId:null,state:'queued',createdAt:queuedAt,queuedAt,error:null});
     trace.run(record,()=>trace.write('task.enqueued',{input:record.input,sourceFiles:record.sourceFiles,cost:costs.breakdown(record,record.rubPerCredit)}));this.notify();this.schedule(0);return record;
   }
   start() { trace.write('queue.start',{concurrency:this.concurrency});this.paused=false;this.error=null;this.schedule(0);this.notify(); }
@@ -61,9 +62,11 @@ class TaskQueue {
         const data=await this.poll(job);
         if(![...remoteStates,'success','fail'].includes(data.state))throw new Error('Неизвестный статус задачи');
         const checkedAt=new Date().toISOString();
-        const timing=['success','fail'].includes(data.state)?this.finishTiming(job,checkedAt):{};
+        const terminal=['success','fail'].includes(data.state);
+        const timing=terminal?{...this.finishTiming(job,checkedAt),resultReceivedAt:checkedAt}:{};
         trace.run(job,()=>trace.write('task.status',{previous:job.state,response:data,...timing}));
-        const updated=await this.store.update(job.id,{...data,...timing,lastCheckedAt:checkedAt,error:data.errorInfo?.message||data.failMsg||null,errorInfo:data.errorInfo||null});
+        const updated=await this.store.update(job.id,{...data,...timing,lastCheckedAt:checkedAt,providerFirstCheckedAt:job.providerFirstCheckedAt||checkedAt,
+          ...(data.state!==job.state?{providerStateChangedAt:checkedAt}:{}),error:data.errorInfo?.message||data.failMsg||null,errorInfo:data.errorInfo||null});
         if(['success','fail'].includes(data.state))trace.run(updated,()=>trace.write('task.cost',{state:data.state,cost:costs.breakdown(updated,updated.rubPerCredit)}));
         this.notify();
         if(data.state==='success')Promise.resolve().then(()=>this.complete(updated)).catch(()=>{}).finally(()=>this.notify());
@@ -74,7 +77,7 @@ class TaskQueue {
       if(current.filter(item=>remoteStates.includes(item.state)||['preparing','submitting'].includes(item.state)).length>=this.concurrency)return;
       record=current.filter(item=>item.state==='queued'&&!item.queueHidden).reverse()[0];
       if(!record)return;
-      try {record=await this.store.update(record.id,{state:'preparing'},['queued']);}
+      try {record=await this.store.update(record.id,{state:'preparing',preparingAt:new Date().toISOString()},['queued']);}
       catch {return;}
       this.notify();
       let input;
@@ -83,7 +86,7 @@ class TaskQueue {
       if((await this.store.list()).find(item=>item.id===record.id)?.queueHidden){await this.store.update(record.id,{state:'cancelled'});continue;}
       if(this.paused||this.closed){await this.store.update(record.id,{state:'queued'});return;}
       const generationStartedAt=new Date().toISOString();
-      await this.store.update(record.id,{state:'submitting',generationStartedAt});this.notify();
+      await this.store.update(record.id,{state:'submitting',generationStartedAt,submittingAt:generationStartedAt});this.notify();
       let taskId;
       try {taskId=(await this.create(record,input)).taskId;if(!taskId)throw new Error('API не вернул ID задачи');}
       catch(error){
@@ -92,7 +95,7 @@ class TaskQueue {
         await this.store.update(record.id,{state:rejected?'fail':'unknown',error:error.message,errorInfo:errors.classify({code:error.errorInfo?.providerCode??error.status??error.code,message:trace.clean(error.errorInfo?.providerMessage||error.message),stage:'submit',outcome:rejected?'rejected':(error.outcome==='rejected'?'rejected':'unknown')}),...(rejected?{failureCode:error.code,...this.finishTiming({generationStartedAt},generationCompletedAt)}:{})});
         throw error;
       }
-      await this.store.update(record.id,{state:'waiting',taskId});
+      await this.store.update(record.id,{state:'waiting',taskId,providerAcceptedAt:new Date().toISOString()});
       this.notify();
       }
     } catch(error) {

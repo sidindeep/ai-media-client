@@ -8,7 +8,7 @@ test('every imported model has a compilable input schema and distinct identity',
   assert.equal(new Set(models.map(m=>m.id)).size, models.length);
   for (const model of models) {
     if (model.inputSchema) ajv.compile(model.inputSchema);
-    assert.ok(['image','video'].includes(model.kind));
+    assert.ok(['image','video','audio'].includes(model.kind));
   }
 });
 
@@ -20,6 +20,16 @@ test('Kling keeps first and last frame distinct and duration as a string', () =>
   const validate = new Ajv({strict:false,validateFormats:false}).compile(model.inputSchema);
   assert.ok(validate({prompt:'A moving camera', image_url:'https://example.com/start.png', duration:'5'}));
   assert.equal(validate({prompt:'A moving camera', image_url:'https://example.com/start.png', duration:5}), false);
+});
+
+test('audio catalog exposes Kie speech, music and audio uploads', () => {
+  const audio = models.filter(model => model.kind === 'audio');
+  assert.equal(audio.length, 27);
+  assert.ok(audio.some(model => model.apiModel === 'elevenlabs/text-to-speech-turbo-2-5'));
+  assert.ok(audio.some(model => model.apiModel === 'ai-music-api/generate'));
+  assert.ok(audio.some(model => model.apiModel === 'ai-music-api/sounds'));
+  assert.equal(audio.find(model => model.apiModel === 'elevenlabs/audio-isolation').fields.find(field => field.key === 'audio_url').type, 'files');
+  assert.equal(audio.find(model => model.apiModel === 'ai-music-api/upload-and-cover-audio').fields.find(field => field.key === 'upload_url').accept, 'audio/*');
 });
 
 test('Kling 2.5 image mode exposes both frames and CFG; every file field has a limit',()=>{

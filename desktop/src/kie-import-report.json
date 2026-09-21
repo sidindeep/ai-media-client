@@ -1,58 +1,15 @@
 {
-  "updatedAt": "2026-09-09T10:29:00.054Z",
-  "count": 135,
+  "updatedAt": "2026-09-21T10:10:18.553Z",
+  "mode": "audio",
+  "count": 162,
   "skipped": [
     {
-      "url": "https://docs.kie.ai/4o-image-api/get-4-o-image-download-url.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/4o-image-api/generate-4-o-image.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/4o-image-api/get-4-o-image-details.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/flux-kontext-api/generate-or-edit-image.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/flux-kontext-api/get-image-details.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/market/kling/kling-3-0.md",
+      "url": "https://docs.kie.ai/suno-api/recovery-audio.md",
       "reason": "Не найдена схема input"
     },
     {
-      "url": "https://docs.kie.ai/runway-api/generate-ai-video.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/runway-api/get-aleph-video-details.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/runway-api/get-ai-video-details.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/runway-api/extend-ai-video.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/runway-api/generate-aleph-video.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/market/gemini-omni-audio.md",
-      "reason": "Отдельный API"
-    },
-    {
-      "url": "https://docs.kie.ai/market/gemini-omni-character.md",
-      "reason": "Отдельный API"
+      "url": "https://docs.kie.ai/suno-api/generate-persona.md",
+      "reason": "Не найдена схема input"
     }
   ]
 }

@@ -52,7 +52,6 @@ export type GenerationPreset = {
   name: string;
   provider: 'codex' | 'media';
   mode: 'text' | 'image' | 'video' | 'audio';
-  quantity: number;
   mediaModelId?: string;
   mediaInput?: Record<string, unknown>;
   codexModel?: string;
@@ -65,6 +64,7 @@ export type GenerationPreset = {
 
 export type GenerationRecord = {
   id: string;
+  optimistic?: boolean;
   providerId: string;
   providerName?: string;
   modelId?: string;
@@ -82,6 +82,17 @@ export type GenerationRecord = {
   generationStartedAt?: string;
   generationCompletedAt?: string;
   generationDurationMs?: number;
+  queuedAt?: string;
+  preparingAt?: string;
+  submittingAt?: string;
+  providerAcceptedAt?: string;
+  providerFirstCheckedAt?: string;
+  providerStateChangedAt?: string;
+  lastCheckedAt?: string;
+  resultReceivedAt?: string;
+  resultSavedAt?: string;
+  progress?: number;
+  providerDurationMs?: number;
   usage?: {
     input_tokens?: number;
     output_tokens?: number;

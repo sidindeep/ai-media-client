@@ -67,6 +67,13 @@ function candidateScore(row, input) {
   return score;
 }
 
+function characterCount(value) {
+  if (typeof value === 'string') return value.length;
+  if (Array.isArray(value)) return value.reduce((total, item) => total + characterCount(item), 0);
+  if (!value || typeof value !== 'object') return 0;
+  return Object.entries(value).reduce((total, [key, child]) => total + (/^(?:text|content|prompt|scene|sample_context)$/i.test(key) ? characterCount(child) : typeof child === 'object' ? characterCount(child) : 0), 0);
+}
+
 function selectTariff(model, input, rows) {
   const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
   const candidates = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
@@ -94,6 +101,11 @@ function multiplier(row, input) {
     const count = Number(input?.num_images ?? input?.number_of_images ?? input?.output_count ?? input?.image_count ?? 2);
     if (!Number.isSafeInteger(count) || count <= 0) throw new Error('Для расчёта цены нужно количество изображений');
     return Math.ceil(count / 2);
+  }
+  if (unit === 'per 1000 characters') {
+    const count = characterCount(input?.text ?? input?.dialogue ?? input);
+    if (!count) throw new Error('Для расчёта цены нужен текст');
+    return Math.ceil(count / 1000);
   }
   if (['', 'per video', 'per vedio', 'per request', 'per generation', 'per upscale'].includes(unit)) return 1;
   throw new Error('Единица тарифа Kie пока не поддерживается');

@@ -18,7 +18,7 @@ function jsonCopy(value) {
 class GenerationPresets {
   constructor(store, findModel) { Object.assign(this, { store, findModel }); }
 
-  async list() { return (await this.store.list()).filter(row => !row.deleted); }
+  async list() { return (await this.store.list()).filter(row => !row.deleted).map(row => { const { quantity: _quantity, ...preset } = row; return preset; }); }
 
   async save(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Некорректный пресет');
@@ -29,9 +29,7 @@ class GenerationPresets {
     const name = shortString(input.name, 80, 'Введите название пресета до 80 символов');
     const provider = input.provider;
     const mode = input.mode;
-    const quantity = Number(input.quantity ?? 1);
     if (!['codex', 'media'].includes(provider) || !modes.has(mode)) throw new Error('Некорректный режим пресета');
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 4) throw new Error('Некорректное количество генераций');
 
     let settings;
     if (provider === 'media') {
@@ -52,7 +50,7 @@ class GenerationPresets {
     }
 
     return this.store.update(input.id || randomUUID(), {
-      name, provider, mode, quantity, ...settings, deleted: false,
+      name, provider, mode, quantity: undefined, ...settings, deleted: false,
       createdAt: existing?.createdAt || new Date().toISOString(),
     });
   }

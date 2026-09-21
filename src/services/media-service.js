@@ -14,7 +14,7 @@ const costs = require('../costs');
 const { download } = require('../downloads');
 const Ajv = require('ajv');
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 4000, stores, pricing, tariffFetcher }) {
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, tariffFetcher }) {
   if (!stores) trace.configure(path.join(directory, 'logs'));
   const history = stores?.history || new History(path.join(directory, 'history.json'));
   const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
@@ -75,7 +75,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           const file = await trace.run(record, () => trace.step('result.save', {url}, () => downloadImpl(url, path.join(directory, 'results'))));
           const index = localFiles.findIndex(item => item.url === url);
           if (index >= 0) localFiles[index] = file; else localFiles.push(file);
-          await history.update(id, { localFiles, downloadError: null });
+          await history.update(id, { localFiles, downloadError: null, resultSavedAt: new Date().toISOString() });
         }
         return localFiles.map((_file, index) => ({ url: `/api/results/${encodeURIComponent(id)}/${index}?download=1` }));
       } catch { await history.update(id, { downloadError: 'Не удалось сохранить результат. Повторите скачивание.' }); throw new Error('Не удалось сохранить результат'); }

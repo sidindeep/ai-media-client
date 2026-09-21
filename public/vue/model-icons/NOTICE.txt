@@ -1,0 +1,8 @@
+WebP brand marks in this directory are the publicly served model icons used by
+ERA2 (https://era2.ai/models/icons/) so the selector matches the supplied
+reference. Remaining SVG fallbacks come from the open-source gokuscraper/
+ai-icons collection (https://github.com/gokuscraper/ai-icons), which declares
+the collection under the MIT license and credits LobeHub Icons.
+
+The marks remain trademarks of their respective owners and are used only to
+identify the corresponding model families in the selector.

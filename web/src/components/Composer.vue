@@ -5,7 +5,9 @@ import { diagnoseProvider, getCodexQuote, getMediaQuote, uploadSource } from '..
 import type { ProviderDiagnostics } from '../api/client';
 import type { MediaField } from '../types';
 import ProviderSelector from './ProviderSelector.vue';
+import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import { formatMediaFieldValue, mediaFieldOptions, parseMediaFieldValue } from '../domain/media-fields';
+import { mediaModelBrandId } from '../domain/model-catalog';
 
 const studio = useStudioStore();
 const sending = ref(false);
@@ -44,8 +46,9 @@ const modelChoice = computed({
   },
 });
 const modelOptions = computed(() => studio.provider === 'codex'
-  ? (studio.codexCatalog?.models || []).map(model => ({ value: model.id, label: model.name }))
-  : studio.mediaModels.map(model => ({ value: model.id, label: model.name })));
+  ? (studio.codexCatalog?.models || []).map(model => ({ value: model.id, label: model.name, description: 'Текст и изображения через Codex CLI.', groupId: 'codex' }))
+  : studio.mediaModels.map(model => ({ value: model.id, label: model.name.trim(), description: model.description, groupId: mediaModelBrandId(model.id, model.name) })));
+const selectedModelPrice = computed(() => quote.value ? `${quote.value.credits.toLocaleString('ru-RU')} кр.` : undefined);
 const hasFieldErrors = computed(() => Object.keys(fieldErrors.value).length > 0);
 const missingRequiredFields = computed(() => studio.provider === 'media' ? currentFields.value.filter(field => {
   if (!field.required || /prompt/i.test(field.key)) return false;
@@ -250,7 +253,7 @@ async function submit() {
         </article>
       </div>
       <div class="composer-controls">
-        <label class="select-pill model-pill"><span>Модель</span><select v-model="modelChoice"><option v-for="model in modelOptions" :key="model.value" :value="model.value">{{ model.label }}</option></select></label>
+        <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice" />
         <template v-if="studio.provider === 'codex'">
           <label class="select-pill"><span>Рассуждение</span><select v-model="studio.codexEffort"><option v-for="effort in effortOptions" :key="effort" :value="effort">{{ effort }}</option></select></label>
           <label v-if="studio.mode === 'image'" class="select-pill"><span>Формат</span><select v-model="studio.codexAspectRatio"><option value="auto">Авто</option><option value="1:1">1:1</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="3:2">3:2</option><option value="2:3">2:3</option></select></label>

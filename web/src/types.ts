@@ -18,6 +18,7 @@ export type MediaModel = {
   apiModel?: string;
   providerId: string;
   name: string;
+  description?: string;
   kind?: string;
   fields?: MediaField[];
   inputSchema?: Record<string, unknown>;

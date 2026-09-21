@@ -67,7 +67,7 @@ function createAccounts({ pool, config, provider, legacy }) {
               const catalog = service.catalog();
               return { providers: [{ id: 'media', name: catalog.providers[0]?.name || 'Медиастудия' }], models: catalog.models.map(model => ({
                 id: model.id, apiModel: model.id, providerId: 'media', name: model.name, kind: model.kind,
-                fields: model.fields, inputSchema: model.inputSchema, startupDefault: model.startupDefault
+                description: model.description, fields: model.fields, inputSchema: model.inputSchema, startupDefault: model.startupDefault
               })) };
             }
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);

@@ -196,6 +196,16 @@ app.whenReady().then(async () => {
     };const mediaPrompt=document.querySelector('.composer-body textarea');mediaPrompt.value='Проверка генерации Kie';mediaPrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0`);
     await evaluate("document.querySelector('.provider-selector button[data-provider=media]').click();void 0");
     await until("document.querySelector('.provider-selector button.active')?.dataset.provider==='media' && document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
+    await evaluate("document.querySelector('.model-picker-trigger').click();void 0");
+    await until("document.querySelector('.model-catalog-popover') && document.querySelectorAll('.model-brand-list button').length>5");
+    assert.equal(await evaluate("document.querySelector('.model-catalog-search input').placeholder"), 'Поиск моделей...');
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-brand-list img')).every(image=>image.src.includes('/app/model-icons/'))"), true);
+    await until("Array.from(document.querySelectorAll('.model-brand-list img')).every(image=>image.complete && image.naturalWidth>0)");
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.model-brand-list img')).some(image=>image.src.endsWith('/nano-banana.webp'))"), true);
+    await evaluate("const input=document.querySelector('.model-catalog-search input');input.value='nano banana';input.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await until("document.querySelectorAll('.model-catalog-item').length>=3 && Array.from(document.querySelectorAll('.model-catalog-item')).every(item=>item.textContent.toLowerCase().includes('nano banana'))");
+    await evaluate("document.querySelector('.model-catalog-item[aria-selected=true]').click();void 0");
+    await until("!document.querySelector('.model-catalog-popover')");
     assert.equal(await evaluate("document.querySelector('.provider-selector button[data-provider=media]').textContent.includes('Kie.ai')"), true);
     assert.match(await evaluate("document.querySelector('.attach-button').textContent"), /Исходники/);
     await uploadTinyImage('.attach-button input[type=file]');

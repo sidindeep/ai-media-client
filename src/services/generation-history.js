@@ -30,9 +30,9 @@ async function generationHistory(pool, accountId, service, present = record => r
   return [...media.map(present), ...codex.map(codexRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
-async function generationHistorySince(pool, accountId, service, since, before, present = record => record) {
+async function generationHistorySince(pool, accountId, service, since, before, present = record => record, activeIds = []) {
   const [media, codex] = await Promise.all([
-    service.listHistorySince(since, before), new AccountRecords(pool, accountId, 'codex').listSince(since, before)
+    service.listHistorySince(since, before, activeIds), new AccountRecords(pool, accountId, 'codex').listSince(since, before)
   ]);
   return [...media.map(present), ...codex.map(codexRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));

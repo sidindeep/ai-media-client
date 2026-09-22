@@ -5,10 +5,10 @@ class AccountRecords {
   async list() {
     return (await this.pool.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 ORDER BY updated_at DESC,id', [this.accountId, this.namespace])).rows.map(row => row.data);
   }
-  async listSince(since, before) {
+  async listSince(since, before, activeIds = []) {
     return (await this.pool.query(`SELECT data FROM media_records
-      WHERE account_id=$1 AND namespace=$2 AND updated_at>$3::timestamptz AND updated_at<=$4::timestamptz
-      ORDER BY updated_at DESC,id`, [this.accountId, this.namespace, since, before])).rows.map(row => row.data);
+      WHERE account_id=$1 AND namespace=$2 AND ((updated_at>$3::timestamptz AND updated_at<=$4::timestamptz) OR id=ANY($5::text[]))
+      ORDER BY updated_at DESC,id`, [this.accountId, this.namespace, since, before, activeIds])).rows.map(row => row.data);
   }
   async update(id, changes, expectedStates) {
     return transaction(this.pool, async client => {

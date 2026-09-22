@@ -64,7 +64,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
-          if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before);
+          if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, undefined, args[0]?.activeIds);
           if (method === 'createTask') {
             await starterPack?.assertProvider(accountId, account.role, 'media');
             return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
@@ -87,7 +87,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
               })) };
             }
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
-            case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord);
+            case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord, args[0]?.activeIds);
             case 'createTask': {
               await starterPack?.assertProvider(accountId, account.role, 'media');
               if (args[0]?.kieAccountId != null && args[0].kieAccountId !== 'primary') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });

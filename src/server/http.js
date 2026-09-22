@@ -325,10 +325,12 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         const rawSince = url.searchParams.get('since');
         const since = rawSince ? new Date(rawSince) : null;
         if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
+        const activeIds = url.searchParams.getAll('active');
+        if (activeIds.length > 20 || activeIds.some(id => !/^[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
         const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
         const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
         const [records, projects, chats, queue] = await Promise.all([
-          scopedService.dispatch(since ? 'getHistoryDelta' : 'getHistory', since ? [{ since: since.toISOString(), before: cursor }] : []),
+          scopedService.dispatch(since ? 'getHistoryDelta' : 'getHistory', since ? [{ since: since.toISOString(), before: cursor, activeIds }] : []),
           since ? accounts.workspaces.listProjectChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listProjects(workspaceAccount),
           since ? accounts.workspaces.listChatChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listChats(workspaceAccount),
           scopedService.dispatch('queueStatus'),

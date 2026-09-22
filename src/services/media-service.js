@@ -167,8 +167,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     }));
   }
   async function listHistory() { return presentHistory(await history.list()); }
-  async function listHistorySince(since, before) {
-    return typeof history.listSince === 'function' ? presentHistory(await history.listSince(since, before)) : listHistory();
+  async function listHistorySince(since, before, activeIds = []) {
+    return typeof history.listSince === 'function' ? presentHistory(await history.listSince(since, before, activeIds)) : listHistory();
   }
   const service = {
     events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, listHistorySince, resultUrls: urls,

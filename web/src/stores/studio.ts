@@ -239,7 +239,8 @@ export const useStudioStore = defineStore('studio', () => {
     syncInFlight = (async () => {
       do {
         syncAgain = false;
-        applyWorkspaceSync(await api.getWorkspaceSync(syncCursor));
+        const activeIds = history.value.filter(item => item.providerId !== 'codex' && MEDIA_POLL_STATES.has(item.state)).map(item => item.id);
+        applyWorkspaceSync(await api.getWorkspaceSync(syncCursor, activeIds));
       } while (syncAgain);
     })();
     try { await syncInFlight; } finally { syncInFlight = null; }

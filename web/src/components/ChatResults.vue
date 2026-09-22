@@ -17,6 +17,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let saveFrame: number | undefined;
 let restoreRevision = 0;
 let restoring = false;
+let initialScrollRestored = false;
 let displayedChatId = studio.activeChatId;
 
 type SavedScrollPosition = { top: number; atBottom: boolean; updatedAt: number };
@@ -171,7 +172,11 @@ async function revealSelected() {
     ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-watch(() => studio.selectedId, () => { void revealSelected(); });
+watch(() => studio.selectedId, () => {
+  // Startup selects a default result while the saved chat position is being
+  // restored. Revealing that result here would override the restored scroll.
+  if (initialScrollRestored) void revealSelected();
+});
 watch(() => studio.activeChatId, (chatId, previousChatId) => {
   if (previousChatId) saveScrollPosition(previousChatId);
   displayedChatId = chatId;
@@ -188,7 +193,7 @@ watch(() => records.value.map(record => `${record.id}:${record.state}:${record.o
 });
 onMounted(() => {
   timer = setInterval(() => { now.value = Date.now(); }, 1000);
-  void restoreScrollPosition(studio.activeChatId);
+  void restoreScrollPosition(studio.activeChatId).then(() => { initialScrollRestored = true; });
 });
 onBeforeUnmount(() => {
   if (!restoring) saveScrollPosition(displayedChatId);

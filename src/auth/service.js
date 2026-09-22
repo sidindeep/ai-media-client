@@ -4,7 +4,7 @@ const { createProviders } = require('./providers');
 const token = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const cookieValue = (req, name) => (req.headers.cookie || '').split(';').map(item => item.trim()).find(item => item.startsWith(name + '='))?.slice(name.length + 1) || '';
-function createAuth({ pool, config, providers = createProviders(config) }) {
+function createAuth({ pool, config, providers = createProviders(config), starterPack }) {
   const secure = config.origin.startsWith('https:');
   const cookie = (name, value, age) => `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secure ? '; Secure' : ''}`;
   const sessionName = secure ? '__Host-media-session' : 'media-session';
@@ -47,7 +47,8 @@ function createAuth({ pool, config, providers = createProviders(config) }) {
           identity = { account_id: randomUUID() };
           await client.query('INSERT INTO media_accounts(id,display_name,role) VALUES($1,$2,$3)', [identity.account_id, String(profile.name).slice(0, 200), isAdmin ? 'admin' : 'user']);
           await client.query('INSERT INTO media_identities(provider,subject,account_id) VALUES($1,$2,$3)', [provider, profile.subject, identity.account_id]);
-          await client.query('INSERT INTO media_wallets(account_id) VALUES($1)', [identity.account_id]);
+          if (starterPack) await starterPack.enroll(client, identity.account_id, isAdmin ? 'admin' : 'user');
+          else await client.query('INSERT INTO media_wallets(account_id) VALUES($1)', [identity.account_id]);
         } else if (isAdmin) await client.query("UPDATE media_accounts SET role='admin' WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM media_role_audit WHERE account_id=$1)", [identity.account_id]);
         const email = provider === 'google' && typeof profile.verifiedEmail === 'string' ? profile.verifiedEmail.trim().toLowerCase() : null;
         await client.query('UPDATE media_identities SET verified_email=$3 WHERE provider=$1 AND subject=$2', [provider, profile.subject, email]);

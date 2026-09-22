@@ -1,8 +1,10 @@
+import type { TranslationKey } from '../i18n';
+
 export type SubscriptionOffer = {
   id: string;
   name: string;
-  description: string;
-  features: string[];
+  descriptionKey: TranslationKey;
+  featureKeys: TranslationKey[];
   priceLabel?: string;
   available: boolean;
 };
@@ -10,8 +12,8 @@ export type SubscriptionOffer = {
 export type SubscriptionPromotion = {
   id: string;
   badge: string;
-  title: string;
-  description: string;
+  titleKey: TranslationKey;
+  descriptionKey: TranslationKey;
   enabled: boolean;
   startsAt?: string;
   endsAt?: string;
@@ -25,8 +27,8 @@ export const subscriptionOffers: SubscriptionOffer[] = [
   {
     id: 'ai-media',
     name: 'AI Media',
-    description: 'Единая подписка для генерации текста, изображений, видео и аудио.',
-    features: ['Общий баланс кредитов', 'Codex и медиамодели', 'История и проекты'],
+    descriptionKey: 'subscription.aiMediaDescription',
+    featureKeys: ['subscription.feature.balance', 'subscription.feature.models', 'subscription.feature.history'],
     available: false,
   },
 ];
@@ -35,8 +37,8 @@ export const subscriptionPromotions: SubscriptionPromotion[] = [
   {
     id: 'launch-discount',
     badge: '−15%',
-    title: 'Стартовая акция',
-    description: 'Скидка будет применена к первому периоду после подключения оплаты.',
+    titleKey: 'subscription.launchTitle',
+    descriptionKey: 'subscription.launchDescription',
     enabled: true,
     offerIds: ['ai-media'],
   },

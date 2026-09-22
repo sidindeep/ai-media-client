@@ -87,7 +87,7 @@ export type StartupStatus = {
   database: { state: 'connecting' | 'connected' | 'unavailable' | 'disabled'; code?: string; attempt?: number; retryInMs?: number; latencyMs?: number };
   provider: { state: 'idle' | 'checking' | 'ready' | 'error'; checkedAt?: string; model?: { id: string; name: string }; quote?: { credits?: number } | null; checks?: Array<{ step: string; status: string; durationMs: number }> };
   authenticated: boolean;
-  account: { id: string; role: string } | null;
+  account: { id: string; role: string; starterPack?: Account['starterPack'] } | null;
 };
 
 export async function getStartupStatus(): Promise<StartupStatus> {

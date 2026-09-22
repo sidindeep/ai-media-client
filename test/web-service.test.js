@@ -236,6 +236,9 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   assert.match(landingHtml, /src="\/theme\.js"/);
   assert.equal((await fetch(base + '/landing.css')).status, 200);
   assert.equal((await fetch(base + '/landing.js')).status, 200);
+  const brandLogo = await fetch(base + '/brand-logo.png');
+  assert.equal(brandLogo.status, 200);
+  assert.equal(brandLogo.headers.get('content-type'), 'image/png');
   const landingIcon = await fetch(base + '/landing-model-icons/openai.svg');
   assert.equal(landingIcon.status, 200);
   assert.match(landingIcon.headers.get('content-type'), /^image\/svg\+xml/);
@@ -245,6 +248,7 @@ test('web serves shared forms, no credentials UI, strict API boundary and persis
   const themeCss = await themeStyles.text();
   assert.match(themeCss, /site-boot-orbit/);
   assert.match(themeCss, /conic-gradient/);
+  assert.doesNotMatch(landingHtml, /data-boot-motion-toggle/);
   const themeScript = await fetch(base + '/theme.js');
   assert.equal(themeScript.status, 200);
   assert.match(await themeScript.text(), /ai-media-boot-motion/);

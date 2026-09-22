@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { MODEL_BRANDS, modelBrand, modelSummary, type ModelPickerOption } from '../domain/model-catalog';
+import { useI18n } from '../i18n';
 
 const props = defineProps<{
   modelValue: string;
@@ -8,6 +9,7 @@ const props = defineProps<{
   price?: string;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+const { locale, t } = useI18n();
 
 const root = ref<HTMLElement | null>(null);
 const trigger = ref<HTMLButtonElement | null>(null);
@@ -20,15 +22,15 @@ const panelStyle = ref<Record<string, string>>({});
 
 const selected = computed(() => props.models.find(model => model.value === props.modelValue) || props.models[0]);
 const selectedBrand = computed(() => modelBrand(selected.value?.groupId || 'other'));
-const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase('ru-RU'));
+const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
 const matchingModels = computed(() => {
   if (!normalizedSearch.value) return props.models;
-  return props.models.filter(model => `${model.label} ${model.description || ''} ${modelBrand(model.groupId).label}`.toLocaleLowerCase('ru-RU').includes(normalizedSearch.value));
+  return props.models.filter(model => `${model.label} ${model.description || ''} ${modelBrand(model.groupId).label}`.toLocaleLowerCase(locale.value).includes(normalizedSearch.value));
 });
-const groups = computed(() => MODEL_BRANDS.map(brand => ({
-  ...brand,
-  count: props.models.filter(model => model.groupId === brand.id).length,
-  matchCount: matchingModels.value.filter(model => model.groupId === brand.id).length,
+const groups = computed(() => MODEL_BRANDS.map(({ id }) => ({
+  ...modelBrand(id),
+  count: props.models.filter(model => model.groupId === id).length,
+  matchCount: matchingModels.value.filter(model => model.groupId === id).length,
 })).filter(group => group.count > 0));
 const shownModels = computed(() => normalizedSearch.value
   ? matchingModels.value
@@ -123,26 +125,26 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="model-picker model-pill">
     <button ref="trigger" type="button" class="model-picker-trigger select-pill" aria-haspopup="listbox" :aria-expanded="open" :disabled="!models.length" @click="open ? close() : show()">
-      <span class="model-picker-label">Модель</span>
+      <span class="model-picker-label">{{ t('model.label') }}</span>
       <span class="model-brand-icon compact" :style="{ '--brand-accent': selectedBrand.accent }">
         <img v-if="selectedBrand.icon" :src="selectedBrand.icon" alt="" :class="{ monochrome: selectedBrand.monochrome }">
         <span v-else>{{ selectedBrand.label.slice(0, 1) }}</span>
       </span>
-      <strong>{{ selected?.label || 'Нет моделей' }}</strong>
+      <strong>{{ selected?.label || t('model.none') }}</strong>
       <span class="model-picker-chevron" aria-hidden="true">⌄</span>
     </button>
     <select class="model-native-select" :value="modelValue" tabindex="-1" aria-hidden="true" @change="nativeChange">
       <option v-for="model in models" :key="model.value" :value="model.value">{{ model.label }}</option>
     </select>
     <Teleport to="body">
-      <section v-if="open" ref="panel" class="model-catalog-popover" :style="panelStyle" aria-label="Выбор модели">
+      <section v-if="open" ref="panel" class="model-catalog-popover" :style="panelStyle" :aria-label="t('model.select')">
         <label class="model-catalog-search">
           <span aria-hidden="true">⌕</span>
-          <input ref="searchInput" v-model="search" type="search" placeholder="Поиск моделей..." autocomplete="off">
-          <button v-if="search" type="button" aria-label="Очистить поиск" @click="search = ''">×</button>
+          <input ref="searchInput" v-model="search" type="search" :placeholder="t('model.search')" autocomplete="off">
+          <button v-if="search" type="button" :aria-label="t('common.clearSearch')" @click="search = ''">×</button>
         </label>
         <div class="model-catalog-body">
-          <nav class="model-brand-list" aria-label="Разработчики моделей">
+          <nav class="model-brand-list" :aria-label="t('model.developers')">
             <button v-for="group in groups" :key="group.id" type="button" :class="{ active: !normalizedSearch && activeGroup === group.id, muted: normalizedSearch && !group.matchCount }" @click="chooseGroup(group.id)">
               <span class="model-brand-icon" :style="{ '--brand-accent': group.accent }">
                 <img v-if="group.icon" :src="group.icon" alt="" :class="{ monochrome: group.monochrome }">
@@ -152,7 +154,7 @@ onBeforeUnmount(() => {
               <small>{{ normalizedSearch ? group.matchCount : group.count }}</small>
             </button>
           </nav>
-          <div class="model-catalog-list" role="listbox" :aria-label="normalizedSearch ? 'Результаты поиска' : modelBrand(activeGroup).label">
+          <div class="model-catalog-list" role="listbox" :aria-label="normalizedSearch ? t('model.searchResults') : modelBrand(activeGroup).label">
             <button v-for="model in shownModels" :key="model.value" type="button" class="model-catalog-item" role="option" :aria-selected="model.value === modelValue" :class="{ selected: model.value === modelValue }" @click="choose(model.value)">
               <span class="model-brand-icon row-icon" :style="{ '--brand-accent': modelBrand(model.groupId).accent }">
                 <img v-if="modelBrand(model.groupId).icon" :src="modelBrand(model.groupId).icon" alt="" :class="{ monochrome: modelBrand(model.groupId).monochrome }">
@@ -166,7 +168,7 @@ onBeforeUnmount(() => {
               </span>
               <span v-if="model.value === modelValue" class="model-selected-check" aria-hidden="true">✓</span>
             </button>
-            <p v-if="!shownModels.length" class="model-catalog-empty">По вашему запросу модели не найдены.</p>
+            <p v-if="!shownModels.length" class="model-catalog-empty">{{ t('model.notFound') }}</p>
           </div>
         </div>
       </section>

@@ -9,9 +9,18 @@ import AspectRatioPicker from './AspectRatioPicker.vue';
 import PresetBar from './PresetBar.vue';
 import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, mediaSourceDurationRange, parseMediaFieldValue } from '../domain/media-fields';
 import { mediaModelBrandId } from '../domain/model-catalog';
+import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
+import { formatCreditCost, roundedCreditCost } from '../domain/credits';
+import { useI18n } from '../i18n';
 
 const studio = useStudioStore();
+const { formatDate, formatNumber, t } = useI18n();
+const modeItems = computed(() => [
+  { id: 'text', label: t('composer.mode.text'), icon: '▢' },
+  { id: 'image', label: t('composer.mode.image'), icon: '▧' },
+  ...(studio.fullModelAccess ? [{ id: 'video', label: t('composer.mode.video'), icon: '▹' }, { id: 'audio', label: t('composer.mode.audio'), icon: '⌁' }] : []),
+] as Array<{ id: 'text' | 'image' | 'video' | 'audio'; label: string; icon: string }>);
 const uploading = ref(false);
 const submitError = ref('');
 const quote = ref<{ credits: number } | null>(null);
@@ -35,25 +44,27 @@ const hasSourcePicker = computed(() => studio.provider === 'codex' ? codexAccept
 const dropFields = computed(() => studio.provider === 'media' ? fileFields.value : []);
 const dropReady = computed(() => studio.accountReady && !uploading.value && hasSourcePicker.value);
 const dropTitle = computed(() => {
-  if (!studio.accountReady) return 'Чат ещё загружается';
-  if (uploading.value) return 'Дождитесь загрузки текущего файла';
-  if (!hasSourcePicker.value) return 'Текущая модель не принимает файлы';
-  return dropFields.value.length > 1 ? 'Выберите назначение файла' : 'Готов принять файл';
+  if (!studio.accountReady) return t('composer.drop.chatLoading');
+  if (uploading.value) return t('composer.drop.uploadPending');
+  if (!hasSourcePicker.value) return t('composer.drop.unsupported');
+  return dropFields.value.length > 1 ? t('composer.drop.chooseTarget') : t('composer.drop.ready');
 });
 const dropDescription = computed(() => {
-  if (!studio.accountReady) return 'Файл можно будет добавить сразу после восстановления чата.';
-  if (uploading.value) return 'Следующий файл можно добавить после завершения текущей загрузки.';
-  if (!hasSourcePicker.value) return 'Выберите модель с поддержкой исходников — сам файл не будет потерян или открыт браузером.';
-  if (dropFields.value.length > 1) return 'У модели несколько файловых полей. Перетащите файл в нужную область ниже.';
+  if (!studio.accountReady) return t('composer.drop.chatLoadingDetail');
+  if (uploading.value) return t('composer.drop.uploadPendingDetail');
+  if (!hasSourcePicker.value) return t('composer.drop.unsupportedDetail');
+  if (dropFields.value.length > 1) return t('composer.drop.chooseTargetDetail');
   const field = dropFields.value[0];
-  return field?.label ? `Отпустите файл, чтобы добавить его в «${field.label}».` : 'Отпустите файл — он прикрепится к текущему чату.';
+  return field?.label ? t('composer.drop.releaseField', { field: field.label }) : t('composer.drop.releaseChat');
 });
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
-const total = computed(() => quote.value?.credits ?? null);
-const quoteErrorMessage = computed(() => studio.provider === 'media' && quoteError.value
-  ? `${quoteError.value}. При запуске сервер повторно запросит официальный прайс Kie.`
-  : quoteError.value);
+const total = computed(() => quote.value ? roundedCreditCost(quote.value.credits) : null);
+const quoteErrorMessage = computed(() => {
+  if (!quoteError.value) return '';
+  if (!studio.isAdmin) return publicServiceError(quoteError.value, t('composer.quoteRetry'));
+  return studio.provider === 'media' ? t('composer.quoteRetryKie', { error: quoteError.value }) : quoteError.value;
+});
 const modelChoice = computed({
   get: () => studio.provider === 'codex' ? studio.codexModel : studio.mediaModelId,
   set: value => {
@@ -67,7 +78,7 @@ const modelChoice = computed({
   },
 });
 const modelOptions = computed(() => studio.provider === 'codex'
-  ? (studio.codexCatalog?.models || []).map(model => ({ value: model.id, label: model.name, description: 'Текст и изображения через Codex CLI.', groupId: 'codex' }))
+  ? (studio.codexCatalog?.models || []).map(model => ({ value: model.id, label: model.name, description: studio.isAdmin ? t('composer.codexDescriptionAdmin') : t('composer.codexDescription'), groupId: 'codex' }))
   : studio.mediaModels.map(model => ({ value: model.id, label: model.name.trim(), description: model.description, groupId: mediaModelBrandId(model.id, model.name) })));
 const promptField = computed(() => studio.provider === 'media' ? currentFields.value.find(field => field.key === 'prompt' || field.key === 'text') : undefined);
 const showsPrompt = computed(() => studio.provider === 'codex' || Boolean(promptField.value));
@@ -76,9 +87,9 @@ const promptValue = computed({
   set: value => { if (promptField.value?.key === 'text') updateField('text', value); else studio.prompt = value; },
 });
 const promptPlaceholder = computed(() => studio.mode === 'audio'
-  ? promptField.value?.key === 'text' ? 'Введите текст для озвучивания' : 'Опишите музыку или звук'
-  : 'Введите идею для генерации');
-const selectedModelPrice = computed(() => quote.value ? `${quote.value.credits.toLocaleString('ru-RU')} кр.` : undefined);
+  ? promptField.value?.key === 'text' ? t('composer.promptVoice') : t('composer.promptAudio')
+  : t('composer.promptDefault'));
+const selectedModelPrice = computed(() => quote.value ? `${formatCreditCost(quote.value.credits)} ${t('common.creditsShort')}` : undefined);
 const valueErrors = computed(() => Object.fromEntries(currentFields.value.flatMap(field => {
   if (field.type === 'files' || /prompt/i.test(field.key)) return [];
   const message = mediaFieldValueError(field, studio.mediaInput[field.key] ?? field.default);
@@ -98,12 +109,11 @@ const retryableReadError = (error: unknown) => error instanceof Error
 
 function fieldOptions(field: MediaField) { return mediaFieldOptions(field); }
 function fieldOptionLabel(field: MediaField, option: unknown) {
-  if (field.key === 'duration' && Number(option) <= 0) return 'Авто';
+  if (field.key === 'duration' && Number(option) <= 0) return t('composer.auto');
   const name = isAspectRatioField(field.key) ? aspectRatioName(option) : '';
   return name ? `${option} — ${name}` : String(option);
 }
-function sourceButtonLabel(field: MediaField) { return fileFields.value.length === 1 ? 'Исходники' : (field.label || 'Исходники'); }
-function sourceFieldLabel(fieldKey?: string) { return fileFields.value.find(field => field.key === fieldKey)?.label || ''; }
+function sourceButtonLabel(field: MediaField) { return fileFields.value.length === 1 ? t('composer.sources') : (field.label || t('composer.sources')); }
 function sourcePreviewUrl(ref: string) {
   const id = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(ref)?.[1];
   return id ? `/api/sources/${id}` : '';
@@ -121,7 +131,7 @@ function updateTypedField(field: MediaField, raw: unknown) {
     updateField(field.key, parseMediaFieldValue(field, raw));
     const errors = { ...fieldErrors.value }; delete errors[field.key]; fieldErrors.value = errors;
   } catch (error) {
-    fieldErrors.value = { ...fieldErrors.value, [field.key]: error instanceof Error ? error.message : 'Некорректное значение' };
+    fieldErrors.value = { ...fieldErrors.value, [field.key]: error instanceof Error ? error.message : t('composer.invalidValue') };
   }
 }
 function updateSelect(field: MediaField, event: Event) {
@@ -139,11 +149,19 @@ function changeMode(value: 'text' | 'image' | 'video' | 'audio') {
 }
 
 const diagnosticStepLabel = (step: string) => ({
-  configuration: 'Конфигурация ключа', authorization: 'Авторизация Kie', tariffs: 'Тарифный API',
-  'model-price': 'Цена выбранной модели', quote: 'Расчёт в форме',
-}[step] || step);
-const diagnosticMechanismLabel = (key: string) => ({ credentials: 'Ключ', authorization: 'Проверка доступа', tariffs: 'Тарифы', generation: 'Генерация' }[key] || key);
-const diagnosticTime = (value: string) => new Date(value).toLocaleTimeString('ru-RU');
+  configuration: t('composer.diagnosticStep.configuration'),
+  authorization: t('composer.diagnosticStep.authorization'),
+  tariffs: t('composer.diagnosticStep.tariffs'),
+  'model-price': t('composer.diagnosticStep.modelPrice'),
+  quote: t('composer.diagnosticStep.quote'),
+} as Record<string, string>)[step] || step;
+const diagnosticMechanismLabel = (key: string) => ({
+  credentials: t('composer.diagnosticMechanism.credentials'),
+  authorization: t('composer.diagnosticMechanism.authorization'),
+  tariffs: t('composer.diagnosticMechanism.tariffs'),
+  generation: t('composer.diagnosticMechanism.generation'),
+} as Record<string, string>)[key] || key;
+const diagnosticTime = (value: string) => formatDate(value, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 async function openDiagnostics() {
   if (diagnosticLoading.value) return;
   const modelId = studio.mediaModelId;
@@ -170,7 +188,7 @@ async function openDiagnostics() {
       quoteLoading.value = false;
     }
   } catch (error) {
-    diagnosticError.value = error instanceof Error ? error.message : 'Не удалось получить диагностику';
+    diagnosticError.value = error instanceof Error ? error.message : t('composer.diagnosticLoadError');
   } finally { diagnosticLoading.value = false; }
 }
 
@@ -187,7 +205,7 @@ watch(() => studio.currentMediaModel?.id, () => {
   fieldErrors.value = Object.fromEntries(Object.entries(fieldErrors.value).filter(([key]) => allowed.has(key)));
 }, { immediate: true });
 watch(() => [studio.mode, studio.provider], () => { submitError.value = ''; fieldErrors.value = {}; });
-watch(() => studio.providerDiagnosticRequest, (request, previous) => { if (request > previous) void openDiagnostics(); });
+watch(() => studio.providerDiagnosticRequest, (request, previous) => { if (studio.isAdmin && request > previous) void openDiagnostics(); });
 
 function stopQuoteTimer() {
   if (quoteTimer === null) return;
@@ -219,7 +237,7 @@ async function refreshQuote(revision: number) {
       if (revision === quoteRevision) quote.value = result;
     }
   } catch (error) {
-    if (revision === quoteRevision) { quote.value = null; quoteError.value = error instanceof Error ? error.message : 'Цена недоступна'; }
+    if (revision === quoteRevision) { quote.value = null; quoteError.value = error instanceof Error ? error.message : t('composer.priceUnavailable'); }
   } finally {
     if (revision === quoteRevision) quoteLoading.value = false;
   }
@@ -280,14 +298,14 @@ function onWindowDrop(event: DragEvent) {
   closeDropOverlay();
   if (!dropReady.value) {
     submitError.value = !studio.accountReady
-      ? 'Дождитесь загрузки чата перед добавлением файла'
+      ? t('composer.drop.waitChat')
       : uploading.value
-        ? 'Дождитесь завершения текущей загрузки'
-        : 'Выбранная модель не поддерживает исходные файлы';
+        ? t('composer.drop.waitUpload')
+        : t('composer.drop.modelUnsupported');
     return;
   }
   if (dropFields.value.length > 1) {
-    submitError.value = 'Укажите назначение файла: перетащите его в одну из областей загрузки';
+    submitError.value = t('composer.drop.targetRequired');
     return;
   }
   void uploadFiles(files, dropFields.value[0]);
@@ -326,21 +344,21 @@ async function uploadFiles(files: File[], field?: MediaField) {
   try {
     const fieldFiles = studio.sourceFiles.filter(item => item.fieldKey === field?.key).length;
     const maxFiles = field ? (field.scalar ? 1 : field.maxFiles) : 10;
-    if (maxFiles && fieldFiles + files.length > maxFiles) throw new Error(`Можно добавить не более ${maxFiles} файлов`);
+    if (maxFiles && fieldFiles + files.length > maxFiles) throw new Error(t('composer.files.max', { count: maxFiles }));
     const accept = dropAccept(field);
     const invalid = files.find(file => !matchesAccept(file, accept));
-    if (invalid) throw new Error(`${invalid.name}: формат файла не поддерживается выбранной моделью`);
+    if (invalid) throw new Error(t('composer.files.unsupportedFormat', { name: invalid.name }));
     const added = [];
     for (const file of files) {
       const maxSizeMb = field?.maxSizeMb || (field ? undefined : 30);
-      if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) throw new Error(file.name + ': превышен лимит ' + maxSizeMb + ' МБ');
+      if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) throw new Error(t('composer.files.sizeLimit', { name: file.name, size: maxSizeMb }));
       const durationSeconds = await checkedSourceDuration(file, field);
       const saved = await uploadSource(file, { projectId: studio.activeProjectId, chatId: studio.activeChatId === 'system:recent' ? null : studio.activeChatId });
       const item = { ...saved, ref: saved.ref, name: file.name, type: file.type, fieldKey: field?.key, ...(durationSeconds === null ? {} : { durationSeconds }) };
       studio.sourceFiles.push(item); added.push(item.ref);
     }
     if (field) updateField(field.key, field.scalar || field.maxFiles === 1 ? added.at(-1) : [...(Array.isArray(studio.mediaInput[field.key]) ? studio.mediaInput[field.key] as string[] : []), ...added]);
-  } catch (error) { submitError.value = error instanceof Error ? error.message : 'Не удалось загрузить исходник'; }
+  } catch (error) { submitError.value = error instanceof Error ? error.message : t('composer.files.uploadError'); }
   finally { uploading.value = false; }
 }
 function sourceDuration(source: File | string, kind: 'audio' | 'video') {
@@ -357,18 +375,18 @@ function sourceDuration(source: File | string, kind: 'audio' | 'video') {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       if (error) reject(error); else resolve(duration);
     };
-    timer = window.setTimeout(() => finish(new Error('Не удалось проверить длительность исходника')), 8000);
+    timer = window.setTimeout(() => finish(new Error(t('composer.files.durationCheckError'))), 8000);
     media.preload = 'metadata';
-    media.onloadedmetadata = () => Number.isFinite(media.duration) && media.duration > 0 ? finish(undefined, media.duration) : finish(new Error('Не удалось определить длительность исходника'));
-    media.onerror = () => finish(new Error('Не удалось прочитать исходник как медиафайл'));
+    media.onloadedmetadata = () => Number.isFinite(media.duration) && media.duration > 0 ? finish(undefined, media.duration) : finish(new Error(t('composer.files.durationReadError')));
+    media.onerror = () => finish(new Error(t('composer.files.mediaReadError')));
     media.src = source instanceof File ? objectUrl : source;
   });
 }
 function sourceDurationError(name: string, duration: number, range: { min: number; max: number }) {
-  const value = duration.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
-  return `${name}: длительность ${value} с; выбранная модель принимает ${range.min}–${range.max} с. Сократите исходник или выберите модель с большим лимитом.`;
+  const value = formatNumber(duration, { maximumFractionDigits: 1 });
+  return t('composer.files.durationRange', { name, duration: value, min: range.min, max: range.max });
 }
-async function checkedSourceDuration(source: File | string, field?: MediaField, name = source instanceof File ? source.name : 'Исходник') {
+async function checkedSourceDuration(source: File | string, field?: MediaField, name = source instanceof File ? source.name : t('composer.files.source')) {
   const range = mediaSourceDurationRange(field);
   if (!range) return null;
   const kind = /audio/i.test(field?.accept || field?.key || '') ? 'audio' : 'video';
@@ -385,10 +403,10 @@ async function validateSavedSourceDurations() {
     if (!Number.isFinite(duration) || duration <= 0) {
       const url = sourcePreviewUrl(item.ref);
       if (!url) continue;
-      duration = await checkedSourceDuration(url, field, item.name || 'Исходник') || 0;
+      duration = await checkedSourceDuration(url, field, item.name || t('composer.files.source')) || 0;
       item.durationSeconds = duration;
     }
-    if (duration < range.min || duration > range.max) throw new Error(sourceDurationError(item.name || 'Исходник', duration, range));
+    if (duration < range.min || duration > range.max) throw new Error(sourceDurationError(item.name || t('composer.files.source'), duration, range));
   }
 }
 function removeFile(index: number) {
@@ -433,60 +451,59 @@ async function submit(event?: Event) {
   if (hasFieldErrors.value) {
     const [key, message] = Object.entries(allFieldErrors.value)[0] || [];
     const field = currentFields.value.find(item => item.key === key);
-    submitError.value = field && message ? `${field.label || field.key}: ${message}` : 'Исправьте параметры с ошибками';
+    submitError.value = field && message ? `${field.label || field.key}: ${message}` : t('composer.fixParameters');
     return;
   }
-  if (missingRequiredFields.value.length) { submitError.value = 'Заполните обязательные параметры'; return; }
-  if (studio.provider === 'codex' && !quote.value) { submitError.value = quoteError.value || 'Дождитесь расчёта стоимости'; return; }
-  if (!studio.prompt.trim()) { submitError.value = 'Введите промпт'; return; }
+  if (missingRequiredFields.value.length) { submitError.value = t('composer.completeRequired'); return; }
+  if (studio.provider === 'codex' && !quote.value) { submitError.value = studio.isAdmin ? (quoteError.value || t('composer.waitQuote')) : publicServiceError(quoteError.value, t('composer.waitQuote')); return; }
+  if (!studio.prompt.trim()) { submitError.value = t('composer.enterPrompt'); return; }
   submitError.value = '';
   uploading.value = true;
   try { await validateSavedSourceDurations(); }
-  catch (error) { submitError.value = error instanceof Error ? error.message : 'Проверьте исходные файлы'; return; }
+  catch (error) { submitError.value = error instanceof Error ? error.message : t('composer.checkSources'); return; }
   finally { uploading.value = false; }
   animateToQueue(event);
-  try { await studio.submit(); } catch (error) { submitError.value = error instanceof Error ? error.message : 'Не удалось запустить генерацию'; }
+  try { await studio.submit(); } catch (error) { const message = error instanceof Error ? error.message : ''; submitError.value = studio.isAdmin ? (message || t('composer.startError')) : publicServiceError(message, t('composer.startError')); }
 }
 </script>
 
 <template>
   <section class="composer-card">
     <div class="composer-tabs">
-      <button v-for="item in [{ id: 'text', label: 'Текст', icon: '▢' }, { id: 'image', label: 'Изображение', icon: '▧' }, { id: 'video', label: 'Видео', icon: '▹' }, { id: 'audio', label: 'Аудио', icon: '⌁' }]" :key="item.id" type="button" :class="{ active: studio.mode === item.id }" @click="changeMode(item.id as 'text' | 'image' | 'video' | 'audio')">{{ item.icon }} {{ item.label }}</button>
+      <button v-for="item in modeItems" :key="item.id" type="button" :class="{ active: studio.mode === item.id }" @click="changeMode(item.id)">{{ item.icon }} {{ item.label }}</button>
     </div>
     <div class="composer-body">
-      <p v-if="studio.provider === 'media' && studio.mode === 'audio' && !modelOptions.length" class="notice" role="status">Аудиомодели пока недоступны.</p>
-      <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" aria-label="Промпт генерации" @keydown.ctrl.enter="submit"></textarea>
+      <p v-if="studio.provider === 'media' && studio.mode === 'audio' && !modelOptions.length" class="notice" role="status">{{ t('composer.audioUnavailable') }}</p>
+      <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" :aria-label="t('composer.promptAria')" @keydown.ctrl.enter="submit"></textarea>
       <div v-if="hasSourcePicker || studio.sourceFiles.length || uploading" class="source-strip">
-        <label v-if="studio.provider === 'codex' && codexAcceptsImages" class="attach-button">＋ Исходники<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
+        <label v-if="studio.provider === 'codex' && codexAcceptsImages" class="attach-button">＋ {{ t('composer.sources') }}<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
         <label v-for="field in fileFields" v-else :key="field.key" class="attach-button">＋ {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
-        <span v-if="uploading" class="uploading">Загрузка…</span>
+        <span v-if="uploading" class="uploading">{{ t('composer.uploading') }}</span>
         <article v-for="(file, index) in studio.sourceFiles" :key="file.ref + index" class="source-preview">
-          <img v-if="isImageSource(file.type)" :src="sourcePreviewUrl(file.ref)" :alt="`Миниатюра ${file.name}`" loading="lazy">
+          <img v-if="isImageSource(file.type)" :src="sourcePreviewUrl(file.ref)" :alt="t('composer.thumbnail', { name: file.name })" loading="lazy">
           <span v-else class="source-file-icon" aria-hidden="true">▧</span>
-          <span class="source-preview-copy"><strong>{{ file.name }}</strong><small>{{ sourceFieldLabel(file.fieldKey) || 'Исходное изображение' }}</small></span>
-          <button type="button" class="source-remove" :aria-label="`Удалить ${file.name}`" @click="removeFile(index)">×</button>
+          <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(index)">×</button>
         </article>
       </div>
       <div class="composer-controls">
         <PresetBar />
         <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice" />
         <template v-if="studio.provider === 'codex'">
-          <label class="select-pill"><span>Рассуждение</span><select v-model="studio.codexEffort"><option v-for="effort in effortOptions" :key="effort" :value="effort">{{ effort }}</option></select></label>
-          <AspectRatioPicker v-if="studio.mode === 'image'" v-model="studio.codexAspectRatio" label="Формат" :options="['auto', '1:1', '16:9', '9:16', '3:2', '2:3']" />
-          <label class="select-pill"><span>Скорость</span><select v-model="studio.codexSpeed"><option value="standard">Обычная</option><option value="fast">⚡ Fast</option></select></label>
+          <label class="select-pill"><span>{{ t('composer.reasoning') }}</span><select v-model="studio.codexEffort"><option v-for="effort in effortOptions" :key="effort" :value="effort">{{ effort }}</option></select></label>
+          <AspectRatioPicker v-if="studio.mode === 'image'" v-model="studio.codexAspectRatio" :label="t('composer.format')" :options="['auto', '1:1', '16:9', '9:16', '3:2', '2:3']" />
+          <label class="select-pill"><span>{{ t('composer.speed') }}</span><select v-model="studio.codexSpeed"><option value="standard">{{ t('generation.speed.standard') }}</option><option value="fast">⚡ Fast</option></select></label>
         </template>
         <template v-for="field in primaryFields" v-else :key="field.key">
-          <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || 'Формат'" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
+          <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || t('composer.format')" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
           <label v-else class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select></label>
         </template>
-        <span v-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button type="button" class="details-button" @click="openDiagnostics">Детали</button></span>
-        <button class="generate-button" :class="{ 'is-loading': quoteLoading }" type="button" :aria-busy="quoteLoading" :disabled="quoteLoading || uploading || !modelOptions.length || (studio.provider === 'codex' && total === null) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? 'Расчёт…' : 'Генерировать' }}<span v-if="!quoteLoading && total !== null"> · {{ total.toLocaleString('ru-RU') }}</span> <span v-if="!quoteLoading" aria-hidden="true">↗</span></button>
+        <span v-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button v-if="studio.isAdmin" type="button" class="details-button" @click="openDiagnostics">{{ t('composer.details') }}</button></span>
+        <button class="generate-button" :class="{ 'is-loading': quoteLoading }" type="button" :aria-busy="quoteLoading" :disabled="quoteLoading || uploading || !modelOptions.length || (studio.provider === 'codex' && total === null) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : t('composer.generate') }}<span v-if="!quoteLoading && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading" aria-hidden="true">↗</span></button>
       </div>
-      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>Дополнительные параметры</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldError(field) }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldError(field)" class="field-error">{{ fieldError(field) }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
-      <p v-if="missingRequiredFields.length" class="form-error">Заполните обязательные параметры: {{ missingRequiredFields.map(field => field.label || field.key).join(', ') }}</p>
+      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>{{ t('composer.advanced') }}</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldError(field) }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldError(field)" class="field-error">{{ fieldError(field) }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
+      <p v-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>
-      <p class="composer-hint">Ctrl + Enter — запустить · черновик сохраняется в текущем чате</p>
+      <p class="composer-hint">{{ t('composer.hint') }}</p>
     </div>
     <Teleport to="body">
       <div v-if="draggingFiles" class="chat-drop-overlay" :class="{ unavailable: !dropReady }" @dragover.prevent>
@@ -506,32 +523,32 @@ async function submit(event?: Event) {
               @drop="dropIntoField($event, field)"
             >
               <strong>{{ field.label || field.key }}</strong>
-              <small>{{ field.scalar || field.maxFiles === 1 ? 'Один файл' : field.maxFiles ? `До ${field.maxFiles} файлов` : 'Несколько файлов' }}</small>
+              <small>{{ field.scalar || field.maxFiles === 1 ? t('composer.oneFile') : field.maxFiles ? t('composer.upToFiles', { count: field.maxFiles }) : t('composer.multipleFiles') }}</small>
             </article>
           </div>
         </section>
       </div>
-      <div v-if="diagnosticOpen" class="diagnostic-backdrop" @click.self="diagnosticOpen = false">
-        <section class="diagnostic-dialog" role="dialog" aria-modal="true" aria-label="Диагностика Kie.ai">
-          <header><div><span class="eyebrow">ДИАГНОСТИКА ПРОВАЙДЕРА</span><h2>Kie.ai</h2></div><button type="button" class="dialog-close" aria-label="Закрыть" @click="diagnosticOpen = false">×</button></header>
-          <div v-if="diagnosticLoading" class="diagnostic-loading">Проверяю серверный ключ, авторизацию и тариф модели…</div>
-          <div v-else-if="diagnosticError" class="diagnostic-summary error"><strong>Сервис диагностики недоступен</strong><span>{{ diagnosticError }}</span></div>
+      <div v-if="studio.isAdmin && diagnosticOpen" class="diagnostic-backdrop" @click.self="diagnosticOpen = false">
+        <section class="diagnostic-dialog" role="dialog" aria-modal="true" :aria-label="t('composer.diagnostics')">
+          <header><div><span class="eyebrow">{{ t('composer.diagnosticsEyebrow') }}</span><h2>Kie.ai</h2></div><button type="button" class="dialog-close" :aria-label="t('common.close')" @click="diagnosticOpen = false">×</button></header>
+          <div v-if="diagnosticLoading" class="diagnostic-loading">{{ t('composer.diagnosticsChecking') }}</div>
+          <div v-else-if="diagnosticError" class="diagnostic-summary error"><strong>{{ t('composer.diagnosticsUnavailable') }}</strong><span>{{ diagnosticError }}</span></div>
           <template v-else-if="diagnostics">
             <div class="diagnostic-summary" :class="diagnostics.ok ? 'success' : 'error'">
-              <strong>{{ diagnostics.ok ? 'Все проверки пройдены' : 'Найдена ошибка' }}</strong>
-              <span>{{ diagnostics.model.name || diagnostics.model.id }}<template v-if="diagnostics.quote?.credits != null"> · {{ diagnostics.quote.credits }} кредитов</template></span>
+              <strong>{{ diagnostics.ok ? t('composer.diagnosticsOk') : t('composer.diagnosticsError') }}</strong>
+              <span>{{ diagnostics.model.name || diagnostics.model.id }}<template v-if="diagnostics.quote?.credits != null"> · {{ t('common.credits', { count: diagnostics.quote.credits }) }}</template></span>
             </div>
             <div class="diagnostic-checks">
               <article v-for="item in diagnostics.checks" :key="item.time + item.step" :class="item.status">
                 <span class="diagnostic-mark">{{ item.status === 'ok' ? '✓' : '!' }}</span>
                 <div><strong>{{ diagnosticStepLabel(item.step) }}</strong><p>{{ item.message }}</p></div>
-                <time>{{ item.durationMs }} мс</time>
+                <time>{{ t('common.milliseconds', { count: item.durationMs }) }}</time>
               </article>
             </div>
-            <details class="diagnostic-mechanism" open><summary>Механизм запросов</summary><dl><template v-for="(value, key) in diagnostics.mechanism" :key="key"><dt>{{ diagnosticMechanismLabel(key) }}</dt><dd>{{ value }}</dd></template></dl></details>
-            <details class="diagnostic-log" open><summary>Последние записи журнала</summary><ol><li v-for="(item, index) in diagnostics.recentLogs" :key="item.time + item.step + index" :class="item.status"><time>{{ diagnosticTime(item.time) }}</time><strong>{{ diagnosticStepLabel(item.step) }}</strong><span>{{ item.message }}</span><em>{{ item.durationMs }} мс</em></li></ol></details>
+            <details class="diagnostic-mechanism" open><summary>{{ t('composer.requestMechanism') }}</summary><dl><template v-for="(value, key) in diagnostics.mechanism" :key="key"><dt>{{ diagnosticMechanismLabel(key) }}</dt><dd>{{ value }}</dd></template></dl></details>
+            <details class="diagnostic-log" open><summary>{{ t('composer.recentLogs') }}</summary><ol><li v-for="(item, index) in diagnostics.recentLogs" :key="item.time + item.step + index" :class="item.status"><time>{{ diagnosticTime(item.time) }}</time><strong>{{ diagnosticStepLabel(item.step) }}</strong><span>{{ item.message }}</span><em>{{ t('common.milliseconds', { count: item.durationMs }) }}</em></li></ol></details>
           </template>
-          <footer><button type="button" class="secondary-button" :disabled="diagnosticLoading" @click="openDiagnostics">Повторить проверку</button><button type="button" class="primary-button" @click="diagnosticOpen = false">Закрыть</button></footer>
+          <footer><button type="button" class="secondary-button" :disabled="diagnosticLoading" @click="openDiagnostics">{{ t('composer.retryCheck') }}</button><button type="button" class="primary-button" @click="diagnosticOpen = false">{{ t('common.close') }}</button></footer>
         </section>
       </div>
     </Teleport>

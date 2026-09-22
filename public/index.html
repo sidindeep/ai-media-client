@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#090909">
   <title>AI Media Client</title>
+  <link rel="icon" type="image/png" href="/brand-logo.png">
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/shared/styles.css">
   <link rel="stylesheet" href="/web.css">
@@ -16,7 +17,7 @@
 </head>
 <body>
   <header>
-    <div class="header-brand"><span class="mark">ИИ</span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p><p id="appVersion" class="app-version" role="status">DEBUG · проверяем версию…</p></div>
+    <div class="header-brand"><span class="mark"><img src="/brand-logo.png" alt=""></span><strong>Медиастудия</strong><p class="brand-caption">WEB · IMAGE / VIDEO</p><p id="appVersion" class="app-version" role="status">DEBUG · проверяем версию…</p></div>
   <nav id="appTabs" class="app-tabs" role="tablist" aria-label="Разделы приложения">
     <button id="tabGeneration" type="button" role="tab" aria-controls="pageGeneration" aria-selected="true" data-page="pageGeneration">Генерация</button>
     <button id="tabHistory" type="button" role="tab" aria-controls="pageHistory" aria-selected="false" tabindex="-1" data-page="pageHistory">История</button>
@@ -30,7 +31,7 @@
   </header>
   <main id="appMain">
     <aside>
-      <div class="studio-rail" aria-label="Разделы медиа"><span class="studio-rail-logo">ИИ</span><span class="studio-rail-label">MEDIA<br>STUDIO</span></div>
+      <div class="studio-rail" aria-label="Разделы медиа"><span class="studio-rail-logo"><img src="/brand-logo.png" alt=""></span><span class="studio-rail-label">MEDIA<br>STUDIO</span></div>
       <label for="generationProvider">Провайдер генерации</label>
       <select id="generationProvider"><option value="kie">Kie.ai · изображения и видео</option><option value="codex">Codex CLI · изображения и текст</option></select>
       <div id="kieModelControls">

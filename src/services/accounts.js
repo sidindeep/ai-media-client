@@ -21,8 +21,13 @@ function publicRecord(record) {
   else if (['fail', 'blocked'].includes(record.state)) result.error = 'Генерация не выполнена. Резерв возвращён.';
   return result;
 }
-function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
-  const services = new Map(), wallet = createWallet(pool), pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
+function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack }) {
+  const services = new Map();
+  const wallet = createWallet(pool, { onPurchase: async accountId => {
+    const operation = services.get(accountId);
+    if (operation) (await operation).events.emit('changed');
+  } });
+  const pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
   const routedProvider = createProviderRouter([provider]);
   async function get(accountId) {
     if (!services.has(accountId)) {
@@ -35,7 +40,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
     return services.get(accountId);
   }
   return {
-    pool, wallet, pricing, workspaces, get,
+    pool, wallet, pricing, workspaces, starterPack, get,
     async recover() {
       const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('queued','preparing','submitting','waiting','queuing','generating','unknown')")).rows;
       for (const row of rows) await get(row.account_id);
@@ -50,7 +55,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
         }
       };
       const accountId = selected || user.id;
-      if (!/^[a-f0-9-]{36}$/.test(accountId) || !(await pool.query('SELECT id FROM media_accounts WHERE id=$1', [accountId])).rowCount) throw new Error('Аккаунт не найден');
+      const account = /^[a-f0-9-]{36}$/.test(accountId) ? (await pool.query('SELECT id,role FROM media_accounts WHERE id=$1', [accountId])).rows[0] : null;
+      if (!account) throw new Error('Аккаунт не найден');
       const service = await get(accountId);
       if (user.role === 'admin') return {
         ...service,
@@ -58,7 +64,11 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
           if (method === 'getBalance') return wallet.get(accountId);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
           if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before);
-          if (method === 'createTask') return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
+          if (method === 'createTask') {
+            await starterPack?.assertProvider(accountId, account.role, 'media');
+            return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
+          }
+          if (['nativeQuote', 'diagnoseProvider'].includes(method)) await starterPack?.assertProvider(accountId, account.role, 'media');
           return service.dispatch(method, args);
         }
       };
@@ -67,6 +77,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
         async dispatch(method, args) {
           switch (method) {
             case 'getCatalog': {
+              const access = starterPack ? await starterPack.status(accountId, account.role) : { active: false };
+              if (access.active) return { providers: [], models: [] };
               const catalog = service.catalog();
               return { providers: [{ id: 'media', name: catalog.providers[0]?.name || 'Медиастудия' }], models: catalog.models.map(model => ({
                 id: model.id, apiModel: model.id, providerId: 'media', name: model.name, kind: model.kind,
@@ -76,6 +88,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
             case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord);
             case 'createTask': {
+              await starterPack?.assertProvider(accountId, account.role, 'media');
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
               const request = { ...args[0], ...(await workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId)) };
               return publicRecord(await service.createTask(request));
@@ -86,8 +99,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
               return publicRecord(row);
             }
             case 'getBalance': return wallet.get(accountId);
-            case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
-            case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+            case 'nativeQuote': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+            case 'diagnoseProvider': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'nativeLedger': return wallet.ledger(accountId);
             case 'queueStatus': return { paused: service.queue.paused, concurrency: service.queue.concurrency, error: service.queue.error ? 'Очередь приостановлена. Проверьте историю.' : null };
             case 'costSettings': return { rubPerCredit: 0, native: true };
@@ -103,7 +116,25 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher }) {
       };
     },
     async list() {
-      return (await pool.query('SELECT a.id,a.display_name AS name,a.role,a.created_at,w.balance,w.held,(SELECT string_agg(verified_email,\', \') FROM media_identities i WHERE i.account_id=a.id) AS email FROM media_accounts a JOIN media_wallets w ON w.account_id=a.id ORDER BY a.created_at DESC LIMIT 500')).rows;
+      const rows = (await pool.query(`SELECT a.id,a.display_name AS name,a.role,a.created_at,w.balance,w.held,
+        (SELECT string_agg(verified_email,', ') FROM media_identities i WHERE i.account_id=a.id) AS email,
+        EXISTS(SELECT 1 FROM media_ledger l WHERE l.account_id=a.id AND l.kind='grant' AND l.reference=$1) AS starter_enrolled,
+        EXISTS(SELECT 1 FROM media_ledger l WHERE l.account_id=a.id AND l.kind='purchase') AS starter_paid
+        FROM media_accounts a JOIN media_wallets w ON w.account_id=a.id ORDER BY a.created_at DESC LIMIT 500`, [starterPack?.reference || 'starter-pack-disabled'])).rows;
+      return rows.map(row => ({ ...row, starterPack: starterPack?.summarize(row.role, row.starter_enrolled, row.starter_paid) || null }));
+    },
+    async starterOverview() {
+      if (!starterPack) return null;
+      const settings = starterPack.settings();
+      const row = (await pool.query(`SELECT
+        (SELECT count(DISTINCT account_id) FROM media_ledger WHERE kind='grant' AND reference=$1) AS enrolled,
+        (SELECT count(DISTINCT account_id) FROM media_ledger WHERE kind='purchase') AS paid,
+        (SELECT count(*) FROM media_accounts a WHERE a.role='user'
+          AND EXISTS(SELECT 1 FROM media_ledger l WHERE l.account_id=a.id AND l.kind='grant' AND l.reference=$1)
+          AND NOT EXISTS(SELECT 1 FROM media_ledger l WHERE l.account_id=a.id AND l.kind='purchase')) AS active`, [starterPack.reference])).rows[0];
+      return { version: settings.version, enabled: settings.enabled, credits: settings.credits,
+        modelAccess: 'GPT', unlockEvent: settings.unlockLedgerKind,
+        enrolled: Number(row.enrolled), paid: Number(row.paid), active: Number(row.active) };
     },
     async setRole(actorId, accountId, role, reason) {
       if (!['admin', 'user'].includes(role) || typeof reason !== 'string' || !reason.trim() || reason.length > 500) throw new Error('Укажите роль и причину изменения');

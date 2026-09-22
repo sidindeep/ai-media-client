@@ -27,7 +27,7 @@ app.whenReady().then(async () => {
     codexWorker = require('../src/services/codex-worker').createCodexWorker(async request => {
       codexRequest = request;
       if (request.prompt === 'Проверка Vue polling') await new Promise(resolve => setTimeout(resolve, 400));
-      return { output: 'Тестовый ответ Codex', usage: { input_tokens: 100, output_tokens: 20, cached_input_tokens: 60, reasoning_output_tokens: 5 }, ...(request.kind === 'image' ? { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' } : {}) };
+      return { output: request.kind === 'image' && request.prompt === 'Проверка Vue polling' ? 'Изображение создано.' : 'Тестовый ответ Codex', usage: { input_tokens: 100, output_tokens: 20, cached_input_tokens: 60, reasoning_output_tokens: 5 }, ...(request.kind === 'image' ? { imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' } : {}) };
     }, { login: {
       status: async () => loginState,
       start: async () => (loginState = { state: 'running', code: 'ABCD-EF123' }),
@@ -58,6 +58,7 @@ app.whenReady().then(async () => {
       await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,5000)', [id]);
       await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(token), id]);
     }
+    await pool.query('INSERT INTO media_identities(provider,subject,account_id,verified_email) VALUES($1,$2,$3,$4)', ['google', 'admin-ui', adminId, 'admin@example.test']);
     const origin = `http://localhost:${runtime.server.address().port}`;
     const browserSession = session.fromPartition(`web-ui-${randomUUID()}`);
     win = new BrowserWindow({ show: false, webPreferences: { session: browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true } });
@@ -154,7 +155,8 @@ app.whenReady().then(async () => {
     assert.match(startupTiming, /^Подключение: (?:\d+ мс|\d+,\d с) · данные: (?:\d+ мс|\d+,\d с) · готово: (?:\d+ мс|\d+,\d с)$/);
     assert.equal(await evaluate("document.querySelector('.provider-selector')"), null);
     assert.equal(await evaluate("document.querySelector('.provider-diagnostic-actions')"), null);
-    assert.equal(await evaluate("document.querySelector('.sidebar-provider-check').textContent"), 'Проверить Kie');
+    assert.equal(await evaluate("document.querySelector('.sidebar-provider-check')"), null, 'provider diagnostics are admin-only');
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.sidebar-provider-option strong'), item=>item.textContent)"), ['AI-модели', 'Медиа-модели']);
     assert.equal(await evaluate("Boolean(document.querySelector('.composer-controls > .preset-bar'))"), true);
     assert.equal(await evaluate("document.querySelector('.composer-resize-handle')"), null);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.composer-body textarea')).resize"), 'none');
@@ -162,7 +164,10 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.preset-summary').click();void 0");
     await until("document.querySelector('.preset-bar').open && document.querySelector('.preset-popover')");
     await evaluate("document.querySelector('.preset-summary').click();void 0");
-    assert.equal(Math.round(Number(await evaluate("document.querySelector('.composer-card').getBoundingClientRect().height"))), 230);
+    const composerSize = await evaluate(`(()=>{const composer=document.querySelector('.composer-card');const style=getComputedStyle(composer);return {height:composer.getBoundingClientRect().height,clientHeight:composer.clientHeight,scrollHeight:composer.scrollHeight,overflowY:style.overflowY}})()`);
+    assert.ok(composerSize.height >= 230, 'composer keeps its compact minimum height');
+    assert.ok(composerSize.scrollHeight <= composerSize.clientHeight + 1, 'composer grows to fit its content');
+    assert.equal(composerSize.overflowY, 'visible', 'composer does not show an internal scrollbar');
     assert.equal(await evaluate("document.querySelector('.composer-controls').textContent.includes('Количество') || document.querySelector('.composer-controls').textContent.includes('шт.')"), false);
     assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>entry.name.endsWith('/api/startup')).length"), 0, 'verified /app navigation must reuse the server session check');
     await until("document.querySelector('.header-credit-balance strong')?.textContent==='4'");
@@ -189,6 +194,16 @@ app.whenReady().then(async () => {
     assert.deepEqual(bootMotion.enabled, { mode: 'on', label: 'Анимация: включена', animation: 'site-boot-orbit' });
     assert.deepEqual(bootMotion.disabled, { mode: 'off', label: 'Анимация: выключена', animation: 'none' });
     assert.equal(bootMotion.stored, 'on');
+    const bootLayout = await evaluate(`(async()=>{
+      const screen=document.createElement('div');screen.className='site-boot-screen';
+      screen.innerHTML='<div class="site-boot-rings"><span></span><span></span><span></span></div><div class="site-boot-content"><img class="site-boot-logo" src="/brand-logo.png" alt=""><span class="site-boot-line"></span><p>Загрузка</p><small>Подготовка</small></div>';
+      document.body.append(screen);const logo=screen.querySelector('.site-boot-logo');if(!logo.complete)await logo.decode();
+      const logoBox=logo.getBoundingClientRect(),ringsBox=screen.querySelector('.site-boot-rings').getBoundingClientRect();
+      const result={centerDelta:Math.abs((logoBox.top+logoBox.height/2)-(ringsBox.top+ringsBox.height/2)),hasMotionToggle:Boolean(screen.querySelector('[data-boot-motion-toggle]'))};
+      screen.remove();return result;
+    })()`);
+    assert.ok(bootLayout.centerDelta <= 1, 'boot logo is vertically centered inside the rings');
+    assert.equal(bootLayout.hasMotionToggle, false, 'boot screen does not show an animation toggle');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.model-picker-trigger strong')).color"), 'rgb(49, 45, 56)');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.sidebar-tabs button.active')).color"), 'rgb(92, 67, 181)');
     assert.notEqual(await evaluate("getComputedStyle(document.querySelector('.composer-card')).backgroundColor"), 'rgb(14, 15, 23)');
@@ -216,7 +231,8 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('.chat-drop-panel')?.getAttribute('role')"), 'status');
     await finishTinyImageDrop('.chat-drop-overlay');
     await until("document.querySelector('.source-preview img')?.complete && document.querySelector('.source-preview img')?.naturalWidth===1");
-    assert.match(await evaluate("document.querySelector('.source-preview').textContent"), /dropped-source\.png.*Исходное изображение/s);
+    assert.equal(await evaluate("document.querySelector('.source-preview-copy')"), null);
+    assert.match(await evaluate("document.querySelector('.source-preview img').alt"), /dropped-source\.png/);
     await evaluate("document.querySelector('.source-remove').click();void 0");
     assert.equal(await evaluate("document.querySelector('.source-preview')"), null);
     await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
@@ -236,6 +252,8 @@ app.whenReady().then(async () => {
     const navigationCount = await evaluate("performance.getEntriesByType('navigation').length");
     await evaluate("document.querySelector('.sidebar-public-home-link').click();void 0");
     await until("location.pathname==='/' && getComputedStyle(document.querySelector('.public-landing')).display!=='none'");
+    await until("document.querySelector('.site-header .account-trigger')?.textContent.includes('Новое имя')");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.landing-login-link')).display"), 'none', 'authenticated landing hides the login link');
     assert.equal(await evaluate("performance.getEntriesByType('navigation').length"), navigationCount, 'public home opens without document navigation');
     assert.equal(await evaluate("performance.getEntriesByType('resource').filter(entry=>{const url=new URL(entry.name);return url.pathname==='/api/workspace/sync'&&!url.search}).length"), fullSyncCount, 'public home must not repeat the full workspace snapshot');
     assert.equal(await evaluate("document.querySelector('.site-boot-screen')"), null, 'public home transition must not show startup again');
@@ -271,7 +289,7 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('.sidebar-provider-option.active').dataset.provider"), 'codex');
     assert.equal(await evaluate("document.querySelector('.model-pill select').value"), 'gpt-5.5');
     assert.equal(await evaluate("document.querySelector('.welcome h2').textContent"), 'GPT-5.5');
-    assert.equal(await evaluate("document.querySelector('.welcome p').textContent"), 'Codex · Text → Image');
+    assert.equal(await evaluate("document.querySelector('.welcome p').textContent"), 'AI-модели · Text → Image');
     assert.equal(await evaluate("document.querySelectorAll('.welcome-suggestions button').length"), 6);
     await evaluate("Array.from(document.querySelectorAll('.welcome-suggestions button')).find(button=>button.textContent==='Киберпанк-сцена').click();void 0");
     assert.match(await evaluate("document.querySelector('.composer-body textarea').value"), /киберпанк/i);
@@ -310,26 +328,69 @@ app.whenReady().then(async () => {
     assert.equal(rapidLaunch.selectedOlder, rapidLaunch.ids[1], 'clicking a queue item switches result details');
     assert.equal(rapidLaunch.restoredSelected, rapidLaunch.ids[0]);
     const newestCodexId = rapidLaunch.ids[0].startsWith('pending:') ? 'codex:' + rapidLaunch.ids[0].slice('pending:'.length) : rapidLaunch.ids[0];
-    await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.result-card')?.dataset.recordId && document.querySelector('.result-output')?.textContent==='Тестовый ответ Codex'`);
+    await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.result-card')?.dataset.recordId && document.querySelector('.result-output')?.textContent==='Проверка Vue polling'`);
+    assert.equal(await evaluate("document.querySelector('.result-footer')"), null, 'the result card must not duplicate the prompt in a footer');
+    assert.equal(await evaluate("document.querySelector('.result-card .panel-heading h2')?.classList.contains('is-success')"), true);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.result-card .panel-heading h2')).color"), 'rgb(105, 213, 159)');
     assert.match(await evaluate("document.querySelector('.result-facts').textContent"), /Время\s+\d+ с/);
-    assert.match(await evaluate("document.querySelector('.result-receipt').textContent"), /Списано: 1 кредитов\..*Время генерации: \d+ с\..*Токены: 120 \(вход: 100; выход: 20; из входных — кэш: 60; из выходных — рассуждения: 5\)\./);
-    assert.match(await evaluate("document.querySelector('.result-route').textContent"), /Codex CLI.*GPT-5\.6-Sol.*генератор изображений.*Ультра.*Fast/);
-    assert.match(await evaluate("document.querySelector('.token-breakdown').textContent"), /Всего токенов\s*120.*Входные\s*100.*Выходные\s*20.*Кэш из входных\s*60.*Рассуждения из выходных\s*5/);
+    assert.match(await evaluate("document.querySelector('.result-receipt').textContent"), /Результат получен\..*Списано: 1 кредитов\..*Время генерации: \d+ с\./);
+    assert.equal(await evaluate("document.querySelector('.result-route').textContent"), 'Запрос → модель');
+    assert.equal(await evaluate("document.querySelectorAll('.generation-timeline li').length"), 6);
+    assert.match(await evaluate("document.querySelector('.generation-timeline').textContent"), /Принято приложением.*Ожидание свободного слота.*Подготовка запроса.*Отправка в модель.*Обработка моделью.*Получение результата/s);
+    assert.equal(await evaluate("/Codex|Kie|провайдер|токен/i.test(Array.from(document.querySelectorAll('.result-route,.result-receipt,.result-facts,.token-breakdown,.generation-timeline')).map(item=>item.textContent).join(' '))"), false, 'user result hides provider and token diagnostics');
+    assert.equal(await evaluate("document.querySelector('.token-breakdown')"), null);
     await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.chat-result-item.selected')?.dataset.recordId`);
     assert.equal(await evaluate("document.querySelector('.welcome-compact .welcome-suggestions')"), null, 'prompt suggestions disappear after the first generation');
-    assert.match(await evaluate(`document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}]').textContent`), /GPT-5\.6-Sol.*Проверка Vue polling.*1 кр\..*120 ток\..*Ультра.*Fast/s);
+    assert.match(await evaluate(`document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}]').textContent`), /GPT-5\.6-Sol.*Проверка Vue polling.*1 кр\..*Ультра.*Fast/s);
+    assert.equal(await evaluate(`/Codex|Kie|провайдер|ток\./i.test(Array.from(document.querySelectorAll('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}] .chat-result-title,.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}] .chat-result-meta')).map(item=>item.textContent).join(' '))`), false);
     const centralSelection = await evaluate(`(()=>{const current=${JSON.stringify(newestCodexId)};const item=Array.from(document.querySelectorAll('.chat-result-item')).find(entry=>entry.dataset.recordId!==current);if(!item)return null;item.querySelector('.chat-result-card').click();return item.dataset.recordId})()`);
     assert.ok(centralSelection, 'the central chat feed contains another selectable result');
     await until(`${JSON.stringify(centralSelection)}===document.querySelector('.result-card')?.dataset.recordId`);
     await evaluate(`document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}] .chat-result-card').click();void 0`);
     await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.result-card')?.dataset.recordId`);
+    win.setContentSize(1440, 900);
+    await until('document.documentElement.clientWidth>=1400');
     await evaluate("document.querySelector('.sidebar-history-link').click();void 0");
     await until(`document.querySelector('.history-page') && document.querySelector('.history-page h2')?.textContent==='История генераций' && document.querySelector('.history-item[data-record-id=${JSON.stringify(newestCodexId)}]')`);
     assert.equal(await evaluate("document.querySelector('.result-card .result-history')"), null, 'completed history is removed from the result panel');
-    assert.match(await evaluate(`document.querySelector('.history-item[data-record-id=${JSON.stringify(newestCodexId)}] .history-item-meta').textContent`), /1 кр\..*120 ток\..*Ультра.*Fast/);
+    assert.match(await evaluate(`document.querySelector('.history-item[data-record-id=${JSON.stringify(newestCodexId)}] .history-item-meta').textContent`), /1 кр\..*Ультра.*Fast/);
     assert.equal(await evaluate("document.querySelectorAll('.history-page .history-item').length"), await evaluate("Number(document.querySelector('.history-page-count').textContent)"));
+    await evaluate(`document.querySelector('.history-item[data-record-id=${JSON.stringify(newestCodexId)}]').click();void 0`);
+    await until(`${JSON.stringify(newestCodexId)}===document.querySelector('.history-detail-content')?.dataset.recordId`);
+    assert.match(await evaluate("document.querySelector('.history-detail').textContent"), /Проверка Vue polling.*Изображение создано\./s);
+    assert.equal(await evaluate("/Провайдер|Токены|Codex CLI|Kie\.ai/.test(document.querySelector('.history-detail-facts').textContent)"), false);
+    const historyLayout = await evaluate(`(()=>{const list=document.querySelector('.history-page-list').getBoundingClientRect();const detail=document.querySelector('.history-detail').getBoundingClientRect();return {listRight:list.right,listWidth:list.width,detailLeft:detail.left,detailWidth:detail.width}})()`);
+    assert.ok(historyLayout.detailLeft > historyLayout.listRight, 'history detail is rendered to the right of the item list');
+    assert.ok(historyLayout.detailWidth > historyLayout.listWidth, 'history detail receives the larger content column');
     await evaluate("document.querySelector('.history-page-back').click();void 0");
     await until(`!document.querySelector('.history-page') && document.querySelector('.chat-result-item[data-record-id=${JSON.stringify(newestCodexId)}]')`);
+    win.setContentSize(800, 600);
+    const chatScrollStorageKey = `ai-media-chat-scroll:${userId}`;
+    const savedChatScroll = await evaluate(`(async()=>{
+      const feed=document.querySelector('.chat-results');
+      feed.style.height='140px';feed.style.flex='0 0 140px';
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      feed.scrollTop=0;feed.dispatchEvent(new Event('scroll'));
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const saved=JSON.parse(localStorage.getItem(${JSON.stringify(chatScrollStorageKey)})||'{}')[${JSON.stringify(vueChat.id)}];
+      return {overflow:feed.scrollHeight>feed.clientHeight,button:Boolean(document.querySelector('.chat-latest-button')),saved};
+    })()`);
+    assert.equal(savedChatScroll.overflow, true, 'chat feed test fixture must be scrollable');
+    assert.equal(savedChatScroll.button, true, 'scrolling up shows the latest-message button');
+    assert.equal(savedChatScroll.saved.atBottom, false);
+    assert.equal(Math.round(savedChatScroll.saved.top), 0);
+    await evaluate("Array.from(document.querySelectorAll('.sidebar-list .list-item')).find(button=>button.textContent.includes('Ранее')).click();void 0");
+    await until("document.querySelector('.studio-header').textContent.includes('Ранее') && document.querySelector('.chat-results').scrollHeight-document.querySelector('.chat-results').clientHeight-document.querySelector('.chat-results').scrollTop<=32");
+    await evaluate("Array.from(document.querySelectorAll('.sidebar-tabs button')).find(button=>button.textContent.trim()==='Проекты').click();void 0");
+    await until("document.querySelector('.project-list-view')?.textContent.includes('Vue проект')");
+    await evaluate("Array.from(document.querySelectorAll('.project-list-view .list-item')).find(button=>button.textContent.includes('Vue проект')).click();void 0");
+    await until("document.querySelector('.project-children')?.textContent.includes('Vue чат')");
+    await evaluate("Array.from(document.querySelectorAll('.project-children .list-item')).find(button=>button.textContent.includes('Vue чат')).click();void 0");
+    await until("document.querySelector('.studio-header').textContent.includes('Vue чат') && document.querySelector('.chat-results').scrollTop<=1 && document.querySelector('.chat-latest-button')");
+    await evaluate("document.querySelector('.chat-latest-button').click();void 0");
+    await until("document.querySelector('.chat-results').scrollHeight-document.querySelector('.chat-results').clientHeight-document.querySelector('.chat-results').scrollTop<=2 && !document.querySelector('.chat-latest-button')");
+    assert.equal(await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(chatScrollStorageKey)}))[${JSON.stringify(vueChat.id)}].atBottom`), true, 'latest-message button stores the chat at the bottom');
+    await evaluate("const feed=document.querySelector('.chat-results');feed.style.height='';feed.style.flex='';void 0");
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 2000);
     await evaluate(`window.__mediaFetch=window.fetch.bind(window);window.__nativeQuoteFailures=1;window.__nativeQuoteCalls=0;window.__providerDiagnosticFailures=0;window.__providerDiagnosticCalls=0;window.fetch=(...args)=>{
       if(String(args[0]).includes('/api/rpc/nativeQuote')){
@@ -351,7 +412,7 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
     await until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='media' && document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
     assert.match(await evaluate("document.querySelector('.welcome h2').textContent"), /Nano Banana 2 Lite/i);
-    assert.equal(await evaluate("document.querySelector('.welcome p').textContent"), 'Kie.ai · Text → Image');
+    assert.equal(await evaluate("document.querySelector('.welcome p').textContent"), 'Медиа-модели · Text → Image');
     assert.equal(await evaluate("document.querySelector('.welcome-model-icon img').getAttribute('src')"), '/app/model-icons/nano-banana.webp');
     await evaluate("document.querySelector('.model-picker-trigger').click();void 0");
     await until("document.querySelector('.model-catalog-popover') && document.querySelectorAll('.model-brand-list button').length>5");
@@ -381,23 +442,41 @@ app.whenReady().then(async () => {
     await until(`document.querySelector('.aspect-native-select').value!==${JSON.stringify(savedPresetRatio)}`);
     await evaluate("Array.from(document.querySelectorAll('.preset-apply')).find(button=>button.textContent==='Nano тест').click();void 0");
     await until(`document.querySelector('.aspect-native-select').value===${JSON.stringify(savedPresetRatio)} && document.querySelector('.preset-chip.active .preset-apply')?.textContent==='Nano тест'`);
-    assert.equal(await evaluate("document.querySelector('.sidebar-provider-option[data-provider=media]').textContent.includes('Kie.ai')"), true);
+    const presetCountBeforeUpdate = await evaluate("document.querySelectorAll('.preset-chip').length");
+    await evaluate("document.querySelector('.aspect-picker-trigger').click();void 0");
+    await until("document.querySelector('.aspect-ratio-menu')");
+    await evaluate("Array.from(document.querySelectorAll('.aspect-ratio-menu button')).find(button=>button.getAttribute('aria-selected')==='false').click();void 0");
+    await until(`document.querySelector('.aspect-native-select').value!==${JSON.stringify(savedPresetRatio)}`);
+    const updatedPresetRatio = await evaluate("document.querySelector('.aspect-native-select').value");
+    await evaluate("document.querySelector('.preset-summary').click();void 0");
+    await until("document.querySelector('.preset-bar').open && !document.querySelector('.preset-update').disabled");
+    assert.equal(await evaluate("document.querySelector('.preset-chip.active .preset-apply')?.textContent"), 'Nano тест', 'edited loaded preset remains selected');
+    assert.match(await evaluate("document.querySelector('.preset-summary-copy small').textContent"), /изменён/);
+    await evaluate("document.querySelector('.preset-update').click();void 0");
+    await until("document.querySelector('.preset-update').disabled && !document.querySelector('.preset-summary-copy small').textContent.includes('изменён')");
+    assert.equal(await evaluate("document.querySelectorAll('.preset-chip').length"), presetCountBeforeUpdate, 'updating a preset does not create a duplicate');
+    await evaluate("document.querySelector('.preset-summary').click();document.querySelector('.aspect-picker-trigger').click();void 0");
+    await until("document.querySelector('.aspect-ratio-menu')");
+    await evaluate("Array.from(document.querySelectorAll('.aspect-ratio-menu button')).find(button=>button.getAttribute('aria-selected')==='false').click();void 0");
+    await until(`document.querySelector('.aspect-native-select').value!==${JSON.stringify(updatedPresetRatio)}`);
+    await evaluate("document.querySelector('.preset-summary').click();void 0");
+    await until("document.querySelector('.preset-bar').open");
+    await evaluate("Array.from(document.querySelectorAll('.preset-apply')).find(button=>button.textContent==='Nano тест').click();void 0");
+    await until(`document.querySelector('.aspect-native-select').value===${JSON.stringify(updatedPresetRatio)} && document.querySelector('.preset-update').disabled`);
+    assert.equal(await evaluate("document.querySelector('.sidebar-provider-option[data-provider=media]').textContent.includes('Медиа-модели')"), true);
     assert.match(await evaluate("document.querySelector('.attach-button').textContent"), /Исходники/);
     await uploadTinyImage('.attach-button input[type=file]');
     await until("document.querySelector('.source-preview img')?.complete && document.querySelector('.source-preview img')?.naturalWidth===1");
-    assert.match(await evaluate("document.querySelector('.source-preview').textContent"), /source\.png.*Исходные изображения/s);
+    assert.equal(await evaluate("document.querySelector('.source-preview-copy')"), null);
+    assert.match(await evaluate("document.querySelector('.source-preview img').alt"), /source\.png/);
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
     await evaluate("window.__nativeQuoteFailures=2;document.querySelector('.sidebar-provider-option[data-provider=codex]').click();document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
-    await until("document.querySelector('.quote.error')?.textContent.includes('официальный прайс Kie') && !document.querySelector('.generate-button').disabled");
-    await evaluate("window.__providerDiagnosticFailures=1;document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-check').click();void 0");
-    await until("document.querySelector('.diagnostic-summary.success')?.textContent.includes('Все проверки пройдены') && !document.querySelector('.generate-button').disabled");
-    assert.equal(await evaluate("window.__providerDiagnosticCalls"), 2, 'provider diagnostics retries one temporary database failure');
-    assert.equal(await evaluate("document.querySelectorAll('.diagnostic-checks article.ok').length"), 4);
-    assert.match(await evaluate("document.querySelector('.diagnostic-log').textContent"), /Авторизация Kie.*Kie принял ключ/s);
-    assert.equal(await evaluate("document.querySelector('.quote.error')"), null);
-    assert.equal(await evaluate("document.querySelector('.generate-button').textContent.includes('1')"), true);
-    await evaluate("document.querySelector('.dialog-close').click();window.__nativeQuoteCalls=0;const debouncePrompt=document.querySelector('.composer-body textarea');debouncePrompt.value='Проверка отложенного расчёта';debouncePrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await until("document.querySelector('.quote.error')?.textContent.includes('Не удалось рассчитать стоимость') && !document.querySelector('.generate-button').disabled");
+    assert.equal(await evaluate("document.querySelector('.details-button')"), null);
+    assert.equal(await evaluate("window.__providerDiagnosticCalls"), 0, 'user cannot run provider diagnostics');
+    assert.equal(await evaluate("/Kie|Codex|токен/i.test(document.querySelector('.generate-button').textContent)"), false);
+    await evaluate("window.__nativeQuoteCalls=0;const debouncePrompt=document.querySelector('.composer-body textarea');debouncePrompt.value='Проверка отложенного расчёта';debouncePrompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
     await until("document.querySelector('.generate-button').getAttribute('aria-busy')==='true' && document.querySelector('.generate-spinner')!==null && document.querySelector('.generate-button').textContent.includes('Расчёт')");
     await new Promise(resolve => setTimeout(resolve, 500));
     assert.equal(await evaluate("window.__nativeQuoteCalls"), 0);
@@ -431,20 +510,36 @@ app.whenReady().then(async () => {
     await until("document.querySelector('.chat-drop-panel')?.textContent.includes('Выберите назначение файла')");
     assert.equal(await evaluate("document.querySelectorAll('.chat-drop-target').length"), 2);
     await finishTinyImageDrop('.chat-drop-target');
-    await until("document.querySelector('.source-preview')?.textContent.includes('dropped-source.png')");
-    assert.match(await evaluate("document.querySelector('.source-preview').textContent"), /Исходное изображение/);
+    await until("document.querySelector('.source-preview img')?.alt.includes('dropped-source.png')");
+    assert.equal(await evaluate("document.querySelector('.source-preview-copy')"), null);
     await evaluate("(()=>{document.querySelector('.source-remove').click();const modelSelect=document.querySelector('.model-pill select');modelSelect.value='kie:nano-banana-2-lite';modelSelect.dispatchEvent(new Event('change',{bubbles:true}))})()");
     await until("document.querySelector('.model-pill select')?.value==='kie:nano-banana-2-lite'");
     await evaluate("const prompt=document.querySelector('.composer-body textarea');prompt.value='Проверка генерации Kie';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
     await until("!document.querySelector('.generate-button').disabled && document.querySelector('.generate-button').textContent.includes('1')");
     await evaluate(`window.__acceptedCreateTaskFetch=window.fetch.bind(window);window.__rejectNextCreateTask=true;window.fetch=(input,init)=>{const url=new URL(typeof input==='string'?input:input.url,location.origin);if(window.__rejectNextCreateTask&&url.pathname==='/api/rpc/createTask'){window.__rejectNextCreateTask=false;return Promise.resolve(new Response(JSON.stringify({error:'Тестовый отказ до постановки в очередь'}),{status:400,headers:{'Content-Type':'application/json'}}))}return window.__acceptedCreateTaskFetch(input,init)};document.querySelector('.generate-button').click();void 0`);
-    await until("document.querySelector('.chat-result-item.selected .chat-result-state.state-fail') && document.querySelector('.result-receipt')?.textContent.includes('Тестовый отказ до постановки в очередь')");
-    assert.match(await evaluate("document.querySelector('.chat-result-item.selected').textContent"), /Ошибка.*Тестовый отказ до постановки в очередь/s);
+    await until("document.querySelector('.chat-result-item.selected .chat-result-state.state-fail') && document.querySelector('.result-receipt')?.textContent.includes('Не удалось получить результат')");
+    assert.match(await evaluate("document.querySelector('.chat-result-item.selected').textContent"), /Ошибка.*Не удалось получить результат/s);
     await evaluate("window.fetch=window.__acceptedCreateTaskFetch;delete window.__acceptedCreateTaskFetch;delete window.__rejectNextCreateTask;void 0");
     await evaluate("document.querySelector('.generate-button').click();void 0");
-    await until("document.querySelector('.result-route')?.textContent.includes('Kie.ai') && document.querySelector('.result-receipt')?.textContent.includes('Ответ получен от Kie.ai')");
+    await until("document.querySelector('.result-route')?.textContent==='Запрос → модель' && document.querySelector('.result-receipt')?.textContent.includes('Результат получен.')");
     assert.equal(await evaluate("document.querySelectorAll('.generation-timeline li').length"), 6);
-    assert.match(await evaluate("document.querySelector('.generation-timeline').textContent"), /Принято приложением.*Ожидание свободного слота.*Отправка в Kie\.ai.*Kie\.ai принял задачу.*Генерация в Kie\.ai.*Получение результата/s);
+    assert.match(await evaluate("document.querySelector('.generation-timeline').textContent"), /Принято приложением.*Ожидание свободного слота.*Отправка задачи.*Задача принята сервисом.*Генерация результата.*Получение результата/s);
+    assert.equal(await evaluate("/Kie|Codex|провайдер|токен/i.test(Array.from(document.querySelectorAll('.result-route,.result-receipt,.result-facts,.generation-timeline')).map(item=>item.textContent).join(' '))"), false);
+    const resultLayout = await evaluate(`(()=>{
+      const card=document.querySelector('.result-card');
+      const last=card.lastElementChild;
+      const cardBox=card.getBoundingClientRect();
+      const lastBox=last.getBoundingClientRect();
+      return {
+        cardBottom:cardBox.bottom,
+        lastBottom:lastBox.bottom,
+        factColumns:getComputedStyle(document.querySelector('.result-facts')).gridTemplateColumns.split(' ').length,
+        actionColumns:getComputedStyle(document.querySelector('.result-actions')).gridTemplateColumns.split(' ').length,
+      };
+    })()`);
+    assert.ok(resultLayout.lastBottom <= resultLayout.cardBottom + 1, 'result content must stay inside the card border');
+    assert.equal(resultLayout.factColumns, 2, 'result facts use two readable columns in the inspector');
+    assert.equal(resultLayout.actionColumns, 2, 'result actions use a stable two-column grid');
     const stableKieItem = await evaluate(`(async()=>{
       const original=window.fetch;
       const payload=await original('/api/workspace/sync').then(response=>response.json());
@@ -457,7 +552,7 @@ app.whenReady().then(async () => {
     assert.ok(stableKieItem.revision >= 1);
     (await runtime.accounts.get(userId)).events.emit('changed');
     await until("window.__staleSyncServed===1");
-    assert.equal(await evaluate("document.querySelector('.result-receipt').textContent.includes('Ответ получен от Kie.ai')"), true, 'stale item snapshot must not rewind success');
+    assert.equal(await evaluate("document.querySelector('.result-receipt').textContent.includes('Результат получен.')"), true, 'stale item snapshot must not rewind success');
     assert.equal(await evaluate("document.querySelectorAll('.queue-item').length"), 0, 'accepted item must not leave an optimistic duplicate');
     await evaluate("window.fetch=window.__stableItemFetch;delete window.__stableItemFetch;delete window.__staleSyncServed;void 0");
     const queueService = await runtime.accounts.get(userId);
@@ -475,7 +570,8 @@ app.whenReady().then(async () => {
     queueService.events.emit('reset');
     await until("Array.from(document.querySelectorAll('.queue-row')).some(row=>row.textContent.includes('Удалить отправленное'))");
     await evaluate("Array.from(document.querySelectorAll('.queue-row')).find(row=>row.textContent.includes('Удалить отправленное')).querySelector('.queue-remove').click();void 0");
-    assert.match(await evaluate("window.__queueConfirmMessages.at(-1)"), /Токены Kie могли быть списаны/);
+    assert.match(await evaluate("window.__queueConfirmMessages.at(-1)"), /Кредиты могли быть списаны/);
+    assert.doesNotMatch(await evaluate("window.__queueConfirmMessages.at(-1)"), /Kie|Codex|токен/i);
     assert.equal((await queueService.history.list()).some(row => row.id === 'ui-sent-remove'), true, 'cancelled warning keeps the submitted item');
     await evaluate("window.confirm=message=>{window.__queueConfirmMessages.push(message);return true};Array.from(document.querySelectorAll('.queue-row')).find(row=>row.textContent.includes('Удалить отправленное')).querySelector('.queue-remove').click();void 0");
     await until("!Array.from(document.querySelectorAll('.queue-row')).some(row=>row.textContent.includes('Удалить отправленное'))");
@@ -493,6 +589,7 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('.theme-button').click();void 0");
     await until("document.documentElement.dataset.theme==='light'");
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.generation-timeline .is-done .timeline-marker')).every(marker=>getComputedStyle(marker).backgroundColor==='rgb(75, 157, 112)')"), true);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.result-card .panel-heading h2.is-success')).color"), 'rgb(38, 133, 91)');
     await evaluate("document.querySelector('.theme-button').click();void 0");
     await until("document.documentElement.dataset.theme==='dark'");
     assert.equal((await runtime.accounts.wallet.get(userId)).balanceUnits, 1000);
@@ -512,6 +609,8 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("localStorage.getItem('ai-media-studio-theme')"), 'light');
     await win.loadURL(origin + '/');
     await until("document.querySelector('.site-header [data-theme-toggle]') && document.documentElement.dataset.theme==='light'");
+    assert.notEqual(await evaluate("getComputedStyle(document.querySelector('.landing-login-link')).display"), 'none', 'guest landing keeps the login link');
+    assert.equal(await evaluate("document.querySelector('.site-header .account-trigger')"), null, 'guest landing does not render the profile menu');
     assert.equal(await evaluate("document.querySelector('meta[name=theme-color]').content"), '#f7f5f0');
     assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()"), '#f7f5f0');
     const landingMotion = await evaluate(`(async()=>{
@@ -523,21 +622,40 @@ app.whenReady().then(async () => {
     })()`);
     assert.deepEqual(landingMotion.running, { plays: 1, pauses: 0, label: 'Пауза видео', pressed: 'true', tickerName: 'ticker-carousel', tickerDuration: '48s', source: 'https://assets.mixkit.co/videos/51214/51214-720.mp4', autoplay: true, muted: true, loop: true, playsInline: true, objectFit: 'cover', titleColor: 'rgb(245, 241, 233)' });
     assert.deepEqual(landingMotion.stopped, { plays: 1, pauses: 1, label: 'Включить видео', pressed: 'false', ticker: 'none' });
-    assert.equal(await evaluate("document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item').length"), 7);
-    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item'),item=>item.textContent.trim())"), ['NANO BANANA 2','SEEDANCE 2.5','FLUX 2','KLING 3','VEO 3.1','GPT IMAGE','GROK IMAGINE']);
-    assert.equal(await evaluate("document.querySelectorAll('.ticker-row img').length"), 14);
+    assert.equal(await evaluate("document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item').length"), 17);
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item'),item=>item.textContent.trim())"), ['NANO BANANA 2','SEEDANCE 2.5','FLUX 2','KLING 3','VEO 3.1','GPT IMAGE','GROK IMAGINE','HAILUO','MINIMAX','IDEOGRAM','QWEN','RECRAFT','TOPAZ','RUNWAY','PIXVERSE','HAPPYHORSE','VOLCENGINE']);
+    assert.equal(await evaluate("document.querySelectorAll('.ticker-row img').length"), 34);
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.ticker-row img')).every(image=>image.complete&&image.naturalWidth>0)"), true);
     await evaluate("window.__landingScrollOptions=null;const original=Element.prototype.scrollIntoView;Element.prototype.scrollIntoView=function(options){window.__landingScrollOptions=options;return original.call(this,options)};document.querySelector('.site-nav a[href=\"#models\"]').click();void 0");
     await until("location.hash==='#models' && window.__landingScrollOptions?.behavior==='smooth'");
     await evaluate("document.querySelector('[data-theme-toggle]').click();void 0");
     await until("document.documentElement.dataset.theme==='dark'");
+    const adminService = await runtime.accounts.get(adminId);
+    const adminRecordAt = new Date().toISOString();
+    await adminService.history.update('admin-debug-result', {
+      id: 'admin-debug-result', state: 'success', providerId: 'codex', providerName: 'Codex CLI',
+      modelId: 'gpt-5.6-sol', modelName: 'GPT-5.6-Sol', kind: 'text', input: { prompt: 'Проверка admin-деталей', effort: 'ultra', speed: 'fast' },
+      output: 'Admin result', usage: { total_tokens: 321, input_tokens: 300, output_tokens: 21 },
+      createdAt: adminRecordAt, generationStartedAt: adminRecordAt, generationCompletedAt: adminRecordAt, generationDurationMs: 5000,
+    });
+    await adminService.history.update('admin-debug-result', {
+      nativeQuote: { amountUnits: 4000, credits: 4, scale: 1000, currency: 'credits', version: 'ui-smoke' },
+    });
     await browserSession.cookies.set({ url: origin, name: 'media-session', value: adminToken, httpOnly: true, sameSite: 'lax' });
     await win.loadURL(origin + '/');
-    await until("location.pathname==='/' && document.querySelector('.site-header') && !document.documentElement.classList.contains('site-booting')");
+    await until("location.pathname==='/' && document.querySelector('.site-header .account-trigger')?.textContent.includes('Администратор') && !document.documentElement.classList.contains('site-booting')");
     assert.equal(await evaluate("location.pathname"), '/', 'authenticated visitors stay on the public home page');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.landing-login-link')).display"), 'none');
     assert.equal(await evaluate("document.querySelector('.button[href=\"/app\"]')?.textContent.includes('Открыть студию')"), true);
     await win.loadURL(origin + '/app');
-    await until("document.querySelector('.account-trigger')?.textContent.includes('Администратор')");
+    await until("document.querySelector('.account-trigger')?.textContent.includes('Администратор') && document.querySelector('.chat-result-item[data-record-id=\"admin-debug-result\"]')");
+    await evaluate("document.querySelector('.chat-result-item[data-record-id=\"admin-debug-result\"] .chat-result-card').click();void 0");
+    await until("document.querySelector('.result-card')?.dataset.recordId==='admin-debug-result'");
+    assert.match(await evaluate("document.querySelector('.result-route').textContent"), /Codex CLI.*GPT-5\.6-Sol.*Ультра.*Fast/);
+    assert.match(await evaluate("document.querySelector('.result-receipt').textContent"), /Ответ получен от Codex CLI.*Списано: 4 кредитов.*Токены: 321/);
+    assert.match(await evaluate("document.querySelector('.token-breakdown').textContent"), /Всего токенов\s*321.*Входные\s*300.*Выходные\s*21/);
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.sidebar-provider-option strong'), item=>item.textContent)"), ['Codex CLI', 'Kie.ai']);
+    assert.equal(await evaluate("document.querySelector('.sidebar-provider-check').textContent"), 'Проверить Kie');
     await evaluate("document.querySelector('.account-trigger').click();void 0");
     await until("document.querySelector('.account-admin-link')?.textContent.includes('Админка')");
     assert.equal(await evaluate("document.querySelector('.account-admin-link').getAttribute('href')"), '/admin.html');
@@ -549,6 +667,8 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate("document.querySelector('#provider').value"), 'kie');
     await win.loadURL(origin + '/admin.html#credits');
     await until("document.querySelector('#grantAccount').options.length===2");
+    await until("document.querySelector('#accountEmail')?.textContent==='admin@example.test'");
+    assert.equal(await evaluate("document.querySelector('#accountEmail').hidden"), false);
     await until("document.querySelector('#appVersion').textContent.includes('сборка')");
     assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия \d+\.\d+\.\d+(?: · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2})? · сборка [a-f0-9]{12}/);
     await evaluate("location.hash='codexPanel';void 0");
@@ -594,8 +714,19 @@ app.whenReady().then(async () => {
     await until("document.querySelector('#adminStatus').textContent==='Роль сохранена' && !document.querySelector('#roleDialog').open");
     assert.equal((await pool.query('SELECT role FROM media_accounts WHERE id=$1', [userId])).rows[0].role, 'admin');
     assert.equal((await pool.query('SELECT reason FROM media_role_audit WHERE account_id=$1', [userId])).rows[0].reason, 'Назначение через панель');
+    const starterId = randomUUID(), starterToken = randomBytes(32).toString('base64url');
+    await pool.query("INSERT INTO media_accounts(id,display_name,role) VALUES($1,'Новый пользователь','user')", [starterId]);
+    await runtime.accounts.starterPack.enroll(pool, starterId, 'user');
+    await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(starterToken), starterId]);
+    await browserSession.cookies.set({ url: origin, name: 'media-session', value: starterToken, httpOnly: true, sameSite: 'lax' });
+    await win.loadURL(origin + '/app');
+    await until("document.querySelector('.header-credit-balance strong')?.textContent==='150' && document.querySelectorAll('.composer-tabs button').length===2");
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.sidebar-provider-option strong'), item=>item.textContent)"), ['GPT-модели']);
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.composer-tabs button'), item=>item.textContent.trim()).join('|')"), '▢ Текст|▧ Изображение');
+    await runtime.accounts.wallet.purchase(starterId, 1000, 'ui-first-payment', 'Первая UI-оплата');
+    await until("document.querySelector('.header-credit-balance strong')?.textContent==='151' && document.querySelectorAll('.composer-tabs button').length===4 && document.querySelectorAll('.sidebar-provider-option').length===2");
     assert.deepEqual(errors, []);
-    console.log('PASS: web account UI, 176 models including 27 audio models, native price and spending, hidden provider finance, logout, admin account list and exact credit grant.');
+    console.log('PASS: web account UI, starter-pack GPT restriction and payment unlock, 176 models including 27 audio models, native price and spending, hidden provider finance, logout, admin account list and exact credit grant.');
   } catch (error) { console.error(error); process.exitCode = 1; }
   finally {
     global.fetch = originalFetch;

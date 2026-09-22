@@ -10,12 +10,15 @@ import QueuePanel from './components/QueuePanel.vue';
 import ResultPanel from './components/ResultPanel.vue';
 import AccountMenu from './components/AccountMenu.vue';
 import HeaderAccountActions from './components/HeaderAccountActions.vue';
+import LocaleSwitcher from './components/LocaleSwitcher.vue';
 import { getStartupStatus, setAccountContext, subscribeToChanges } from './api/client';
 import { mediaModelBrandId, modelBrand } from './domain/model-catalog';
+import { useI18n } from './i18n';
 import { useStudioStore } from './stores/studio';
 import type { GenerationRecord } from './types';
 
 const studio = useStudioStore();
+const { t } = useI18n();
 const rightOpen = ref(false);
 type AppSection = 'landing' | 'home' | 'workspace' | 'history';
 const sectionFromPath = (): AppSection => window.location.pathname === '/' || window.location.pathname === '/index.html' ? 'landing' : window.location.pathname === '/app/home' ? 'home' : window.location.pathname.includes('/history') ? 'history' : 'workspace';
@@ -23,7 +26,7 @@ const activeSection = ref<AppSection>(sectionFromPath());
 const initialReady = ref(false);
 const sessionAuthenticated = ref(false);
 const mobileView = ref<'chats' | 'workspace' | 'results'>('workspace');
-const activeChatName = computed(() => studio.activeChatId === 'system:recent' ? 'Ранее' : studio.chats.find(chat => chat.id === studio.activeChatId)?.name || 'Новый чат');
+const activeChatName = computed(() => studio.activeChatId === 'system:recent' ? t('navigation.earlier') : studio.chats.find(chat => chat.id === studio.activeChatId)?.name || t('navigation.newChat'));
 const showPromptSuggestions = computed(() => {
   const activeChat = studio.chats.find(chat => chat.id === studio.activeChatId);
   return studio.activeChatId !== 'system:recent' && Boolean(activeChat)
@@ -67,18 +70,18 @@ const promptSuggestions = computed(() => ({
 const welcomeModel = computed(() => {
   if (studio.provider === 'codex') {
     const model = studio.currentCodexModel;
-    return { name: model?.name || 'Codex', provider: 'Codex', brand: modelBrand('codex') };
+    return { name: model?.name || (studio.isAdmin ? 'Codex' : t('provider.aiModel')), provider: studio.isAdmin ? 'Codex' : t('provider.aiModels'), brand: modelBrand('codex') };
   }
   const model = studio.currentMediaModel;
-  const provider = studio.catalog?.providers.find(item => item.id === model?.providerId)?.name || 'Kie.ai';
+  const provider = studio.isAdmin ? (studio.catalog?.providers.find(item => item.id === model?.providerId)?.name || 'Kie.ai') : t('provider.mediaModels');
   const brandId = model ? mediaModelBrandId(model.id, model.name) : 'other';
-  return { name: model?.name || 'Выберите модель', provider, brand: modelBrand(brandId) };
+  return { name: model?.name || t('provider.selectModel'), provider, brand: modelBrand(brandId) };
 });
 const startupTitle = computed(() => studio.databaseState === 'unavailable'
-  ? 'Восстанавливаем соединение с базой данных…'
+  ? t('boot.databaseRecovering')
   : studio.databaseState === 'connecting'
-    ? 'Проверяем соединение с базой данных…'
-    : 'Загружаем рабочее пространство…');
+    ? t('boot.databaseChecking')
+    : t('boot.workspace'));
 let unsubscribe: (() => void) | null = null;
 let eventStreamReady = false;
 let studioInitialization: Promise<boolean> | null = null;
@@ -90,7 +93,7 @@ function startLiveUpdates() {
       eventStreamReady = true;
       return;
     }
-    void (event === 'reset' ? studio.refreshFull() : studio.refresh()).catch(() => {});
+    void Promise.all([event === 'reset' ? studio.refreshFull() : studio.refresh(), studio.refreshAccess()]).catch(() => {});
   });
 }
 
@@ -180,6 +183,7 @@ function selectResult(id: string) {
 function selectHistoryResult(record: GenerationRecord) {
   studio.selectChat(record.chatId || 'system:recent');
   studio.select(record.id);
+  if (activeSection.value === 'history') return;
   if (window.matchMedia('(max-width: 720px)').matches) mobileView.value = 'results';
   else if (window.matchMedia('(max-width: 1050px)').matches) rightOpen.value = true;
 }
@@ -201,17 +205,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="!initialReady || (activeSection !== 'landing' && !studio.accountReady)" class="site-boot-screen" role="status" aria-live="polite" aria-label="Загрузка AI Media Client">
+  <div v-if="!initialReady || (activeSection !== 'landing' && !studio.accountReady)" class="site-boot-screen" role="status" aria-live="polite" :aria-label="t('boot.aria')">
     <div class="site-boot-rings" aria-hidden="true"><span></span><span></span><span></span></div>
-    <div class="site-boot-content"><strong class="site-boot-logo">AI MEDIA</strong><span class="site-boot-line"></span><p>{{ startupTitle }}</p><small>{{ studio.providerReadiness === 'checking' ? 'Подготавливаем сервисы' : 'Загружаем только необходимые данные' }}</small><button v-if="studio.error" type="button" @click="studio.initialize">Повторить</button><button class="site-boot-motion" type="button" data-boot-motion-toggle aria-pressed="true">Анимация: включена</button></div>
+    <div class="site-boot-content"><img class="site-boot-logo" src="/brand-logo.png" alt="AI Media Client"><span class="site-boot-line"></span><p>{{ startupTitle }}</p><small>{{ studio.providerReadiness === 'checking' ? t('boot.services') : t('boot.necessaryData') }}</small><button v-if="studio.error" type="button" @click="studio.initialize">{{ t('common.retry') }}</button></div>
   </div>
-  <LandingPage v-show="initialReady && activeSection === 'landing'" :active="activeSection === 'landing'" @home="showLanding" @studio="showWorkspace" />
+  <LandingPage v-show="initialReady && activeSection === 'landing'" :active="activeSection === 'landing'" :authenticated="sessionAuthenticated" :account-ready="studio.accountReady" @home="showLanding" @studio="showWorkspace" @history="showHistory" />
   <div v-show="initialReady && activeSection !== 'landing' && studio.accountReady" class="studio-app" :class="[`mobile-view-${mobileView}`, { 'right-panel-open': rightOpen }]">
     <Sidebar :active-section="activeSection" @landing="showLanding" @home="showHome" @workspace="showWorkspace" @history="showHistory" />
     <main class="studio-main">
-      <header class="studio-header"><div><span class="eyebrow">{{ activeSection === 'home' ? 'AI MEDIA CLIENT' : activeSection === 'history' ? 'БИБЛИОТЕКА РЕЗУЛЬТАТОВ' : `ТЕКУЩИЙ ЧАТ · ${activeChatName}` }}</span><h1>{{ activeSection === 'home' ? 'Главная' : activeSection === 'history' ? 'История' : 'Генерация' }}</h1></div><div class="header-actions"><HeaderAccountActions :ready="studio.accountReady" @select-notification="selectHistoryResult" /><button v-if="activeSection !== 'home'" type="button" class="results-toggle" @click="rightOpen = true">Очередь и результаты</button><AccountMenu :ready="studio.accountReady" @history="showHistory" /></div></header>
-      <div class="studio-grid" :class="{ 'history-mode': activeSection === 'history', 'home-mode': activeSection === 'home' }"><HomePage v-if="activeSection === 'home'" @workspace="showWorkspace" /><HistoryPage v-else-if="activeSection === 'history'" @select="selectHistoryResult" @workspace="showWorkspace" /><div v-else class="studio-center" :class="{ 'has-chat-results': studio.visibleRecords.length }"><section class="welcome" :class="{ 'welcome-compact': studio.visibleRecords.length }" aria-label="Текущая модель"><span class="welcome-model-icon" :style="{ '--brand-accent': welcomeModel.brand.accent }"><img v-if="welcomeModel.brand.icon" :src="welcomeModel.brand.icon" alt=""><span v-else>{{ welcomeModel.brand.label.slice(0, 1) }}</span></span><h2>{{ welcomeModel.name }}</h2><p>{{ welcomeModel.provider }} · {{ modeLabels[studio.mode] }}</p><div v-if="showPromptSuggestions" class="welcome-suggestions" aria-label="Идеи для промпта"><button v-for="suggestion in promptSuggestions" :key="suggestion[0]" type="button" @click="usePromptSuggestion(suggestion[1])">{{ suggestion[0] }}</button></div></section><ChatResults v-if="studio.visibleRecords.length" @select="selectResult" /><Composer /></div><div v-if="activeSection === 'workspace'" class="studio-right"><button type="button" class="right-close" aria-label="Закрыть результаты" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel @history="showHistory" @workspace="showWorkspace" /></div></div>
+      <header class="studio-header"><div><span class="eyebrow">{{ activeSection === 'home' ? 'AI MEDIA CLIENT' : activeSection === 'history' ? t('navigation.resultsLibrary') : t('navigation.currentChat', { name: activeChatName }) }}</span><h1>{{ activeSection === 'home' ? t('navigation.home') : activeSection === 'history' ? t('navigation.history') : t('navigation.generation') }}</h1></div><div class="header-actions"><LocaleSwitcher /><HeaderAccountActions :ready="studio.accountReady" @select-notification="selectHistoryResult" /><button v-if="activeSection !== 'home'" type="button" class="results-toggle" @click="rightOpen = true">{{ t('navigation.queueAndResults') }}</button><AccountMenu :ready="studio.accountReady" @history="showHistory" /></div></header>
+      <div class="studio-grid" :class="{ 'history-mode': activeSection === 'history', 'home-mode': activeSection === 'home' }"><HomePage v-if="activeSection === 'home'" @workspace="showWorkspace" /><HistoryPage v-else-if="activeSection === 'history'" @select="selectHistoryResult" @workspace="showWorkspace" /><div v-else class="studio-center" :class="{ 'has-chat-results': studio.visibleRecords.length }"><section class="welcome" :class="{ 'welcome-compact': studio.visibleRecords.length }" :aria-label="t('provider.currentModel')"><span class="welcome-model-icon" :style="{ '--brand-accent': welcomeModel.brand.accent }"><img v-if="welcomeModel.brand.icon" :src="welcomeModel.brand.icon" alt=""><span v-else>{{ welcomeModel.brand.label.slice(0, 1) }}</span></span><h2>{{ welcomeModel.name }}</h2><p>{{ welcomeModel.provider }} · {{ modeLabels[studio.mode] }}</p><div v-if="showPromptSuggestions" class="welcome-suggestions" :aria-label="t('provider.promptIdeas')"><button v-for="suggestion in promptSuggestions" :key="suggestion[0]" type="button" @click="usePromptSuggestion(suggestion[1])">{{ suggestion[0] }}</button></div></section><ChatResults v-show="studio.visibleRecords.length" @select="selectResult" /><Composer /></div><div v-if="activeSection === 'workspace'" class="studio-right"><button type="button" class="right-close" :aria-label="t('provider.closeResults')" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel @history="showHistory" @workspace="showWorkspace" /></div></div>
     </main>
-    <nav class="mobile-nav" aria-label="Разделы студии"><button type="button" :class="{ active: mobileView === 'chats' }" @click="mobileView = 'chats'">Чаты</button><button type="button" :class="{ active: mobileView === 'workspace' }" @click="mobileView = 'workspace'">Работа</button><button type="button" :class="{ active: mobileView === 'results' }" @click="mobileView = 'results'">Результаты</button></nav>
+    <nav class="mobile-nav" :aria-label="t('navigation.sections')"><button type="button" :class="{ active: mobileView === 'chats' }" @click="mobileView = 'chats'">{{ t('navigation.chats') }}</button><button type="button" :class="{ active: mobileView === 'workspace' }" @click="mobileView = 'workspace'">{{ t('navigation.work') }}</button><button type="button" :class="{ active: mobileView === 'results' }" @click="mobileView = 'results'">{{ t('navigation.results') }}</button></nav>
   </div>
 </template>

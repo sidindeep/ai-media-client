@@ -10,6 +10,7 @@ const { createDatabaseAvailability } = require('./src/database/availability');
 const { createAuth } = require('./src/auth/service');
 const { createAccounts } = require('./src/services/accounts');
 const { createCodexWorker } = require('./src/services/codex-worker');
+const { createStarterPack } = require('./src/billing/starter-pack');
 
 function startupDiagnosticRequest(service) {
   const catalog = service.catalog();
@@ -89,8 +90,9 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher });
     if (config.auth.enabled && suppliedPool) {
       pool = await databaseOpener(config.database, suppliedPool);
-      auth = createAuth({ pool, config: config.auth, providers: authProviders });
-      accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher });
+      const starterPack = createStarterPack({ pool, config: config.starterPack });
+      auth = createAuth({ pool, config: config.auth, providers: authProviders, starterPack });
+      accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack });
       await accounts.recover();
       databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
     }
@@ -120,8 +122,9 @@ async function start({ config = loadConfig(), provider, pool: suppliedPool, auth
           let nextPool, nextAccounts;
           try {
             nextPool = await databaseOpener(config.database);
-            const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders });
-            nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher });
+            const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
+            const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack });
+            nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack });
             await nextAccounts.recover();
             if (closing) { await nextAccounts.close(); await nextPool.end(); return; }
             pool = nextPool; auth = nextAuth; accounts = nextAccounts;

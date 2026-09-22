@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 export type ModelPickerOption = {
   value: string;
   label: string;
@@ -40,13 +42,14 @@ export const MODEL_BRANDS: ModelBrand[] = [
   { id: 'elevenlabs', label: 'ElevenLabs', accent: '#f2f2f2' },
   { id: 'suno', label: 'Suno', accent: '#ff7a45' },
   { id: 'zimage', label: 'Z-Image', accent: '#9e83ff' },
-  { id: 'other', label: 'Другие', accent: '#8f8aa3' },
+  { id: 'other', label: 'Other', accent: '#8f8aa3' },
 ];
 
 const brandsById = new Map(MODEL_BRANDS.map(brand => [brand.id, brand]));
 
 export function modelBrand(id: string) {
-  return brandsById.get(id) || brandsById.get('other')!;
+  const brand = brandsById.get(id) || brandsById.get('other')!;
+  return brand.id === 'other' ? { ...brand, label: t('model.other') } : brand;
 }
 
 export function mediaModelBrandId(id: string, name: string) {
@@ -80,19 +83,19 @@ export function mediaModelBrandId(id: string, name: string) {
 export function modelSummary(name: string, description?: string) {
   const normalized = name.toLowerCase();
   if (description && description !== name && description !== 'Отдельный API Kie.ai') return description;
-  if (/remove background/.test(normalized)) return 'Удаление фона с изображения.';
-  if (/upscale/.test(normalized)) return /video/.test(normalized) ? 'Увеличение разрешения видео.' : 'Увеличение разрешения изображения.';
-  if (/segment map/.test(normalized)) return 'Создание карты сегментов изображения.';
-  if (/segment edit|image edit|\bedit\b/.test(normalized)) return 'Редактирование и преобразование изображения.';
-  if (/image to image|image-to-image/.test(normalized)) return 'Новая версия изображения по референсу.';
-  if (/text to image|text-to-image/.test(normalized)) return 'Генерация изображения по текстовому описанию.';
-  if (/reference to video|reference-to-video|references/.test(normalized)) return 'Видео по одному или нескольким референсам.';
-  if (/first.*last|transition/.test(normalized)) return 'Видео между начальным и конечным кадрами.';
-  if (/image to video|image-to-video/.test(normalized)) return 'Оживление изображения в видео.';
-  if (/text to video|text-to-video/.test(normalized)) return 'Генерация видео по текстовому описанию.';
-  if (/video edit|video-edit|video to video|video-to-video|transformation/.test(normalized)) return 'Преобразование готового видео.';
-  if (/avatar|lip sync|from audio|speech to video/.test(normalized)) return 'Генерация говорящего персонажа с синхронизацией.';
-  if (/motion.control|animate/.test(normalized)) return 'Перенос движения и анимация персонажа.';
-  if (/extend/.test(normalized)) return 'Продление готового видео.';
-  return 'Настраиваемая генерация через Kie.ai.';
+  if (/remove background/.test(normalized)) return t('model.summary.removeBackground');
+  if (/upscale/.test(normalized)) return t(/video/.test(normalized) ? 'model.summary.upscaleVideo' : 'model.summary.upscaleImage');
+  if (/segment map/.test(normalized)) return t('model.summary.segmentMap');
+  if (/segment edit|image edit|\bedit\b/.test(normalized)) return t('model.summary.editImage');
+  if (/image to image|image-to-image/.test(normalized)) return t('model.summary.imageToImage');
+  if (/text to image|text-to-image/.test(normalized)) return t('model.summary.textToImage');
+  if (/reference to video|reference-to-video|references/.test(normalized)) return t('model.summary.referenceToVideo');
+  if (/first.*last|transition/.test(normalized)) return t('model.summary.transition');
+  if (/image to video|image-to-video/.test(normalized)) return t('model.summary.imageToVideo');
+  if (/text to video|text-to-video/.test(normalized)) return t('model.summary.textToVideo');
+  if (/video edit|video-edit|video to video|video-to-video|transformation/.test(normalized)) return t('model.summary.videoEdit');
+  if (/avatar|lip sync|from audio|speech to video/.test(normalized)) return t('model.summary.avatar');
+  if (/motion.control|animate/.test(normalized)) return t('model.summary.animate');
+  if (/extend/.test(normalized)) return t('model.summary.extend');
+  return t('model.summary.default');
 }

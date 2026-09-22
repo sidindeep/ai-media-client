@@ -1,0 +1,7 @@
+{
+  "version": "2026-09-22-v1",
+  "enabled": true,
+  "credits": 150,
+  "allowedProviders": ["codex"],
+  "unlockLedgerKind": "purchase"
+}

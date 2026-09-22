@@ -10,8 +10,12 @@ const trace = require('../generation-log');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
-const publicPageAssets = new Set(['landing.css', 'landing.js', 'legal.css', 'login.js', 'web.css', 'version.js', 'theme.css', 'theme.js']);
-const landingModelIcons = new Set(['openai.svg', 'google.svg', 'bytedance.svg', 'kling.svg', 'grok.svg', 'flux.svg']);
+const publicPageAssets = new Set(['brand-logo.png', 'landing.css', 'landing.js', 'legal.css', 'login.js', 'web.css', 'version.js', 'theme.css', 'theme.js']);
+const landingModelIcons = new Set([
+  'openai.svg', 'google.svg', 'bytedance.svg', 'kling.svg', 'grok.svg', 'flux.svg',
+  'hailuo.svg', 'minimax.svg', 'ideogram.svg', 'qwen.svg', 'recraft.svg', 'topaz.svg',
+  'runway.svg', 'pixverse.svg', 'happyhorse.svg', 'volcengine.svg',
+]);
 const legalPages = new Map([
   ['/legal/terms', 'terms.html'],
   ['/legal/privacy', 'privacy.html'],
@@ -116,7 +120,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
         const sendVueIndex = async () => {
           let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
-          html = html.replace('<head>', `<head><meta name="account-id" content="${user?.id || 'pending'}"><meta name="account-role" content="${user?.role || 'pending'}">`);
+          const starterStatus = user && accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null;
+          html = html.replace('<head>', `<head><meta name="account-id" content="${user?.id || 'pending'}"><meta name="account-role" content="${user?.role || 'pending'}"><meta name="account-model-access" content="${starterStatus?.modelAccess || 'pending'}">`);
           res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
           res.end(req.method === 'HEAD' ? '' : html);
         };
@@ -144,7 +149,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           database,
           provider: readiness?.provider || { state: 'idle' },
           authenticated: config.auth.enabled ? Boolean(startupUser) : true,
-          account: startupUser ? { id: startupUser.id, role: startupUser.role } : null,
+          account: startupUser ? { id: startupUser.id, role: startupUser.role,
+            starterPack: accounts?.starterPack ? await accounts.starterPack.status(startupUser.id, startupUser.role) : null } : null,
         });
       }
       if (req.method === 'GET' && url.pathname === '/api/health') {
@@ -182,6 +188,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
       if (url.pathname.startsWith('/api/codex/')) {
+        await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
         if (req.method === 'GET' && url.pathname === '/api/codex/status') return json(res, 200, { enabled: Boolean(codex), allowed: Boolean(accounts) });
         if (!codex) return json(res, 503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
         const imageRequest = /^\/api\/codex\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
@@ -214,7 +221,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if ((isLanding || isVueApp) && ['GET', 'HEAD'].includes(req.method)) {
         return await sendVueApplication(user);
       }
-      if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null } });
+      if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null,
+        starterPack: accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null } });
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
         const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
         if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 200) throw new Error('Укажите имя до 200 символов');
@@ -278,6 +286,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           } catch { return json(res, 502, { error: 'Сервис Codex не отвечает. Проверьте его запуск.' }); }
         }
         if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return json(res, 200, { result: await accounts.list() });
+        if (url.pathname === '/api/admin/starter-pack' && req.method === 'GET') return json(res, 200, { result: await accounts.starterOverview() });
         if (url.pathname === '/api/admin/roles' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
           const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
           await accounts.setRole(user.id, body.accountId, body.role, body.reason);

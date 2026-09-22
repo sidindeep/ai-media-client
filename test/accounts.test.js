@@ -32,6 +32,8 @@ test('native prices use exact minor units, explicit tariffs, no provider cost co
   assert.throws(() => createPricing({ models: { bad: { baseUnits: Number.MAX_SAFE_INTEGER, perSecondUnits: 1 } } }).quote('bad', { duration: 1 }));
   assert.throws(() => loadConfig({ MEDIA_AUTH_ENABLED: 'false', MEDIA_HOST: '0.0.0.0' }));
   assert.throws(() => loadConfig({ MEDIA_PUBLIC_ORIGIN: 'http://public.example' }));
+  assert.equal(loadConfig({}).starterPack.credits, 150);
+  assert.deepEqual(loadConfig({}).starterPack.allowedProviders, ['codex']);
 });
 
 test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay and logout', { timeout: 60000 }, async t => {
@@ -80,6 +82,18 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request('/api/sources/' + 'a'.repeat(64))).status, 401);
   const alice = await login('alice'), bob = await login('bob'), owner = await login('owner'), otherIdentity = await login('alice', 'vk');
   assert.equal(alice.role, 'user'); assert.equal(owner.role, 'admin'); assert.notEqual(otherIdentity.id, alice.id);
+  assert.equal(alice.wallet.balance, 150); assert.equal(alice.starterPack.active, true); assert.equal(alice.starterPack.modelAccess, 'gpt-only');
+  assert.deepEqual(await result(rpc(alice, 'getCatalog')), { providers: [], models: [] });
+  assert.equal((await rpc(alice, 'nativeQuote', [{ modelId, input }])).status, 403);
+  await runtime.accounts.wallet.grant(owner.id, alice.id, 1000, 'starter-manual-grant', 'Ручное начисление не открывает каталог');
+  assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).active, true);
+  assert.equal(await runtime.accounts.wallet.purchase(alice.id, 1000, 'payment-first-alice', 'Первая тестовая оплата'), true);
+  assert.equal(await runtime.accounts.wallet.purchase(alice.id, 1000, 'payment-first-alice', 'Первая тестовая оплата'), false);
+  await assert.rejects(runtime.accounts.wallet.purchase(alice.id, 2000, 'payment-first-alice', 'Первая тестовая оплата'));
+  await runtime.accounts.wallet.purchase(bob.id, 1000, 'payment-first-bob', 'Первая тестовая оплата');
+  assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).active, false);
+  assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).modelAccess, 'all');
+  await pool.query('UPDATE media_wallets SET balance=0,held=0 WHERE account_id=ANY($1::uuid[])', [[alice.id, bob.id]]);
   const workspaceRequest = (user, path, method = 'GET', body) => request(path, { method, headers: { Cookie: user.cookie, 'X-Media-Client': 'web', 'X-Media-User': user.id, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const workspaceResult = async response => { const r = await response, body = await r.json(); assert.equal(r.status, 200, JSON.stringify(body)); return body.result; };
   const project = await workspaceResult(workspaceRequest(alice, '/api/projects', 'POST', { name: 'Личный проект' }));

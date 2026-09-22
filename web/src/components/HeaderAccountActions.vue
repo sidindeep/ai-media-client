@@ -5,10 +5,13 @@ import { activeSubscriptionPromotion, subscriptionOffers } from '../config/subsc
 import { useStudioStore } from '../stores/studio';
 import { applyStudioTheme } from '../theme';
 import type { Account, GenerationRecord } from '../types';
+import { resultModelLabel } from '../domain/result-presentation';
+import { useI18n } from '../i18n';
 
 const props = defineProps<{ ready: boolean }>();
 const emit = defineEmits<{ selectNotification: [record: GenerationRecord] }>();
 const studio = useStudioStore();
+const { formatDate, formatNumber, t } = useI18n();
 const root = ref<HTMLElement | null>(null);
 const account = ref<Account | null>(null);
 const notificationsOpen = ref(false);
@@ -27,7 +30,7 @@ const balance = computed(() => account.value?.wallet?.balance);
 const seenStorageKey = computed(() => `ai-media-notifications-seen:${account.value?.id || 'local'}`);
 
 function formatCredits(value?: number) {
-  return value === undefined ? '—' : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value);
+  return value === undefined ? '—' : formatNumber(value, { maximumFractionDigits: 3 });
 }
 
 function notificationTime(record: GenerationRecord) {
@@ -37,20 +40,20 @@ function notificationTime(record: GenerationRecord) {
 }
 
 function notificationTitle(record: GenerationRecord) {
-  if (record.state === 'success') return 'Генерация готова';
-  if (record.state === 'cancelled') return 'Генерация отменена';
-  if (record.state === 'unknown' || record.state === 'unconfirmed') return 'Нужно проверить результат';
-  return 'Ошибка генерации';
+  if (record.state === 'success') return t('header.generationReady');
+  if (record.state === 'cancelled') return t('header.generationCancelled');
+  if (record.state === 'unknown' || record.state === 'unconfirmed') return t('header.checkResult');
+  return t('header.generationError');
 }
 
 function notificationDescription(record: GenerationRecord) {
-  return record.modelName || record.modelId || record.providerName || 'Задача';
+  return resultModelLabel(record, studio.isAdmin);
 }
 
 function notificationDate(record: GenerationRecord) {
   const timestamp = notificationTime(record);
   if (!timestamp) return '';
-  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(timestamp);
+  return formatDate(timestamp, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function restoreSeen() {
@@ -74,6 +77,7 @@ async function loadAccount() {
   try {
     const previousId = account.value?.id;
     account.value = await api.getAccount();
+    studio.setModelAccess(account.value.starterPack?.modelAccess === 'gpt-only' ? 'gpt-only' : 'all');
     if (account.value.id !== previousId) restoreSeen();
   } catch {
     account.value = null;
@@ -121,6 +125,7 @@ function handleThemeChange(event: Event) {
 
 watch(() => props.ready, ready => { if (ready) void loadAccount(); else account.value = null; }, { immediate: true });
 watch(() => `${studio.accountActive.length}:${studio.history[0]?.id || ''}:${studio.history[0]?.state || ''}`, () => { if (props.ready) void loadAccount(); });
+watch(() => studio.modelAccess, () => { if (props.ready) void loadAccount(); });
 onMounted(() => {
   document.addEventListener('pointerdown', handlePointerDown);
   document.addEventListener('keydown', handleKeydown);
@@ -137,21 +142,21 @@ onBeforeUnmount(() => {
   <div ref="root" class="header-account-actions">
     <button class="subscription-button" type="button" aria-haspopup="dialog" @click="openSubscriptions">
       <span v-if="promotion" class="subscription-promo">{{ promotion.badge }}</span>
-      <span class="subscription-label">Тарифы</span>
+      <span class="subscription-label">{{ t('header.plans') }}</span>
     </button>
 
-    <span class="header-credit-balance" title="Доступный баланс внутренних кредитов" aria-label="Доступный баланс внутренних кредитов">
+    <span class="header-credit-balance" :title="t('header.balance')" :aria-label="t('header.balance')">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8L12 3.5Z"/><path d="m8.5 10 3.5 2 3.5-2M12 12v4"/></svg>
-      <strong>{{ formatCredits(balance) }}</strong><span>кр.</span>
+      <strong>{{ formatCredits(balance) }}</strong><span>{{ t('common.creditsShort') }}</span>
     </span>
 
     <div class="notification-control">
-      <button class="notification-button" type="button" aria-label="Уведомления" aria-haspopup="menu" :aria-expanded="notificationsOpen" @click="toggleNotifications">
+      <button class="notification-button" type="button" :aria-label="t('header.notifications')" aria-haspopup="menu" :aria-expanded="notificationsOpen" @click="toggleNotifications">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg>
         <span v-if="unreadCount" class="notification-count">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
       </button>
       <div v-if="notificationsOpen" class="notification-popover" role="menu">
-        <header><div><small>ЦЕНТР СОБЫТИЙ</small><strong>Уведомления</strong></div><button type="button" @click="markNotificationsRead">Прочитано</button></header>
+        <header><div><small>{{ t('header.eventCenter') }}</small><strong>{{ t('header.notifications') }}</strong></div><button type="button" @click="markNotificationsRead">{{ t('header.read') }}</button></header>
         <div v-if="notifications.length" class="notification-list">
           <button v-for="record in notifications" :key="record.id" type="button" role="menuitem" :class="{ unread: !seenIds.has(record.id), error: record.state !== 'success' }" @click="selectNotification(record)">
             <span class="notification-dot"></span>
@@ -159,11 +164,11 @@ onBeforeUnmount(() => {
             <time>{{ notificationDate(record) }}</time>
           </button>
         </div>
-        <p v-else class="notification-empty">Новых событий пока нет.</p>
+        <p v-else class="notification-empty">{{ t('header.noEvents') }}</p>
       </div>
     </div>
 
-    <button class="theme-button" type="button" :aria-label="theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'" :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'" :aria-pressed="theme === 'light'" @click="toggleTheme">
+    <button class="theme-button" type="button" :aria-label="theme === 'dark' ? t('theme.enableLight') : t('theme.enableDark')" :title="theme === 'dark' ? t('theme.light') : t('theme.dark')" :aria-pressed="theme === 'light'" @click="toggleTheme">
       <svg v-if="theme === 'dark'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
       <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.7 8.7 0 0 1 8.8 3.5 8.8 8.8 0 1 0 20.5 15.2Z"/></svg>
     </button>
@@ -172,17 +177,18 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div v-if="subscriptionsOpen" class="subscription-backdrop" @mousedown.self="subscriptionsOpen = false">
       <section class="subscription-dialog" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
-        <header><div><span>ПОДПИСКА</span><h2 id="subscription-title">Тарифы AI Media</h2></div><button type="button" aria-label="Закрыть" @click="subscriptionsOpen = false">×</button></header>
-        <div v-if="promotion" class="subscription-offer"><strong>{{ promotion.badge }} · {{ promotion.title }}</strong><p>{{ promotion.description }}</p></div>
+        <header><div><span>{{ t('subscription.eyebrow') }}</span><h2 id="subscription-title">{{ t('subscription.title') }}</h2></div><button type="button" :aria-label="t('common.close')" @click="subscriptionsOpen = false">×</button></header>
+        <div v-if="promotion" class="subscription-offer"><strong>{{ promotion.badge }} · {{ t(promotion.titleKey) }}</strong><p>{{ t(promotion.descriptionKey) }}</p></div>
+        <div v-if="account?.starterPack?.active" class="subscription-offer"><strong>{{ t('subscription.starter', { count: account.starterPack.credits }) }}</strong><p>{{ t('subscription.starterHint') }}</p></div>
         <div class="subscription-plans">
           <article v-for="offer in subscriptionOffers" :key="offer.id">
             <div><h3>{{ offer.name }}</h3><span v-if="offer.priceLabel">{{ offer.priceLabel }}</span></div>
-            <p>{{ offer.description }}</p>
-            <ul><li v-for="feature in offer.features" :key="feature">{{ feature }}</li></ul>
-            <button type="button" :disabled="!offer.available">{{ offer.available ? 'Выбрать подписку' : 'Покупка скоро' }}</button>
+            <p>{{ t(offer.descriptionKey) }}</p>
+            <ul><li v-for="featureKey in offer.featureKeys" :key="featureKey">{{ t(featureKey) }}</li></ul>
+            <button type="button" :disabled="!offer.available">{{ offer.available ? t('subscription.choose') : t('subscription.soon') }}</button>
           </article>
         </div>
-        <p class="subscription-note">Платёжный модуль ещё не подключён. До его запуска кнопка не проводит оплату и не создаёт подписку.</p>
+        <p class="subscription-note">{{ t('subscription.note') }}</p>
       </section>
     </div>
   </Teleport>

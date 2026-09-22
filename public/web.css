@@ -11,7 +11,8 @@ header { height:auto; min-height:76px; flex-wrap:wrap; padding:14px 24px; }
 .studio-nav button { padding:9px 12px; background:transparent; color:#aeb3c4; font-size:12px; }
 .studio-nav .studio-nav-active { background:#7563dc; color:#fff; }
 .studio-rail { display:flex; align-items:center; gap:10px; padding:0 0 18px; margin-bottom:18px; border-bottom:1px solid #303440; }
-.studio-rail-logo { display:grid; place-items:center; width:32px; height:32px; border-radius:9px; background:#7563dc; font-weight:800; }
+.studio-rail-logo { display:block; width:32px; height:32px; overflow:hidden; border-radius:9px; background:#0a0b11; }
+.studio-rail-logo img { display:block; width:100%; height:100%; object-fit:cover; }
 .studio-rail-label { color:#9ca5ba; font-size:10px; letter-spacing:1.3px; line-height:1.2; }
 .studio-context { display:flex; align-items:center; gap:9px; margin:0 0 16px; padding:10px 13px; border:1px solid #303747; border-radius:10px; background:#111521; color:#aeb7cc; font-size:12px; }
 .studio-context strong { color:#fff; font-size:14px; }
@@ -99,6 +100,9 @@ button,input,select { min-height:40px; }
 .account-dropdown { position:relative; }
 .account-dropdown > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:6px; border-radius:14px; }
 .account-dropdown > summary::-webkit-details-marker { display:none; }
+.account-trigger-identity { display:grid; min-width:0; gap:2px; }
+.account-trigger-identity > span,.account-trigger-identity > small { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.account-trigger-identity > small { color:#9ba6ba; font-size:11px; }
 .codex-models-menu { margin-top:22px; padding-top:18px; border-top:1px solid #303646; }
 .codex-active .header-provider,.codex-active aside .favorites-card,.codex-active aside .web-storage { display:none; }
 .codex-effort-control { margin:18px 0; padding:14px; background:#232530; border-radius:18px; }
@@ -136,7 +140,7 @@ button,input,select { min-height:40px; }
 .admin-account-row p { margin:6px 0; font-size:13px; color:#acbad1; overflow-wrap:anywhere; }
 .account-card button:disabled,.studio-dialog button:disabled { opacity:.5; cursor:wait; }
 .account-card input,.account-card select { color:#eef2fb; background:#111622; border:1px solid #444b61; border-radius:8px; }
-@media(max-width:720px) { .admin-account-row { align-items:flex-start; flex-direction:column; } .account-card { padding:20px; } .account-page { padding:12px; } #accountName { max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } }
+@media(max-width:720px) { .admin-account-row { align-items:flex-start; flex-direction:column; } .account-card { padding:20px; } .account-page { padding:12px; } .account-trigger-identity > span,.account-trigger-identity > small { max-width:130px; } }
 
 .codex-login-code { font-size: 1.8rem; letter-spacing: .12em; }
 
@@ -160,7 +164,8 @@ html, body { background: var(--studio-bg); color: var(--studio-text); }
 body { background: radial-gradient(circle at 72% 8%, #271813 0, transparent 32%), var(--studio-bg); }
 header { min-height: 72px; height: 72px; padding: 0 28px; background: #111113eF; border-bottom: 1px solid #27272c; backdrop-filter: blur(18px); }
 .header-brand { position: relative; min-width: 230px; padding-left: 45px; }
-.header-brand .mark { position: absolute; left: 0; top: 1px; width: 34px; height: 34px; margin: 0; border-radius: 11px; background: var(--studio-accent); color: #160b07; }
+.header-brand .mark { position: absolute; left: 0; top: 1px; width: 34px; height: 34px; margin: 0; overflow: hidden; border-radius: 11px; background: #0a0b11; }
+.header-brand .mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .header-brand > strong { display: block; font-size: 14px; letter-spacing: .01em; }
 header .brand-caption { margin: 3px 0 0; color: #777780; font-size: 9px; letter-spacing: .16em; }
 .app-version { margin: 2px 0 0; color: #8d8d98; font-size: 10px; }
@@ -177,7 +182,7 @@ header .brand-caption { margin: 3px 0 0; color: #777780; font-size: 9px; letter-
 #appMain > aside { padding: 22px 17px; background: #111113d9; border-right: 1px solid #27272c; }
 #appMain > section { padding: 24px 34px 60px; background: transparent; }
 .studio-rail { padding-bottom: 20px; margin-bottom: 25px; border-bottom-color: #2a2a2e; }
-.studio-rail-logo { background: var(--studio-accent); color: #1a0b06; }
+.studio-rail-logo { background: #0a0b11; }
 .studio-rail-label { color: #a39f9e; }
 .codex-active #appMain > aside { background: #111113; }
 .codex-active #appMain > section { padding-top: 22px; }
@@ -332,6 +337,7 @@ header .brand-caption { margin: 3px 0 0; color: #777780; font-size: 9px; letter-
 :root[data-theme='light'] .admin-tabs a[aria-current='page'] { color: #fff; background: #654dbc; }
 :root[data-theme='light'] .admin-account-row p { color: #665f70; }
 :root[data-theme='light'] .account-dropdown > summary { color: #302b35; }
+:root[data-theme='light'] .account-trigger-identity > small { color: #6f6878; }
 :root[data-theme='light'] .account-avatar { border-color: #7259cc; color: #fff; background: #7259cc; }
 :root[data-theme='light'] .account-popover { border-color: #d9d3df; color: #302b36; background: #fff; box-shadow: 0 18px 54px rgba(54, 46, 63, .18); }
 :root[data-theme='light'] .account-popover :is(button, a) { color: #3c3543; }

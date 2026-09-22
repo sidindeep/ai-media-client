@@ -2,7 +2,6 @@ node_modules/
 dist/
 artifacts/
 outputs/
-research/
 data/service/
 .env
 .env.*

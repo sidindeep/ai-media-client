@@ -2,7 +2,7 @@
   const mount = document.getElementById('accountMenuMount');
   if (!mount) return;
   mount.innerHTML = `<details class="account-dropdown" id="accountDropdown">
-    <summary aria-label="Меню аккаунта"><span class="account-avatar" id="accountAvatar">•</span><span id="accountName">Аккаунт</span><span>⌄</span></summary>
+    <summary aria-label="Меню аккаунта"><span class="account-avatar" id="accountAvatar">•</span><span class="account-trigger-identity"><span id="accountName">Аккаунт</span><small id="accountEmail" hidden></small></span><span>⌄</span></summary>
     <div class="account-popover"><strong id="menuName"></strong><span id="menuRole" class="hint"></span>
       <div class="menu-credit-row"><span>Кредиты</span><b id="menuBalance">—</b></div>
       <button id="menuTopup" class="primary" type="button">＋ Пополнить</button>
@@ -23,6 +23,9 @@
   });
   function render() {
     el('accountName').textContent = el('menuName').textContent = account.name;
+    const email = account.identities.find(identity => identity.email)?.email || '';
+    el('accountEmail').textContent = email;
+    el('accountEmail').hidden = !email;
     el('accountAvatar').textContent = account.name.slice(0, 1).toUpperCase();
     el('menuRole').textContent = account.role === 'admin' ? 'Администратор' : 'Пользователь';
     el('menuBalance').textContent = account.wallet ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(account.wallet.balance) : '—';

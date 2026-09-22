@@ -34,12 +34,16 @@ function loadConfig(env = process.env) {
   const pricingRelative = path.relative(root, pricingFile);
   if (pricingRelative.startsWith('..') || path.isAbsolute(pricingRelative)) throw new Error('Файл цен должен быть внутри проекта');
   const pricing = fs.existsSync(pricingFile) ? JSON.parse(fs.readFileSync(pricingFile, 'utf8')) : { version: 'unpublished', models: {} };
+  const starterPackFile = path.resolve(root, env.MEDIA_STARTER_PACK_FILE || 'config/starter-pack.json');
+  const starterPackRelative = path.relative(root, starterPackFile);
+  if (starterPackRelative.startsWith('..') || path.isAbsolute(starterPackRelative) || !fs.existsSync(starterPackFile)) throw new Error('Файл стартового пакета должен находиться внутри проекта');
+  const starterPack = JSON.parse(fs.readFileSync(starterPackFile, 'utf8'));
   return {
     root, host, port, dataDirectory, kieKey: env.KIE_API_KEY || '',
     uploadLimit: integer(env.MEDIA_UPLOAD_LIMIT_MB, 64, 1, 512) * 1024 * 1024,
     telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',
-    rubPerCredit, pricing,
+    rubPerCredit, pricing, starterPack,
     codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
       embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },
     database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1' },

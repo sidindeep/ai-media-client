@@ -1,4 +1,5 @@
 import type { MediaField } from '../types';
+import { t } from '../i18n';
 
 export function mediaFieldOptions(field: MediaField): unknown[] {
   return field.options || field.schema?.enum || [];
@@ -14,15 +15,15 @@ export function mediaFieldValueError(field: MediaField, value: unknown): string 
   if (value === '' || value === null || value === undefined) return '';
   const options = mediaFieldOptions(field);
   if (options.length && !options.some(option => matchesOption(option, value))) {
-    return `Допустимые значения: ${options.map(option => Number(option) <= 0 ? 'авто' : String(option)).join(', ')}`;
+    return t('validation.allowedValues', { values: options.map(option => Number(option) <= 0 ? t('validation.auto') : String(option)).join(', ') });
   }
   if (field.type === 'number' || field.schema?.type === 'number' || field.schema?.type === 'integer') {
     const number = Number(value);
-    if (!Number.isFinite(number)) return 'Введите число';
+    if (!Number.isFinite(number)) return t('validation.number');
     const minimum = Number(field.min ?? field.schema?.minimum);
     const maximum = Number(field.max ?? field.schema?.maximum);
-    if (Number.isFinite(minimum) && number < minimum) return `Минимум: ${minimum}`;
-    if (Number.isFinite(maximum) && number > maximum) return `Максимум: ${maximum}`;
+    if (Number.isFinite(minimum) && number < minimum) return t('validation.minimum', { value: minimum });
+    if (Number.isFinite(maximum) && number > maximum) return t('validation.maximum', { value: maximum });
   }
   return '';
 }
@@ -58,12 +59,12 @@ export function parseMediaFieldValue(field: MediaField, raw: unknown): unknown {
   const schemaType = field.schema?.type;
   if (field.type === 'number' || schemaType === 'number' || schemaType === 'integer') {
     const value = Number(raw);
-    if (!Number.isFinite(value)) throw new Error('Введите число');
+    if (!Number.isFinite(value)) throw new Error(t('validation.number'));
     return schemaType === 'integer' ? Math.trunc(value) : value;
   }
   if (field.type === 'json') {
     if (typeof raw !== 'string') return raw;
-    try { return JSON.parse(raw); } catch { throw new Error('Некорректный JSON'); }
+    try { return JSON.parse(raw); } catch { throw new Error(t('validation.json')); }
   }
   if (schemaType === 'boolean') {
     if (raw === true || raw === 'true') return true;

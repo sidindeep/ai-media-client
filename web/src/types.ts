@@ -161,6 +161,14 @@ export type Account = {
     currency: 'credits';
     scale: number;
   } | null;
+  starterPack?: {
+    enabled: boolean;
+    enrolled: boolean;
+    active: boolean;
+    unlockedByPayment: boolean;
+    credits: number;
+    modelAccess: 'gpt-only' | 'all';
+  } | null;
 };
 
 export type ReleaseInfo = {

@@ -11,7 +11,7 @@ function showBalance() {
   void loadLedger();
 }
 function selectPanel() {
-  const panels = ['accountsPanel', 'credits', 'auditPanel', 'reconcilePanel', 'codexPanel'];
+  const panels = ['accountsPanel', 'starterPanel', 'credits', 'auditPanel', 'reconcilePanel', 'codexPanel'];
   const selected = panels.includes(location.hash.slice(1)) ? location.hash.slice(1) : panels[0];
   for (const id of panels) document.getElementById(id).hidden = id !== selected;
   document.querySelectorAll('.admin-tabs a').forEach(link => link.setAttribute('aria-current', link.hash === '#' + selected ? 'page' : 'false'));
@@ -25,7 +25,8 @@ function renderAccounts() {
     const card = document.createElement('article'); card.className = 'admin-account-row';
     const info = document.createElement('div'), link = document.createElement('a'), detail = document.createElement('p');
     link.href = `/?account=${row.id}`; link.textContent = row.name;
-    detail.textContent = `${row.email || row.id} · ${row.role === 'admin' ? 'Администратор' : 'Пользователь'} · доступно ${formatCredits((Number(row.balance) - Number(row.held)) / creditScale)} кредитов`;
+    const starter = row.starterPack?.active ? 'стартер-пак: только GPT' : row.starterPack?.unlockedByPayment ? 'весь каталог открыт оплатой' : 'без стартер-ограничения';
+    detail.textContent = `${row.email || row.id} · ${row.role === 'admin' ? 'Администратор' : 'Пользователь'} · ${starter} · доступно ${formatCredits((Number(row.balance) - Number(row.held)) / creditScale)} кредитов`;
     info.append(link, detail);
     const actions = document.createElement('div'); actions.className = 'account-controls';
     const grant = document.createElement('button'); grant.textContent = 'Пополнить'; grant.type = 'button';
@@ -51,6 +52,13 @@ async function loadAccounts() {
   const select = document.getElementById('grantAccount'), selected = select.value;
   select.replaceChildren(...rows.map(row => new Option(`${row.name}${row.id === account.id ? ' — мой счёт' : ''} (${row.id})`, row.id))); select.value = selected || account.id;
   showBalance();
+  const starter = await adminRequest('/api/admin/starter-pack');
+  document.getElementById('starterOverview').replaceChildren(...[
+    `Статус: ${starter.enabled ? 'включён' : 'выключен'} · версия ${starter.version}`,
+    `Пакет: ${formatCredits(starter.credits)} кредитов · доступ: ${starter.modelAccess}`,
+    `Активно: ${starter.active} · выдано: ${starter.enrolled} · разблокировано оплатой: ${starter.paid}`,
+    `Условие разблокировки: платёжная проводка ${starter.unlockEvent}`,
+  ].map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
   document.getElementById('reconcileAccount').replaceChildren(...rows.map(row => new Option(`${row.name} (${row.id})`, row.id)));
   const audit = await adminRequest('/api/admin/roles');
   document.getElementById('roleAudit').replaceChildren(...audit.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString('ru-RU')} · ${row.name}: ${row.old_role} → ${row.new_role} · ${row.reason} · администратор: ${row.actor_id || 'назначение владельца'}`; return p; }));

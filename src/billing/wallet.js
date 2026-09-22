@@ -30,7 +30,7 @@ async function settle(client, accountId, jobId, state) {
   await client.query('UPDATE media_reservations SET state=$2 WHERE job_id=$1', [jobId, captured ? 'captured' : 'released']);
   await entry(client, accountId, captured ? 'capture' : 'release', jobId, reservation.amount);
 }
-function createWallet(pool) {
+function createWallet(pool, { onPurchase } = {}) {
   return {
     async get(accountId) {
       const row = (await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [accountId])).rows[0];
@@ -55,6 +55,24 @@ function createWallet(pool) {
         await client.query('UPDATE media_wallets SET balance=balance+$2 WHERE account_id=$1', [accountId, amount]);
         await entry(client, accountId, 'grant', reference, amount, actorId, note);
       });
+    },
+    async purchase(accountId, amount, reference, note = 'Оплата кредитов') {
+      units(amount);
+      if (!amount || typeof reference !== 'string' || !/^[\w-]{8,100}$/.test(reference) || typeof note !== 'string' || !note.trim() || note.length > 500) throw new Error('Укажите сумму, идентификатор и назначение платежа');
+      const created = await transaction(pool, async client => {
+        const wallet = await lockWallet(client, accountId);
+        const previous = (await client.query("SELECT amount,note FROM media_ledger WHERE account_id=$1 AND kind='purchase' AND reference=$2", [accountId, reference])).rows[0];
+        if (previous) {
+          if (Number(previous.amount) !== amount || previous.note !== note) throw new Error('Платёж с этим идентификатором уже отличается');
+          return false;
+        }
+        units(wallet.balance + amount);
+        await client.query('UPDATE media_wallets SET balance=balance+$2 WHERE account_id=$1', [accountId, amount]);
+        await entry(client, accountId, 'purchase', reference, amount, null, note);
+        return true;
+      });
+      if (created) await onPurchase?.(accountId);
+      return created;
     }
   };
 }

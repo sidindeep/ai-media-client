@@ -17,6 +17,7 @@
 - [Каталог и валидация](specs/features/catalog-validation.md) — декларативные формы, адаптеры и ограничения.
 - [Исходники и результаты](specs/features/media-storage.md) — сохранение, повтор, скачивание.
 - [Рабочие вкладки](specs/features/workspaces-templates.md) — черновики, шаблоны и избранное.
+- [Локализация](specs/features/localization.md) — RU/EN-словари, ключи, plural rules, выбор языка и границы перевода.
 - [Стоимость](specs/business-rules/cost-accounting.md) — оценки, списания и сверка.
 - [Исследование ценовой политики](specs/business-rules/pricing-policy-research.md) — рыночные цены Kie, налоговая модель и сценарий патента.
 - [Юридические документы](specs/business-rules/legal-documents.md) — публичные страницы, изученный пример ERA2, факты продукта и блокеры перед публикацией.

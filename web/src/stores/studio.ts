@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import * as api from '../api/client';
 import type { Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 import { normalizeMediaInput } from '../domain/media-fields';
+import { t } from '../i18n';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
@@ -23,6 +24,7 @@ export const useStudioStore = defineStore('studio', () => {
   const history = ref<GenerationRecord[]>([]);
   const pendingSubmissions = ref<GenerationRecord[]>([]);
   const presets = ref<GenerationPreset[]>([]);
+  const selectedPresetId = ref<string | null>(null);
   const projects = ref<Project[]>([]);
   const chats = ref<Chat[]>([]);
   const activeChatId = ref<string>('system:recent');
@@ -35,6 +37,10 @@ export const useStudioStore = defineStore('studio', () => {
   const providerReadiness = ref<'idle' | 'checking' | 'ready' | 'error'>('checking');
   const providerDiagnosticRequest = ref(0);
   const accountReady = ref(false);
+  const accountRole = ref<'user' | 'admin'>('user');
+  const isAdmin = computed(() => accountRole.value === 'admin');
+  const modelAccess = ref<'gpt-only' | 'all'>('all');
+  const fullModelAccess = computed(() => isAdmin.value || modelAccess.value === 'all');
   const connectionElapsedMs = ref<number | null>(null);
   const dataLoadElapsedMs = ref<number | null>(null);
   const readyElapsedMs = ref<number | null>(null);
@@ -77,7 +83,7 @@ export const useStudioStore = defineStore('studio', () => {
   let startupPollTimer: ReturnType<typeof setTimeout> | undefined;
   let startupPollInFlight = false;
 
-  const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: 'Ранее', mode: 'system', projectId: null, context: {}, materialCount: history.value.length }));
+  const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: t('navigation.earlier'), mode: 'system', projectId: null, context: {}, materialCount: history.value.length }));
   function recordIsVisible(item: GenerationRecord) {
     if (activeChatId.value !== 'system:recent') return item.chatId === activeChatId.value;
     return activeProjectId.value ? item.projectId === activeProjectId.value : true;
@@ -193,7 +199,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   function failOptimisticRecord(optimisticId: string, cause: unknown) {
     const completedAt = new Date().toISOString();
-    const message = cause instanceof Error ? cause.message : 'Не удалось запустить генерацию';
+    const message = cause instanceof Error ? cause.message : t('studio.loadGenerationError');
     pendingSubmissions.value = pendingSubmissions.value.map(item => item.id === optimisticId ? {
       ...item, optimistic: false, state: 'fail', error: message, updatedAt: completedAt,
       generationCompletedAt: completedAt, generationDurationMs: Math.max(0, Date.parse(completedAt) - Date.parse(item.createdAt || completedAt)),
@@ -242,6 +248,15 @@ export const useStudioStore = defineStore('studio', () => {
     if (syncInFlight) await syncInFlight.catch(() => {});
     syncCursor = null;
     await refresh();
+  }
+
+  async function refreshAccess() {
+    const account = await api.getAccount();
+    const next = account.starterPack?.modelAccess === 'gpt-only' ? 'gpt-only' : 'all';
+    if (next === modelAccess.value) return;
+    setModelAccess(next);
+    catalog.value = await api.getCatalog().catch(() => null);
+    normalizeMediaControls();
   }
 
   function codexJobIdsToPoll() {
@@ -343,6 +358,7 @@ export const useStudioStore = defineStore('studio', () => {
   function selectStandalone() { activeProjectId.value = null; if (activeChatId.value !== 'system:recent' && chats.value.find(chat => chat.id === activeChatId.value)?.projectId) activeChatId.value = 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
 
   function setMode(value: GenerationMode) {
+    if (!fullModelAccess.value && ['video', 'audio'].includes(value)) throw new Error(t('studio.mediaLocked'));
     const previousMediaModel = mediaModelId.value;
     mode.value = value;
     if (value === 'text') { provider.value = 'codex'; codexKind.value = 'text'; }
@@ -353,6 +369,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function setProvider(value: 'codex' | 'media') {
+    if (value === 'media' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
     provider.value = value;
     if (value === 'codex') {
       if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
@@ -361,6 +378,14 @@ export const useStudioStore = defineStore('studio', () => {
     } else {
       if (!['image', 'video', 'audio'].includes(mode.value)) mode.value = 'image';
       normalizeMediaControls();
+    }
+  }
+
+  function setModelAccess(value: 'gpt-only' | 'all') {
+    modelAccess.value = value;
+    if (!fullModelAccess.value) {
+      provider.value = 'codex';
+      if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
     }
   }
 
@@ -385,23 +410,26 @@ export const useStudioStore = defineStore('studio', () => {
     };
   }
 
-  async function saveCurrentPreset(name: string) {
+  async function saveCurrentPreset(name: string, id?: string) {
     const payload = currentPresetPayload(name.trim());
-    if (!payload) throw new Error('Сначала выберите модель');
-    const saved = await api.saveGenerationPreset(payload);
+    if (!payload) throw new Error(t('studio.selectModel'));
+    const saved = await api.saveGenerationPreset(id ? { ...payload, id } : payload);
     presets.value = [saved, ...presets.value.filter(item => item.id !== saved.id)];
+    selectedPresetId.value = saved.id;
     return saved;
   }
 
   async function removePreset(id: string) {
     await api.removeGenerationPreset(id);
     presets.value = presets.value.filter(item => item.id !== id);
+    if (selectedPresetId.value === id) selectedPresetId.value = null;
   }
 
   function applyPreset(preset: GenerationPreset) {
     if (preset.provider === 'media') {
+      if (!fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
       const available = mediaModelsFor(preset.mode).find(model => model.id === preset.mediaModelId);
-      if (!available) throw new Error('Модель этого пресета больше недоступна');
+      if (!available) throw new Error(t('studio.presetMediaUnavailable'));
       mode.value = preset.mode;
       provider.value = 'media';
       mediaModelId.value = available.id;
@@ -409,7 +437,7 @@ export const useStudioStore = defineStore('studio', () => {
       normalizeCurrentMediaInput();
     } else {
       const available = codexCatalog.value?.models.find(model => model.id === preset.codexModel);
-      if (!available) throw new Error('Модель Codex этого пресета больше недоступна');
+      if (!available) throw new Error(t('studio.presetCodexUnavailable'));
       mode.value = preset.mode === 'text' ? 'text' : 'image';
       provider.value = 'codex';
       codexKind.value = mode.value === 'text' ? 'text' : 'image';
@@ -420,6 +448,7 @@ export const useStudioStore = defineStore('studio', () => {
       normalizeCodexControls();
     }
     sourceFiles.value = [];
+    selectedPresetId.value = preset.id;
   }
 
   function stable(value: unknown): unknown {
@@ -475,13 +504,14 @@ export const useStudioStore = defineStore('studio', () => {
       syncCursor = null;
       await refresh();
       await loadDraftForActive();
+      if (!fullModelAccess.value) provider.value = 'codex';
       const readyAt = performance.now();
       dataLoadElapsedMs.value = Math.max(0, Math.round(readyAt - dataLoadStartedAt));
       readyElapsedMs.value = Math.max(0, Math.round(readyAt - startupStartedAt));
       accountReady.value = true;
     } catch (cause) {
       accountReady.value = false;
-      const message = cause instanceof Error ? cause.message : 'Не удалось загрузить студию';
+      const message = cause instanceof Error ? cause.message : t('studio.loadError');
       console.error('Account startup failed:', message);
       if (/баз|соедин|connection|timeout|временно недоступ/i.test(message)) databaseState.value = 'unavailable';
       else error.value = message;
@@ -505,7 +535,11 @@ export const useStudioStore = defineStore('studio', () => {
       if (['connected', 'disabled'].includes(status.database.state)) {
         markDatabaseConnected();
         if (!status.authenticated) { window.location.assign('/login'); return; }
-        if (status.account) api.setAccountContext(status.account);
+        if (status.account) {
+          accountRole.value = status.account.role === 'admin' ? 'admin' : 'user';
+          setModelAccess(status.account.starterPack?.modelAccess === 'gpt-only' ? 'gpt-only' : 'all');
+          api.setAccountContext(status.account);
+        }
         if (!accountReady.value) await loadAccountState();
       }
     } catch {
@@ -526,13 +560,16 @@ export const useStudioStore = defineStore('studio', () => {
     resetStartupTimings();
     restoreWorkspaceSelection();
     const accountId = document.querySelector('meta[name="account-id"]')?.getAttribute('content') || '';
-    const accountRole = document.querySelector('meta[name="account-role"]')?.getAttribute('content') || '';
-    if (accountId && accountId !== 'pending' && accountRole && accountRole !== 'pending') {
+    const documentAccountRole = document.querySelector('meta[name="account-role"]')?.getAttribute('content') || '';
+    const documentModelAccess = document.querySelector('meta[name="account-model-access"]')?.getAttribute('content') || '';
+    if (accountId && accountId !== 'pending' && documentAccountRole && documentAccountRole !== 'pending') {
       // The server already verified this session while serving /app. Reuse that
       // result instead of running the database startup probe again on navigation.
       databaseState.value = 'connected';
       markDatabaseConnected();
-      api.setAccountContext({ id: accountId, role: accountRole });
+      accountRole.value = documentAccountRole === 'admin' ? 'admin' : 'user';
+      setModelAccess(documentModelAccess === 'gpt-only' ? 'gpt-only' : 'all');
+      api.setAccountContext({ id: accountId, role: documentAccountRole });
       await loadAccountState();
       if (!accountReady.value) scheduleStartupPoll();
       return;
@@ -547,7 +584,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   async function submit() {
     const submittedPrompt = prompt.value.trim();
-    if (!submittedPrompt) throw new Error('Введите промпт');
+    if (!submittedPrompt) throw new Error(t('studio.enterPrompt'));
     const context = { projectId: activeProjectId.value, chatId: activeChatId.value === 'system:recent' ? null : activeChatId.value };
     const requestId = crypto.randomUUID();
     const optimisticId = `pending:${requestId}`;
@@ -575,8 +612,9 @@ export const useStudioStore = defineStore('studio', () => {
         throw error;
       }
     }
+    if (!fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
     const model = currentMediaModel.value;
-    if (!model) throw new Error('Каталог моделей недоступен');
+    if (!model) throw new Error(t('studio.catalogUnavailable'));
     normalizeCurrentMediaInput();
     const input = { ...mediaInput.value };
     if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
@@ -640,13 +678,13 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, release, history, presets, queue, selectedId, selected, active, accountActive, completed, loading, error,
-    databaseState, providerReadiness, providerDiagnosticRequest, accountReady, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
-    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider,
+    catalog, codexCatalog, release, history, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
+    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,
     loadDraftForActive,
-    currentCodexModel, initialize, refresh, refreshFull, stopCodexPolling, stopMediaPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom, requestProviderDiagnostics,
+    currentCodexModel, initialize, refresh, refreshFull, refreshAccess, stopCodexPolling, stopMediaPolling, stopStartupPolling, saveCurrentPreset, removePreset, applyPreset, presetMatchesCurrent, submit, toggleQueue, clearWaiting, remove, select, prepareFrom, requestProviderDiagnostics,
   };
 });

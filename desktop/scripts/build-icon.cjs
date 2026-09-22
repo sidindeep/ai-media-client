@@ -1,4 +1,4 @@
-// Render the editable vector at Windows icon sizes; store PNG-compressed ICO frames.
+// Render the canonical product mark at Windows icon sizes; store PNG-compressed ICO frames.
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs/promises');
 const path=require('node:path');
@@ -7,13 +7,13 @@ app.whenReady().then(async()=>{
   let win;
   try{
     const folder=path.resolve(__dirname,'../src/assets');
-    const svg=await fs.readFile(path.join(folder,'icon.svg'),'utf8');
+    const source=await fs.readFile(path.resolve(__dirname,'../../public/brand-logo.png'));
     win=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true}});
     await win.loadURL('about:blank');
     const frames=[];
     for(const size of [16,24,32,48,64,128,256]){
       const data=await win.webContents.executeJavaScript(`(async()=>{
-        const img=new Image();img.src=${JSON.stringify('data:image/svg+xml;base64,'+Buffer.from(svg).toString('base64'))};await img.decode();
+        const img=new Image();img.src=${JSON.stringify('data:image/png;base64,'+source.toString('base64'))};await img.decode();
         const canvas=document.createElement('canvas');canvas.width=canvas.height=${size};canvas.getContext('2d').drawImage(img,0,0,${size},${size});return canvas.toDataURL('image/png').split(',')[1];
       })()`);
       frames.push({size,bytes:Buffer.from(data,'base64')});

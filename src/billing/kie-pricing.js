@@ -44,6 +44,10 @@ function pathModelIdFromAnchor(anchor) {
   } catch { return ''; }
 }
 
+function comparablePathModelId(value) {
+  return String(value || '').trim().toLowerCase().replace(/[._]+/g, '-').replace(/-+/g, '-');
+}
+
 function modelCandidates(model, rows) {
   const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
   const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
@@ -53,8 +57,10 @@ function modelCandidates(model, rows) {
   // (for example bytedance/seedance-2-5 is published at /seedance-2-5).
   // Only use this suffix fallback when the anchor has no explicit ?model= id;
   // an explicit id remains authoritative and must match exactly.
-  const suffixes = new Set([...aliases].map(alias => alias.split('/').pop()).filter(Boolean));
-  return rows.filter(row => suffixes.has(pathModelIdFromAnchor(row.anchor)));
+  const suffixes = new Set([...aliases]
+    .map(alias => comparablePathModelId(alias.split('/').pop()))
+    .filter(Boolean));
+  return rows.filter(row => suffixes.has(comparablePathModelId(pathModelIdFromAnchor(row.anchor))));
 }
 
 function normalized(value) {

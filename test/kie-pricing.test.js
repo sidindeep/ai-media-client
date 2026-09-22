@@ -35,6 +35,17 @@ test('Kie dynamic pricing resolves provider-prefixed models from a short officia
   assert.throws(() => quoteKie(model, input, tariffData), /длительность исходного видео/);
 });
 
+test('Kie dynamic pricing matches dotted model versions to hyphenated official paths', () => {
+  const model = { id: 'kie:bytedance/seedance-1.5-pro', apiModel: 'bytedance/seedance-1.5-pro', providerId: 'kie' };
+  const tariffData = { fetchedAt: '2026-09-22T00:00:00Z', rows: [
+    { modelDescription: 'bytedance/seedance-1.5-pro, without audio-720p', creditPrice: '3.5', creditUnit: 'per second', anchor: 'https://kie.ai/seedance-1-5-pro' },
+    { modelDescription: 'bytedance/seedance-1.5-pro, with audio-720p', creditPrice: '7', creditUnit: 'per second', anchor: 'https://kie.ai/seedance-1-5-pro' },
+  ] };
+
+  assert.equal(quoteKie(model, { resolution: '720p', duration: 4, generate_audio: false }, tariffData).credits, 14);
+  assert.equal(quoteKie(model, { resolution: '720p', duration: 4, generate_audio: true }, tariffData).credits, 28);
+});
+
 test('Kie pricing uses exact versioned fallbacks for ByteDance V1 models missing from the live catalog', () => {
   const quote = (apiModel, resolution, duration) => quoteKie(
     { id: `kie:${apiModel}`, apiModel, providerId: 'kie' },

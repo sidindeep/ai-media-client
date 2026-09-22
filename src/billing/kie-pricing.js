@@ -1,4 +1,31 @@
 const { units, SCALE } = require('./pricing');
+const fallbackConfig = require('../../config/kie-price-fallbacks.json');
+
+function buildFallbackIndex(config) {
+  if (config?.schemaVersion !== 1 || !config.version || !config.source || !config.models) {
+    throw new Error('Некорректная конфигурация резервных тарифов Kie');
+  }
+  const index = new Map();
+  for (const [modelId, variants] of Object.entries(config.models)) {
+    if (!modelId || !Array.isArray(variants) || !variants.length) throw new Error('Некорректная модель резервного тарифа Kie');
+    const modelVariants = new Map();
+    for (const variant of variants) {
+      const resolution = String(variant.resolution || '').trim().toLowerCase();
+      const duration = Number(variant.duration);
+      const amountUnits = Number(variant.amountUnits);
+      if (!resolution || !Number.isSafeInteger(duration) || duration <= 0 || !Number.isSafeInteger(amountUnits) || amountUnits <= 0) {
+        throw new Error('Некорректный вариант резервного тарифа Kie');
+      }
+      const key = `${resolution}:${duration}`;
+      if (modelVariants.has(key)) throw new Error('Дублирующийся вариант резервного тарифа Kie');
+      modelVariants.set(key, amountUnits);
+    }
+    index.set(modelId, modelVariants);
+  }
+  return index;
+}
+
+const fallbackIndex = buildFallbackIndex(fallbackConfig);
 
 function modelIdFromAnchor(anchor) {
   try {
@@ -154,10 +181,37 @@ function multiplier(row, input, context) {
   throw new Error('Единица тарифа Kie пока не поддерживается');
 }
 
+function fallbackQuote(model, input) {
+  const modelId = model.apiModel || model.id?.replace(/^kie:/, '');
+  const variants = fallbackIndex.get(modelId);
+  if (!variants) return null;
+  const resolution = String(input?.resolution || input?.output_resolution || '').trim().toLowerCase();
+  const duration = Number(input?.duration ?? input?.output_duration);
+  if (!resolution || !Number.isSafeInteger(duration) || duration <= 0) {
+    throw new Error('Для расчёта резервной цены Kie нужны разрешение и длительность');
+  }
+  const amountUnits = variants.get(`${resolution}:${duration}`);
+  if (!amountUnits) throw new Error('Цена выбранных параметров Kie ещё не определена');
+  return {
+    amountUnits: units(amountUnits),
+    credits: amountUnits / SCALE,
+    scale: SCALE,
+    currency: 'credits',
+    version: fallbackConfig.version,
+  };
+}
+
 function quoteKie(model, input, tariffData, context = {}) {
   if (!model || model.providerId !== 'kie') throw new Error('Модель Kie не найдена');
-  if (!Array.isArray(tariffData?.rows) || !tariffData.rows.length) throw new Error('Цена Kie временно недоступна');
-  const row = selectTariff(model, input || {}, tariffData.rows);
+  const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
+  const candidates = modelCandidates(model, rows);
+  if (!candidates.length) {
+    const fallback = fallbackQuote(model, input || {});
+    if (fallback) return fallback;
+    if (!rows.length) throw new Error('Цена Kie временно недоступна');
+    throw new Error('Цена этой модели Kie ещё не опубликована');
+  }
+  const row = selectTariff(model, input || {}, rows);
   const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context)));
   return {
     amountUnits,
@@ -168,4 +222,4 @@ function quoteKie(model, input, tariffData, context = {}) {
   };
 }
 
-module.exports = { quoteKie, modelIdFromAnchor, selectTariff };
+module.exports = { quoteKie, modelIdFromAnchor, selectTariff, fallbackQuote };

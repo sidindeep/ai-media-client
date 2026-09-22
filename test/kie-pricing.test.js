@@ -35,6 +35,70 @@ test('Kie dynamic pricing resolves provider-prefixed models from a short officia
   assert.throws(() => quoteKie(model, input, tariffData), /длительность исходного видео/);
 });
 
+test('Kie pricing uses exact versioned fallbacks for ByteDance V1 models missing from the live catalog', () => {
+  const quote = (apiModel, resolution, duration) => quoteKie(
+    { id: `kie:${apiModel}`, apiModel, providerId: 'kie' },
+    { resolution, duration },
+    { fetchedAt: '2026-09-22T00:00:00Z', rows: [] },
+  );
+  assert.deepEqual(quote('bytedance/v1-lite-text-to-video', '720p', 5), {
+    amountUnits: 22500,
+    credits: 22.5,
+    scale: 1000,
+    currency: 'credits',
+    version: 'kie-page-2026-09-22-seedance-v1',
+  });
+  assert.equal(quote('bytedance/v1-lite-image-to-video', '1080p', '10').credits, 100);
+  assert.equal(quote('bytedance/v1-pro-text-to-video', '480p', 5).credits, 14);
+  assert.equal(quote('bytedance/v1-pro-image-to-video', '720P', 10).credits, 60);
+  assert.equal(quote('bytedance/v1-pro-fast-image-to-video', '720p', 5).credits, 16);
+  assert.equal(quote('bytedance/v1-pro-fast-image-to-video', '1080p', 10).credits, 72);
+});
+
+test('Kie ByteDance V1 fallback covers every configured catalog variant exactly', () => {
+  const config = require('../config/kie-price-fallbacks.json');
+  const catalogModels = require('../src/kie-models.json')
+    .filter(model => model.apiModel.startsWith('bytedance/v1-'))
+    .map(model => model.apiModel)
+    .sort();
+  assert.deepEqual(Object.keys(config.models).sort(), catalogModels);
+  let checked = 0;
+  for (const [apiModel, variants] of Object.entries(config.models)) {
+    for (const variant of variants) {
+      const quote = quoteKie(
+        { id: `kie:${apiModel}`, apiModel, providerId: 'kie' },
+        { resolution: variant.resolution, duration: variant.duration },
+        { rows: [] },
+      );
+      assert.equal(quote.amountUnits, variant.amountUnits, `${apiModel} ${variant.resolution} ${variant.duration}s`);
+      checked++;
+    }
+  }
+  assert.equal(checked, 28);
+});
+
+test('Kie ByteDance V1 fallback rejects unpublished combinations and incomplete input', () => {
+  const model = { id: 'kie:bytedance/v1-pro-fast-image-to-video', apiModel: 'bytedance/v1-pro-fast-image-to-video', providerId: 'kie' };
+  assert.throws(() => quoteKie(model, { resolution: '480p', duration: 5 }, { rows: [] }), /параметров/);
+  assert.throws(() => quoteKie(model, { resolution: '720p' }, { rows: [] }), /разрешение и длительность/);
+});
+
+test('Kie live tariff remains authoritative when a ByteDance V1 fallback exists', () => {
+  const model = { id: 'kie:bytedance/v1-lite-text-to-video', apiModel: 'bytedance/v1-lite-text-to-video', providerId: 'kie' };
+  const live = {
+    fetchedAt: '2026-09-23T00:00:00Z',
+    rows: [{
+      modelDescription: 'bytedance/v1-lite-text-to-video, 720p',
+      creditPrice: '9',
+      creditUnit: 'per second',
+      anchor: 'https://kie.ai/bytedance-v1?model=bytedance%2Fv1-lite-text-to-video',
+    }],
+  };
+  const quote = quoteKie(model, { resolution: '720p', duration: 5 }, live);
+  assert.equal(quote.credits, 45);
+  assert.equal(quote.version, 'kie-live-2026-09-23');
+});
+
 test('Kie explicit anchor model id wins over a matching short path suffix', () => {
   const model = { id: 'kie:vendor/demo', apiModel: 'vendor/demo', providerId: 'kie' };
   const tariffData = { rows: [

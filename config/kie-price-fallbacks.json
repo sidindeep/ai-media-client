@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "version": "kie-page-2026-09-22-seedance-v1",
+  "source": "https://kie.ai/bytedance/seedance-v1",
+  "retrievedAt": "2026-09-22",
+  "models": {
+    "bytedance/v1-lite-image-to-video": [
+      { "resolution": "480p", "duration": 5, "amountUnits": 10000 },
+      { "resolution": "480p", "duration": 10, "amountUnits": 20000 },
+      { "resolution": "720p", "duration": 5, "amountUnits": 22500 },
+      { "resolution": "720p", "duration": 10, "amountUnits": 45000 },
+      { "resolution": "1080p", "duration": 5, "amountUnits": 50000 },
+      { "resolution": "1080p", "duration": 10, "amountUnits": 100000 }
+    ],
+    "bytedance/v1-lite-text-to-video": [
+      { "resolution": "480p", "duration": 5, "amountUnits": 10000 },
+      { "resolution": "480p", "duration": 10, "amountUnits": 20000 },
+      { "resolution": "720p", "duration": 5, "amountUnits": 22500 },
+      { "resolution": "720p", "duration": 10, "amountUnits": 45000 },
+      { "resolution": "1080p", "duration": 5, "amountUnits": 50000 },
+      { "resolution": "1080p", "duration": 10, "amountUnits": 100000 }
+    ],
+    "bytedance/v1-pro-image-to-video": [
+      { "resolution": "480p", "duration": 5, "amountUnits": 14000 },
+      { "resolution": "480p", "duration": 10, "amountUnits": 28000 },
+      { "resolution": "720p", "duration": 5, "amountUnits": 30000 },
+      { "resolution": "720p", "duration": 10, "amountUnits": 60000 },
+      { "resolution": "1080p", "duration": 5, "amountUnits": 70000 },
+      { "resolution": "1080p", "duration": 10, "amountUnits": 140000 }
+    ],
+    "bytedance/v1-pro-text-to-video": [
+      { "resolution": "480p", "duration": 5, "amountUnits": 14000 },
+      { "resolution": "480p", "duration": 10, "amountUnits": 28000 },
+      { "resolution": "720p", "duration": 5, "amountUnits": 30000 },
+      { "resolution": "720p", "duration": 10, "amountUnits": 60000 },
+      { "resolution": "1080p", "duration": 5, "amountUnits": 70000 },
+      { "resolution": "1080p", "duration": 10, "amountUnits": 140000 }
+    ],
+    "bytedance/v1-pro-fast-image-to-video": [
+      { "resolution": "720p", "duration": 5, "amountUnits": 16000 },
+      { "resolution": "720p", "duration": 10, "amountUnits": 36000 },
+      { "resolution": "1080p", "duration": 5, "amountUnits": 36000 },
+      { "resolution": "1080p", "duration": 10, "amountUnits": 72000 }
+    ]
+  }
+}

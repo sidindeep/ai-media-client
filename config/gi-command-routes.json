@@ -401,7 +401,7 @@
         "gi пул",
         "ги пул"
       ],
-      "contract": "Apply the exact requested scoped Git finish or pull workflow and preserve unrelated worktree changes.",
+      "contract": "Finalize only an already established scoped change set or pull workflow; preserve unrelated worktree changes and do not turn Git finish into implementation, repair, or runtime cleanup.",
       "context_files": [
         "patterns/AGENTS_RUNTIME/16-git-policy.md",
         "patterns/AGENTS_RUNTIME/15-verification.md"

@@ -422,6 +422,9 @@ test('Telegram polling offsets survive restart and token-bearing failures are re
 test('config rejects external data paths and unconfigured enabled bot', () => {
   assert.throws(() => loadConfig({ MEDIA_DATA_DIR: '../outside' }), /внутри проекта/);
   assert.throws(() => loadConfig({ TELEGRAM_ENABLED: 'true' }), /TELEGRAM/);
+  assert.throws(() => loadConfig({ MEDIA_STORAGE_DRIVER: 's3' }), /MEDIA_S3_ENDPOINT/);
+  const storage = loadConfig({ MEDIA_STORAGE_DRIVER: 's3', MEDIA_S3_ENDPOINT: 'https://s3.example', MEDIA_S3_BUCKET: 'media', MEDIA_S3_ACCESS_KEY: 'key', MEDIA_S3_SECRET_KEY: 'secret' }).storage;
+  assert.deepEqual(storage, { enabled: true, driver: 's3', endpoint: 'https://s3.example', bucket: 'media', region: 'ru-1', accessKey: 'key', secretKey: 'secret', forcePathStyle: true });
 });
 
 

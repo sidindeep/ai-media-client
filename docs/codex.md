@@ -167,7 +167,9 @@ docker compose exec codex codex login status
 Повтор одного requestId не запускает второй процесс. Таймаут остаётся
 три минуты для текста и пять минут для изображения. Его временный кеш результатов
 живёт до часа и теряется при перезапуске; подтверждённые вебом результаты
-сохраняются в PostgreSQL, а PNG — в `data/service/codex-images/<account>/<request>.png`
+сохраняются в PostgreSQL, а при включённом S3 PNG — в
+`accounts/<account>/codex-images/<request>.png` приватного бакета. Без S3 используется
+локальный путь `data/service/codex-images/<account>/<request>.png`
 (внутри `MEDIA_DATA_DIR`). PNG выдаётся только после проверки владельца задания.
 Неопределённые задания после перезапуска требуют
 сверки, а не повторного запуска.

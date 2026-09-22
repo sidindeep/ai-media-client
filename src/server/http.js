@@ -24,6 +24,45 @@ const legalPages = new Map([
 ]);
 const vueAppPrefix = '/app';
 const retryableReadRpc = new Set(['nativeQuote', 'diagnoseProvider']);
+const missingMediaPlaceholder = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title description">
+  <title id="title">Файл недоступен</title>
+  <desc id="description">Медиафайл отсутствует в хранилище</desc>
+  <rect width="960" height="540" fill="#111110"/>
+  <rect x="330" y="125" width="300" height="220" rx="24" fill="#181816" stroke="#403d38" stroke-width="4"/>
+  <path d="M380 300l82-82 58 58 42-42 48 66H380z" fill="#35322e"/>
+  <circle cx="548" cy="196" r="24" fill="#ff5a2f" opacity=".72"/>
+  <path d="M447 154h66M480 121v66" stroke="#a09c95" stroke-width="10" stroke-linecap="round" transform="rotate(45 480 154)"/>
+  <text x="480" y="402" fill="#f5f1e9" font-family="Arial, sans-serif" font-size="30" font-weight="700" text-anchor="middle">Файл недоступен</text>
+  <text x="480" y="442" fill="#a09c95" font-family="Arial, sans-serif" font-size="20" text-anchor="middle">Он отсутствует в хранилище</text>
+</svg>`);
+
+function missingMedia(error) {
+  return error?.code === 'ENOENT'
+    || error?.name === 'NoSuchKey'
+    || error?.name === 'NotFound'
+    || error?.$metadata?.httpStatusCode === 404;
+}
+
+function sendMissingMedia(req, res) {
+  res.writeHead(200, {
+    ...headers,
+    'Content-Type': 'image/svg+xml; charset=utf-8',
+    'Content-Length': missingMediaPlaceholder.length,
+    'Cache-Control': 'no-store',
+    'X-Media-Placeholder': 'missing',
+  });
+  res.end(req.method === 'HEAD' ? '' : missingMediaPlaceholder);
+}
+
+async function sendMedia(req, res, action) {
+  try { return await action(); }
+  catch (error) {
+    if (missingMedia(error)) return sendMissingMedia(req, res);
+    throw error;
+  }
+}
+
 function temporaryConnectionFailure(error) {
   return transientConnection(error);
 }
@@ -75,9 +114,30 @@ async function sendFile(req, res, filename, type, attachment = false) {
   const stream = createReadStream(filename, { start, end });
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }) }) {
+async function sendStored(req, res, storage, file, attachment = false) {
+  if (!storage || !file?.storageKey) throw new Error('S3-хранилище не подключено');
+  const stat = await storage.head(file.storageKey);
+  let start = 0, end = stat.size - 1, status = 200, range = '';
+  if (req.headers.range) {
+    const match = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range);
+    if (!match) { res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` }); res.end(); return; }
+    start = Number(match[1]); end = match[2] ? Math.min(Number(match[2]), end) : end;
+    if (start > end || start >= stat.size) { res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` }); res.end(); return; }
+    status = 206; range = `bytes=${start}-${end}`;
+  }
+  const result = req.method === 'HEAD' || !stat.size ? null : await storage.stream(file.storageKey, range);
+  res.writeHead(status, {
+    ...headers, 'Content-Type': file.type || stat.type, 'Content-Length': stat.size ? end - start + 1 : 0,
+    'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
+    ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${stat.size}` } : {}),
+    ...(attachment ? { 'Content-Disposition': `attachment; filename="${String(file.name || 'download').replace(/[^a-zA-Z0-9._-]/g, '_')}"` } : {}),
+  });
+  if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
+  result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
+}
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), storage = null, payments = null, commerce = null }) {
   const release = buildInfo(config.root);
-  let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
+  let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
@@ -88,6 +148,13 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (!allowedHosts.has(req.headers.host)) return json(res, 403, { error: 'Недопустимый адрес сервиса' });
       const url = new URL(req.url, `http://${req.headers.host}`);
       const normalizedPath = url.pathname.length > 1 ? url.pathname.replace(/\/$/, '') : url.pathname;
+      if (req.method === 'POST' && url.pathname === `/api/payments/webhooks/yookassa/${config.payments?.environment || 'test'}`) {
+        if (!payments || config.payments?.provider !== 'yookassa') return json(res, 404, { error: 'Не найдено' });
+        if (!(req.headers['content-type'] || '').startsWith('application/json')) return json(res, 415, { error: 'Ожидается JSON' });
+        const body = JSON.parse((await readBody(req, 256 * 1024)).toString('utf8'));
+        await payments.webhook(body);
+        return json(res, 200, { ok: true });
+      }
       const legalPage = legalPages.get(normalizedPath);
       const rpcMatch = req.method === 'POST' ? /^\/api\/rpc\/([a-zA-Z]+)$/.exec(url.pathname) : null;
       const retryReadOnlyRpc = Boolean(rpcMatch && retryableReadRpc.has(rpcMatch[1]));
@@ -113,7 +180,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const isVuePublicAsset = isVueApp && Boolean(path.extname(url.pathname));
       const isLegacyApp = ['/legacy', '/legacy/', '/legacy/index.html'].includes(url.pathname);
       const isAsset = ['GET', 'HEAD'].includes(req.method)
-        && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || landingModelIcons.has(landingModelIcon) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || isVueApp || isLegacyApp);
+        && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || landingModelIcons.has(landingModelIcon) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || /^\/api\/content\/[a-f0-9-]{36}$/.test(url.pathname) || isVueApp || isLegacyApp);
       const sendVueApplication = async user => {
         const root = path.join(config.root, 'public', 'vue');
         const relative = isLanding || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
@@ -156,7 +223,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'GET' && url.pathname === '/api/health') {
         const database = accounts ? await checkDatabase(accounts.pool) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         const status = ['connected', 'disabled'].includes(database.state) ? 200 : 503;
-        return json(res, status, { ok: status === 200, version: release.version, build: release.build, database, generationConfigured: Boolean(legacyService.configured?.()), telegram: telegramStatus() });
+        return json(res, status, { ok: status === 200, version: release.version, build: release.build, database, generationConfigured: Boolean(legacyService.configured?.()),
+          payments: { enabled: Boolean(payments), salesEnabled: Boolean(commerce && config.commerce?.salesEnabled), environment: config.payments?.environment || 'test', provider: config.payments?.provider || null }, telegram: telegramStatus() });
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
@@ -195,7 +263,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
           const selectedAccount = url.searchParams.get('account');
           if (selectedAccount) await accounts.scope(user, selectedAccount);
-          return await sendFile(req, res, await codex.image(selectedAccount || user.id, imageRequest[1]), 'image/png', url.searchParams.get('download') === '1');
+          const file = await codex.image(selectedAccount || user.id, imageRequest[1]);
+          return await sendMedia(req, res, () => file.storageKey
+            ? sendStored(req, res, storage, file, url.searchParams.get('download') === '1')
+            : sendFile(req, res, file, 'image/png', url.searchParams.get('download') === '1'));
         }
         if (req.method === 'GET' && url.pathname === '/api/codex/quote') {
           try { return json(res, 200, { quote: codex.quote({ model: url.searchParams.get('model'), effort: url.searchParams.get('effort'), speed: url.searchParams.get('speed') }) }); }
@@ -223,6 +294,24 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null,
         starterPack: accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null } });
+      if (accounts && url.pathname.startsWith('/api/commerce/')) {
+        if (!commerce) return json(res, 503, { error: 'Платёжный модуль пока недоступен', code: 'PAYMENTS_DISABLED' });
+        if (req.method === 'GET' && url.pathname === '/api/commerce/offers') return json(res, 200, { result: config.commerce?.salesEnabled ? commerce.offers() : [] });
+        if (req.method === 'GET' && url.pathname === '/api/commerce/orders') return json(res, 200, { result: await commerce.listOrders(user.id) });
+        const orderMatch = /^\/api\/commerce\/orders\/([a-f0-9-]{36})(?:\/(checkout))?$/.exec(url.pathname);
+        if (req.method === 'GET' && orderMatch && !orderMatch[2]) return json(res, 200, { result: await commerce.getOrder(user.id, orderMatch[1]) });
+        if (req.method === 'POST' && url.pathname === '/api/commerce/orders' && req.headers['x-media-client'] === 'web') {
+          if (!config.commerce?.salesEnabled) return json(res, 503, { error: 'Продажа кредитов пока недоступна', code: 'SALES_DISABLED' });
+          const body = JSON.parse((await readBody(req, 8192)).toString('utf8'));
+          return json(res, 200, { result: await commerce.createOrder(user.id, body) });
+        }
+        if (req.method === 'POST' && orderMatch?.[2] === 'checkout' && req.headers['x-media-client'] === 'web') {
+          if (!config.commerce?.salesEnabled) return json(res, 503, { error: 'Продажа кредитов пока недоступна', code: 'SALES_DISABLED' });
+          const returnUrl = `${config.auth.origin}/app?order=${encodeURIComponent(orderMatch[1])}`;
+          return json(res, 200, { result: await commerce.checkout(user.id, orderMatch[1], returnUrl) });
+        }
+        return json(res, 404, { error: 'Метод не найден' });
+      }
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
         const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
         if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 200) throw new Error('Укажите имя до 200 символов');
@@ -347,12 +436,21 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const source = /^\/api\/sources\/([a-f0-9]{64})$/.exec(url.pathname);
       if (source) {
         const file = await service.sourceFile(source[1]);
-        return await sendFile(req, res, file.path, file.type);
+        return await sendMedia(req, res, () => file.storageKey ? sendStored(req, res, storage, file) : sendFile(req, res, file.path, file.type));
       }
       const result = /^\/api\/results\/([a-f0-9-]{36})\/(\d+)$/.exec(url.pathname);
       if (result) {
         const file = await service.resultFile(result[1], Number(result[2]));
-        return await sendFile(req, res, file.path, null, url.searchParams.has('download'));
+        return await sendMedia(req, res, () => file.storageKey
+          ? sendStored(req, res, storage, file, url.searchParams.has('download'))
+          : sendFile(req, res, file.path, null, url.searchParams.has('download')));
+      }
+      const contentRequest = /^\/api\/content\/([a-f0-9-]{36})$/.exec(url.pathname);
+      if (contentRequest) {
+        if (!accounts?.content) throw Object.assign(new Error('Хранилище контента не подключено'), { status: 503 });
+        const accountId = selected || user.id;
+        const file = await accounts.content.file(accountId, contentRequest[1]);
+        return file.storageKey ? sendStored(req, res, storage, file, url.searchParams.has('download')) : sendFile(req, res, file.path, file.type, url.searchParams.has('download'));
       }
       if (user.role !== 'admin' && shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) return json(res, 403, { error: 'Доступ запрещён' });
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
@@ -404,11 +502,13 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;
   server.recoverCodex = () => codex?.recover();
-  server.setAccountServices = async (nextAuth, nextAccounts) => {
+  server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null) => {
     codex?.close();
     auth = nextAuth;
     accounts = nextAccounts;
-    codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory }) : null;
+    payments = nextPayments;
+    commerce = nextCommerce;
+    codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
     await codex?.recover();
   };
   server.closeEvents = () => { codex?.close(); for (const connection of connections) connection.end(); };

@@ -626,8 +626,14 @@ app.whenReady().then(async () => {
     assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.ticker-set:not([aria-hidden]) .ticker-item'),item=>item.textContent.trim())"), ['NANO BANANA 2','SEEDANCE 2.5','FLUX 2','KLING 3','VEO 3.1','GPT IMAGE','GROK IMAGINE','HAILUO','MINIMAX','IDEOGRAM','QWEN','RECRAFT','TOPAZ','RUNWAY','PIXVERSE','HAPPYHORSE','VOLCENGINE']);
     assert.equal(await evaluate("document.querySelectorAll('.ticker-row img').length"), 34);
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.ticker-row img')).every(image=>image.complete&&image.naturalWidth>0)"), true);
-    await evaluate("window.__landingScrollOptions=null;const original=Element.prototype.scrollIntoView;Element.prototype.scrollIntoView=function(options){window.__landingScrollOptions=options;return original.call(this,options)};document.querySelector('.site-nav a[href=\"#models\"]').click();void 0");
-    await until("location.hash==='#models' && window.__landingScrollOptions?.behavior==='smooth'");
+    assert.equal(await evaluate("document.querySelector('.back-to-top').getAttribute('aria-hidden')"), 'true');
+    await evaluate("window.__landingScrollSamples=[];window.addEventListener('scroll',()=>window.__landingScrollSamples.push(window.scrollY),{passive:true});document.querySelector('.site-nav a[href=\"#models\"]').click();void 0");
+    await until("location.hash==='#models' && (()=>{const target=document.querySelector('#models');const targetTop=window.scrollY+target.getBoundingClientRect().top;const reachableTop=Math.min(targetTop,document.scrollingElement.scrollHeight-window.innerHeight);return Math.abs(window.scrollY-reachableTop)<2})()");
+    assert.equal(await evaluate("window.__landingScrollSamples.length>2 && window.__landingScrollSamples.some((position,index,samples)=>index>0&&position>samples[0]&&position<samples[samples.length-1])"), true, 'landing navigation advances through intermediate lerp positions');
+    assert.equal(await evaluate("document.querySelector('.back-to-top').getAttribute('aria-hidden')"), 'false');
+    await evaluate("document.querySelector('.back-to-top').click();void 0");
+    await until("location.hash==='' && window.scrollY<2");
+    assert.equal(await evaluate("document.querySelector('.back-to-top').getAttribute('aria-hidden')"), 'true');
     await evaluate("document.querySelector('[data-theme-toggle]').click();void 0");
     await until("document.documentElement.dataset.theme==='dark'");
     const adminService = await runtime.accounts.get(adminId);

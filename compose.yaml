@@ -45,6 +45,13 @@ services:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3210/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: test
+    image: ai-media-web-tg-tests:local
+    command: [node, --test, test/payments.test.js]
 volumes:
   codex-auth:
     external: true

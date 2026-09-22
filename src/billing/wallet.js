@@ -57,23 +57,24 @@ function createWallet(pool, { onPurchase } = {}) {
       });
     },
     async purchase(accountId, amount, reference, note = 'Оплата кредитов') {
-      units(amount);
-      if (!amount || typeof reference !== 'string' || !/^[\w-]{8,100}$/.test(reference) || typeof note !== 'string' || !note.trim() || note.length > 500) throw new Error('Укажите сумму, идентификатор и назначение платежа');
-      const created = await transaction(pool, async client => {
-        const wallet = await lockWallet(client, accountId);
-        const previous = (await client.query("SELECT amount,note FROM media_ledger WHERE account_id=$1 AND kind='purchase' AND reference=$2", [accountId, reference])).rows[0];
-        if (previous) {
-          if (Number(previous.amount) !== amount || previous.note !== note) throw new Error('Платёж с этим идентификатором уже отличается');
-          return false;
-        }
-        units(wallet.balance + amount);
-        await client.query('UPDATE media_wallets SET balance=balance+$2 WHERE account_id=$1', [accountId, amount]);
-        await entry(client, accountId, 'purchase', reference, amount, null, note);
-        return true;
-      });
+      const created = await transaction(pool, client => purchaseInTransaction(client, accountId, amount, reference, note));
       if (created) await onPurchase?.(accountId);
       return created;
     }
   };
 }
-module.exports = { createWallet, reserve, settle, lockWallet };
+async function purchaseInTransaction(client, accountId, amount, reference, note = 'Оплата кредитов') {
+  units(amount);
+  if (!amount || typeof reference !== 'string' || !/^[\w-]{8,100}$/.test(reference) || typeof note !== 'string' || !note.trim() || note.length > 500) throw new Error('Укажите сумму, идентификатор и назначение платежа');
+  const wallet = await lockWallet(client, accountId);
+  const previous = (await client.query("SELECT amount,note FROM media_ledger WHERE account_id=$1 AND kind='purchase' AND reference=$2", [accountId, reference])).rows[0];
+  if (previous) {
+    if (Number(previous.amount) !== amount || previous.note !== note) throw new Error('Платёж с этим идентификатором уже отличается');
+    return false;
+  }
+  units(wallet.balance + amount);
+  await client.query('UPDATE media_wallets SET balance=balance+$2 WHERE account_id=$1', [accountId, amount]);
+  await entry(client, accountId, 'purchase', reference, amount, null, note);
+  return true;
+}
+module.exports = { createWallet, reserve, settle, lockWallet, purchaseInTransaction };

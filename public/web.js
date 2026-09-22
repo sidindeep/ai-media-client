@@ -37,6 +37,8 @@
   };
   api.saveSource = file => request(`/api/source?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file.bytes });
   api.sourcePreview = async ref => {
+    const content = /^content:([a-f0-9-]{36})$/.exec(ref);
+    if (content) return accountUrl(`/api/content/${content[1]}`);
     const match = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(ref);
     if (!match) throw new Error('Некорректный исходник'); return accountUrl(`/api/sources/${match[1]}`);
   };

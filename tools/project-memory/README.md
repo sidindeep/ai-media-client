@@ -6,6 +6,9 @@
 
 - [Аккаунты и кредиты](specs/features/accounts-credits.md) — Google/VK, PostgreSQL,
   изоляция, роли и независимый от провайдера кредитный модуль.
+- [Архитектура платежей](specs/features/payments-module.md) — граница продукта и
+  платёжных провайдеров, outbox/inbox, возвраты и будущий вынос в сервис;
+  [план реализации для Sol Medium](../../docs/payments-implementation-plan.md).
 
 - [Веб и Telegram](specs/features/web-telegram.md) — сервер, общий workspace, бот и проверки.
 
@@ -16,6 +19,10 @@
 - [Очередь](specs/features/generation-queue.md) — отправка, параллельность, пауза, восстановление.
 - [Каталог и валидация](specs/features/catalog-validation.md) — декларативные формы, адаптеры и ограничения.
 - [Исходники и результаты](specs/features/media-storage.md) — сохранение, повтор, скачивание.
+- [План единого модуля контента](specs/features/content-module-plan.md) — UUID-файлы,
+  приватный S3, каталог, фоновые задания и переход legacy-данных.
+- [План production CDN и Storage](specs/features/cdn-storage-production-plan.md) —
+  Versioning, Object Lock, CDN-авторизация, backup 3-2-1 и восстановление.
 - [Рабочие вкладки](specs/features/workspaces-templates.md) — черновики, шаблоны и избранное.
 - [Локализация](specs/features/localization.md) — RU/EN-словари, ключи, plural rules, выбор языка и границы перевода.
 - [Стоимость](specs/business-rules/cost-accounting.md) — оценки, списания и сверка.

@@ -1,0 +1,55 @@
+{
+  "version": "2026-09-22",
+  "offers": [
+    {
+      "id": "credits-start",
+      "version": "2026-09-22",
+      "name": "Старт",
+      "description": "Пробный тариф с низким порогом входа.",
+      "creditUnits": 450,
+      "amountMinor": 49000,
+      "currency": "RUB",
+      "active": true
+    },
+    {
+      "id": "credits-base",
+      "version": "2026-09-22",
+      "name": "Базовый",
+      "description": "Основной публичный тариф для регулярного использования.",
+      "creditUnits": 1000,
+      "amountMinor": 99000,
+      "currency": "RUB",
+      "active": true
+    },
+    {
+      "id": "credits-pro",
+      "version": "2026-09-22",
+      "name": "Pro",
+      "description": "Баланс цены и запаса кредитов для активных пользователей.",
+      "creditUnits": 2200,
+      "amountMinor": 199000,
+      "currency": "RUB",
+      "active": true
+    },
+    {
+      "id": "credits-business",
+      "version": "2026-09-22",
+      "name": "Business",
+      "description": "Выгодная цена при большом объёме для команд.",
+      "creditUnits": 6000,
+      "amountMinor": 499000,
+      "currency": "RUB",
+      "active": true
+    },
+    {
+      "id": "credits-agency",
+      "version": "2026-09-22",
+      "name": "Agency",
+      "description": "Максимальная скидка для студий и агентств.",
+      "creditUnits": 13000,
+      "amountMinor": 999000,
+      "currency": "RUB",
+      "active": true
+    }
+  ]
+}

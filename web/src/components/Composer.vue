@@ -115,6 +115,8 @@ function fieldOptionLabel(field: MediaField, option: unknown) {
 }
 function sourceButtonLabel(field: MediaField) { return fileFields.value.length === 1 ? t('composer.sources') : (field.label || t('composer.sources')); }
 function sourcePreviewUrl(ref: string) {
+  const assetId = /^content:([a-f0-9-]{36})$/.exec(ref)?.[1];
+  if (assetId) return `/api/content/${assetId}`;
   const id = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(ref)?.[1];
   return id ? `/api/sources/${id}` : '';
 }

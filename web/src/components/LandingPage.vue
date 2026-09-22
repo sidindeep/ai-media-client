@@ -16,6 +16,60 @@ const markup = landingDocument.slice(start, end);
 type ThemeBridge = { current: () => 'light' | 'dark'; apply: (theme: 'light' | 'dark') => void };
 type MotionBridge = { current: () => 'on' | 'off' };
 
+const scrollCancelKeys = new Set(['ArrowDown', 'ArrowUp', 'End', 'Home', 'PageDown', 'PageUp', ' ']);
+const scrollResponseMs = 190;
+let scrollFrame = 0;
+
+function cancelScrollLerp() {
+  if (!scrollFrame) return;
+  cancelAnimationFrame(scrollFrame);
+  scrollFrame = 0;
+}
+
+function scrollWithLerp(requestedTop: number) {
+  cancelScrollLerp();
+  const scrollingElement = document.scrollingElement;
+  if (!scrollingElement) return;
+  const maximum = Math.max(0, scrollingElement.scrollHeight - window.innerHeight);
+  const targetTop = Math.min(maximum, Math.max(0, requestedTop));
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    && document.documentElement.dataset.bootMotion !== 'on';
+  if (reduceMotion) {
+    scrollingElement.scrollTop = targetTop;
+    return;
+  }
+
+  let previousTime = performance.now();
+  const advance = (time: number) => {
+    const currentTop = scrollingElement.scrollTop;
+    const remaining = targetTop - currentTop;
+    if (Math.abs(remaining) < 6) {
+      scrollingElement.scrollTop = targetTop;
+      scrollFrame = 0;
+      return;
+    }
+    const elapsed = Math.min(64, Math.max(1, time - previousTime));
+    previousTime = time;
+    const blend = 1 - Math.exp(-elapsed / scrollResponseMs);
+    scrollingElement.scrollTop = currentTop + remaining * blend;
+    scrollFrame = requestAnimationFrame(advance);
+  };
+  scrollFrame = requestAnimationFrame(advance);
+}
+
+function cancelScrollOnKey(event: KeyboardEvent) {
+  if (scrollCancelKeys.has(event.key)) cancelScrollLerp();
+}
+
+function syncBackToTop() {
+  const control = root.value?.querySelector<HTMLAnchorElement>('.back-to-top');
+  if (!control) return;
+  const visible = props.active && window.scrollY > Math.max(360, window.innerHeight * 0.6);
+  control.classList.toggle('is-visible', visible);
+  control.setAttribute('aria-hidden', String(!visible));
+  control.tabIndex = visible ? 0 : -1;
+}
+
 function landingStyles() {
   let link = document.querySelector<HTMLLinkElement>('link[data-landing-styles]');
   if (!link) {
@@ -31,11 +85,12 @@ function landingStyles() {
 function applySurface(active: boolean) {
   landingStyles().media = active ? 'all' : 'not all';
   document.body.classList.toggle('public-landing-active', active);
+  if (!active) cancelScrollLerp();
   if (active) {
     const theme = (window as Window & { AiMediaTheme?: ThemeBridge }).AiMediaTheme;
     if (theme) theme.apply(theme.current());
   }
-  void nextTick().then(() => syncHeroVideo());
+  void nextTick().then(() => { syncHeroVideo(); syncBackToTop(); });
 }
 
 function syncAccountAction() {
@@ -87,6 +142,12 @@ function handleClick(event: MouseEvent) {
   if (!link) return;
   const destination = new URL(link.href, window.location.href);
   if (destination.origin !== window.location.origin) return;
+  if (link.hasAttribute('data-back-to-top')) {
+    event.preventDefault();
+    scrollWithLerp(0);
+    history.replaceState(history.state, '', window.location.pathname + window.location.search);
+    return;
+  }
   if (destination.pathname === '/app' && !destination.search && !destination.hash) {
     event.preventDefault();
     emit('studio');
@@ -95,14 +156,14 @@ function handleClick(event: MouseEvent) {
   if (destination.pathname === '/' && !destination.search && !destination.hash) {
     event.preventDefault();
     emit('home');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollWithLerp(0);
     return;
   }
   if (destination.pathname !== '/' || !destination.hash) return;
   const target = root.value?.querySelector<HTMLElement>(`#${CSS.escape(decodeURIComponent(destination.hash.slice(1)))}`);
   if (!target) return;
   event.preventDefault();
-  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  scrollWithLerp(window.scrollY + target.getBoundingClientRect().top);
   if (window.location.hash !== destination.hash) history.replaceState(history.state, '', destination.hash);
 }
 
@@ -126,6 +187,11 @@ watch(locale, () => { void nextTick().then(() => { translateLanding(); void upda
 onMounted(() => {
   window.addEventListener('ai-media-motion-change', syncHeroVideo);
   window.addEventListener('ai-media-theme-change', syncLocalizedControls);
+  window.addEventListener('wheel', cancelScrollLerp, { passive: true });
+  window.addEventListener('touchstart', cancelScrollLerp, { passive: true });
+  window.addEventListener('keydown', cancelScrollOnKey);
+  window.addEventListener('scroll', syncBackToTop, { passive: true });
+  window.addEventListener('resize', syncBackToTop);
   void updateVersion();
   syncAccountAction();
   translateLanding();
@@ -134,6 +200,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('ai-media-motion-change', syncHeroVideo);
   window.removeEventListener('ai-media-theme-change', syncLocalizedControls);
+  window.removeEventListener('wheel', cancelScrollLerp);
+  window.removeEventListener('touchstart', cancelScrollLerp);
+  window.removeEventListener('keydown', cancelScrollOnKey);
+  window.removeEventListener('scroll', syncBackToTop);
+  window.removeEventListener('resize', syncBackToTop);
+  cancelScrollLerp();
   applySurface(false);
 });
 </script>

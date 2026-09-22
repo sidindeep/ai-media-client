@@ -8,6 +8,7 @@
 | Запуск веба и настроенного бота | pnpm start |
 | Проверка веба | pnpm check |
 | Тесты веба | pnpm test |
+| Изолированные контейнерные тесты платежей | pnpm test:payments:container |
 | Зависимости Windows | pnpm --dir desktop install --frozen-lockfile |
 | Запуск Windows | pnpm start:desktop |
 | Проверка Windows | pnpm check:desktop |
@@ -20,6 +21,8 @@
 | Подготовить новую заливку | pnpm release:bump |
 | Docker состояние | docker compose ps |
 | Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
+| Зарегистрировать и перенести legacy-контент в каталог/S3 | pnpm migrate:content |
+| Сверить каталог контента с S3 без удаления | pnpm audit:content |
 | Пилот exec/app-server (реальный расход, только с бюджетом 6 текстов + 6 PNG) | node scripts/benchmark-codex-transports.cjs --docker --live |
 | Ступени генераций Codex (реальный расход, до 127 запросов при потолке 64) | node scripts/benchmark-codex-capacity.cjs --docker --live --kind=image --transport=app-server --max-concurrency=64 |
 | Docker остановка | docker compose down |
@@ -56,7 +59,7 @@ GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настр
 Аккаунты: [PostgreSQL/OAuth/кредиты](../docs/accounts-and-credits.md). По умолчанию
 MEDIA_AUTH_ENABLED=true; DATABASE_URL обязателен. `.env.example` содержит только
 пустые секреты. Для полноценного входа нужны Google/VK приложения и HTTPS origin.
-Схема v2 применяется на старте транзакционно, старая JSON-история не мигрирует.
+Схема v4 применяется на старте транзакционно, старая JSON-история не мигрирует.
 Тарифы config/native-prices.json: Nano Banana 2 Lite и все режимы Codex —
 4 внутренних кредита за запрос по решению владельца от 2026-09-18;
 остальные цены публикуются отдельно.

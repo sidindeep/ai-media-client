@@ -34,6 +34,7 @@ test('native prices use exact minor units, explicit tariffs, no provider cost co
   assert.throws(() => loadConfig({ MEDIA_PUBLIC_ORIGIN: 'http://public.example' }));
   assert.equal(loadConfig({}).starterPack.credits, 150);
   assert.deepEqual(loadConfig({}).starterPack.allowedProviders, ['codex']);
+  assert.throws(() => loadConfig({ MEDIA_SALES_ENABLED: 'true' }), /платёжного модуля/);
 });
 
 test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay and logout', { timeout: 60000 }, async t => {
@@ -138,6 +139,14 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   const sourcePath = '/api/sources/' + upload.ref.split('/').at(-1);
   assert.equal((await request(sourcePath, { headers: { Cookie: bob.cookie } })).status, 400);
   assert.equal((await request(sourcePath, { headers: { Cookie: alice.cookie } })).status, 200);
+  const sourceFile = await (await runtime.accounts.get(alice.id)).sourceFile(upload.ref.split('/').at(-1));
+  await fs.unlink(sourceFile.path);
+  const missingSource = await request(sourcePath, { headers: { Cookie: alice.cookie } });
+  assert.equal(missingSource.status, 200);
+  assert.match(missingSource.headers.get('content-type'), /^image\/svg\+xml/);
+  assert.equal(missingSource.headers.get('x-media-placeholder'), 'missing');
+  assert.match(await missingSource.text(), /Файл недоступен/);
+  assert.equal((await request('/api/health')).status, 200, 'missing media must not stop the service');
   const catalog = await result(rpc(alice, 'getCatalog')); assert.equal(catalog.providers[0].id, 'media'); assert.equal(catalog.providers[0].name, 'Kie.ai'); assert.equal(catalog.models[0].pricing, undefined);
   const empty = await result(rpc(alice, 'getBalance')); assert.equal(empty.balance, 0);
   for (const user of [alice, owner]) {

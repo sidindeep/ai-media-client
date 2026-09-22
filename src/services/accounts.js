@@ -21,7 +21,7 @@ function publicRecord(record) {
   else if (['fail', 'blocked'].includes(record.state)) result.error = 'Генерация не выполнена. Резерв возвращён.';
   return result;
 }
-function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack }) {
+function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack, storage, content = null }) {
   const services = new Map();
   const wallet = createWallet(pool, { onPurchase: async accountId => {
     const operation = services.get(accountId);
@@ -33,14 +33,15 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     if (!services.has(accountId)) {
       const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates', 'presets'].map(name => [name, new AccountRecords(pool, accountId, name)]));
       const operation = createMediaService({ directory: path.join(config.dataDirectory, 'accounts', accountId), provider: routedProvider,
-        rubPerCredit: config.rubPerCredit, stores, pricing, tariffFetcher });
+        rubPerCredit: config.rubPerCredit, stores, pricing, tariffFetcher, storage, storagePrefix: `accounts/${accountId}`, content, accountId });
       services.set(accountId, operation);
       operation.catch(() => services.delete(accountId));
     }
     return services.get(accountId);
   }
   return {
-    pool, wallet, pricing, workspaces, starterPack, get,
+    pool, wallet, pricing, workspaces, starterPack, content, get,
+    async notifyContent(accountId) { const operation = services.get(accountId); if (operation) (await operation).events.emit('changed'); },
     async recover() {
       const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('queued','preparing','submitting','waiting','queuing','generating','unknown')")).rows;
       for (const row of rows) await get(row.account_id);

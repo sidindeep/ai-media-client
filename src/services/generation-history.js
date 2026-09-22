@@ -3,7 +3,7 @@ const catalog = require('../../config/codex-models.json');
 
 function codexRecord(job) {
   const image = job.state === 'success' && job.hasImage === true;
-  const url = `/api/codex/jobs/${encodeURIComponent(job.id)}/image`;
+  const url = job.contentAssetId ? `/api/content/${job.contentAssetId}` : `/api/codex/jobs/${encodeURIComponent(job.id)}/image`;
   return {
     id: `codex:${job.id}`, providerId: 'codex', providerName: 'Codex CLI',
     modelId: job.model, model: job.model,

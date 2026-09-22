@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as api from '../api/client';
-import { activeSubscriptionPromotion, subscriptionOffers } from '../config/subscription-offers';
+import { activeSubscriptionPromotion } from '../config/subscription-offers';
+import type { CommerceOffer } from '../api/client';
 import { useStudioStore } from '../stores/studio';
 import { applyStudioTheme } from '../theme';
 import type { Account, GenerationRecord } from '../types';
@@ -16,6 +17,9 @@ const root = ref<HTMLElement | null>(null);
 const account = ref<Account | null>(null);
 const notificationsOpen = ref(false);
 const subscriptionsOpen = ref(false);
+const commerceOffers = ref<CommerceOffer[]>([]);
+const commerceLoading = ref(false);
+const commerceStatus = ref('');
 const seenIds = ref(new Set<string>());
 const promotion = activeSubscriptionPromotion();
 const theme = ref<'dark' | 'light'>(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
@@ -90,9 +94,57 @@ function toggleNotifications() {
   if (notificationsOpen.value) markNotificationsRead();
 }
 
+function formatMoney(offer: CommerceOffer) {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: offer.currency }).format(offer.amountMinor / 100);
+}
+
+async function loadCommerceOffers() {
+  commerceLoading.value = true;
+  commerceStatus.value = '';
+  try { commerceOffers.value = await api.getCommerceOffers(); }
+  catch { commerceOffers.value = []; commerceStatus.value = t('subscription.unavailable'); }
+  finally { commerceLoading.value = false; }
+}
+
 function openSubscriptions() {
   notificationsOpen.value = false;
   subscriptionsOpen.value = true;
+  void loadCommerceOffers();
+}
+
+async function buyOffer(offer: CommerceOffer) {
+  commerceLoading.value = true;
+  commerceStatus.value = '';
+  try {
+    const storageKey = `ai-media-checkout:${offer.id}:${offer.version}`;
+    const idempotencyKey = sessionStorage.getItem(storageKey) || crypto.randomUUID();
+    sessionStorage.setItem(storageKey, idempotencyKey);
+    const order = await api.createCommerceOrder(offer, idempotencyKey);
+    const checkout = await api.checkoutCommerceOrder(order.id);
+    if (checkout.confirmationUrl) { window.location.assign(checkout.confirmationUrl); return; }
+    if (checkout.status === 'fulfilled') { sessionStorage.removeItem(storageKey); await loadAccount(); commerceStatus.value = t('subscription.completed'); }
+    else commerceStatus.value = t('subscription.pending');
+  } catch (cause) { commerceStatus.value = cause instanceof Error ? cause.message : t('subscription.unavailable'); }
+  finally { commerceLoading.value = false; }
+}
+
+async function restoreReturnedOrder() {
+  if (!props.ready) return;
+  const url = new URL(window.location.href);
+  const orderId = url.searchParams.get('order');
+  if (!orderId || !/^[a-f0-9-]{36}$/.test(orderId)) return;
+  subscriptionsOpen.value = true;
+  commerceLoading.value = true;
+  try {
+    const order = await api.getCommerceOrder(orderId);
+    commerceStatus.value = order.status === 'fulfilled' ? t('subscription.completed') : order.status === 'payment_failed' ? t('subscription.failed') : t('subscription.pending');
+    if (order.status === 'fulfilled') await loadAccount();
+  } catch (cause) { commerceStatus.value = cause instanceof Error ? cause.message : t('subscription.unavailable'); }
+  finally {
+    commerceLoading.value = false;
+    url.searchParams.delete('order');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+  }
 }
 
 function selectNotification(record: GenerationRecord) {
@@ -122,19 +174,22 @@ function handleThemeChange(event: Event) {
   const next = (event as CustomEvent<{ theme?: string }>).detail?.theme;
   if (next === 'dark' || next === 'light') theme.value = next;
 }
+function handleOpenCommerce() { openSubscriptions(); }
 
-watch(() => props.ready, ready => { if (ready) void loadAccount(); else account.value = null; }, { immediate: true });
+watch(() => props.ready, ready => { if (ready) { void loadAccount(); void restoreReturnedOrder(); } else account.value = null; }, { immediate: true });
 watch(() => `${studio.accountActive.length}:${studio.history[0]?.id || ''}:${studio.history[0]?.state || ''}`, () => { if (props.ready) void loadAccount(); });
 watch(() => studio.modelAccess, () => { if (props.ready) void loadAccount(); });
 onMounted(() => {
   document.addEventListener('pointerdown', handlePointerDown);
   document.addEventListener('keydown', handleKeydown);
   window.addEventListener('ai-media-theme-change', handleThemeChange);
+  window.addEventListener('ai-media-open-commerce', handleOpenCommerce);
 });
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handlePointerDown);
   document.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('ai-media-theme-change', handleThemeChange);
+  window.removeEventListener('ai-media-open-commerce', handleOpenCommerce);
 });
 </script>
 
@@ -180,15 +235,17 @@ onBeforeUnmount(() => {
         <header><div><span>{{ t('subscription.eyebrow') }}</span><h2 id="subscription-title">{{ t('subscription.title') }}</h2></div><button type="button" :aria-label="t('common.close')" @click="subscriptionsOpen = false">×</button></header>
         <div v-if="promotion" class="subscription-offer"><strong>{{ promotion.badge }} · {{ t(promotion.titleKey) }}</strong><p>{{ t(promotion.descriptionKey) }}</p></div>
         <div v-if="account?.starterPack?.active" class="subscription-offer"><strong>{{ t('subscription.starter', { count: account.starterPack.credits }) }}</strong><p>{{ t('subscription.starterHint') }}</p></div>
-        <div class="subscription-plans">
-          <article v-for="offer in subscriptionOffers" :key="offer.id">
-            <div><h3>{{ offer.name }}</h3><span v-if="offer.priceLabel">{{ offer.priceLabel }}</span></div>
-            <p>{{ t(offer.descriptionKey) }}</p>
-            <ul><li v-for="featureKey in offer.featureKeys" :key="featureKey">{{ t(featureKey) }}</li></ul>
-            <button type="button" :disabled="!offer.available">{{ offer.available ? t('subscription.choose') : t('subscription.soon') }}</button>
+        <div v-if="commerceOffers.length" class="subscription-plans">
+          <article v-for="offer in commerceOffers" :key="`${offer.id}:${offer.version}`">
+            <div><h3>{{ offer.name }}</h3><span>{{ formatMoney(offer) }}</span></div>
+            <p>{{ offer.description }}</p>
+            <ul><li>{{ t('subscription.creditCount', { count: formatCredits(offer.creditUnits / 1000) }) }}</li><li>{{ t('subscription.feature.balance') }}</li><li>{{ t('subscription.feature.models') }}</li></ul>
+            <button type="button" :disabled="commerceLoading" @click="buyOffer(offer)">{{ commerceLoading ? t('common.loading') : t('subscription.buy') }}</button>
           </article>
         </div>
-        <p class="subscription-note">{{ t('subscription.note') }}</p>
+        <p v-if="commerceLoading && !commerceOffers.length" class="subscription-note">{{ t('common.loading') }}</p>
+        <p v-else-if="commerceStatus" class="subscription-note" role="status">{{ commerceStatus }}</p>
+        <p v-else-if="!commerceOffers.length" class="subscription-note">{{ t('subscription.unavailable') }}</p>
       </section>
     </div>
   </Teleport>

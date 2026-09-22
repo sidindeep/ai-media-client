@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
     "dev": "node --env-file-if-exists=.env --watch server.js",
-    "check": "node --check server.js && node --check src/server/http.js && node --check src/services/media-service.js && node --check src/services/telegram-bot.js && node --check src/services/telegram-gateway.js && node --check public/theme.js && node --check public/landing.js && node --check public/web.js",
+    "check": "node --check server.js && node --check src/server/http.js && node --check src/services/media-service.js && node --check src/services/content-service.js && node --check src/services/telegram-bot.js && node --check src/services/telegram-gateway.js && node --check src/object-storage.js && node --check src/payments/contracts.js && node --check src/payments/service.js && node --check src/payments/providers/yookassa.js && node --check src/commerce/catalog.js && node --check src/commerce/service.js && node --check scripts/migrate-content-assets.cjs && node --check scripts/audit-content.cjs && node --check public/theme.js && node --check public/landing.js && node --check public/web.js",
+    "test:payments": "node --test test/payments.test.js",
+    "test:payments:container": "docker compose --profile test run --build --rm tests",
     "test": "node --test test/*.test.js",
     "start:web": "pnpm start",
     "dev:web": "pnpm dev",
@@ -23,9 +25,12 @@
     "test:desktop": "pnpm --dir desktop test",
     "pack:desktop": "pnpm --dir desktop run pack",
     "dist:desktop": "pnpm --dir desktop run dist",
-    "release:bump": "node scripts/bump-release-version.cjs"
+    "release:bump": "node scripts/bump-release-version.cjs",
+    "migrate:content": "node --env-file-if-exists=.env scripts/migrate-content-assets.cjs",
+    "audit:content": "node --env-file-if-exists=.env scripts/audit-content.cjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1136.0",
     "ajv": "^8.20.0",
     "pg": "8.22.0"
   },

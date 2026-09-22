@@ -6,13 +6,15 @@ const { normalizeUsage } = require('./codex-usage');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { parseContentRef } = require('./content-service');
 const priceKey = request => `codex:${request.model}:${request.effort}:${request.speed}`;
-function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch }) {
+function createCodexBilling({ accounts, url, dataDirectory, storage = null, content = accounts?.content || null, fetchImpl = fetch }) {
   const timers = new Map(); let closed = false;
   const id = (account, requestId) => `codex:${account}:${requestId}`;
   const get = async (account, requestId) => (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
   const quote = request => accounts.pricing.quote(priceKey(request));
   const imagePath = (account, requestId) => path.join(dataDirectory, 'codex-images', account, requestId + '.png');
+  const imageKey = (account, requestId) => `accounts/${account}/codex-images/${requestId}.png`;
   async function update(account, requestId, patch) {
     return transaction(accounts.pool, async client => {
       await lockWallet(client, account);
@@ -67,18 +69,34 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
     try {
       const result = await remote(account, '/jobs/' + requestId);
       if (result.state === 'success') {
+        let contentAssetId = null;
+        let contentSaveError = null;
         if (job.kind === 'image') {
           let image;
           try {
             if (typeof result.imageBase64 !== 'string' || result.imageBase64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('missing image');
             image = validatePng(Buffer.from(result.imageBase64, 'base64'));
           } catch { return await update(account, requestId, { state: 'fail', error: 'Изображение не получено. Резерв кредитов возвращён.' }); }
-          const filename = imagePath(account, requestId), temporary = filename + '.' + randomUUID() + '.tmp';
-          await fs.mkdir(path.dirname(filename), { recursive: true });
-          try { await fs.writeFile(temporary, image, { flag: 'wx' }); await fs.rename(temporary, filename); }
-          finally { await fs.unlink(temporary).catch(() => {}); }
+          try { if (content) {
+            try {
+              const asset = await content.createFromBuffer(account, { bytes: image, name: requestId + '.png', type: 'image/png', origin: { kind: 'result', provider: 'codex', recordId: id(account, requestId), position: 0 } });
+              await content.link(account, 'codex', id(account, requestId), asset.id, 'result', 0);
+              contentAssetId = asset.id;
+            } catch (error) {
+              // Storage catalog errors must not turn a confirmed provider result
+              // into an unknown billing outcome. Preserve bytes under the legacy key.
+              if (!storage) throw error;
+              await storage.put(imageKey(account, requestId), image, 'image/png', image.length);
+            }
+          } else if (storage) await storage.put(imageKey(account, requestId), image, 'image/png', image.length);
+          else {
+            const filename = imagePath(account, requestId), temporary = filename + '.' + randomUUID() + '.tmp';
+            await fs.mkdir(path.dirname(filename), { recursive: true });
+            try { await fs.writeFile(temporary, image, { flag: 'wx' }); await fs.rename(temporary, filename); }
+            finally { await fs.unlink(temporary).catch(() => {}); }
+          } } catch { contentSaveError = 'Изображение создано, но постоянное сохранение требует повтора.'; }
         }
-        return await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', error: null });
+        return await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', ...(typeof contentAssetId === 'string' ? { contentAssetId } : {}), ...(contentSaveError ? { contentSaveError } : {}), error: null });
       }
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: result.error });
       if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: result.error });
@@ -98,10 +116,19 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
     const request = validateCodexRequest(raw);
     const images = [];
     for (const ref of request.sourceFiles || []) {
+      const contentId = parseContentRef(ref);
+      if (contentId) {
+        images.push(`data:image/png;base64,${(await content.read(account, contentId)).toString('base64')}`);
+        continue;
+      }
       const match = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(ref);
       if (!match) continue;
-      const filename = path.join(dataDirectory, 'accounts', account, 'sources', match[1]);
-      const bytes = await fs.readFile(filename).catch(() => { throw Object.assign(new Error('Исходное изображение не найдено'), { status: 400 }); });
+      let bytes;
+      try { bytes = storage ? await storage.read(`accounts/${account}/sources/${match[1]}`) : await fs.readFile(path.join(dataDirectory, 'accounts', account, 'sources', match[1])); }
+      catch {
+        bytes = await fs.readFile(path.join(dataDirectory, 'accounts', account, 'sources', match[1]))
+          .catch(() => { throw Object.assign(new Error('Исходное изображение не найдено'), { status: 400 }); });
+      }
       images.push(`data:image/png;base64,${bytes.toString('base64')}`);
     }
     let fresh = false;
@@ -135,6 +162,8 @@ function createCodexBilling({ accounts, url, dataDirectory, fetchImpl = fetch })
     async image(account, requestId) {
       const job = await get(account, requestId);
       if (!job?.hasImage || job.state !== 'success') throw Object.assign(new Error('Изображение не найдено'), { status: 404 });
+      if (job.contentAssetId && content) return content.file(account, job.contentAssetId);
+      if (storage && await storage.head(imageKey(account, requestId)).then(() => true).catch(() => false)) return { storageKey: imageKey(account, requestId), name: requestId + '.png', type: 'image/png' };
       return imagePath(account, requestId);
     },
     async recover() {

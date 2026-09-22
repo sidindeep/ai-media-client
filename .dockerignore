@@ -11,3 +11,9 @@
 !config/
 !config/native-prices.json
 !config/codex-models.json
+!config/product-offers.json
+!scripts/
+!scripts/migrate-content-assets.cjs
+!scripts/audit-content.cjs
+!test/
+!test/**

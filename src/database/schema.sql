@@ -88,3 +88,173 @@ CREATE INDEX IF NOT EXISTS media_chats_account_recent ON media_chats(account_id,
 CREATE INDEX IF NOT EXISTS media_chats_project_recent ON media_chats(account_id, project_id, updated_at DESC);
 
 INSERT INTO media_schema_versions(version) VALUES (3) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS content_assets (
+  account_id uuid NOT NULL REFERENCES media_accounts(id),
+  id uuid NOT NULL,
+  storage_key text NOT NULL UNIQUE,
+  original_name text NOT NULL,
+  mime_type text NOT NULL,
+  size_bytes bigint CHECK (size_bytes IS NULL OR size_bytes >= 0),
+  sha256 text CHECK (sha256 IS NULL OR sha256 ~ '^[a-f0-9]{64}$'),
+  status text NOT NULL CHECK (status IN ('saving','ready','failed','missing')),
+  origin jsonb NOT NULL DEFAULT '{}'::jsonb,
+  error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,id)
+);
+CREATE INDEX IF NOT EXISTS content_assets_account_recent ON content_assets(account_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS content_assets_status ON content_assets(status,updated_at);
+
+CREATE TABLE IF NOT EXISTS content_links (
+  account_id uuid NOT NULL,
+  namespace text NOT NULL,
+  record_id text NOT NULL,
+  asset_id uuid NOT NULL,
+  role text NOT NULL CHECK (role IN ('source','result')),
+  position integer NOT NULL CHECK (position >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,namespace,record_id,role,position),
+  FOREIGN KEY(account_id,namespace,record_id) REFERENCES media_records(account_id,namespace,id) ON DELETE CASCADE,
+  FOREIGN KEY(account_id,asset_id) REFERENCES content_assets(account_id,id)
+);
+CREATE INDEX IF NOT EXISTS content_links_asset ON content_links(account_id,asset_id);
+
+CREATE TABLE IF NOT EXISTS content_jobs (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL,
+  asset_id uuid NOT NULL,
+  state text NOT NULL CHECK (state IN ('pending','processing','retry','done','failed')),
+  source jsonb NOT NULL,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,asset_id),
+  FOREIGN KEY(account_id,asset_id) REFERENCES content_assets(account_id,id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS content_jobs_ready ON content_jobs(state,next_attempt_at);
+
+INSERT INTO media_schema_versions(version) VALUES (4) ON CONFLICT DO NOTHING;
+
+-- Payment bounded context. It deliberately has no foreign keys to media_* tables.
+CREATE TABLE IF NOT EXISTS payment_payments (
+  id uuid PRIMARY KEY,
+  client_id text NOT NULL,
+  environment text NOT NULL CHECK (environment IN ('test','live')),
+  external_order_id text NOT NULL,
+  amount_minor bigint NOT NULL CHECK (amount_minor > 0 AND amount_minor <= 9007199254740991),
+  currency text NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  status text NOT NULL CHECK (status IN ('created','pending','succeeded','canceled','failed')),
+  resolution text NOT NULL CHECK (resolution IN ('known','unknown')),
+  confirmation_url text,
+  expires_at timestamptz,
+  refunded_minor bigint NOT NULL DEFAULT 0 CHECK (refunded_minor >= 0 AND refunded_minor <= amount_minor),
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(client_id,environment,external_order_id)
+);
+CREATE TABLE IF NOT EXISTS payment_commands (
+  id uuid PRIMARY KEY,
+  operation text NOT NULL,
+  client_id text NOT NULL,
+  environment text NOT NULL CHECK (environment IN ('test','live')),
+  idempotency_key text NOT NULL,
+  payload_hash text NOT NULL CHECK (payload_hash ~ '^[a-f0-9]{64}$'),
+  payment_id uuid NOT NULL REFERENCES payment_payments(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation,client_id,environment,idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS payment_attempts (
+  id uuid PRIMARY KEY,
+  payment_id uuid NOT NULL UNIQUE REFERENCES payment_payments(id),
+  provider_id text NOT NULL,
+  provider_account_id text NOT NULL,
+  environment text NOT NULL CHECK (environment IN ('test','live')),
+  provider_payment_id text,
+  provider_idempotency_key text NOT NULL,
+  state text NOT NULL CHECK (state IN ('created','pending','succeeded','canceled','failed')),
+  resolution text NOT NULL CHECK (resolution IN ('known','unknown')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS payment_attempts_provider_payment ON payment_attempts(provider_id,provider_account_id,environment,provider_payment_id) WHERE provider_payment_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS payment_webhook_inbox (
+  provider_id text NOT NULL,
+  provider_account_id text NOT NULL,
+  environment text NOT NULL,
+  event_identity text NOT NULL,
+  payload_hash text NOT NULL CHECK (payload_hash ~ '^[a-f0-9]{64}$'),
+  payload jsonb NOT NULL,
+  processed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(provider_id,provider_account_id,environment,event_identity)
+);
+CREATE TABLE IF NOT EXISTS payment_outbox (
+  event_id uuid PRIMARY KEY,
+  client_id text NOT NULL,
+  environment text NOT NULL,
+  aggregate_id uuid NOT NULL REFERENCES payment_payments(id),
+  revision bigint NOT NULL,
+  type text NOT NULL,
+  payload jsonb NOT NULL,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  lease_token uuid,
+  leased_until timestamptz,
+  delivered_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(aggregate_id,revision,type)
+);
+CREATE INDEX IF NOT EXISTS payment_outbox_ready ON payment_outbox(delivered_at,next_attempt_at);
+
+-- Product commerce owns orders, fulfillment and the consumer inbox.
+CREATE TABLE IF NOT EXISTS media_orders (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES media_accounts(id),
+  status text NOT NULL CHECK (status IN ('awaiting_payment','paid_pending_fulfillment','fulfilled','payment_failed','refund_pending','refunded','review_required')),
+  product_id text NOT NULL,
+  product_version text NOT NULL,
+  offer_snapshot jsonb NOT NULL,
+  amount_minor bigint NOT NULL CHECK (amount_minor > 0 AND amount_minor <= 9007199254740991),
+  currency text NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  credit_units bigint NOT NULL CHECK (credit_units > 0 AND credit_units <= 9007199254740991),
+  checkout_key text NOT NULL,
+  checkout_hash text NOT NULL CHECK (checkout_hash ~ '^[a-f0-9]{64}$'),
+  payment_id uuid,
+  confirmation_url text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,checkout_key), UNIQUE(payment_id)
+);
+CREATE INDEX IF NOT EXISTS media_orders_account_recent ON media_orders(account_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS media_payment_inbox (
+  producer text NOT NULL,
+  environment text NOT NULL,
+  event_id uuid NOT NULL,
+  payload_hash text NOT NULL CHECK (payload_hash ~ '^[a-f0-9]{64}$'),
+  order_id uuid NOT NULL REFERENCES media_orders(id),
+  payload jsonb NOT NULL,
+  processed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(producer,environment,event_id)
+);
+CREATE TABLE IF NOT EXISTS media_order_fulfillments (
+  order_id uuid PRIMARY KEY REFERENCES media_orders(id),
+  producer text NOT NULL,
+  environment text NOT NULL,
+  payment_id uuid NOT NULL,
+  account_id uuid NOT NULL REFERENCES media_accounts(id),
+  credit_units bigint NOT NULL CHECK (credit_units > 0),
+  ledger_reference text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(producer,environment,payment_id), UNIQUE(ledger_reference)
+);
+
+INSERT INTO media_schema_versions(version) VALUES (5) ON CONFLICT DO NOTHING;

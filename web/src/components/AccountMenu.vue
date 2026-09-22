@@ -83,8 +83,7 @@ function openTopup() {
     window.location.assign('/admin.html#credits');
     return;
   }
-  status.value = '';
-  modal.value = 'topup';
+  window.dispatchEvent(new CustomEvent('ai-media-open-commerce'));
 }
 
 function openHistory() {

@@ -79,6 +79,15 @@ export const getStorageSettings = () => rpc<{ autoSave: boolean }>('storageSetti
 export const setAutoSave = (autoSave: boolean) => rpc<{ autoSave: boolean }>('setAutoSave', [autoSave]);
 export const logout = () => workspaceRequest<boolean>('/auth/logout', { method: 'POST', body: '{}' });
 
+export type CommerceOffer = { id: string; version: string; name: string; description: string; creditUnits: number; amountMinor: number; currency: string; active: boolean };
+export type CommerceOrder = { id: string; status: string; offer: CommerceOffer; amountMinor: number; currency: string; creditUnits: number; paymentId: string | null; confirmationUrl: string | null; createdAt: string; updatedAt: string };
+export const getCommerceOffers = () => workspaceRequest<CommerceOffer[]>('/api/commerce/offers');
+export const createCommerceOrder = (offer: CommerceOffer, idempotencyKey: string) => workspaceRequest<CommerceOrder>('/api/commerce/orders', {
+  method: 'POST', body: JSON.stringify({ offerId: offer.id, offerVersion: offer.version, idempotencyKey }),
+});
+export const checkoutCommerceOrder = (orderId: string) => workspaceRequest<CommerceOrder>(`/api/commerce/orders/${encodeURIComponent(orderId)}/checkout`, { method: 'POST', body: '{}' });
+export const getCommerceOrder = (orderId: string) => workspaceRequest<CommerceOrder>(`/api/commerce/orders/${encodeURIComponent(orderId)}`);
+
 export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number; amountUnits: number }> {
   return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }

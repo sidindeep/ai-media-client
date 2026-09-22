@@ -15,13 +15,13 @@ const { download } = require('../downloads');
 const { mediaDurationSeconds } = require('../media-duration');
 const Ajv = require('ajv');
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, tariffFetcher }) {
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, tariffFetcher, storage = null, storagePrefix = '', content = null, accountId = null }) {
   if (!stores) trace.configure(path.join(directory, 'logs'));
   const history = stores?.history || new History(path.join(directory, 'history.json'));
   const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
   const drafts = stores?.drafts || new History(path.join(directory, 'drafts.json'));
   const sourceMetadata = stores?.sources || new History(path.join(directory, 'source-metadata.json'));
-  const assets = new Assets(path.join(directory, 'sources'));
+  const assets = new Assets(path.join(directory, 'sources'), { storage, prefix: storagePrefix, content, accountId });
   const templates = new PromptTemplates(path.join(directory, 'templates.json'), stores?.templates);
   const tariffs = new (require('../tariffs').Tariffs)(preferences, tariffFetcher || fetch);
   const { quoteKie } = require('../billing/kie-pricing');
@@ -51,7 +51,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const presets = new GenerationPresets(stores?.presets || new History(path.join(directory, 'presets.json')), findModel);
   const preference = async (id, fallback) => (await preferences.list()).find(item => item.id === id) || fallback;
   const costSettings = () => preference('cost-settings', { rubPerCredit });
-  const storageSettings = async () => ({ directory: 'Хранилище сервиса', autoSave: (await preference('storage', {})).autoSave === true });
+  const storageSettings = async () => ({ directory: content ? 'Единое хранилище контента' : storage ? 'Общее S3-хранилище' : 'Хранилище сервиса', autoSave: content ? true : (await preference('storage', {})).autoSave === true });
   function validate(model, input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Некорректные параметры генерации');
     require('../duration').validate(model, input);
@@ -73,10 +73,34 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const links = urls(record);
       if (!links.length) throw new Error('Нет ссылок на результат');
       const localFiles = [...(record.localFiles || [])];
+      const linkedResults = content ? await content.links(accountId, 'history', id, 'result') : [];
       try {
-        for (const url of links) {
-          if (localFiles.some(file => file.url === url) && await fs.stat(localFiles.find(file => file.url === url).path).then(s => s.isFile()).catch(() => false)) continue;
-          const file = await trace.run(record, () => trace.step('result.save', {url}, () => downloadImpl(url, path.join(directory, 'results'))));
+        for (const [linkIndex, url] of links.entries()) {
+          const existing = localFiles.find(file => file.url === url);
+          if (existing && (existing.assetId ? (await content?.get(accountId,existing.assetId))?.status==='ready' : existing.storageKey ? await storage?.head(existing.storageKey).then(() => true).catch(() => false) : await fs.stat(existing.path).then(s => s.isFile()).catch(() => false))) continue;
+          if (content) {
+            let asset = linkedResults.find(item => item.position === linkIndex);
+            if (!asset) {
+              asset = await content.createFromUrl(accountId, { url, name: `result-${linkIndex}`, origin: { kind: 'result', provider: record.providerId || 'media', recordId: id, position: linkIndex } });
+              await content.link(accountId, 'history', id, asset.id, 'result', linkIndex);
+            } else if (asset.status === 'failed') await content.retry(accountId, asset.id);
+            const ready = await content.wait(accountId, asset.id);
+            const file = { assetId: ready.id, name: ready.name, type: ready.type, url, size: ready.size, savedAt: new Date().toISOString() };
+            const index = localFiles.findIndex(item => item.url === url);
+            if (index >= 0) localFiles[index] = file; else localFiles.push(file);
+            await history.update(id, { localFiles, downloadError: null, resultSavedAt: new Date().toISOString() });
+            continue;
+          }
+          let file = await trace.run(record, () => trace.step('result.save', {url}, () => downloadImpl(url, path.join(directory, 'results'))));
+          if (storage) {
+            const extension = path.extname(file.path).toLowerCase();
+            const type = ({ '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.mp4':'video/mp4','.webm':'video/webm','.mov':'video/quicktime' })[extension] || 'application/octet-stream';
+            const storageKey = `${storagePrefix}/results/${id}/${linkIndex}${extension}`.replace(/^\/+/, '');
+            const bytes = await fs.readFile(file.path);
+            await storage.put(storageKey, bytes, type);
+            await fs.unlink(file.path).catch(() => {});
+            file = { storageKey, name: path.basename(file.path), type, url: file.url, size: file.size, savedAt: file.savedAt };
+          }
           const index = localFiles.findIndex(item => item.url === url);
           if (index >= 0) localFiles[index] = file; else localFiles.push(file);
           await history.update(id, { localFiles, downloadError: null, resultSavedAt: new Date().toISOString() });
@@ -98,18 +122,21 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     create: (record, input) => provider.create(findModel(record.modelId), input),
     poll: record => provider.poll(findModel(record.modelId), record.taskId),
     complete: async record => {
-      if ((await storageSettings()).autoSave) await saveResults(record.id).catch(() => {});
+      if (content || (await storageSettings()).autoSave) await saveResults(record.id).catch(() => {});
       events.emit('complete', record);
     }
   });
   await queue.recover();
   async function presentHistory(records) {
     return Promise.all(records.map(async record => {
-      const localFiles = await Promise.all((record.localFiles || []).map(async (file, index) => ({
-        size: file.size, savedAt: file.savedAt, url: file.url, name: path.basename(file.path),
-        previewUrl: `/api/results/${encodeURIComponent(record.id)}/${index}`,
-        exists: await fs.stat(file.path).then(s => s.isFile()).catch(() => false)
-      })));
+      const localFiles = await Promise.all((record.localFiles || []).map(async (file, index) => {
+        const asset = file.assetId ? await content?.get(accountId,file.assetId) : null;
+        return {
+          assetId:file.assetId,size:asset?.size??file.size,savedAt:file.savedAt,url:file.url,name:asset?.name||file.name||path.basename(file.path||file.storageKey),
+          previewUrl:file.assetId?`/api/content/${file.assetId}`:`/api/results/${encodeURIComponent(record.id)}/${index}`,
+          exists:file.assetId?asset?.status==='ready':file.storageKey?await storage?.head(file.storageKey).then(()=>true).catch(()=>false):await fs.stat(file.path).then(s=>s.isFile()).catch(()=>false)
+        };
+      }));
       return { ...record, resultJson: JSON.stringify({ resultUrls: urls(record) }), localFiles };
     }));
   }
@@ -117,13 +144,13 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     if (!Array.isArray(files) || files.length > 100) throw new Error('Некорректный список исходников');
     const metadata = await sourceMetadata.list();
     return Promise.all(files.map(async item => {
-      const id = assets.id(item?.ref);
+      const id = assets.referenceId(item?.ref);
       const stored = id && metadata.find(entry => entry.id === id);
       if (!stored) throw new Error('Не найдены сведения о сохранённом исходнике');
       let durationSeconds = Number(stored.durationSeconds);
       if (String(stored.type || '').startsWith('video/') && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) {
-        const bytes = await fs.readFile(path.join(assets.directory, id)).catch(error => {
-          if (error.code === 'ENOENT') throw new Error(`Исходник «${stored.name}» не найден. Выберите файл заново.`);
+        const bytes = await assets.readRef(item.ref).catch(error => {
+          if (error.code === 'ENOENT' || error.name === 'NoSuchKey') throw new Error(`Исходник «${stored.name}» не найден. Выберите файл заново.`);
           throw error;
         });
         durationSeconds = mediaDurationSeconds(bytes, stored.type);
@@ -218,19 +245,26 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         const durationSeconds = mediaDurationSeconds(file.bytes, saved.type);
         if (durationSeconds) saved.durationSeconds = durationSeconds;
       }
-      await sourceMetadata.update(assets.id(saved.ref), { ...saved, chatId: file.chatId || null, projectId: file.projectId || null });
+      await sourceMetadata.update(assets.referenceId(saved.ref), { ...saved, chatId: file.chatId || null, projectId: file.projectId || null });
       return saved;
     },
     async sourceFile(id) {
+      if (/^[a-f0-9-]{36}$/.test(id) && content) return content.file(accountId,id);
       if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Исходник не найден');
       const metadata = (await sourceMetadata.list()).find(item => item.id === id);
       if (!metadata) throw new Error('Исходник не найден');
+      if (storage && await storage.head(assets.key(id)).then(() => true).catch(() => false)) return { storageKey: assets.key(id), name: metadata.name, type: metadata.type };
       return { path: path.join(assets.directory, id), type: metadata.type };
     },
     async resultFile(id, index) {
       const record = (await history.list()).find(item => item.id === id);
       if (!Number.isInteger(index) || index < 0 || !record?.localFiles?.[index]) throw new Error('Файл не найден');
       const file = record.localFiles[index];
+      if (file.assetId) return content.file(accountId,file.assetId);
+      if (file.storageKey) {
+        if (!storage || !file.storageKey.startsWith(`${storagePrefix}/results/`)) throw new Error('Файл вне S3-хранилища результатов');
+        return file;
+      }
       const relative = path.relative(path.join(directory, 'results'), file.path);
       if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Файл вне хранилища результатов');
       return file;
@@ -270,6 +304,10 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         });
         // A generation click always resumed the queue through a second RPC. Wake it
         // here so the accepted record can start without waiting for another round trip.
+        if(content) {
+          const ids=(request.sourceFiles||[]).map(item=>assets.contentId(item.ref)).filter(Boolean);
+          await Promise.all(ids.map((assetId,index)=>content.link(accountId,'history',record.id,assetId,'source',index)));
+        }
         queue.start();
         return record;
       })));
@@ -341,6 +379,12 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       await Promise.allSettled([...pendingSaves.values(), history.queue, preferences.queue, drafts.queue, sourceMetadata.queue]);
     }
   };
+  if (content) {
+    Promise.resolve().then(async () => {
+      const records = await history.list();
+      await Promise.allSettled(records.filter(record => record.state === 'success' && urls(record).length).map(record => saveResults(record.id)));
+    }).catch(() => {});
+  }
   return service;
 }
 module.exports = { createMediaService };

@@ -53,7 +53,7 @@ function loadConfig(env = process.env) {
   if (!['test', 'live'].includes(paymentEnvironment)) throw new Error('MEDIA_PAYMENTS_ENVIRONMENT должен быть test или live');
   if (env.MEDIA_SALES_ENABLED === 'true' && env.MEDIA_PAYMENTS_ENABLED !== 'true') throw new Error('Продажи нельзя включить без платёжного модуля');
   return {
-    root, host, port, dataDirectory, kieKey: env.KIE_API_KEY || '',
+    root, host, port, dataDirectory, kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
     uploadLimit: integer(env.MEDIA_UPLOAD_LIMIT_MB, 64, 1, 512) * 1024 * 1024,
     telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',

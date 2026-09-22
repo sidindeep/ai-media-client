@@ -46,6 +46,7 @@ export const useStudioStore = defineStore('studio', () => {
   const readyElapsedMs = ref<number | null>(null);
   const prompt = ref('');
   const provider = ref<'codex' | 'media'>('codex');
+  const kieAccountId = ref<'primary' | 'secondary'>('primary');
   const mode = ref<GenerationMode>('image');
   const mediaModelId = ref('');
   const mediaInput = ref<Record<string, unknown>>({});
@@ -300,6 +301,7 @@ export const useStudioStore = defineStore('studio', () => {
     draftReady.value = false;
     const draft = await api.loadDraft(activeChatId.value === 'system:recent' ? null : activeChatId.value).catch(() => null);
     const tab = Array.isArray(draft?.tabs) ? draft.tabs[Number(draft.active) || 0] : null;
+    kieAccountId.value = isAdmin.value && tab?.kieAccountId === 'secondary' ? 'secondary' : 'primary';
     prompt.value = tab && typeof tab === 'object' && typeof tab.prompt === 'string' ? tab.prompt : '';
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
@@ -343,7 +345,7 @@ export const useStudioStore = defineStore('studio', () => {
   async function saveCurrentDraft() {
     if (!draftReady.value) return;
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
   async function createProject(name: string) { const project = await api.createProject(name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
@@ -472,7 +474,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
-  watch([prompt, mode, provider, mediaModelId, mediaInput, sourceFiles, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch([prompt, mode, provider, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
   function restoreWorkspaceSelection() {
@@ -615,16 +617,17 @@ export const useStudioStore = defineStore('studio', () => {
     if (!fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
     const model = currentMediaModel.value;
     if (!model) throw new Error(t('studio.catalogUnavailable'));
+    const submittedKieAccount = isAdmin.value ? kieAccountId.value : 'primary';
     normalizeCurrentMediaInput();
     const input = { ...mediaInput.value };
     if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
-    optimistic = { id: optimisticId, requestId, optimistic: true, providerId: model.providerId || 'media',
+    optimistic = { id: optimisticId, requestId, optimistic: true, kieAccountId: submittedKieAccount, providerId: model.providerId || 'media',
       providerName: catalog.value?.providers.find(item => item.id === model.providerId)?.name || 'Kie.ai', modelId: model.id,
       modelName: model.name, kind: model.kind || mode.value, state: 'queued', createdAt, queuedAt: createdAt, input, ...context };
     pendingSubmissions.value.unshift(optimistic);
     selectedId.value = optimisticId;
     try {
-      const task = await api.createTask({ modelId: model.id, input, sourceFiles: sourceFiles.value, ...context, requestId });
+      const task = await api.createTask({ modelId: model.id, input, sourceFiles: sourceFiles.value, ...context, requestId, kieAccountId: submittedKieAccount });
       acceptServerRecord(optimisticId, task);
       await refresh().catch(() => {});
       return task;
@@ -664,6 +667,7 @@ export const useStudioStore = defineStore('studio', () => {
       if (typeof record.input?.speed === 'string') codexSpeed.value = record.input.speed;
     } else {
       provider.value = 'media';
+      kieAccountId.value = isAdmin.value && record.kieAccountId === 'secondary' ? 'secondary' : 'primary';
       if (record.modelId) mediaModelId.value = record.modelId;
       mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
       normalizeCurrentMediaInput();
@@ -680,7 +684,7 @@ export const useStudioStore = defineStore('studio', () => {
   return {
     catalog, codexCatalog, release, history, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
-    prompt, provider, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
+    prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
     codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,

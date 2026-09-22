@@ -14,18 +14,21 @@ const collapsed = ref(false);
 const menuId = ref<string | null>(null);
 const selectedProjectId = ref<string | null>(null);
 type ProviderId = 'codex' | 'media';
-const mediaProviderName = computed(() => studio.catalog?.providers.find(provider => provider.id === 'media')?.name || 'Kie.ai');
-const providerItems = computed(() => (studio.isAdmin ? [
+type ProviderItem = { id: ProviderId; accountId?: 'primary' | 'secondary'; label: string; detail: string; icon: string; configured?: boolean };
+const providerItems = computed<ProviderItem[]>(() => (studio.isAdmin ? [
   { id: 'codex' as const, label: 'Codex CLI', detail: `GPT · ${t('sidebar.textImages').toLocaleLowerCase()}`, icon: 'C' },
-  { id: 'media' as const, label: 'Kie.ai', detail: t('sidebar.mediaAll'), icon: 'K' },
+  ...(['primary', 'secondary'] as const).map((accountId, index) => {
+    const account = studio.catalog?.kieAccounts?.find(item => item.id === accountId);
+    return { id: 'media' as const, accountId, label: account?.name || `Kie.ai · ${index + 1}`, detail: account?.configured ? t('sidebar.mediaAll') : t('sidebar.kieNotConfigured'), icon: 'K', configured: Boolean(account?.configured) };
+  }),
 ] : [
   { id: 'codex' as const, label: t('provider.aiModels'), detail: t('sidebar.textImages'), icon: '✦' },
   { id: 'media' as const, label: t('provider.mediaModels'), detail: t('sidebar.mediaAll'), icon: '◇' },
 ])
   .filter(item => studio.fullModelAccess || item.id === 'codex')
-  .map(item => studio.isAdmin && item.id === 'media' ? { ...item, label: mediaProviderName.value }
-    : !studio.fullModelAccess && item.id === 'codex' ? { ...item, label: t('sidebar.gptModels'), detail: t('sidebar.starterAccess') } : item));
-const activeProvider = computed(() => providerItems.value.find(item => item.id === studio.provider) || providerItems.value[0]);
+  .map(item => !studio.fullModelAccess && item.id === 'codex' ? { ...item, label: t('sidebar.gptModels'), detail: t('sidebar.starterAccess') } : item));
+const isActiveProvider = (item: ProviderItem) => item.id === studio.provider && (!item.accountId || item.accountId === studio.kieAccountId);
+const activeProvider = computed(() => providerItems.value.find(isActiveProvider) || providerItems.value[0]);
 const debugToolsVisible = computed(() => studio.release?.channel === 'debug');
 const formatStartupDuration = (milliseconds: number | null) => {
   if (milliseconds === null) return '—';
@@ -104,12 +107,14 @@ async function primaryAdd() {
   return addProject();
 }
 const primaryActionLabel = computed(() => activeTab.value === 'chats' ? t('navigation.newChat') : t('sidebar.newProject'));
-function selectProvider(value: ProviderId, event: Event) {
-  studio.setProvider(value);
+function selectProvider(item: ProviderItem, event: Event) {
+  if (item.accountId) studio.kieAccountId = item.accountId;
+  studio.setProvider(item.id);
   const details = (event.currentTarget as HTMLElement).closest('details') as HTMLDetailsElement | null;
   if (details) details.open = false;
 }
-function diagnoseKie(event: Event) {
+function diagnoseKie(item: ProviderItem, event: Event) {
+  if (item.accountId) studio.kieAccountId = item.accountId;
   studio.setProvider('media');
   studio.requestProviderDiagnostics();
   const details = (event.currentTarget as HTMLElement).closest('details') as HTMLDetailsElement | null;
@@ -160,7 +165,7 @@ function diagnoseKie(event: Event) {
       <details v-if="debugToolsVisible" class="sidebar-provider-menu">
         <summary><span class="sidebar-provider-icon" aria-hidden="true">{{ activeProvider.icon }}</span><span><small>{{ studio.isAdmin ? t('sidebar.supplier') : t('sidebar.modelCatalog') }}</small><strong>{{ activeProvider.label }}</strong></span><span class="sidebar-provider-chevron" aria-hidden="true">⌃</span></summary>
         <div class="sidebar-provider-options" role="menu">
-          <div v-for="item in providerItems" :key="item.id" class="sidebar-provider-row"><button type="button" class="sidebar-provider-option" :class="{ active: studio.provider === item.id }" :data-provider="item.id" role="menuitem" @click="selectProvider(item.id, $event)"><span class="provider-option-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span><span v-if="studio.provider === item.id" aria-hidden="true">✓</span></button><button v-if="studio.isAdmin && item.id === 'media'" type="button" class="sidebar-provider-check" @click="diagnoseKie">{{ t('sidebar.checkKie') }}</button></div>
+          <div v-for="item in providerItems" :key="item.accountId || item.id" class="sidebar-provider-row"><button type="button" class="sidebar-provider-option" :class="{ active: isActiveProvider(item) }" :data-provider="item.id" :data-kie-account="item.accountId" :disabled="item.configured === false" role="menuitemradio" :aria-checked="isActiveProvider(item)" @click="selectProvider(item, $event)"><span class="provider-option-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span><span v-if="isActiveProvider(item)" aria-hidden="true">✓</span></button><button v-if="studio.isAdmin && item.id === 'media'" type="button" class="sidebar-provider-check" :aria-label="`${t('sidebar.checkKie')} · ${item.label}`" @click="diagnoseKie(item, $event)">{{ t('sidebar.checkKie') }}</button></div>
         </div>
       </details>
     </template>

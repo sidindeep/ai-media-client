@@ -51,7 +51,7 @@ class Assets {
     // Names are display-only: never use user filenames as filesystem paths.
     return {ref:prefix+id,name:path.basename(file.name || 'source'),type:file.type||'application/octet-stream',size:bytes.length};
   }
-  async resolve(input, metadata, upload) {
+  async resolve(input, metadata, upload, uploadScope = '') {
     const cache=new Map();
     const visit=async value=>{
       const id=this.referenceId(value);
@@ -59,7 +59,7 @@ class Assets {
         if(!cache.has(id)) cache.set(id,(async()=>{
           const meta=metadata.find(item=>item.ref===value);
           if(!meta)throw new Error('Не найдены сведения о сохранённом исходнике');
-          const key=`${id}:${meta.type}:${path.extname(meta.name).toLowerCase()}`;
+          const key=`${uploadScope}:${id}:${meta.type}:${path.extname(meta.name).toLowerCase()}`;
           const cached=this.uploads.get(key);
           if(cached) {
             trace.write('source.upload.cache_hit',{ref:value,name:meta.name,size:meta.size,type:meta.type});

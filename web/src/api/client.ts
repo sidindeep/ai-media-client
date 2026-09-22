@@ -117,8 +117,8 @@ export type ProviderDiagnostics = {
   recentLogs: ProviderDiagnosticEntry[];
 };
 
-export async function diagnoseProvider(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<ProviderDiagnostics> {
-  return rpc('diagnoseProvider', [{ modelId, input, sourceFiles }]);
+export async function diagnoseProvider(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = [], kieAccountId = 'primary'): Promise<ProviderDiagnostics> {
+  return rpc('diagnoseProvider', [{ modelId, input, sourceFiles, kieAccountId }]);
 }
 
 export async function uploadSource(file: File, context: { projectId?: string | null; chatId?: string | null } = {}): Promise<{ ref: string; name?: string; type?: string; [key: string]: unknown }> {
@@ -130,7 +130,7 @@ export async function uploadSource(file: File, context: { projectId?: string | n
   return body.result;
 }
 
-export async function createTask(input: { modelId: string; input: Record<string, unknown>; requestId: string; projectId?: string | null; chatId?: string | null; sourceFiles?: Array<Record<string, unknown>> }): Promise<GenerationRecord> {
+export async function createTask(input: { modelId: string; input: Record<string, unknown>; requestId: string; kieAccountId?: 'primary' | 'secondary'; projectId?: string | null; chatId?: string | null; sourceFiles?: Array<Record<string, unknown>> }): Promise<GenerationRecord> {
   return rpc<GenerationRecord>('createTask', [input]);
 }
 

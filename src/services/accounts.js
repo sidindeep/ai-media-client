@@ -90,8 +90,9 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord);
             case 'createTask': {
               await starterPack?.assertProvider(accountId, account.role, 'media');
+              if (args[0]?.kieAccountId != null && args[0].kieAccountId !== 'primary') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
-              const request = { ...args[0], ...(await workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId)) };
+              const request = { ...args[0], kieAccountId: 'primary', ...(await workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId)) };
               return publicRecord(await service.createTask(request));
             }
             case 'getTask': {

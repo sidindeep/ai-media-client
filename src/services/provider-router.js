@@ -9,6 +9,7 @@ function createProviderRouter(providers) {
     return provider;
   };
   return { id: primary.id, isConfigured: () => primary.isConfigured(),
+    ...(primary.selectAccount ? { selectAccount: id => primary.selectAccount(id), listAccounts: () => primary.listAccounts() } : {}),
     upload: file => primary.upload(file), balance: () => primary.balance(),
     create: (model, input) => select(model).create(model, input),
     poll: (model, taskId) => select(model).poll(model, taskId) };

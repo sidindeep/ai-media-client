@@ -32,9 +32,14 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   // `pricing` only marks account mode, where a quote must be reserved. Kie
   // price values themselves always come from Kie's live public tariff API.
   const nativeBilling = Boolean(pricing);
+  const accountProvider = (id = 'primary') => {
+    if (provider.selectAccount) return provider.selectAccount(id);
+    if (id !== 'primary') throw new Error('Неизвестный аккаунт Kie');
+    return provider;
+  };
   const diagnosticMessage = error => error instanceof Error ? error.message : String(error || 'Неизвестная ошибка');
-  const addProviderDiagnostic = (step, status, message, durationMs = 0) => {
-    const entry = { time: new Date().toISOString(), step, status, message, durationMs };
+  const addProviderDiagnostic = (step, status, message, durationMs = 0, kieAccountId = 'primary') => {
+    const entry = { time: new Date().toISOString(), step, status, message, durationMs, kieAccountId };
     providerDiagnostics.push(entry);
     if (providerDiagnostics.length > 50) providerDiagnostics.splice(0, providerDiagnostics.length - 50);
     return entry;
@@ -115,12 +120,13 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const queue = new TaskQueue({
     store: history, concurrency: settings.concurrency, interval, notify: change => events.emit(change?.full ? 'reset' : 'changed'),
     prepare: async record => {
-      if (!provider.isConfigured()) throw new Error('Генерация ещё не подключена на сервере');
-      const input = await assets.resolve(record.input, record.sourceFiles || [], file => provider.upload(file));
+      const selectedProvider = accountProvider(record.kieAccountId);
+      if (!selectedProvider.isConfigured()) throw new Error('Для выбранного аккаунта Kie не настроен ключ');
+      const input = await assets.resolve(record.input, record.sourceFiles || [], file => selectedProvider.upload(file), record.kieAccountId || 'primary');
       validate(findModel(record.modelId), input); return input;
     },
-    create: (record, input) => provider.create(findModel(record.modelId), input),
-    poll: record => provider.poll(findModel(record.modelId), record.taskId),
+    create: (record, input) => accountProvider(record.kieAccountId).create(findModel(record.modelId), input),
+    poll: record => accountProvider(record.kieAccountId).poll(findModel(record.modelId), record.taskId),
     complete: async record => {
       if (content || (await storageSettings()).autoSave) await saveResults(record.id).catch(() => {});
       events.emit('complete', record);
@@ -166,7 +172,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   }
   const service = {
     events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, listHistorySince, resultUrls: urls,
-    catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id) }),
+    catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id), kieAccounts: provider.listAccounts?.() || [{ id: 'primary', name: 'Kie.ai · 1', configured: provider.isConfigured() }] }),
     configured: () => provider.isConfigured(),
     async nativeQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
       const started = Date.now();
@@ -194,18 +200,20 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         throw new Error(`Цена Kie временно недоступна: ${message}`);
       }
     },
-    async diagnoseProvider(modelId, input = {}, sourceFiles = []) {
+    async diagnoseProvider(modelId, input = {}, sourceFiles = [], kieAccountId = 'primary') {
+      const selectedProvider = accountProvider(kieAccountId);
       const checkedAt = new Date().toISOString();
       const checks = [];
       const add = (step, status, message, started = Date.now()) => {
-        const entry = addProviderDiagnostic(step, status, message, Math.max(0, Date.now() - started));
+        const entry = addProviderDiagnostic(step, status, message, Math.max(0, Date.now() - started), kieAccountId);
         checks.push(entry);
       };
-      const configured = provider.isConfigured();
-      add('configuration', configured ? 'ok' : 'error', configured ? 'Серверный KIE_API_KEY загружен' : 'Серверный KIE_API_KEY отсутствует');
+      const configured = selectedProvider.isConfigured();
+      const keyName = kieAccountId === 'secondary' ? 'KIE_API_KEY_2' : 'KIE_API_KEY';
+      add('configuration', configured ? 'ok' : 'error', configured ? `Серверный ${keyName} загружен` : `Серверный ${keyName} отсутствует`);
       if (configured) {
         const started = Date.now();
-        try { await provider.balance(); add('authorization', 'ok', 'Kie принял ключ; запрос баланса выполнен', started); }
+        try { await selectedProvider.balance(); add('authorization', 'ok', 'Kie принял ключ; запрос баланса выполнен', started); }
         catch (error) { add('authorization', 'error', diagnosticMessage(error), started); }
       }
       let tariffData;
@@ -229,14 +237,14 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       }
       return {
         ok: checks.every(item => item.status === 'ok'), configured, checkedAt,
-        provider: 'Kie.ai', model: model ? { id: model.id, name: model.name } : { id: String(modelId || ''), name: '' }, quote,
+        provider: provider.listAccounts?.().find(account => account.id === kieAccountId)?.name || 'Kie.ai', model: model ? { id: model.id, name: model.name } : { id: String(modelId || ''), name: '' }, quote,
         mechanism: {
-          credentials: 'Серверная переменная KIE_API_KEY; значение не передаётся в браузер',
+          credentials: `Серверная переменная ${keyName}; значение не передаётся в браузер`,
           authorization: 'GET https://api.kie.ai/api/v1/chat/credit',
           tariffs: 'POST https://api.kie.ai/client/v1/model-pricing/page',
           generation: 'Сервер создаёт задачу Kie и опрашивает её статус; тест генерацию не запускает',
         },
-        checks, recentLogs: providerDiagnostics.slice(-25),
+        checks, recentLogs: providerDiagnostics.filter(entry => entry.kieAccountId === kieAccountId).slice(-25),
       };
     },
     async saveSource(file) {
@@ -275,7 +283,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const chainKey = request?.requestId || 'legacy-without-request-id';
       const previous = enqueueChains.get(chainKey) || Promise.resolve();
       const operation = previous.then(()=>trace.request(()=>trace.step('generation.request',{request},async () => {
-        if (!provider.isConfigured()) throw new Error('Генерация ещё не подключена на сервере');
+        const kieAccountId = request?.kieAccountId ?? 'primary';
+        const selectedProvider = accountProvider(kieAccountId);
         const model = findModel(request?.modelId);
         validate(model, request.input);
         if (!Array.isArray(request.sourceFiles || []) || (request.sourceFiles || []).length > 100) throw new Error('Некорректный список исходников');
@@ -285,13 +294,16 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         if (request.requestId) {
           const existing = (await history.list()).find(row => row.requestId === request.requestId);
           if (existing) {
+            if ((existing.kieAccountId || 'primary') !== kieAccountId) throw new Error('Этот запрос уже сохранён для другого аккаунта Kie');
             if (existing.requestDigest !== digest) throw new Error('Этот запрос уже сохранён с другими параметрами');
             return existing;
           }
         }
+        if (!selectedProvider.isConfigured()) throw new Error('Для выбранного аккаунта Kie не настроен ключ');
         const price = await costSettings();
         const cachedTariffs=(await preference('kie-tariffs',{})).data;
         const record = await queue.enqueue({
+          kieAccountId,
           modelId: model.id, providerId: model.providerId, providerName: providers.find(item => item.id === model.providerId)?.name || model.providerId, model: model.apiModel,
           modelName: model.name, kind: model.kind, input: request.input,
           sourceFiles: request.sourceFiles || [], workspace: [1, 2, 3, 4, 5].includes(request.workspace) ? request.workspace : 1,
@@ -320,7 +332,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       switch (method) {
         case 'getCatalog': return service.catalog();
         case 'nativeQuote': return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
-        case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+        case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles, args[0]?.kieAccountId);
         case 'keyStatus': return service.configured();
         case 'getHistory': return listHistory();
         case 'queueStatus': return { paused: queue.paused, error: queue.error, concurrency: queue.concurrency };

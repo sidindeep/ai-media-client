@@ -59,6 +59,7 @@ export const ru = {
   'sidebar.supplier': 'Поставщик',
   'sidebar.modelCatalog': 'Каталог моделей',
   'sidebar.checkKie': 'Проверить Kie',
+  'sidebar.kieNotConfigured': 'Ключ не подключён',
   'sidebar.offline': 'Нет связи с сервисом',
   'sidebar.connected': 'Сервис подключён',
   'sidebar.connecting': 'Подключаемся к БД',

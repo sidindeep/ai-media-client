@@ -43,6 +43,7 @@ export type MediaField = {
   schema?: { type?: string; enum?: unknown[] } & Record<string, unknown>;
 };
 export type Catalog = {
+  kieAccounts?: Array<{ id: 'primary' | 'secondary'; name: string; configured: boolean }>;
   providers: Array<{ id: string; name: string }>;
   models: MediaModel[];
 };
@@ -63,6 +64,7 @@ export type GenerationPreset = {
 };
 
 export type GenerationRecord = {
+  kieAccountId?: 'primary' | 'secondary';
   id: string;
   requestId?: string;
   revision?: number;

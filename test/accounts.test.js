@@ -94,6 +94,9 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await runtime.accounts.wallet.purchase(bob.id, 1000, 'payment-first-bob', 'Первая тестовая оплата');
   assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).active, false);
   assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).modelAccess, 'all');
+  assert.equal((await rpc(alice, 'createTask', [{ modelId, input, requestId: 'forbidden-kie-account', kieAccountId: 'secondary' }])).status, 403);
+  assert.equal((await result(rpc(alice, 'getCatalog'))).kieAccounts, undefined);
+  assert.equal((await result(rpc(owner, 'getCatalog'))).kieAccounts[0].id, 'primary');
   await pool.query('UPDATE media_wallets SET balance=0,held=0 WHERE account_id=ANY($1::uuid[])', [[alice.id, bob.id]]);
   const workspaceRequest = (user, path, method = 'GET', body) => request(path, { method, headers: { Cookie: user.cookie, 'X-Media-Client': 'web', 'X-Media-User': user.id, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const workspaceResult = async response => { const r = await response, body = await r.json(); assert.equal(r.status, 200, JSON.stringify(body)); return body.result; };

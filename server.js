@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { loadConfig } = require('./src/server/config');
 const { createHttpServer } = require('./src/server/http');
-const { createKieGeneration } = require('./src/services/kie-generation');
+const { createKieAccounts } = require('./src/services/kie-accounts');
 const { createMediaService } = require('./src/services/media-service');
 const { createTelegramGateway } = require('./src/services/telegram-gateway');
 const { openDatabase } = require('./src/database/database');
@@ -109,7 +109,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await lock.close(); await fs.unlink(lockPath).catch(() => {});
   };
   try {
-    provider = provider || await createKieGeneration({ apiKey: config.kieKey });
+    provider = provider || await createKieAccounts({ primaryKey: config.kieKey, secondaryKey: config.kieSecondaryKey });
     if (storage) await storage.check();
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy' });
     if (config.auth.enabled && suppliedPool) {

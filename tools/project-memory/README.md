@@ -17,6 +17,7 @@
 - [Архитектура](architecture.md) — границы процессов и поток данных.
 - [Стек](specs/technology-stack.md) — технологии и команды.
 - [Очередь](specs/features/generation-queue.md) — отправка, параллельность, пауза, восстановление.
+- [Два аккаунта Kie](specs/features/kie-accounts.md) — выбор в меню, серверные ключи и привязка задач.
 - [Каталог и валидация](specs/features/catalog-validation.md) — декларативные формы, адаптеры и ограничения.
 - [Исходники и результаты](specs/features/media-storage.md) — сохранение, повтор, скачивание.
 - [План единого модуля контента](specs/features/content-module-plan.md) — UUID-файлы,

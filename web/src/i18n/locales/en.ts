@@ -61,6 +61,7 @@ export const en = {
   'sidebar.supplier': 'Provider',
   'sidebar.modelCatalog': 'Model catalog',
   'sidebar.checkKie': 'Check Kie',
+  'sidebar.kieNotConfigured': 'Key not configured',
   'sidebar.offline': 'Service unavailable',
   'sidebar.connected': 'Service connected',
   'sidebar.connecting': 'Connecting to the database',

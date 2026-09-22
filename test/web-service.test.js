@@ -348,7 +348,7 @@ test('unconfigured service starts and refuses paid task without fabricating outp
   const dir = await directory(); const provider = fakeProvider(); provider.isConfigured = () => false;
   const service = await createMediaService({ directory: dir, provider }); t.after(() => cleanup(dir, service));
   assert.equal(service.configured(), false);
-  await assert.rejects(service.createTask({ modelId: model.id, input }), /не подключена/);
+  await assert.rejects(service.createTask({ modelId: model.id, input }), /не настроен ключ/);
   assert.equal((await service.listHistory()).length, 0);
 });
 

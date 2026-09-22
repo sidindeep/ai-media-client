@@ -173,7 +173,8 @@ async function openDiagnostics() {
   diagnosticError.value = '';
   diagnostics.value = null;
   try {
-    const requestDiagnostics = () => diagnoseProvider(modelId, mediaRequestInput(), studio.sourceFiles);
+    const selectedKieAccount = studio.kieAccountId;
+    const requestDiagnostics = () => diagnoseProvider(modelId, mediaRequestInput(), studio.sourceFiles, selectedKieAccount);
     let result;
     try { result = await requestDiagnostics(); }
     catch (error) {
@@ -532,7 +533,7 @@ async function submit(event?: Event) {
       </div>
       <div v-if="studio.isAdmin && diagnosticOpen" class="diagnostic-backdrop" @click.self="diagnosticOpen = false">
         <section class="diagnostic-dialog" role="dialog" aria-modal="true" :aria-label="t('composer.diagnostics')">
-          <header><div><span class="eyebrow">{{ t('composer.diagnosticsEyebrow') }}</span><h2>Kie.ai</h2></div><button type="button" class="dialog-close" :aria-label="t('common.close')" @click="diagnosticOpen = false">×</button></header>
+          <header><div><span class="eyebrow">{{ t('composer.diagnosticsEyebrow') }}</span><h2>{{ diagnostics?.provider || 'Kie.ai' }}</h2></div><button type="button" class="dialog-close" :aria-label="t('common.close')" @click="diagnosticOpen = false">×</button></header>
           <div v-if="diagnosticLoading" class="diagnostic-loading">{{ t('composer.diagnosticsChecking') }}</div>
           <div v-else-if="diagnosticError" class="diagnostic-summary error"><strong>{{ t('composer.diagnosticsUnavailable') }}</strong><span>{{ diagnosticError }}</span></div>
           <template v-else-if="diagnostics">

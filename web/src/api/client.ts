@@ -1,4 +1,4 @@
-import type { Account, Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
+import type { Account, Catalog, Chat, CodexCatalog, GenerationJournalPage, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -48,6 +48,9 @@ export async function getHistory(): Promise<GenerationRecord[]> {
 
 export function getSpending(input: { days: 7 | 30 | 90; category: SpendingCategory; cursor?: string | null; asOf?: string }) {
   return rpc<SpendingPageData>('getSpending', [input]);
+}
+export function getGenerationJournal(input: { provider: 'all' | 'kie' | 'routerai' | 'codex'; offset?: number }) {
+  return rpc<GenerationJournalPage>('getGenerationJournal', [input]);
 }
 
 async function workspaceRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -200,8 +203,8 @@ export async function getRouterAiCatalog(): Promise<RouterAiCatalog> {
   return parse(await fetch('/api/routerai/models', { headers: accountHeaders() }));
 }
 
-export async function getRouterAiQuote(model: string): Promise<{ quote: { credits: number } | null; error?: string }> {
-  return parse(await fetch(`/api/routerai/quote?${new URLSearchParams({ model })}`, { headers: accountHeaders() }));
+export async function getRouterAiQuote(model: string, payload: Record<string, unknown> = {}): Promise<{ quote: { credits: number; amountUnits: number } | null; error?: string }> {
+  return parse(await fetch(`/api/routerai/quote?${new URLSearchParams({ model, payload: JSON.stringify(payload) })}`, { headers: accountHeaders() }));
 }
 
 export async function submitRouterAi(input: Record<string, unknown>): Promise<GenerationRecord> {
@@ -218,7 +221,7 @@ export async function getRouterAiAdminCatalog(): Promise<{ models: RouterAiAdmin
   return parse(await fetch('/api/routerai/admin/models', { headers: accountHeaders() }));
 }
 
-export async function submitRouterAiAdmin(input: { requestId: string; model: string; payload: Record<string, unknown>; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
+export async function submitRouterAiAdmin(input: { requestId: string; model: string; payload: Record<string, unknown>; quotedAmountUnits?: number; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
   return parse(await fetch('/api/routerai/admin/jobs', { method: 'POST',
     headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
 }

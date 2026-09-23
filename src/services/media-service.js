@@ -11,11 +11,12 @@ const { GenerationPresets } = require('../generation-presets');
 const { models, providers } = require('../catalog');
 const { buildRequest } = require('../adapters');
 const costs = require('../costs');
+const { createCreditConversion } = require('../billing/conversion');
 const { download } = require('../downloads');
 const { mediaDurationSeconds } = require('../media-duration');
 const Ajv = require('ajv');
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, tariffFetcher, storage = null, storagePrefix = '', content = null, accountId = null }) {
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, conversion, tariffFetcher, storage = null, storagePrefix = '', content = null, accountId = null }) {
   if (!stores) trace.configure(path.join(directory, 'logs'));
   const history = stores?.history || new History(path.join(directory, 'history.json'));
   const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
@@ -25,6 +26,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const templates = new PromptTemplates(path.join(directory, 'templates.json'), stores?.templates);
   const tariffs = new (require('../tariffs').Tariffs)(preferences, tariffFetcher || fetch);
   const { quoteKie } = require('../billing/kie-pricing');
+  const creditConversion = conversion || createCreditConversion({ kieRubPerCredit: rubPerCredit });
   const events = new EventEmitter();
   const ajv = new Ajv({ strict: false, validateFormats: false });
   const pendingSaves = new Map();
@@ -193,8 +195,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           tariffData = await tariffs.get(true);
           quote = quoteKie(model, input, tariffData, pricingContext);
         }
-        addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${quote.credits} кредитов`, Date.now() - started);
-        return quote;
+        const productQuote = creditConversion.quote('kie', quote);
+        addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${productQuote.credits} кредитов`, Date.now() - started);
+        return productQuote;
       } catch (error) {
         addProviderDiagnostic('quote', 'error', diagnosticMessage(error), Date.now() - started);
         trace.write('pricing.quote.error', { modelId, error });
@@ -234,7 +237,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         try {
           model = findModel(modelId);
           if (!tariffData) throw new Error('Тарифный каталог недоступен');
-          quote = quoteKie(model, input, tariffData, { sourceFiles: await trustedSourceFiles(sourceFiles) });
+          quote = creditConversion.quote('kie', quoteKie(model, input, tariffData, { sourceFiles: await trustedSourceFiles(sourceFiles) }));
           add('model-price', 'ok', `${model.name}: ${quote.credits} кредитов`, started);
         } catch (error) { add('model-price', 'error', diagnosticMessage(error), started); }
       }

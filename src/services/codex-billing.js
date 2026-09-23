@@ -3,16 +3,19 @@ const { reserve, settle, lockWallet } = require('../billing/wallet');
 const { validateCodexRequest } = require('./codex-request');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
+const { createCreditConversion } = require('../billing/conversion');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { parseContentRef } = require('./content-service');
+const { appendGenerationEvent } = require('./generation-journal');
 const priceKey = request => `codex:${request.model}:${request.effort}:${request.speed}`;
 function createCodexBilling({ accounts, url, dataDirectory, storage = null, content = accounts?.content || null, fetchImpl = fetch }) {
   const timers = new Map(); let closed = false;
   const id = (account, requestId) => `codex:${account}:${requestId}`;
   const get = async (account, requestId) => (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
-  const quote = request => accounts.pricing.quote(priceKey(request));
+  const conversion = accounts.conversion || createCreditConversion();
+  const quote = request => conversion.quote('codex', accounts.pricing.quote(priceKey(request)));
   const imagePath = (account, requestId) => path.join(dataDirectory, 'codex-images', account, requestId + '.png');
   const imageKey = (account, requestId) => `accounts/${account}/codex-images/${requestId}.png`;
   async function update(account, requestId, patch) {
@@ -32,6 +35,8 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       }
       await settle(client, account, id(account, requestId), next.state, next);
       await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId), JSON.stringify(next)]);
+      if (row.data.state !== next.state) await appendGenerationEvent(client, account, 'codex', next, next.state,
+        { error: next.error });
       return next;
     });
   }
@@ -146,10 +151,12 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       const createdAt = new Date().toISOString();
       const record = { ...request, id: request.requestId, revision: 1, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, updatedAt: createdAt, startedAt: createdAt };
       await client.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'codex',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
+      await appendGenerationEvent(client, account, 'codex', record, 'created');
       fresh = true; return record;
     });
     if (!fresh) return job;
     try {
+      await appendGenerationEvent(accounts.pool, account, 'codex', job, 'send_start');
       await remote(account, '/jobs', { ...request, images });
       const running = await update(account, request.requestId, { state: 'running', stage: 'generating' });
       watch(account, request.requestId); return running;
@@ -179,6 +186,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
           if (Number.isFinite(started)) next.durationMs = Math.max(0, now.getTime() - started);
           await settle(client, row.account_id, row.id, 'cancelled', next);
           await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [row.account_id, row.id, JSON.stringify(next)]);
+          await appendGenerationEvent(client, row.account_id, 'codex', next, 'cancelled', { error: next.error });
         });
       }
     },

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { getSpending } from '../api/client';
+import { getGenerationJournal, getSpending } from '../api/client';
 import { useI18n } from '../i18n';
-import type { SpendingCategory, SpendingItem, SpendingPageData } from '../types';
+import type { GenerationJournalItem, SpendingCategory, SpendingItem, SpendingPageData } from '../types';
 
 const props = defineProps<{ refreshKey: number; availableRecordIds: Set<string> }>();
 const emit = defineEmits<{ result: [recordId: string] }>();
@@ -14,6 +14,13 @@ const items = ref<SpendingItem[]>([]);
 const loading = ref(false);
 const loadingMore = ref(false);
 const error = ref('');
+const journalProvider = ref<'all' | 'kie' | 'routerai' | 'codex'>('all');
+const journalItems = ref<GenerationJournalItem[]>([]);
+const journalNextOffset = ref<number | null>(null);
+const journalSummary = ref<{ generations: number; sendAttempts: number } | null>(null);
+const journalLoading = ref(false);
+const journalError = ref('');
+let journalRequestId = 0;
 let requestId = 0;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let lastRefreshAt = 0;
@@ -22,6 +29,26 @@ const categories: SpendingCategory[] = ['all', 'image', 'video', 'text', 'audio'
 function credits(units: number) { return formatNumber(units / 1000, { maximumFractionDigits: 3 }); }
 function categoryLabel(value: SpendingCategory) { return t(`spending.category.${value}` as 'spending.category.all'); }
 function date(value: string) { return formatDate(value, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+function eventLabel(event: string) {
+  const known = ['created', 'send_start', 'submitting', 'accepted', 'success', 'fail', 'unknown', 'removed'];
+  return known.includes(event) ? t(`journal.event.${event}` as 'journal.event.created') : event;
+}
+async function loadJournal(more = false) {
+  const current = ++journalRequestId;
+  const offset = more ? journalNextOffset.value : 0;
+  if (offset === null) return;
+  journalLoading.value = true;
+  journalError.value = '';
+  try {
+    const page = await getGenerationJournal({ provider: journalProvider.value, offset });
+    if (current !== journalRequestId) return;
+    journalItems.value = more ? [...journalItems.value, ...page.items] : page.items;
+    journalNextOffset.value = page.nextOffset;
+    journalSummary.value = page.summary;
+  } catch (cause) {
+    if (current === journalRequestId) journalError.value = cause instanceof Error ? cause.message : t('journal.error');
+  } finally { if (current === journalRequestId) journalLoading.value = false; }
+}
 
 async function load(reset = false) {
   const current = ++requestId;
@@ -57,6 +84,7 @@ function scheduleRefresh() {
     refreshTimer = null;
     lastRefreshAt = Date.now();
     void load();
+    void loadJournal();
   }, Math.max(0, 2000 - (Date.now() - lastRefreshAt)));
 }
 async function loadMore() {
@@ -76,8 +104,9 @@ async function loadMore() {
 }
 
 watch([days, category], () => { void load(true); });
+watch(journalProvider, () => { void loadJournal(); });
 watch(() => props.refreshKey, scheduleRefresh);
-onMounted(() => { void load(true); });
+onMounted(() => { void load(true); void loadJournal(); });
 onBeforeUnmount(() => { if (refreshTimer) clearTimeout(refreshTimer); });
 </script>
 
@@ -105,5 +134,17 @@ onBeforeUnmount(() => { if (refreshTimer) clearTimeout(refreshTimer); });
       <li v-for="item in items" :key="item.id"><div class="spending-operation"><span :class="{ released: item.kind === 'release' }">{{ item.kind === 'capture' ? '−' : '+' }}</span><div><strong>{{ item.kind === 'capture' ? t('spending.charge') : t('spending.release') }} · {{ item.modelName || categoryLabel(item.category) }}</strong><small>{{ categoryLabel(item.category) }} · {{ date(item.createdAt) }}</small></div></div><div class="spending-operation-end"><strong :class="{ 'spending-positive': item.kind === 'release' }">{{ item.kind === 'capture' ? '−' : '+' }}{{ credits(item.amountUnits) }} {{ t('common.creditsShort') }}</strong><button v-if="item.recordId && availableRecordIds.has(item.recordId)" type="button" @click="emit('result', item.recordId)">{{ t('spending.openResult') }}</button></div></li>
     </ol>
     <button v-if="data?.nextCursor" class="spending-more" type="button" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? t('common.loading') : t('spending.more') }}</button>
+    <div class="spending-list-head"><div><h3>{{ t('journal.title') }}</h3><span>{{ t('journal.lead') }}</span></div></div>
+    <div class="spending-filter-group" :aria-label="t('journal.title')">
+      <button v-for="provider in ['all', 'kie', 'routerai', 'codex'] as const" :key="provider" type="button" :class="{ active: journalProvider === provider }" :aria-pressed="journalProvider === provider" @click="journalProvider = provider">{{ t(`journal.provider.${provider}` as 'journal.provider.all') }}</button>
+    </div>
+    <div v-if="journalSummary" class="spending-cards"><article><span>{{ t('journal.generations') }}</span><strong>{{ journalSummary.generations }}</strong></article><article><span>{{ t('journal.sendAttempts') }}</span><strong>{{ journalSummary.sendAttempts }}</strong></article></div>
+    <p v-if="journalError" class="spending-error" role="alert">{{ journalError }} <button type="button" @click="loadJournal()">{{ t('common.retry') }}</button></p>
+    <p v-if="journalLoading && !journalItems.length" class="spending-state" role="status">{{ t('common.loading') }}</p>
+    <p v-else-if="!journalItems.length && !journalError" class="spending-state">{{ t('journal.empty') }}</p>
+    <ol v-else class="spending-list">
+      <li v-for="item in journalItems" :key="item.id"><div class="spending-operation"><div><strong>{{ t(`journal.provider.${item.provider}` as 'journal.provider.kie') }} · {{ item.model || '—' }}</strong><small>{{ eventLabel(item.event) }} · {{ date(item.createdAt) }} · {{ item.requestId || '—' }}</small></div></div><div class="spending-operation-end"><strong v-if="item.quotedCredits !== null">{{ formatNumber(item.quotedCredits, { maximumFractionDigits: 3 }) }} {{ t('common.creditsShort') }}</strong></div></li>
+    </ol>
+    <button v-if="journalNextOffset !== null" class="spending-more" type="button" :disabled="journalLoading" @click="loadJournal(true)">{{ journalLoading ? t('common.loading') : t('spending.more') }}</button>
   </section>
 </template>

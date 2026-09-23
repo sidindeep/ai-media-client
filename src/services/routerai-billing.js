@@ -1,6 +1,9 @@
 const { transaction } = require('../database/database');
 const { reserve, settle, lockWallet } = require('../billing/wallet');
 const { createRouterAiClient } = require('../providers/routerai/client');
+const { quoteRouterAi } = require('../providers/routerai/pricing');
+const { appendGenerationEvent } = require('./generation-journal');
+const { createCreditConversion } = require('../billing/conversion');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
 const catalog = require('../../config/routerai-models.json');
 
@@ -27,7 +30,7 @@ function streamedWav(events) {
 }
 function validateRouterAiRequest(raw, models = catalog.models) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid('Некорректный запрос RouterAI');
-  if (Object.keys(raw).some(key => !['requestId', 'model', 'prompt', 'projectId', 'chatId'].includes(key))) throw invalid('Недопустимые параметры RouterAI');
+  if (Object.keys(raw).some(key => !['requestId', 'model', 'prompt', 'projectId', 'chatId', 'quotedAmountUnits'].includes(key))) throw invalid('Недопустимые параметры RouterAI');
   const model = models.find(item => item.id === raw.model);
   if (!model || !['text', 'image'].includes(model.kind)) throw invalid('Модель RouterAI недоступна в этом режиме');
   if (typeof raw.prompt !== 'string' || !raw.prompt.trim() || raw.prompt.length > 20000) throw invalid('Укажите текст до 20 000 символов');
@@ -37,19 +40,23 @@ function validateRouterAiRequest(raw, models = catalog.models) {
   }
   return { requestId: raw.requestId, model: model.id, kind: model.kind, endpoint: model.endpoint || (model.kind === 'image' ? 'images' : 'chat/completions'),
     outputFormat: model.outputFormat || 'raster', prompt: raw.prompt.trim(),
+    ...(raw.quotedAmountUnits !== undefined ? { quotedAmountUnits: raw.quotedAmountUnits } : {}),
     ...(raw.projectId ? { projectId: raw.projectId } : {}), ...(raw.chatId ? { chatId: raw.chatId } : {}) };
 }
 
-function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
+function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFetcher }) {
   const client = createRouterAiClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
   const id = (account, requestId) => `routerai:${account}:${requestId}`;
-  const quote = (request, role = 'user') => accounts.pricing.quote(role === 'admin' && !catalog.models.some(model => model.id === request.model)
-    ? 'routerai:admin-catalog' : `routerai:${request.model}`);
+  const conversion = accounts.conversion || createCreditConversion();
+  const quote = async (request, _role = 'user', force = false) => conversion.quote('routerai', quoteRouterAi(await tariffFetcher(request.model, force), request));
   async function get(account, requestId) {
     return (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
   }
-  async function markVideo(account, requestId, providerVideoId) {
-    await accounts.pool.query("UPDATE media_records SET data=jsonb_set(data,'{providerVideoId}',to_jsonb($3::text)),updated_at=now() WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, requestId), providerVideoId]);
+  async function markVideo(account, request, providerVideoId) {
+    await transaction(accounts.pool, async db => {
+      await db.query("UPDATE media_records SET data=jsonb_set(data,'{providerVideoId}',to_jsonb($3::text)),updated_at=now() WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, request.requestId), providerVideoId]);
+      await appendGenerationEvent(db, account, 'routerai', request, 'accepted', { providerTaskId: providerVideoId });
+    });
   }
   async function finish(account, requestId, patch) {
     return transaction(accounts.pool, async db => {
@@ -62,11 +69,14 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
         durationMs: Math.max(0, Date.parse(now) - Date.parse(row.data.createdAt)) };
       await settle(db, account, id(account, requestId), next.state, next);
       await db.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, requestId), JSON.stringify(next)]);
+      await appendGenerationEvent(db, account, 'routerai', next, next.state,
+        { providerCostRub: next.providerCostRub, error: next.error });
       return next;
     });
   }
   async function process(account, request) {
     try {
+      await appendGenerationEvent(accounts.pool, account, 'routerai', request, 'send_start');
       if (request.kind === 'api') {
         const payload = { ...request.payload };
         if (request.endpoint === 'audio/transcriptions' && typeof payload.input_audio?.data === 'string'
@@ -78,7 +88,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
         if (request.endpoint === 'videos') {
           const providerVideoId = result.type === 'json' && typeof result.data?.id === 'string' ? result.data.id : null;
           if (!providerVideoId) throw new Error('RouterAI не вернул ID видеозадачи');
-          await markVideo(account, request.requestId, providerVideoId);
+          await markVideo(account, request, providerVideoId);
           for (let attempt = 0; attempt < 144; attempt++) {
             const status = await client.video(providerVideoId);
             const state = String(status?.status || status?.data?.status || '').toLowerCase();
@@ -87,7 +97,9 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
               const asset = await content.createFromBuffer(account, { bytes, name: request.requestId + '.mp4', type: 'video/mp4',
                 origin: { kind: 'result', provider: 'routerai', recordId: id(account, request.requestId), position: 0 } });
               await content.link(account, 'routerai', id(account, request.requestId), asset.id, 'result', 0);
-              return finish(account, request.requestId, { state: 'success', contentAssetId: asset.id, resultType: 'video/mp4', output: 'Видео RouterAI готово.' });
+              return finish(account, request.requestId, { state: 'success', contentAssetId: asset.id, resultType: 'video/mp4',
+                providerCostRub: typeof status?.usage?.cost === 'number' && Number.isFinite(status.usage.cost) ? status.usage.cost : null,
+                output: 'Видео RouterAI готово.' });
             }
             if (['failed', 'error', 'cancelled', 'canceled'].includes(state)) return finish(account, request.requestId, { state: 'fail', error: 'RouterAI не создал видео.' });
             await new Promise(resolve => setTimeout(resolve, 5000));
@@ -116,13 +128,15 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
         }
         const output = result.type === 'json' ? JSON.stringify(result.data) : result.data;
         if (typeof output !== 'string' || output.length > 2 * 1024 * 1024) throw new Error('Ответ RouterAI слишком большой для истории');
-        return finish(account, request.requestId, { state: 'success', output });
+        return finish(account, request.requestId, { state: 'success', output,
+          providerCostRub: result.type === 'json' && typeof result.data?.usage?.cost === 'number' ? result.data.usage.cost : null });
       }
       if (request.kind === 'text') {
         const result = await client.chatCompletion({ model: request.model, messages: [{ role: 'user', content: request.prompt }] });
         const output = result?.choices?.[0]?.message?.content;
         if (typeof output !== 'string' || !output.trim()) throw new Error('Пустой ответ RouterAI');
-        return finish(account, request.requestId, { state: 'success', output, usage: result.usage || null });
+        return finish(account, request.requestId, { state: 'success', output, usage: result.usage || null,
+          providerCostRub: typeof result.usage?.cost === 'number' ? result.usage.cost : null });
       }
       const result = request.endpoint === 'chat/completions'
         ? await client.chatCompletion({ model: request.model, messages: [{ role: 'user', content: request.prompt }], modalities: ['image', 'text'] })
@@ -142,7 +156,8 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
       const asset = await content.createFromBuffer(account, { bytes: image, name: request.requestId + '.' + extension, type,
         origin: { kind: 'result', provider: 'routerai', recordId: id(account, request.requestId), position: 0 } });
       await content.link(account, 'routerai', id(account, request.requestId), asset.id, 'result', 0);
-      return finish(account, request.requestId, { state: 'success', contentAssetId: asset.id, hasImage: true, imageType: type, usage: result.usage || null });
+      return finish(account, request.requestId, { state: 'success', contentAssetId: asset.id, hasImage: true, imageType: type,
+        usage: result.usage || null, providerCostRub: typeof result.usage?.cost === 'number' ? result.usage.cost : null });
     } catch (error) {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(error.status);
       return finish(account, request.requestId, { state: rejected ? 'fail' : 'unknown',
@@ -150,20 +165,30 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
     }
   }
   async function save(account, request, role) {
+    const matches = previous => !['model', 'prompt', 'projectId', 'chatId', 'endpoint'].some(key => (previous[key] ?? null) !== (request[key] ?? null))
+      && JSON.stringify(previous.payload || null) === JSON.stringify(request.payload || null);
+    const existing = await get(account, request.requestId);
+    if (existing) {
+      if (!matches(existing)) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
+      return existing;
+    }
+    const nativeQuote = await quote(request, role, true);
+    if (request.quotedAmountUnits !== undefined && request.quotedAmountUnits !== nativeQuote.amountUnits) {
+      throw Object.assign(new Error('Тариф RouterAI изменился. Обновите цену перед отправкой.'), { status: 409 });
+    }
     let fresh = false;
     const job = await transaction(accounts.pool, async db => {
       await lockWallet(db, account);
       const previous = (await db.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, request.requestId)])).rows[0]?.data;
       if (previous) {
-        if (['model', 'prompt', 'projectId', 'chatId', 'endpoint'].some(key => (previous[key] ?? null) !== (request[key] ?? null))
-          || JSON.stringify(previous.payload || null) !== JSON.stringify(request.payload || null)) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
+        if (!matches(previous)) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
         return previous;
       }
-      const nativeQuote = quote(request, role);
       await reserve(db, account, id(account, request.requestId), nativeQuote);
       const createdAt = new Date().toISOString();
       const record = { ...request, id: request.requestId, state: 'running', revision: 1, nativeQuote, createdAt, updatedAt: createdAt };
       await db.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'routerai',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
+      await appendGenerationEvent(db, account, 'routerai', record, 'created');
       fresh = true;
       return record;
     });
@@ -174,7 +199,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
     return save(account, validateRouterAiRequest(raw, allowedModels), role);
   }
   async function submitAdmin(account, raw, allModels) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['requestId', 'model', 'payload', 'projectId', 'chatId'].includes(key))) throw invalid('Некорректный запрос RouterAI');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['requestId', 'model', 'payload', 'projectId', 'chatId', 'quotedAmountUnits'].includes(key))) throw invalid('Некорректный запрос RouterAI');
     if (typeof raw.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(raw.requestId)) throw invalid('Некорректный ID запроса');
     for (const [value, label] of [[raw.projectId, 'Проект'], [raw.chatId, 'Чат']]) {
       if (value !== undefined && value !== null && (typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value))) throw invalid(`${label} не найден`);
@@ -184,7 +209,11 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl }) {
     if (!raw.payload || typeof raw.payload !== 'object' || Array.isArray(raw.payload) || 'model' in raw.payload) throw invalid('Некорректное тело запроса RouterAI');
     const serialized = JSON.stringify(raw.payload);
     if (!serialized || serialized.length > 256 * 1024) throw invalid('Тело запроса RouterAI слишком большое');
-    const request = { requestId: raw.requestId, model: model.id, kind: 'api', modelKind: model.kind, endpoint: model.endpoint, payload: raw.payload,
+    const payload = model.kind === 'video' ? { ...raw.payload,
+      ...(raw.payload.duration == null && model.supportedDurations?.length ? { duration: model.supportedDurations[0] } : {}),
+      ...(raw.payload.resolution == null && model.supportedResolutions?.length ? { resolution: model.supportedResolutions[0] } : {}) } : raw.payload;
+    const request = { requestId: raw.requestId, model: model.id, kind: 'api', modelKind: model.kind, endpoint: model.endpoint, payload,
+      ...(raw.quotedAmountUnits !== undefined ? { quotedAmountUnits: raw.quotedAmountUnits } : {}),
       prompt: `[${model.kind}] ${model.name}`, ...(raw.projectId ? { projectId: raw.projectId } : {}), ...(raw.chatId ? { chatId: raw.chatId } : {}) };
     return save(account, request, 'admin');
   }

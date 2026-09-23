@@ -1,6 +1,7 @@
 const { transaction } = require('./database');
 const { reserve, settle, lockWallet } = require('../billing/wallet');
 const trace = require('../generation-log');
+const { appendGenerationEvent } = require('../services/generation-journal');
 async function journalKieSubmission(client, accountId, old, record) {
   if (record.state === 'submitting' && old?.state !== 'submitting') {
     await client.query(`INSERT INTO media_kie_submissions
@@ -38,6 +39,10 @@ class AccountRecords {
         if (!old && record.nativeQuote) await reserve(client, this.accountId, id, record.nativeQuote);
         await settle(client, this.accountId, id, record.state, record);
         await journalKieSubmission(client, this.accountId, old, record);
+        if (!old || old.state !== record.state) {
+          await appendGenerationEvent(client, this.accountId, 'kie', record, !old ? 'created' : record.state,
+            { providerTaskId: record.taskId, error: record.error });
+        }
       }
       await client.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4) ON CONFLICT(account_id,namespace,id) DO UPDATE SET data=EXCLUDED.data,updated_at=now()', [this.accountId, this.namespace, id, JSON.stringify(record)]);
       return record;
@@ -54,6 +59,9 @@ class AccountRecords {
         await client.query(`UPDATE media_kie_submissions SET outcome='unknown',finished_at=now(),error_code='RECORD_REMOVED_DURING_SUBMIT'
           WHERE id=(SELECT id FROM media_kie_submissions WHERE account_id=$1 AND job_id=$2 AND outcome='pending' ORDER BY id DESC LIMIT 1)`, [this.accountId,id]);
         trace.run(old, () => trace.write('kie.submit.unknown', { reason: 'record-removed-during-submit', accountId: this.accountId, chatId: old.chatId, kieAccountId: old.kieAccountId }));
+      }
+      if (this.namespace === 'history') {
+        await appendGenerationEvent(client, this.accountId, 'kie', old, 'removed', { providerTaskId: old.taskId });
       }
       await client.query('DELETE FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3', [this.accountId, this.namespace, id]);
       return old;

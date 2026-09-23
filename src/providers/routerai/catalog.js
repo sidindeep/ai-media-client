@@ -23,20 +23,27 @@ function normalizeModel(raw) {
       : kind === 'audio' && output.includes('text') ? 'chat/completions' : kind === 'audio' ? 'audio/speech'
       : kind === 'text' ? 'chat/completions' : kind,
     outputFormat: kind === 'image' && raw.supported_output_formats?.includes('svg') && !raw.supported_output_formats?.some(format => ['png', 'jpeg', 'webp'].includes(format)) ? 'svg' : 'raster',
+    ...(kind === 'video' ? { supportedDurations: Array.isArray(raw.supported_durations) ? raw.supported_durations : [],
+      supportedResolutions: Array.isArray(raw.supported_resolutions) ? raw.supported_resolutions : [],
+      supportedAspectRatios: Array.isArray(raw.supported_aspect_ratios) ? raw.supported_aspect_ratios : [] } : {}),
   };
 }
 
 function createRouterAiCatalog({ fetchImpl = fetch, now = Date.now } = {}) {
   let cache = null;
+  let tariffs = null;
   let expiresAt = 0;
   let pending = null;
-  async function adminModels() {
-    if (cache && now() < expiresAt) return cache;
+  async function adminModels(force = false) {
+    if (!force && cache && now() < expiresAt) return cache;
     if (!pending) pending = (async () => {
       const response = await fetchImpl(URL, { signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error('Каталог RouterAI временно недоступен');
       const payload = await response.json();
       if (!Array.isArray(payload?.data)) throw new Error('Каталог RouterAI вернул неверный ответ');
+      const fetchedAt = new Date(now()).toISOString();
+      tariffs = new Map(payload.data.filter(item => typeof item?.id === 'string')
+        .map(item => [item.id, { ...item, priceFetchedAt: fetchedAt }]));
       const models = payload.data.map(normalizeModel).filter(Boolean);
       if (!models.length) throw new Error('Каталог RouterAI пуст');
       const seen = new Set(models.map(model => model.id));
@@ -54,6 +61,10 @@ function createRouterAiCatalog({ fetchImpl = fetch, now = Date.now } = {}) {
     async all(role) {
       if (role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
       return { models: await adminModels() };
+    },
+    async tariff(modelId, force = false) {
+      await adminModels(force);
+      return tariffs.get(modelId) || null;
     },
   };
 }

@@ -23,7 +23,7 @@ const modeItems = computed(() => [
 ] as Array<{ id: 'text' | 'image' | 'video' | 'audio'; label: string; icon: string }>);
 const uploading = ref(false);
 const submitError = ref('');
-const quote = ref<{ credits: number } | null>(null);
+const quote = ref<{ credits: number; amountUnits?: number } | null>(null);
 const quoteError = ref('');
 const quoteLoading = ref(false);
 const diagnosticOpen = ref(false);
@@ -32,6 +32,9 @@ const diagnosticError = ref('');
 const diagnostics = ref<ProviderDiagnostics | null>(null);
 const fieldErrors = ref<Record<string, string>>({});
 const routerAiExtra = ref('{}');
+const routerAiVideoDuration = ref<number | null>(null);
+const routerAiVideoResolution = ref('');
+const routerAiVideoAspectRatio = ref('');
 const routerAiAudioFile = ref<File | null>(null);
 const routerAiSpecial = computed(() => studio.provider === 'routerai' && studio.isAdmin
   && Boolean(studio.currentRouterAiModel) && !['text', 'image'].includes(studio.currentRouterAiModel!.kind));
@@ -217,17 +220,33 @@ watch(() => studio.currentMediaModel?.id, () => {
   fieldErrors.value = Object.fromEntries(Object.entries(fieldErrors.value).filter(([key]) => allowed.has(key)));
 }, { immediate: true });
 watch(() => [studio.mode, studio.provider], () => { submitError.value = ''; fieldErrors.value = {}; });
-watch(() => studio.routerAiModel, () => { routerAiExtra.value = '{}'; routerAiAudioFile.value = null; });
+watch(() => studio.currentRouterAiModel?.id, () => {
+  routerAiExtra.value = '{}';
+  routerAiAudioFile.value = null;
+  const model = studio.currentRouterAiModel;
+  routerAiVideoDuration.value = model?.supportedDurations?.[0] ?? null;
+  routerAiVideoResolution.value = model?.supportedResolutions?.[0] ?? '';
+  routerAiVideoAspectRatio.value = model?.supportedAspectRatios?.[0] ?? '';
+}, { immediate: true });
+
+function routerAiVideoPayload(prompt: string): Record<string, unknown> {
+  return { prompt,
+    ...(routerAiVideoDuration.value !== null ? { duration: routerAiVideoDuration.value } : {}),
+    ...(routerAiVideoResolution.value ? { resolution: routerAiVideoResolution.value } : {}),
+    ...(routerAiVideoAspectRatio.value ? { aspect_ratio: routerAiVideoAspectRatio.value } : {}),
+  };
+}
 
 async function routerAiPayload(prompt: string): Promise<Record<string, unknown>> {
   const model = studio.currentRouterAiModel;
   if (!model) throw new Error(t('studio.selectModel'));
+  if (model.kind === 'video') return routerAiVideoPayload(prompt);
   let extras: unknown;
   try { extras = JSON.parse(routerAiExtra.value); }
   catch { throw new Error(t('routerai.admin.invalidJson')); }
   if (!extras || typeof extras !== 'object' || Array.isArray(extras)) throw new Error(t('routerai.admin.invalidBody'));
   let base: Record<string, unknown>;
-  if (model.kind === 'video' || model.kind === 'image') base = { prompt };
+  if (model.kind === 'image') base = { prompt };
   else if (model.kind === 'audio' && model.endpoint === 'audio/speech') base = { input: prompt, voice: 'alloy', response_format: 'mp3' };
   else if (model.kind === 'audio') base = { messages: [{ role: 'user', content: prompt }], modalities: ['text', 'audio'], audio: { voice: 'alloy', format: 'pcm16' }, stream: true };
   else if (model.kind === 'transcription') base = { input_audio: { data: '', format: 'mp3' } };
@@ -264,7 +283,14 @@ async function refreshQuote(revision: number) {
       const result = await getCodexQuote(studio.codexModel, studio.codexEffort, studio.codexSpeed);
       if (revision === quoteRevision) { quote.value = result.quote; quoteError.value = result.error || ''; }
     } else if (studio.provider === 'routerai') {
-      const result = await getRouterAiQuote(studio.routerAiModel);
+      let payload: Record<string, unknown> = {};
+      if (studio.currentRouterAiModel?.kind === 'video') payload = routerAiVideoPayload(studio.prompt.trim());
+      else if (routerAiSpecial.value) {
+        const parsed: unknown = JSON.parse(routerAiExtra.value);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(t('routerai.admin.invalidBody'));
+        payload = parsed as Record<string, unknown>;
+      }
+      const result = await getRouterAiQuote(studio.routerAiModel, payload);
       if (revision === quoteRevision) { quote.value = result.quote; quoteError.value = result.error || ''; }
     } else if (studio.mediaModelId) {
       const requestQuote = () => getMediaQuote(studio.mediaModelId, mediaRequestInput(), studio.sourceFiles);
@@ -299,6 +325,7 @@ function scheduleQuoteRefresh(delay = 0) {
 }
 
 watch(() => [studio.provider, studio.codexModel, studio.routerAiModel, studio.codexEffort, studio.codexSpeed, studio.mediaModelId, studio.mediaInput, studio.sourceFiles], () => scheduleQuoteRefresh(), { immediate: true, deep: true });
+watch([routerAiExtra, routerAiVideoDuration, routerAiVideoResolution, routerAiVideoAspectRatio], () => { if (studio.provider === 'routerai') scheduleQuoteRefresh(QUOTE_DEBOUNCE_MS); });
 watch(() => studio.prompt, () => {
   if (studio.provider === 'media') scheduleQuoteRefresh(QUOTE_DEBOUNCE_MS);
 });
@@ -509,7 +536,8 @@ async function submit(event?: Event) {
   catch (error) { submitError.value = error instanceof Error ? error.message : t('composer.checkSources'); return; }
   finally { uploading.value = false; }
   animateToQueue(event);
-  try { await studio.submit(specialPayload); } catch (error) { const message = error instanceof Error ? error.message : ''; submitError.value = studio.isAdmin ? (message || t('composer.startError')) : publicServiceError(message, t('composer.startError')); }
+  try { await studio.submit(specialPayload, studio.provider === 'routerai' ? quote.value?.amountUnits : undefined); }
+  catch (error) { const message = error instanceof Error ? error.message : ''; submitError.value = studio.isAdmin ? (message || t('composer.startError')) : publicServiceError(message, t('composer.startError')); }
 }
 </script>
 
@@ -550,8 +578,12 @@ async function submit(event?: Event) {
       <details v-if="routerAiSpecial" class="advanced-settings"><summary>{{ t('composer.advanced') }}</summary><div class="advanced-grid">
         <p>{{ studio.currentRouterAiModel?.id }} · POST /{{ studio.currentRouterAiModel?.endpoint }}</p>
         <label v-if="studio.currentRouterAiModel?.kind === 'transcription'"><span>{{ t('routerai.admin.audioFile') }}</span><input type="file" accept="audio/*" @change="routerAiAudioFile = ($event.target as HTMLInputElement).files?.[0] || null"></label>
-        <label><span>{{ t('routerai.admin.body') }}</span><textarea v-model="routerAiExtra" rows="6" spellcheck="false"></textarea></label>
-        <small>{{ t('routerai.admin.parametersHint') }}</small>
+        <template v-if="studio.currentRouterAiModel?.kind === 'video'">
+          <label v-if="studio.currentRouterAiModel.supportedDurations?.length"><span>{{ t('routerai.admin.duration') }}</span><select v-model.number="routerAiVideoDuration"><option v-for="duration in studio.currentRouterAiModel.supportedDurations" :key="duration" :value="duration">{{ duration }} {{ t('routerai.admin.seconds') }}</option></select></label>
+          <label v-if="studio.currentRouterAiModel.supportedResolutions?.length"><span>{{ t('routerai.admin.resolution') }}</span><select v-model="routerAiVideoResolution"><option v-for="resolution in studio.currentRouterAiModel.supportedResolutions" :key="resolution" :value="resolution">{{ resolution }}</option></select></label>
+          <label v-if="studio.currentRouterAiModel.supportedAspectRatios?.length"><span>{{ t('routerai.admin.aspectRatio') }}</span><select v-model="routerAiVideoAspectRatio"><option v-for="ratio in studio.currentRouterAiModel.supportedAspectRatios" :key="ratio" :value="ratio">{{ ratio }}</option></select></label>
+        </template>
+        <template v-else><label><span>{{ t('routerai.admin.body') }}</span><textarea v-model="routerAiExtra" rows="6" spellcheck="false"></textarea></label><small>{{ t('routerai.admin.parametersHint') }}</small></template>
       </div></details>
       <p v-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>

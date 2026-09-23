@@ -140,8 +140,9 @@ async function sendStored(req, res, storage, file, attachment = false) {
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null }) {
   const release = buildInfo(config.root);
   let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
-  let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey, content: accounts.content }) : null;
   const routerAiModels = createRouterAiCatalog();
+  let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
+    content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
@@ -333,9 +334,14 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
             const allowed = (await routerAiModels.list(user.role)).models;
             const model = allowed.find(item => item.id === url.searchParams.get('model'));
             if (!model) return json(res, 403, { quote: null, error: 'Модель RouterAI недоступна.' });
-            return json(res, 200, { quote: routerAi.quote({ model: model.id }, user.role) });
+            const rawPayload = url.searchParams.get('payload') || '{}';
+            if (rawPayload.length > 4096) return json(res, 400, { quote: null, error: 'Параметры слишком длинные.' });
+            const payload = JSON.parse(rawPayload);
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return json(res, 400, { quote: null, error: 'Некорректные параметры.' });
+            return json(res, 200, { quote: await routerAi.quote({ model: model.id, endpoint: model.endpoint ||
+              (model.kind === 'image' ? 'images' : 'chat/completions'), payload }, user.role) });
           }
-          catch { return json(res, 200, { quote: null, error: 'Цена модели RouterAI не опубликована.' }); }
+          catch (error) { return json(res, 200, { quote: null, error: error.message || 'Цена модели RouterAI не опубликована.' }); }
         }
         const imageRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
         if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
@@ -350,11 +356,14 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
           const body = validateRouterAiRequest(raw, allowed);
           const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
-          return json(res, 200, await routerAi.submit(user.id, { ...raw, ...binding }, user.role, allowed));
+          const job = await routerAi.submit(user.id, { ...raw, ...binding }, user.role, allowed);
+          if (user.role !== 'admin') delete job.providerCostRub;
+          return json(res, 200, job);
         }
         const jobRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
         if (req.method === 'GET' && jobRequest) {
           const job = await routerAi.get(user.id, jobRequest[1]);
+          if (job && user.role !== 'admin') delete job.providerCostRub;
           return job ? json(res, 200, job) : json(res, 404, { error: 'Запрос не найден' });
         }
         return json(res, 404, { error: 'Не найдено' });
@@ -589,7 +598,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     payments = nextPayments;
     commerce = nextCommerce;
     codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
-    routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey, content: accounts.content }) : null;
+    routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
+      content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
     await codex?.recover();
     await routerAi?.recover();
   };

@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-20-codex",
+  "version": "2026-09-23-routerai-live",
   "models": {
     "codex:gpt-6-astra:low:standard": {
       "baseUnits": 4000
@@ -162,13 +162,6 @@
     },
     "codex:gpt-5.5:xhigh:fast": {
       "baseUnits": 4000
-    },
-    "routerai:openai/gpt-oss-20b": { "baseUnits": 4000 },
-    "routerai:openai/gpt-4o-mini": { "baseUnits": 4000 },
-    "routerai:openai/gpt-image-1-mini": { "baseUnits": 4000 },
-    "routerai:openai/gpt-image-1": { "baseUnits": 4000 },
-    "routerai:openai/gpt-image-2": { "baseUnits": 4000 },
-    "routerai:black-forest-labs/flux.2-klein-4b": { "baseUnits": 4000 },
-    "routerai:admin-catalog": { "baseUnits": 4000 }
+    }
   }
 }

@@ -620,7 +620,7 @@ export const useStudioStore = defineStore('studio', () => {
     startupPollTimer = undefined;
   }
 
-  async function submit(routerAiPayload?: Record<string, unknown>) {
+  async function submit(routerAiPayload?: Record<string, unknown>, quotedAmountUnits?: number) {
     const submittedPrompt = prompt.value.trim() || (provider.value === 'routerai' && currentRouterAiModel.value?.kind === 'transcription'
       ? t('routerai.admin.transcriptionPrompt') : '');
     if (!submittedPrompt) throw new Error(t('studio.enterPrompt'));
@@ -649,8 +649,6 @@ export const useStudioStore = defineStore('studio', () => {
       try {
         const job = await api.submitCodex({ ...input, prompt: submittedPrompt, model: codexModel.value,
           kind: mode.value === 'text' ? 'text' : 'image', sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
-        pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
-        if (selectedId.value === optimisticId) selectedId.value = `codex:${job.id || requestId}`;
         await refresh().catch(() => {});
         return job;
       } catch (error) {
@@ -671,10 +669,8 @@ export const useStudioStore = defineStore('studio', () => {
       selectedId.value = optimisticId;
       try {
         const job = ['text', 'image'].includes(model.kind)
-          ? await api.submitRouterAi({ requestId, model: model.id, prompt: submittedPrompt, ...context })
-          : await api.submitRouterAiAdmin({ requestId, model: model.id, payload: routerAiPayload || {}, ...context });
-        pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
-        if (selectedId.value === optimisticId) selectedId.value = `routerai:${job.id || requestId}`;
+          ? await api.submitRouterAi({ requestId, model: model.id, prompt: submittedPrompt, quotedAmountUnits, ...context })
+          : await api.submitRouterAiAdmin({ requestId, model: model.id, payload: routerAiPayload || {}, quotedAmountUnits, ...context });
         await refresh().catch(() => {});
         return job;
       } catch (error) {

@@ -4,11 +4,13 @@ const { AccountRecords } = require('../database/records');
 const { createMediaService } = require('./media-service');
 const { createWallet } = require('../billing/wallet');
 const { createPricing } = require('../billing/pricing');
+const { createCreditConversion } = require('../billing/conversion');
 const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
 const { generationHistory, generationHistorySince } = require('./generation-history');
 const { spendingHistory } = require('./spending-history');
+const { generationJournal } = require('./generation-journal');
 const { createWorkspaces } = require('./workspaces');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
@@ -29,6 +31,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     if (operation) (await operation).events.emit('changed');
   } });
   const pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
+  const conversion = createCreditConversion({ offersFile: config.commerce?.offersFile,
+    kieRubPerCredit: config.rubPerCredit });
   const routedProvider = createProviderRouter([provider]);
   async function dispatchDraft(accountId, service, method, args) {
     const suppliedChatId = method === 'saveDrafts' ? args[1]?.chatId || args[0]?.chatId : args[0]?.chatId;
@@ -41,14 +45,14 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     if (!services.has(accountId)) {
       const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates', 'presets'].map(name => [name, new AccountRecords(pool, accountId, name)]));
       const operation = createMediaService({ directory: path.join(config.dataDirectory, 'accounts', accountId), provider: routedProvider,
-        rubPerCredit: config.rubPerCredit, stores, pricing, tariffFetcher, storage, storagePrefix: `accounts/${accountId}`, content, accountId });
+        rubPerCredit: config.rubPerCredit, stores, pricing, conversion, tariffFetcher, storage, storagePrefix: `accounts/${accountId}`, content, accountId });
       services.set(accountId, operation);
       operation.catch(() => services.delete(accountId));
     }
     return services.get(accountId);
   }
   return {
-    pool, wallet, pricing, workspaces, starterPack, content, get,
+    pool, wallet, pricing, conversion, workspaces, starterPack, content, get,
     async createTelegramTask(telegramUserId, request, confirmationToken) {
       const identity = (await pool.query('SELECT a.id,a.role FROM media_telegram_links l JOIN media_accounts a ON a.id=l.account_id WHERE l.telegram_user_id=$1', [String(telegramUserId)])).rows[0];
       if (!identity) throw Object.assign(new Error('Сначала привяжите Telegram к аккаунту сайта'), { status: 403 });
@@ -81,6 +85,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
           if (method === 'getSpending') return spendingHistory(pool, accountId, args[0]);
+          if (method === 'getGenerationJournal') return generationJournal(pool, accountId, args[0], true);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
           if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, undefined, args[0]?.activeIds);
           if (['loadDrafts', 'saveDrafts'].includes(method)) return dispatchDraft(accountId, service, method, args);
@@ -123,6 +128,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             }
             case 'getBalance': return wallet.get(accountId);
             case 'getSpending': return spendingHistory(pool, accountId, args[0]);
+            case 'getGenerationJournal': return generationJournal(pool, accountId, args[0]);
             case 'nativeQuote': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'diagnoseProvider': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'nativeLedger': return wallet.ledger(accountId);

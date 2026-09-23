@@ -8,6 +8,13 @@ export type SpendingPageData = {
   summary: { spentUnits: number; releasedUnits: number; topCategory: Exclude<SpendingCategory, 'all'> | null };
   items: SpendingItem[]; nextCursor: string | null;
 };
+export type GenerationJournalItem = {
+  id: string; provider: 'kie' | 'routerai' | 'codex'; event: string;
+  requestId: string | null; jobId: string | null; model: string | null;
+  kind: string | null; state: string | null; quotedCredits: number | null;
+  createdAt: string;
+};
+export type GenerationJournalPage = { items: GenerationJournalItem[]; summary: { generations: number; sendAttempts: number }; nextOffset: number | null };
 
 export type GenerationState =
   | 'queued'
@@ -208,4 +215,4 @@ export type CodexCatalog = {
   uiDefaults?: { model?: string; effort?: string; speed?: string; kind?: string };
 };
 
-export type RouterAiCatalog = { models: Array<{ id: string; name: string; description?: string; kind: 'text' | 'image' | 'video' | 'audio' | 'transcription' | 'embeddings' | 'rerank' | 'decisions'; endpoint?: string }> };
+export type RouterAiCatalog = { models: Array<{ id: string; name: string; description?: string; kind: 'text' | 'image' | 'video' | 'audio' | 'transcription' | 'embeddings' | 'rerank' | 'decisions'; endpoint?: string; supportedDurations?: number[]; supportedResolutions?: string[]; supportedAspectRatios?: string[] }> };

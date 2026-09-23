@@ -4,6 +4,7 @@ import { useStudioStore } from '../stores/studio';
 import { getRouterAiAdminVideoStatus } from '../api/client';
 import type { GenerationRecord } from '../types';
 import { formatCreditCost } from '../domain/credits';
+import { generationProviderLabel } from '../domain/provider-label';
 import { resultError, resultModelLabel } from '../domain/result-presentation';
 import { useI18n } from '../i18n';
 import { generationDuration, generationStateLabel, reasoningEffortLabel } from '../i18n/presentation';
@@ -98,7 +99,7 @@ const timeline = computed(() => {
     const hasStarted = Boolean(record.generationStartedAt) || terminal || processing || record.state === 'submitting';
     const startedAt = record.generationStartedAt || (hasStarted ? record.createdAt : undefined);
     const completedAt = record.generationCompletedAt;
-    const provider = record.providerName || record.providerId || t('result.providerFallback');
+    const provider = generationProviderLabel(record, studio.catalog);
     return [
       step(t('result.timeline.accepted'), t('result.timeline.acceptedDetail'), 'done', record.createdAt),
       step(t('result.timeline.slot'), startedAt ? t('result.timeline.slotAcquired') : t('result.timeline.slotWaiting'), startedAt ? 'done' : record.state === 'queued' ? 'active' : 'pending', record.createdAt, stepDuration(record.createdAt, startedAt, record.state === 'queued')),
@@ -128,7 +129,7 @@ const route = computed(() => {
   const record = studio.selected;
   if (!record) return '';
   if (!isAdmin.value) return t('result.routePublic');
-  const provider = record.providerName || (record.providerId === 'codex' ? 'Codex CLI' : record.providerId);
+  const provider = generationProviderLabel(record, studio.catalog);
   const model = resultModelLabel(record, isAdmin.value);
   const kind = record.kind === 'image' ? t('result.imageGenerator') : record.kind === 'text' ? t('result.textKind') : record.kind || t('result.resultKind');
   const effort = typeof record.input?.effort === 'string' ? reasoningEffortLabel(record.input.effort) : '';
@@ -160,9 +161,9 @@ const receipt = computed(() => {
     };
     return t('result.receipt.elapsed', { message: messages[record.state] || generationStateLabel(record.state), duration: duration.value, check: ['waiting', 'queuing', 'generating'].includes(record.state) ? ` ${lastProviderCheck.value}` : '' });
   }
-  if (activeStates.has(record.state)) return t('result.receipt.active', { provider: isAdmin.value ? `${record.providerName || t('result.serviceFallback')}: ` : '', state: generationStateLabel(record.state), duration: duration.value, details: isAdmin.value ? t('result.receipt.adminPendingDetails') : '' });
+  if (activeStates.has(record.state)) return t('result.receipt.active', { provider: isAdmin.value ? `${generationProviderLabel(record, studio.catalog)}: ` : '', state: generationStateLabel(record.state), duration: duration.value, details: isAdmin.value ? t('result.receipt.adminPendingDetails') : '' });
   const costAction = record.state === 'success' ? t('result.receipt.charged') : ['fail', 'blocked', 'cancelled'].includes(record.state) ? t('result.receipt.refunded') : t('result.receipt.reserved');
-  const parts = [record.state === 'success' ? (isAdmin.value ? t('result.receipt.responseFrom', { provider: record.providerName || record.providerId }) : t('result.receipt.received')) : `${resultError(record, isAdmin.value)}.`];
+  const parts = [record.state === 'success' ? (isAdmin.value ? t('result.receipt.responseFrom', { provider: generationProviderLabel(record, studio.catalog) }) : t('result.receipt.received')) : `${resultError(record, isAdmin.value)}.`];
   if (credits.value != null) parts.push(t('result.receipt.creditCost', { action: costAction, count: formatCreditCost(credits.value) }));
   if (record.generationDurationMs != null) parts.push(t('result.receipt.generationTime', { duration: duration.value }));
   if (isAdmin.value && isKie.value && record.providerDurationMs != null) parts.push(t('result.receipt.providerTime', { duration: formatDuration(record.providerDurationMs) }));

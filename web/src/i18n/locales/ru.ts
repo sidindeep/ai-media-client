@@ -382,6 +382,7 @@ export const ru = {
   'composer.enterPrompt': 'Введите промпт',
   'composer.waitQuote': 'Дождитесь расчёта стоимости',
   'composer.checkSources': 'Проверьте исходные файлы',
+  'composer.selectionChanged': 'Поставщик или параметры изменились. Проверьте выбор и отправьте запрос ещё раз.',
   'composer.startError': 'Не удалось запустить генерацию',
   'composer.diagnostics': 'Диагностика Kie.ai',
   'composer.diagnosticsEyebrow': 'ДИАГНОСТИКА ПРОВАЙДЕРА',

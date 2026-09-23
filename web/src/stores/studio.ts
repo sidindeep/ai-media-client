@@ -621,7 +621,20 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   async function submit(routerAiPayload?: Record<string, unknown>, quotedAmountUnits?: number) {
-    const submittedPrompt = prompt.value.trim() || (provider.value === 'routerai' && currentRouterAiModel.value?.kind === 'transcription'
+    const submittedProvider = provider.value;
+    const submittedKieAccount = isAdmin.value ? kieAccountId.value : 'primary';
+    const submittedCodexModel = codexModel.value;
+    const submittedCodexModelName = currentCodexModel.value?.name || submittedCodexModel;
+    const submittedCodexEffort = codexEffort.value;
+    const submittedCodexSpeed = codexSpeed.value;
+    const submittedCodexAspectRatio = codexAspectRatio.value;
+    const submittedMode = mode.value;
+    const submittedRouterAiModel = currentRouterAiModel.value;
+    const submittedMediaModel = currentMediaModel.value;
+    if (submittedProvider === 'media') normalizeCurrentMediaInput();
+    const submittedMediaInput = { ...mediaInput.value };
+    const submittedSourceFiles = [...sourceFiles.value];
+    const submittedPrompt = prompt.value.trim() || (submittedProvider === 'routerai' && submittedRouterAiModel?.kind === 'transcription'
       ? t('routerai.admin.transcriptionPrompt') : '');
     if (!submittedPrompt) throw new Error(t('studio.enterPrompt'));
     if (activeChatId.value === 'system:recent') {
@@ -639,16 +652,16 @@ export const useStudioStore = defineStore('studio', () => {
     const optimisticId = `pending:${requestId}`;
     const createdAt = new Date().toISOString();
     let optimistic: GenerationRecord;
-    if (provider.value === 'codex') {
-      const input = { prompt: submittedPrompt, effort: codexEffort.value, speed: codexSpeed.value, aspectRatio: codexAspectRatio.value };
-      optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'codex', providerName: 'Codex CLI', modelId: codexModel.value,
-        modelName: currentCodexModel.value?.name || codexModel.value, kind: mode.value === 'text' ? 'text' : 'image', state: 'queued',
+    if (submittedProvider === 'codex') {
+      const input = { prompt: submittedPrompt, effort: submittedCodexEffort, speed: submittedCodexSpeed, aspectRatio: submittedCodexAspectRatio };
+      optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'codex', providerName: 'Codex CLI', modelId: submittedCodexModel,
+        modelName: submittedCodexModelName, kind: submittedMode === 'text' ? 'text' : 'image', state: 'queued',
         createdAt, queuedAt: createdAt, input, ...context };
       pendingSubmissions.value.unshift(optimistic);
       selectedId.value = optimisticId;
       try {
-        const job = await api.submitCodex({ ...input, prompt: submittedPrompt, model: codexModel.value,
-          kind: mode.value === 'text' ? 'text' : 'image', sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
+        const job = await api.submitCodex({ ...input, prompt: submittedPrompt, model: submittedCodexModel,
+          kind: submittedMode === 'text' ? 'text' : 'image', sourceFiles: submittedSourceFiles.map(item => item.ref), ...context, requestId });
         await refresh().catch(() => {});
         return job;
       } catch (error) {
@@ -659,8 +672,8 @@ export const useStudioStore = defineStore('studio', () => {
         throw error;
       }
     }
-    if (provider.value === 'routerai') {
-      const model = currentRouterAiModel.value;
+    if (submittedProvider === 'routerai') {
+      const model = submittedRouterAiModel;
       if (!model) throw new Error(t('studio.selectModel'));
       optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'routerai', providerName: 'RouterAI',
         modelId: model.id, modelName: model.name, kind: model.kind, state: 'queued', createdAt, queuedAt: createdAt,
@@ -682,19 +695,17 @@ export const useStudioStore = defineStore('studio', () => {
       }
     }
     if (!fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
-    const model = currentMediaModel.value;
+    const model = submittedMediaModel;
     if (!model) throw new Error(t('studio.catalogUnavailable'));
-    const submittedKieAccount = isAdmin.value ? kieAccountId.value : 'primary';
-    normalizeCurrentMediaInput();
-    const input = { ...mediaInput.value };
+    const input = { ...submittedMediaInput };
     if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
     optimistic = { id: optimisticId, requestId, optimistic: true, kieAccountId: submittedKieAccount, providerId: model.providerId || 'media',
-      providerName: catalog.value?.providers.find(item => item.id === model.providerId)?.name || 'Kie.ai', modelId: model.id,
-      modelName: model.name, kind: model.kind || mode.value, state: 'queued', createdAt, queuedAt: createdAt, input, ...context };
+      providerName: catalog.value?.kieAccounts?.find(item => item.id === submittedKieAccount)?.name || 'Kie.ai', modelId: model.id,
+      modelName: model.name, kind: model.kind || submittedMode, state: 'queued', createdAt, queuedAt: createdAt, input, ...context };
     pendingSubmissions.value.unshift(optimistic);
     selectedId.value = optimisticId;
     try {
-      const task = await api.createTask({ modelId: model.id, input, sourceFiles: sourceFiles.value, ...context, requestId, kieAccountId: submittedKieAccount });
+      const task = await api.createTask({ modelId: model.id, input, sourceFiles: submittedSourceFiles, ...context, requestId, kieAccountId: submittedKieAccount });
       acceptServerRecord(optimisticId, task);
       await refresh().catch(() => {});
       return task;

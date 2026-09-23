@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import type { GenerationRecord } from '../types';
 import { formatCreditCost } from '../domain/credits';
+import { generationProviderLabel } from '../domain/provider-label';
 import { resultError, resultModelLabel } from '../domain/result-presentation';
 import { useI18n } from '../i18n';
 import { generationDuration, generationStateLabel, reasoningEffortLabel } from '../i18n/presentation';
@@ -39,7 +40,7 @@ function historyMeta(record: GenerationRecord) {
   const total = record.usage?.total_tokens ?? record.usage?.totalTokens;
   const effort = typeof record.input?.effort === 'string' ? reasoningEffortLabel(record.input.effort) : '';
   const speed = record.input?.speed === 'fast' ? 'Fast' : record.input?.speed === 'standard' ? t('generation.speed.standard') : '';
-  return [timestamp(record.createdAt), formatDuration(record.generationDurationMs), record.nativeQuote?.credits != null ? `${formatCreditCost(record.nativeQuote.credits)} ${t('common.creditsShort')}` : '', studio.isAdmin && total != null ? t('generation.tokensShort', { count: formatCount(total) }) : '', effort, speed].filter(Boolean).join(' · ');
+  return [studio.isAdmin ? generationProviderLabel(record, studio.catalog) : '', timestamp(record.createdAt), formatDuration(record.generationDurationMs), record.nativeQuote?.credits != null ? `${formatCreditCost(record.nativeQuote.credits)} ${t('common.creditsShort')}` : '', studio.isAdmin && total != null ? t('generation.tokensShort', { count: formatCount(total) }) : '', effort, speed].filter(Boolean).join(' · ');
 }
 function totalTokens(record: GenerationRecord) { return record.usage?.total_tokens ?? record.usage?.totalTokens; }
 function creditCost(record: GenerationRecord) { return record.nativeQuote?.credits == null ? '—' : formatCreditCost(record.nativeQuote.credits); }
@@ -64,7 +65,7 @@ function creditCost(record: GenerationRecord) { return record.nativeQuote?.credi
             <p v-else-if="selectedRecord.error" class="history-detail-error">{{ resultError(selectedRecord, studio.isAdmin) }}</p>
             <p v-else-if="!selectedUrls.length" class="history-detail-empty">{{ t('history.noPreview') }}</p>
           </div>
-          <dl class="history-detail-facts"><div v-if="studio.isAdmin"><dt>{{ t('history.provider') }}</dt><dd>{{ selectedRecord.providerName || selectedRecord.providerId || '—' }}</dd></div><div><dt>{{ t('history.created') }}</dt><dd>{{ timestamp(selectedRecord.createdAt) || '—' }}</dd></div><div><dt>{{ t('history.time') }}</dt><dd>{{ formatDuration(selectedRecord.generationDurationMs) || '—' }}</dd></div><div><dt>{{ t('history.cost') }}</dt><dd>{{ creditCost(selectedRecord) }}</dd></div><div v-if="studio.isAdmin"><dt>{{ t('history.tokens') }}</dt><dd>{{ formatCount(totalTokens(selectedRecord)) || '—' }}</dd></div></dl>
+          <dl class="history-detail-facts"><div v-if="studio.isAdmin"><dt>{{ t('history.provider') }}</dt><dd>{{ generationProviderLabel(selectedRecord, studio.catalog) }}</dd></div><div><dt>{{ t('history.created') }}</dt><dd>{{ timestamp(selectedRecord.createdAt) || '—' }}</dd></div><div><dt>{{ t('history.time') }}</dt><dd>{{ formatDuration(selectedRecord.generationDurationMs) || '—' }}</dd></div><div><dt>{{ t('history.cost') }}</dt><dd>{{ creditCost(selectedRecord) }}</dd></div><div v-if="studio.isAdmin"><dt>{{ t('history.tokens') }}</dt><dd>{{ formatCount(totalTokens(selectedRecord)) || '—' }}</dd></div></dl>
           <a v-if="selectedUrls[0]" class="action-button history-detail-download" :href="selectedRecord.localFiles?.[0]?.url || selectedUrls[0]" download>{{ t('history.download') }}</a>
         </div>
         <div v-else class="history-detail-placeholder"><span aria-hidden="true">→</span><strong>{{ t('history.select') }}</strong><p>{{ t('history.selectHint') }}</p></div>

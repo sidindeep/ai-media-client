@@ -384,6 +384,7 @@ export const en = {
   'composer.enterPrompt': 'Enter a prompt',
   'composer.waitQuote': 'Wait for the cost estimate',
   'composer.checkSources': 'Check the source files',
+  'composer.selectionChanged': 'The provider or settings changed. Review your selection and submit again.',
   'composer.startError': 'Could not start generation',
   'composer.diagnostics': 'Kie.ai diagnostics',
   'composer.diagnosticsEyebrow': 'PROVIDER DIAGNOSTICS',

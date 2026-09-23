@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useStudioStore } from '../stores/studio';
 import type { GenerationRecord } from '../types';
 import { formatCreditCost } from '../domain/credits';
+import { generationProviderLabel } from '../domain/provider-label';
 import { resultError, resultModelLabel } from '../domain/result-presentation';
 import { useI18n } from '../i18n';
 import { generationDuration, generationStateLabel, reasoningEffortLabel } from '../i18n/presentation';
@@ -72,7 +73,7 @@ function previewText(record: GenerationRecord) {
   return activeStates.has(record.state) ? t('generation.resultPending') : generationStateLabel(record.state);
 }
 function provider(record: GenerationRecord) {
-  return record.providerName || (record.providerId === 'codex' ? 'Codex' : record.providerId === 'media' ? 'Kie.ai' : record.providerId);
+  return generationProviderLabel(record, studio.catalog);
 }
 function status(record: GenerationRecord) {
   if (studio.isAdmin) return `${provider(record)} · ${generationStateLabel(record.state)}`;

@@ -57,7 +57,33 @@ function createCreditConversion({ offersFile, kieRubPerCredit, policy = defaultP
     return { amountUnits, credits: amountUnits / SCALE, scale: SCALE, currency: 'credits',
       version: `${providerId}:${String(result.rawVersion || 'unknown')}:${fxVersion}:${policy.version}` };
   }
-  return { quote };
+  function snapshot() {
+    const offered = active.map(offer => ({
+      id: offer.id, name: offer.name,
+      priceRub: offer.amountMinor / 100, credits: offer.creditUnits / SCALE,
+      rubPerCredit: offer.amountMinor * 10 / offer.creditUnits,
+    }));
+    return {
+      version: policy.version,
+      deductionsFraction: policy.deductionsFraction,
+      costMarkupFraction: policy.costMarkupFraction,
+      minimumRubPerCredit: rubPerCredit,
+      netRubPerCredit,
+      kieRubPerCredit,
+      offers: offered,
+      providers: [
+        { id: 'kie', sourceUnit: 'Кредит Kie', mode: 'provider-cost',
+          exampleInput: 1, exampleCredits: quote('kie', { amountUnits: SCALE, version: 'example' }).credits },
+        { id: 'routerai', sourceUnit: '₽', mode: 'provider-cost',
+          exampleInput: 1, exampleCredits: quote('routerai', { amount: 1, currency: 'RUB', version: 'example' }).credits },
+        { id: 'codex', sourceUnit: 'Опубликованный тариф', mode: 'fixed-product-price',
+          exampleInput: null, exampleCredits: null },
+      ],
+      fxRates: Object.entries(fxRates).map(([currency, rate]) => ({ currency,
+        rubPerUnit: rate.rubPerUnit, version: rate.version, validUntil: rate.validUntil })),
+    };
+  }
+  return { quote, snapshot };
 }
 
 module.exports = { createCreditConversion };

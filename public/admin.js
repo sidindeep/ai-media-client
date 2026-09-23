@@ -11,7 +11,7 @@ function showBalance() {
   void loadLedger();
 }
 function selectPanel() {
-  const panels = ['accountsPanel', 'starterPanel', 'credits', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'codexPanel'];
+  const panels = ['accountsPanel', 'starterPanel', 'credits', 'conversionPanel', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'codexPanel'];
   const selected = panels.includes(location.hash.slice(1)) ? location.hash.slice(1) : panels[0];
   for (const id of panels) document.getElementById(id).hidden = id !== selected;
   document.querySelectorAll('.admin-tabs a').forEach(link => link.setAttribute('aria-current', link.hash === '#' + selected ? 'page' : 'false'));
@@ -25,6 +25,48 @@ function kieStatsNode(tag, text, className) {
   if (className) node.className = className;
   return node;
 }
+const conversionNumber = value => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 }).format(value);
+function renderConversion(data) {
+  const summary = [
+    ['Версия политики', data.version],
+    ['Удержания', `${conversionNumber(data.deductionsFraction * 100)}%`],
+    ['Наценка к себестоимости', `${conversionNumber(data.costMarkupFraction * 100)}%`],
+    ['Минимальная цена покупки кредита', `${conversionNumber(data.minimumRubPerCredit)} ₽`],
+    ['Выручка после удержаний за кредит', `${conversionNumber(data.netRubPerCredit)} ₽`],
+    ['Себестоимость кредита Kie', `${conversionNumber(data.kieRubPerCredit)} ₽`],
+  ];
+  document.getElementById('conversionSummary').replaceChildren(...summary.map(([label, value]) => {
+    const card = kieStatsNode('div', undefined, 'kie-stats-card');
+    card.append(kieStatsNode('span', label), kieStatsNode('strong', String(value)));
+    return card;
+  }));
+  document.getElementById('conversionProviders').replaceChildren(...data.providers.map(row => {
+    const card = kieStatsNode('article', undefined, 'kie-stats-incident');
+    const mode = row.mode === 'fixed-product-price' ? 'Фиксированная продуктовая цена' : 'Расчёт по себестоимости';
+    const example = row.exampleCredits == null ? 'Цена берётся из опубликованного тарифа модели'
+      : `${conversionNumber(row.exampleInput)} ${row.sourceUnit} → ${conversionNumber(row.exampleCredits)} наших кредитов`;
+    card.append(kieStatsNode('strong', `${row.id} · ${mode}`), kieStatsNode('p', example));
+    return card;
+  }));
+  document.getElementById('conversionOffers').replaceChildren(...data.offers.map(row =>
+    kieStatsNode('p', `${row.name} · ${conversionNumber(row.priceRub)} ₽ за ${conversionNumber(row.credits)} кредитов · ${conversionNumber(row.rubPerCredit)} ₽ за кредит`)));
+  document.getElementById('conversionFx').replaceChildren(...(data.fxRates.length ? data.fxRates.map(row =>
+    kieStatsNode('p', `${row.currency}: ${conversionNumber(row.rubPerUnit)} ₽ · версия ${row.version} · действует до ${kieStatsDate(row.validUntil)}`))
+    : [kieStatsNode('p', 'Иностранные валюты пока не подключены.') ]));
+}
+let conversionBusy = false;
+async function loadConversion() {
+  if (conversionBusy) return;
+  conversionBusy = true;
+  const status = document.getElementById('conversionStatus');
+  status.textContent = 'Загружаем данные…';
+  try { renderConversion(await adminRequest('/api/admin/credit-conversion')); status.textContent = `Обновлено ${kieStatsDate(new Date())}`; }
+  catch (error) { status.textContent = error.message; }
+  finally { conversionBusy = false; }
+}
+document.getElementById('conversionRefresh').onclick = () => void loadConversion();
+window.addEventListener('hashchange', () => { if (location.hash === '#conversionPanel') void loadConversion(); });
+if (location.hash === '#conversionPanel') queueMicrotask(() => void loadConversion());
 function renderKieStats(stats) {
   const summary = document.getElementById('kieStatsSummary');
   summary.replaceChildren(...[

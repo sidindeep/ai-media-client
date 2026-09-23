@@ -26,6 +26,22 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
   }
 
   return {
+    async credits() {
+      let response;
+      try {
+        response = await fetchImpl(`${BASE_URL}/credits`, {
+          headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(Math.min(timeoutMs, 15000)),
+        });
+      } catch { throw new Error('RouterAI недоступен'); }
+      if (!response.ok) throw Object.assign(new Error(`RouterAI отклонил проверку баланса (HTTP ${response.status})`), { status: response.status });
+      let payload;
+      try { payload = await response.json(); } catch { throw new Error('RouterAI вернул некорректный баланс'); }
+      const value = payload?.data?.credits ?? payload?.credits;
+      if (typeof value !== 'number' && !(typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value))) throw new Error('RouterAI не вернул остаток баланса');
+      const credits = Number(value);
+      if (!Number.isFinite(credits) || credits < 0) throw new Error('RouterAI не вернул остаток баланса');
+      return credits;
+    },
     chatCompletion: ({ model, messages, ...options }) => request('/chat/completions', { model, messages, ...options }),
     generateImage: ({ model, prompt, ...options }) => request('/images', { model, prompt, ...options }),
     async raw(endpoint, body) {

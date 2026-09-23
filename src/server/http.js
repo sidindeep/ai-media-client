@@ -6,6 +6,8 @@ const { validateCodexRequest } = require('../services/codex-request');
 const { createCodexBilling } = require('../services/codex-billing');
 const { createRouterAiBilling, validateRouterAiRequest } = require('../services/routerai-billing');
 const { createRouterAiCatalog } = require('../providers/routerai/catalog');
+const { createRouterAiClient } = require('../providers/routerai/client');
+const { readProviderStatus } = require('../services/provider-status');
 const { buildInfo } = require('./build-info');
 const { checkDatabase, transientConnection } = require('../database/database');
 const trace = require('../generation-log');
@@ -143,6 +145,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   const routerAiModels = createRouterAiCatalog();
   let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
     content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
+  const routerAiStatus = config.routerAi?.apiKey ? createRouterAiClient({ apiKey: config.routerAi.apiKey }) : null;
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
@@ -447,6 +450,22 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (url.pathname === '/api/admin/credit-conversion' && req.method === 'GET') {
+          return json(res, 200, { result: accounts.conversion.snapshot() });
+        }
+        if (url.pathname === '/api/admin/provider-status' && req.method === 'GET') {
+          const provider = url.searchParams.get('provider');
+          const kieAccountId = url.searchParams.get('kieAccountId') || 'primary';
+          const codexLimits = config.codex?.url ? async () => {
+            const response = await fetch(`${config.codex.url.replace(/\/$/, '')}/auth/limits`, {
+              headers: { 'x-account-id': user.id }, signal: AbortSignal.timeout(15000),
+            });
+            if (!response.ok) throw new Error('Не удалось прочитать лимиты Codex');
+            return response.json();
+          } : null;
+          try { return json(res, 200, await readProviderStatus({ provider, kieAccountId, kie: accounts.provider, routerAi: routerAiStatus, codex: codexLimits })); }
+          catch (error) { return json(res, error.status === 400 ? 400 : 502, { error: error.message || 'Не удалось проверить поставщика' }); }
+        }
         if (url.pathname === '/api/admin/kie-submissions' && req.method === 'GET') {
           const { kieSubmissionStatistics } = require('../services/kie-submission-statistics');
           return json(res, 200, { result: await kieSubmissionStatistics(accounts.pool, url.searchParams.get('days') || 30) });

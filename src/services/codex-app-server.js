@@ -236,7 +236,10 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
       }
     }
   }
-  return { run, close() { closed = true; session?.break('shutdown'); },
+  return { run, async rateLimits() {
+      const current = await start();
+      return current.rpc('account/rateLimits/read', {});
+    }, close() { closed = true; session?.break('shutdown'); },
     status() { return { transport: 'app-server', running: Boolean(session && !session.dead), active: runs.size }; } };
 }
 module.exports = { createCodexAppServer, threadParams };

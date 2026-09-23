@@ -26,3 +26,7 @@
 кредита берётся из активных рублёвых предложений `config/product-offers.json`.
 Котировки Kie формирует `src/billing/kie-pricing.js`, RouterAI —
 `src/providers/routerai/pricing.js`, сведение — `src/billing/conversion/`.
+Админский read-only снимок политики выдаётся через
+`GET /api/admin/credit-conversion` только роли admin и отображается в отдельной
+вкладке `/admin.html#conversionPanel`. Он показывает текущие параметры, активные
+пакеты, единицы роутеров, примеры и подключённые курсы без редактирования.

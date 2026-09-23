@@ -621,6 +621,7 @@ async function submit(event?: Event) {
             <div class="diagnostic-summary" :class="diagnostics.ok ? 'success' : 'error'">
               <strong>{{ diagnostics.ok ? t('composer.diagnosticsOk') : t('composer.diagnosticsError') }}</strong>
               <span>{{ diagnostics.model.name || diagnostics.model.id }}<template v-if="diagnostics.quote?.credits != null"> · {{ t('common.credits', { count: diagnostics.quote.credits }) }}</template></span>
+              <span v-if="diagnostics.balance != null">{{ t('sidebar.remainingCredits', { count: formatNumber(diagnostics.balance) }) }}</span>
             </div>
             <div class="diagnostic-checks">
               <article v-for="item in diagnostics.checks" :key="item.time + item.step" :class="item.status">

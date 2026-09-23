@@ -217,9 +217,10 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const configured = selectedProvider.isConfigured();
       const keyName = kieAccountId === 'secondary' ? 'KIE_API_KEY_2' : 'KIE_API_KEY';
       add('configuration', configured ? 'ok' : 'error', configured ? `Серверный ${keyName} загружен` : `Серверный ${keyName} отсутствует`);
+      let balance = null;
       if (configured) {
         const started = Date.now();
-        try { await selectedProvider.balance(); add('authorization', 'ok', 'Kie принял ключ; запрос баланса выполнен', started); }
+        try { balance = costs.amount(await selectedProvider.balance()); add('authorization', 'ok', 'Kie принял ключ; запрос баланса выполнен', started); }
         catch (error) { add('authorization', 'error', diagnosticMessage(error), started); }
       }
       let tariffData;
@@ -243,7 +244,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       }
       return {
         ok: checks.every(item => item.status === 'ok'), configured, checkedAt,
-        provider: provider.listAccounts?.().find(account => account.id === kieAccountId)?.name || 'Kie.ai', model: model ? { id: model.id, name: model.name } : { id: String(modelId || ''), name: '' }, quote,
+        provider: provider.listAccounts?.().find(account => account.id === kieAccountId)?.name || 'Kie.ai', model: model ? { id: model.id, name: model.name } : { id: String(modelId || ''), name: '' }, quote, balance,
         mechanism: {
           credentials: `Серверная переменная ${keyName}; значение не передаётся в браузер`,
           authorization: 'GET https://api.kie.ai/api/v1/chat/credit',

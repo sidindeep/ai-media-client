@@ -24,6 +24,7 @@ function createCodexAppServerPool({ size = Number(process.env.MEDIA_CODEX_POOL_S
     }
   }
   return {
+    rateLimits: () => slots[0].adapter.rateLimits(),
     run(request, { signal } = {}) {
       if (closed || signal?.aborted) return Promise.reject(cancelled());
       return new Promise((resolve, reject) => {

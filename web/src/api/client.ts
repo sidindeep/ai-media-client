@@ -131,7 +131,21 @@ export type ProviderDiagnostics = {
   mechanism: { credentials: string; authorization: string; tariffs: string; generation: string };
   checks: ProviderDiagnosticEntry[];
   recentLogs: ProviderDiagnosticEntry[];
+  balance?: number | null;
 };
+
+export type ProviderStatus = {
+  provider: 'media' | 'routerai' | 'codex';
+  kieAccountId?: 'primary' | 'secondary';
+  checkedAt: string;
+  balance: { amount: number; unit: 'credits' | 'rub' } | null;
+  windows: Array<{ name: string; windowMinutes: number | null; remainingPercent: number; resetsAt: number | null }>;
+};
+
+export async function getProviderStatus(provider: ProviderStatus['provider'], kieAccountId = 'primary'): Promise<ProviderStatus> {
+  const query = new URLSearchParams({ provider, kieAccountId });
+  return parse(await fetch(`/api/admin/provider-status?${query}`, { headers: accountHeaders(), cache: 'no-store' }));
+}
 
 export async function diagnoseProvider(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = [], kieAccountId = 'primary'): Promise<ProviderDiagnostics> {
   return rpc('diagnoseProvider', [{ modelId, input, sourceFiles, kieAccountId }]);

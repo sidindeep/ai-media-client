@@ -128,6 +128,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/archive`, 'POST', {}))).archivedAt !== null, true);
   assert.equal((await workspaceRequest(alice, `/api/chats/${chat.id}/archive`, 'POST', {})).status, 200);
   assert.equal((await request('/api/admin/accounts', { headers: { Cookie: alice.cookie } })).status, 403);
+  assert.equal((await request('/api/admin/credit-conversion')).status, 401);
+  assert.equal((await request('/api/admin/credit-conversion', { headers: { Cookie: alice.cookie } })).status, 403);
+  const conversionSnapshot = await result(request('/api/admin/credit-conversion', { headers: { Cookie: owner.cookie } }));
+  assert.equal(conversionSnapshot.version, '2026-09-23-1');
+  assert.equal(conversionSnapshot.providers.find(row => row.id === 'kie').sourceUnit, 'Кредит Kie');
   assert.equal((await request('/api/admin/codex/status')).status, 401);
   assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: alice.cookie } })).status, 403);
   assert.equal((await request('/api/admin/codex/start', { method: 'POST', headers: { Cookie: alice.cookie, 'X-Media-User': alice.id, 'X-Media-Client': 'web' } })).status, 403);

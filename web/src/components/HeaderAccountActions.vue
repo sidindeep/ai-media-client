@@ -12,11 +12,12 @@ import { useI18n } from '../i18n';
 const props = defineProps<{ ready: boolean }>();
 const emit = defineEmits<{ selectNotification: [record: GenerationRecord] }>();
 const studio = useStudioStore();
-const { formatDate, formatNumber, t } = useI18n();
+const { formatDate, formatNumber, locale, t } = useI18n();
 const root = ref<HTMLElement | null>(null);
 const account = ref<Account | null>(null);
 const notificationsOpen = ref(false);
 const subscriptionsOpen = ref(false);
+const selectedOffer = ref<CommerceOffer | null>(null);
 const commerceOffers = ref<CommerceOffer[]>([]);
 const recentCommerceOrder = ref<CommerceOrder | null>(null);
 const commerceLoading = ref(false);
@@ -25,6 +26,19 @@ const seenIds = ref(new Set<string>());
 const promotion = activeSubscriptionPromotion();
 const theme = ref<'dark' | 'light'>(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
 const terminalStates = new Set(['success', 'fail', 'blocked', 'cancelled', 'unknown', 'unconfirmed']);
+const paymentMethods = [
+  { id: 'sbp', ru: 'СБП (QR-код)', en: 'SBP (QR code)' },
+  { id: 'sberpay', ru: 'SberPay', en: 'SberPay' },
+  { id: 'tpay', ru: 'T-Pay', en: 'T-Pay' },
+  { id: 'ozonpay', ru: 'Ozon Pay', en: 'Ozon Pay' },
+  { id: 'mirpay', ru: 'MirPay', en: 'MirPay' },
+  { id: 'alfapay', ru: 'Альфа Pay', en: 'Alfa Pay' },
+  { id: 'card', ru: 'Банковской картой', en: 'Bank card' },
+  { id: 'robokassa', ru: 'Robokassa', en: 'Robokassa' },
+  { id: 'yandexpay', ru: 'Яндекс Pay', en: 'Yandex Pay' },
+  { id: 'mtspay', ru: 'МТС Pay', en: 'MTS Pay' },
+  { id: 'yookassa', ru: 'YooKassa', en: 'YooKassa' },
+];
 
 const notifications = computed(() => [...studio.history]
   .filter(record => terminalStates.has(record.state))
@@ -129,27 +143,13 @@ function clearCompletedCheckoutKey(order: CommerceOrder) {
 
 function openSubscriptions() {
   notificationsOpen.value = false;
+  selectedOffer.value = null;
   subscriptionsOpen.value = true;
   void loadCommerceOffers();
 }
 
-async function buyOffer(offer: CommerceOffer) {
-  commerceLoading.value = true;
-  commerceStatus.value = '';
-  try {
-    const storageKey = `ai-media-checkout:${offer.id}:${offer.version}`;
-    const idempotencyKey = sessionStorage.getItem(storageKey) || crypto.randomUUID();
-    sessionStorage.setItem(storageKey, idempotencyKey);
-    const order = await api.createCommerceOrder(offer, idempotencyKey);
-    recentCommerceOrder.value = order;
-    const checkout = await api.checkoutCommerceOrder(order.id);
-    recentCommerceOrder.value = checkout;
-    if (checkout.confirmationUrl) { window.location.assign(checkout.confirmationUrl); return; }
-    clearCompletedCheckoutKey(checkout);
-    if (checkout.status === 'fulfilled') await loadAccount();
-    commerceStatus.value = commerceOrderStatus(checkout);
-  } catch (cause) { commerceStatus.value = cause instanceof Error ? cause.message : t('subscription.unavailable'); }
-  finally { commerceLoading.value = false; }
+function selectOffer(offer: CommerceOffer) {
+  selectedOffer.value = offer;
 }
 
 async function restoreReturnedOrder() {
@@ -259,7 +259,16 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div v-if="subscriptionsOpen" class="subscription-backdrop" @mousedown.self="subscriptionsOpen = false">
       <section class="subscription-dialog" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
-        <header><div><span>{{ t('subscription.eyebrow') }}</span><h2 id="subscription-title">{{ t('subscription.title') }}</h2></div><button type="button" :aria-label="t('common.close')" @click="subscriptionsOpen = false">×</button></header>
+        <header><div><span>{{ selectedOffer ? t('subscription.paymentEyebrow') : t('subscription.eyebrow') }}</span><h2 id="subscription-title">{{ selectedOffer ? t('subscription.paymentTitle') : t('subscription.title') }}</h2></div><button type="button" :aria-label="t('common.close')" @click="subscriptionsOpen = false">×</button></header>
+        <template v-if="selectedOffer">
+          <button type="button" class="subscription-back" @click="selectedOffer = null">← {{ t('subscription.backToPackages') }}</button>
+          <div class="subscription-selected-offer"><strong>{{ selectedOffer.name }}</strong><span>{{ formatMoney(selectedOffer) }}</span><small>{{ t('subscription.creditCount', { count: formatCredits(selectedOffer.creditUnits / 1000) }) }}</small></div>
+          <p class="subscription-payment-note">{{ t('subscription.paymentUnavailable') }}</p>
+          <div class="subscription-payment-methods" :aria-label="t('subscription.paymentTitle')">
+            <button v-for="method in paymentMethods" :key="method.id" type="button" disabled><span>{{ method[locale] }}</span><small>{{ t('subscription.soon') }}</small></button>
+          </div>
+        </template>
+        <template v-else>
         <div v-if="promotion" class="subscription-offer"><strong>{{ promotion.badge }} · {{ t(promotion.titleKey) }}</strong><p>{{ t(promotion.descriptionKey) }}</p></div>
         <div v-if="account?.starterPack?.active" class="subscription-offer"><strong>{{ t('subscription.starter', { count: account.starterPack.credits }) }}</strong><p>{{ t('subscription.starterHint') }}</p></div>
         <div v-if="commerceOffers.length" class="subscription-plans">
@@ -267,13 +276,14 @@ onBeforeUnmount(() => {
             <div><h3>{{ offer.name }}</h3><span>{{ formatMoney(offer) }}</span></div>
             <p>{{ offer.description }}</p>
             <ul><li>{{ t('subscription.creditCount', { count: formatCredits(offer.creditUnits / 1000) }) }}</li><li>{{ t('subscription.feature.balance') }}</li><li>{{ t('subscription.feature.models') }}</li></ul>
-            <button type="button" :disabled="commerceLoading" @click="buyOffer(offer)">{{ commerceLoading ? t('common.loading') : offer.checkoutMode === 'stub' ? t('subscription.stubBuy') : t('subscription.buy') }}</button>
+            <button type="button" :disabled="commerceLoading" @click="selectOffer(offer)">{{ t('subscription.selectPackage') }}</button>
           </article>
         </div>
         <p v-if="recentCommerceOrder && !commerceLoading" class="subscription-order">{{ t('subscription.lastOrder', { name: recentCommerceOrder.offer.name }) }}</p>
         <p v-if="commerceLoading && !commerceOffers.length" class="subscription-note">{{ t('common.loading') }}</p>
         <p v-else-if="commerceStatus" class="subscription-note" role="status">{{ commerceStatus }}</p>
         <p v-else-if="!commerceOffers.length" class="subscription-note">{{ t('subscription.unavailable') }}</p>
+        </template>
       </section>
     </div>
   </Teleport>
@@ -310,19 +320,16 @@ onBeforeUnmount(() => {
 .subscription-offer { margin-top: 18px; border: 1px solid #71351f; border-radius: 12px; padding: 12px 14px; background: linear-gradient(135deg, rgba(74, 30, 17, .75), rgba(31, 20, 21, .75)); }.subscription-offer strong { color: #ff8b62; font-size: 12px; }.subscription-offer p { margin-top: 5px; color: #b7a49d; font-size: 10px; line-height: 1.5; }
 .subscription-plans { display: grid; gap: 10px; margin-top: 12px; }.subscription-plans article { border: 1px solid #30303e; border-radius: 13px; padding: 15px; background: #12131a; }.subscription-plans article > div { display: flex; justify-content: space-between; gap: 12px; }.subscription-plans h3 { margin: 0; font-size: 15px; }.subscription-plans article > p { margin-top: 6px; color: #8d8899; font-size: 10px; line-height: 1.5; }.subscription-plans ul { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0; padding: 0; color: #b7b1c4; font-size: 9px; list-style: none; }.subscription-plans li::before { margin-right: 5px; color: #8a73e8; content: '✓'; }.subscription-plans button { width: 100%; border: 1px solid #3b394a; border-radius: 9px; padding: 9px; color: #777382; background: #1b1b24; }.subscription-plans button:disabled { cursor: not-allowed; }
 .subscription-note { margin-top: 12px; color: #6f6b79; font-size: 9px; line-height: 1.5; }
-:global(html[data-theme='light']) .subscription-button { border-color: #e4a285; color: #65311e; background: linear-gradient(135deg, #fff0e9, #fff8f4); }
-:global(html[data-theme='light']) .header-credit-balance, :global(html[data-theme='light']) .notification-button, :global(html[data-theme='light']) .theme-button { border-color: #d9d5e1; color: #6f697b; background: rgba(255, 255, 255, .9); }
-:global(html[data-theme='light']) .header-credit-balance strong { color: #2b2732; }
-:global(html[data-theme='light']) .notification-button:hover, :global(html[data-theme='light']) .notification-button[aria-expanded="true"], :global(html[data-theme='light']) .theme-button:hover { border-color: #8a79c7; color: #55448c; background: #f1edff; }
-:global(html[data-theme='light']) .notification-count { border-color: #fff; }
-:global(html[data-theme='light']) .notification-popover { border-color: #d8d4df; color: #292532; background: #fff; box-shadow: 0 24px 70px rgba(53, 45, 67, .2); }
-:global(html[data-theme='light']) .notification-popover > header, :global(html[data-theme='light']) .notification-list > button { border-color: #ebe8ef; }
-:global(html[data-theme='light']) .notification-list > button { color: #393442; }
-:global(html[data-theme='light']) .notification-list > button:hover { background: #f6f3fb; }
-:global(html[data-theme='light']) .notification-list > button.unread { background: #f6f2ff; }
-:global(html[data-theme='light']) .subscription-backdrop { background: rgba(47, 42, 55, .38); }
-:global(html[data-theme='light']) .subscription-dialog { border-color: #d7d1df; color: #292432; background: linear-gradient(145deg, #fff, #f7f5fa); box-shadow: 0 34px 100px rgba(52, 44, 65, .24); }
-:global(html[data-theme='light']) .subscription-plans article { border-color: #ded9e5; background: #fff; }
-:global(html[data-theme='light']) .subscription-plans button { border-color: #d6d0dc; color: #8b8492; background: #f1eef3; }
+.subscription-plans button:not(:disabled) { border-color: #7357bc; color: #f5efff; background: #493581; cursor: pointer; }
+.subscription-plans button:not(:disabled):hover, .subscription-plans button:not(:disabled):focus-visible { outline: 0; border-color: #a28ce3; background: #6047a0; }
+.subscription-back { margin-top: 20px; border: 0; padding: 0; color: #b6a5e8; background: transparent; cursor: pointer; font-size: 11px; }
+.subscription-back:hover, .subscription-back:focus-visible { outline: 0; color: #e3d7ff; text-decoration: underline; }
+.subscription-selected-offer { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin-top: 16px; border: 1px solid #403852; border-radius: 12px; padding: 14px; background: #191722; }
+.subscription-selected-offer strong, .subscription-selected-offer span { font-size: 15px; }.subscription-selected-offer small { grid-column: 1 / -1; color: #aca3bb; font-size: 10px; }
+.subscription-payment-note { margin: 16px 0 12px; color: #bbb5c7; font-size: 11px; line-height: 1.5; }
+.subscription-payment-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.subscription-payment-methods button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; border: 1px solid #34303e; border-radius: 10px; padding: 11px 12px; color: #aaa4b4; background: #1a1921; text-align: left; cursor: not-allowed; }
+.subscription-payment-methods button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }.subscription-payment-methods button small { flex: none; color: #777080; font-size: 9px; }
+@media (max-width: 480px) { .subscription-payment-methods { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .subscription-button { width: 36px; padding: 0; justify-content: center; }.subscription-label { display: none; }.subscription-promo { font-size: 8px; }.header-credit-balance { padding-inline: 9px; }.header-credit-balance span { display: none; }.notification-popover { position: fixed; top: 62px; right: 10px; }.subscription-dialog { padding: 17px; } }
 </style>

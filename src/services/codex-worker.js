@@ -25,6 +25,10 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
       const account = req.headers['x-account-id'];
       if (typeof account !== 'string' || !/^(local|[a-f0-9-]{36})$/.test(account)) return send(res, 403, { error: 'Доступ запрещён' });
       if (url.pathname === '/auth/status' && req.method === 'GET') return send(res, 200, await login.status());
+      if (url.pathname === '/auth/limits' && req.method === 'GET') {
+        if (!adapter) return send(res, 200, { rateLimits: null, rateLimitsByLimitId: null });
+        return send(res, 200, await adapter.rateLimits());
+      }
       if (url.pathname === '/auth/start' && req.method === 'POST') return send(res, 200, await login.start());
       if (url.pathname === '/auth/cancel' && req.method === 'POST') return send(res, 200, login.cancel());
       const now = Date.now();

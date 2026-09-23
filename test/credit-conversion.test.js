@@ -36,3 +36,15 @@ test('new currency adapters require an explicit current rate', () => {
   assert.throws(() => createCreditConversion({ ...options, now: () => Date.parse('2026-09-25T00:00:00Z'),
     fxRates: { USD: { rubPerUnit: 80, version: 'fx-v1', validUntil: '2026-09-24T00:00:00Z' } } }).quote('foreign', raw), /устарел/);
 });
+
+test('admin snapshot reports the same active policy and example quotes', () => {
+  const conversion = createCreditConversion({ offers, policy, kieRubPerCredit: 0.51 });
+  const snapshot = conversion.snapshot();
+  assert.equal(snapshot.version, 'test-policy');
+  assert.equal(snapshot.offers.length, 2);
+  assert.equal(snapshot.minimumRubPerCredit, 9990 / 13000);
+  assert.equal(snapshot.providers.find(row => row.id === 'routerai').exampleCredits,
+    conversion.quote('routerai', { amount: 1, currency: 'RUB', version: 'example' }).credits);
+  assert.equal(snapshot.providers.find(row => row.id === 'codex').mode, 'fixed-product-price');
+  assert.deepEqual(snapshot.fxRates, []);
+});

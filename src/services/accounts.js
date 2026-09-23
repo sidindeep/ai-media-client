@@ -52,7 +52,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     return services.get(accountId);
   }
   return {
-    pool, wallet, pricing, conversion, workspaces, starterPack, content, get,
+    pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get,
     async createTelegramTask(telegramUserId, request, confirmationToken) {
       const identity = (await pool.query('SELECT a.id,a.role FROM media_telegram_links l JOIN media_accounts a ON a.id=l.account_id WHERE l.telegram_user_id=$1', [String(telegramUserId)])).rows[0];
       if (!identity) throw Object.assign(new Error('Сначала привяжите Telegram к аккаунту сайта'), { status: 403 });

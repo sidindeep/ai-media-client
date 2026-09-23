@@ -16,9 +16,16 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
       });
       const result = await response.json();
       trace.write('telegram.response',{method,httpStatus:response.status,ok:result.ok,errorCode:result.error_code});
+      if (method === 'getUpdates' && response.status === 409) {
+        throw Object.assign(new Error('Другой экземпляр Telegram-бота получает обновления'), { code: 'TELEGRAM_POLL_CONFLICT' });
+      }
       if (!response.ok || !result.ok) throw new Error();
       return result.result;
-    } catch { trace.write('telegram.error',{method});throw new Error('Telegram временно недоступен'); }
+    } catch (error) {
+      trace.write('telegram.error',{method});
+      if (error.code === 'TELEGRAM_POLL_CONFLICT') throw error;
+      throw new Error('Telegram временно недоступен');
+    }
   }
   const resolveAccount = async telegramUserId => {
     if (!accountMode) return { service };
@@ -115,7 +122,7 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
       loop = (async () => {
         while (running) {
           try { await pollOnce(); lastError = null; }
-          catch { if (running) { lastError = 'Нет связи с Telegram'; await delay(3000, undefined, { signal: controller.signal }).catch(() => {}); } }
+          catch (error) { if (running) { lastError = error.code === 'TELEGRAM_POLL_CONFLICT' ? error.message : 'Нет связи с Telegram'; await delay(3000, undefined, { signal: controller.signal }).catch(() => {}); } }
         }
       })();
     },

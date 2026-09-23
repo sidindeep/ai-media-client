@@ -432,6 +432,11 @@ test('Telegram polling offsets survive restart and token-bearing failures are re
   await next.pollOnce(); assert.equal(observedOffset, 11);
   const failing = createTelegramGateway({ service, config, directory: dir, fetchImpl: async () => { throw Error('https://private/test-token'); } });
   await assert.rejects(failing.pollOnce(), error => !error.message.includes('test-token'));
+  const conflicting = createTelegramGateway({ service, config, directory: dir, fetchImpl: async () => ({
+    ok: false, status: 409, json: async () => ({ ok: false, error_code: 409, description: 'private token' })
+  }) });
+  await assert.rejects(conflicting.pollOnce(), error => error.code === 'TELEGRAM_POLL_CONFLICT'
+    && error.message.includes('Другой экземпляр') && !error.message.includes('private token'));
 });
 
 test('config rejects external data paths and unconfigured enabled bot', () => {

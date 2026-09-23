@@ -10,13 +10,17 @@ const emit = defineEmits<{ history: [] }>();
 const root = ref<HTMLElement | null>(null);
 const account = ref<Account | null>(null);
 const menuOpen = ref(false);
-const modal = ref<'profile' | 'settings' | 'topup' | null>(null);
+const modal = ref<'profile' | 'settings' | 'topup' | 'telegram' | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const status = ref('');
 const profileName = ref('');
 const autoSave = ref(false);
 const concurrency = ref(5);
+const telegram = ref<{ linked: boolean; available: boolean; username?: string | null; telegramUserId?: string } | null>(null);
+const telegramLink = ref('');
+let telegramPoll: ReturnType<typeof setInterval> | undefined;
+let telegramPollUntil = 0;
 
 const isAdmin = computed(() => account.value?.role === 'admin' && account.value.id !== 'local');
 const initials = computed(() => account.value?.name.trim().slice(0, 1).toUpperCase() || '•');
@@ -24,7 +28,7 @@ const identity = computed(() => {
   if (!account.value) return '';
   return [...account.value.identities.map(item => item.email || `${item.provider}: ${item.subject}`), `ID: ${account.value.id}`].join(' · ');
 });
-const dialogTitle = computed(() => modal.value === 'profile' ? t('account.profile') : modal.value === 'settings' ? t('account.settings') : t('account.topUpTitle'));
+const dialogTitle = computed(() => modal.value === 'profile' ? t('account.profile') : modal.value === 'settings' ? t('account.settings') : modal.value === 'telegram' ? t('account.telegramTitle') : t('account.topUpTitle'));
 
 function formatCredits(value?: number) {
   return value === undefined ? '—' : formatNumber(value, { maximumFractionDigits: 3 });
@@ -91,6 +95,55 @@ function openHistory() {
   emit('history');
 }
 
+async function openTelegram() {
+  menuOpen.value = false;
+  status.value = '';
+  telegramLink.value = '';
+  loading.value = true;
+  try {
+    if (telegramPoll) clearInterval(telegramPoll);
+    telegram.value = await api.getTelegramLinkStatus();
+    modal.value = 'telegram';
+    telegramPollUntil = Date.now() + 10 * 60 * 1000;
+    if (telegram.value.available) telegramPoll = setInterval(async () => {
+      if (modal.value !== 'telegram' || Date.now() >= telegramPollUntil) {
+        if (telegramPoll) clearInterval(telegramPoll);
+        telegramPoll = undefined;
+        return;
+      }
+      try {
+        const current = await api.getTelegramLinkStatus();
+        telegram.value = current;
+        if (current.linked && telegramPoll) { clearInterval(telegramPoll); telegramPoll = undefined; telegramLink.value = ''; }
+      } catch { /* Keep the last known state while the service reconnects. */ }
+    }, 3000);
+  } catch (cause) {
+    status.value = cause instanceof Error ? cause.message : t('account.telegramError');
+  } finally { loading.value = false; }
+}
+
+async function startTelegramLink() {
+  saving.value = true;
+  status.value = '';
+  try {
+    const result = await api.createTelegramLink();
+    telegramLink.value = result.url;
+  } catch (cause) { status.value = cause instanceof Error ? cause.message : t('account.telegramError'); }
+  finally { saving.value = false; }
+}
+
+async function disconnectTelegram() {
+  saving.value = true;
+  status.value = '';
+  try {
+    await api.unlinkTelegram();
+    telegram.value = { linked: false, available: telegram.value?.available === true };
+    telegramLink.value = '';
+    status.value = t('account.telegramDisconnected');
+  } catch (cause) { status.value = cause instanceof Error ? cause.message : t('account.telegramError'); }
+  finally { saving.value = false; }
+}
+
 async function saveProfile() {
   if (!account.value) return;
   saving.value = true;
@@ -131,6 +184,8 @@ async function signOut() {
 }
 
 function closeModal() {
+  if (telegramPoll) clearInterval(telegramPoll);
+  telegramPoll = undefined;
   modal.value = null;
   status.value = '';
 }
@@ -151,6 +206,8 @@ onMounted(() => {
   document.addEventListener('keydown', handleKeydown);
 });
 onBeforeUnmount(() => {
+  if (telegramPoll) clearInterval(telegramPoll);
+  telegramPoll = undefined;
   document.removeEventListener('pointerdown', handlePointerDown);
   document.removeEventListener('keydown', handleKeydown);
 });
@@ -174,6 +231,7 @@ onBeforeUnmount(() => {
         <button type="button" role="menuitem" @click="openProfile"><span>{{ t('account.profile') }}</span><small>{{ t('account.profileHint') }}</small></button>
         <button type="button" role="menuitem" @click="openHistory"><span>{{ t('navigation.history') }}</span><small>{{ t('account.historyHint') }}</small></button>
         <button type="button" role="menuitem" @click="openSettings"><span>{{ t('account.settings') }}</span><small>{{ t('account.settingsHint') }}</small></button>
+        <button v-if="account?.id !== 'local'" type="button" role="menuitem" @click="openTelegram"><span>{{ t('account.telegramTitle') }}</span><small>{{ t('account.telegramHint') }}</small></button>
         <a v-if="isAdmin" class="account-admin-link" href="/admin.html" role="menuitem"><span>{{ t('account.adminPanel') }}</span><small>{{ t('account.adminPanelHint') }}</small></a>
       </div>
       <button v-if="account?.id !== 'local'" class="account-logout" type="button" role="menuitem" @click="signOut">{{ t('account.signOut') }}</button>
@@ -197,6 +255,12 @@ onBeforeUnmount(() => {
           <select id="accountConcurrency" v-model.number="concurrency"><option v-for="value in 5" :key="value" :value="value">{{ value }}</option></select>
           <button class="primary-button" type="submit" :disabled="saving || loading">{{ saving ? t('common.saving') : t('account.saveSettings') }}</button>
         </form>
+        <div v-else-if="modal === 'telegram'" class="account-form">
+          <p>{{ telegram?.linked ? t('account.telegramConnected', { username: telegram.username ? `@${telegram.username}` : (telegram.telegramUserId || '') }) : telegram?.available ? t('account.telegramInstructions') : t('account.telegramUnavailable') }}</p>
+          <a v-if="telegramLink" class="primary-button" :href="telegramLink" target="_blank" rel="noopener noreferrer">{{ t('account.telegramOpen') }}</a>
+          <button v-if="!telegram?.linked && telegram?.available" class="primary-button" type="button" :disabled="saving" @click="startTelegramLink">{{ saving ? t('common.loading') : t('account.telegramConnect') }}</button>
+          <button v-else-if="telegram?.linked" class="text-button danger" type="button" :disabled="saving" @click="disconnectTelegram">{{ t('account.telegramDisconnect') }}</button>
+        </div>
         <div v-else class="account-form"><p>{{ t('account.topUpUnavailable') }}</p></div>
         <p v-if="status" class="account-modal-status" role="status">{{ status }}</p>
       </section>

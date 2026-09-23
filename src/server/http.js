@@ -135,7 +135,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
   if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
   result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), storage = null, payments = null, commerce = null }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null }) {
   const release = buildInfo(config.root);
   let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
   const connections = new Set();
@@ -255,6 +255,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
+      if (url.pathname === '/api/account/telegram') {
+        if (!config.auth.enabled || !telegram || req.method !== 'GET') return json(res, 404, { error: 'Метод не найден' });
+        return json(res, 200, { result: await telegram.linkStatus(user.id) });
+      }
+      if (url.pathname === '/api/account/telegram/link') {
+        if (!config.auth.enabled || !telegram || req.method !== 'POST' || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Метод не найден' });
+        return json(res, 200, { result: await telegram.createLink(user.id) });
+      }
+      if (url.pathname === '/api/account/telegram/unlink') {
+        if (!config.auth.enabled || !telegram || req.method !== 'POST' || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Метод не найден' });
+        return json(res, 200, { result: await telegram.unlink(user.id) });
+      }
       if (url.pathname.startsWith('/api/codex/')) {
         await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
         if (req.method === 'GET' && url.pathname === '/api/codex/status') return json(res, 200, { enabled: Boolean(codex), allowed: Boolean(accounts) });

@@ -80,6 +80,9 @@ export async function getQueueStatus(): Promise<QueueStatus> {
 
 export const getAccount = () => workspaceRequest<Account>('/api/account');
 export const updateAccountProfile = (name: string) => workspaceRequest<{ name: string }>('/api/account/profile', { method: 'POST', body: JSON.stringify({ name }) });
+export const getTelegramLinkStatus = () => workspaceRequest<{ linked: boolean; available: boolean; telegramUserId?: string; username?: string | null; linkedAt?: string }>('/api/account/telegram');
+export const createTelegramLink = () => workspaceRequest<{ url: string; expiresInSeconds: number }>('/api/account/telegram/link', { method: 'POST', body: '{}' });
+export const unlinkTelegram = () => workspaceRequest<boolean>('/api/account/telegram/unlink', { method: 'POST', body: '{}' });
 export const getStorageSettings = () => rpc<{ autoSave: boolean }>('storageSettings');
 export const setAutoSave = (autoSave: boolean) => rpc<{ autoSave: boolean }>('setAutoSave', [autoSave]);
 export const logout = () => workspaceRequest<boolean>('/auth/logout', { method: 'POST', body: '{}' });

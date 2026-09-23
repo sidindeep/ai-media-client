@@ -55,7 +55,7 @@ Kie. Реальный worker ответил на gpt-5.6-sol/low в standard и 
 - `src/auth/`: реестр адаптеров Google/VK, серверный обмен code, userinfo,
   одноразовые state с привязкой к браузеру, PKCE, хешированные серверные сессии.
   Идентичность — `(provider,subject)`, email не склеивает аккаунты.
-- `src/database/schema.sql`: версия схемы 1, PostgreSQL аккаунты, identities,
+- `src/database/schema.sql`: версии схемы 1–6, PostgreSQL аккаунты, identities,
   sessions, OAuth flows, tenant records, wallets, reservations, ledger,
   reconciliations. `database.js` применяет схему с advisory lock.
 - `AccountRecords` ограничен account_id + namespace; транзакция с блокировкой
@@ -153,12 +153,12 @@ ROLLBACK. Google/VK OAuth-приложения остаются ненастро
   web/bot. SQL выполняется PGlite, HTTP провайдеры подставные. Живые OAuth и
   сетевой PostgreSQL требуют конфигурации пользователя и не подтверждены.
 - Следующее по отдельному решению: коммерческие тарифы; подключение оплаты;
-  привязка Telegram; связывание OAuth identities; несколько генерационных
+  связывание OAuth identities; несколько генерационных
   провайдеров, лимиты/балансировка; серверная миграция legacy при необходимости.
 
 Существующая JSON-история не мигрируется и остаётся admin-only legacy workspace.
-Desktop не меняется. В auth-режиме старый Telegram выключен, чтобы не обходить
-кошелёк; локальный owner-only режим сохраняется явным MEDIA_AUTH_ENABLED=false.
+Desktop не меняется. Локальный owner-only режим сохраняется явным
+MEDIA_AUTH_ENABLED=false.
 
 Архитектурный источник: Benz AI `services/analytics.js`, `services/payment-store.js`,
 `config.js`, README/package.json, прочитаны 2026-09-18 по разрешению пользователя.
@@ -202,3 +202,18 @@ Google-аккаунту с точным именем со скриншота Dim
 пятью соединениями и сохраняет их между health-проверками, поскольку внешний
 прокси периодически блокирует создание новых сессий (`Connection terminated` /
 timeout).
+
+## Telegram account linking
+
+В auth-режиме личный Telegram связывается с аккаунтом сайта только после
+авторизованного POST из веб-сессии и входящего `/start <token>` в личном чате.
+Хранится SHA-256 токена, исходный 256-битный token действует 10 минут. Уникальные
+ограничения обеспечивают максимум одну Telegram identity на аккаунт и максимум
+один аккаунт на Telegram ID. Бот разрешает личные чаты, находит account ID по
+проверенному `from.id`, использует account-scoped catalog/history/queue и
+дедуплицирует платное создание через requestId
+`telegram:<accountId>:<confirmationToken>`. Тариф и кошелёк проверяются тем же
+серверным путём, что и web; стартер-пак с доступом только к GPT блокирует Kie
+бота. Уведомления идут на связанный Telegram ID. Unlink удаляет связь и
+незавершённые link flows; задачи/история сохраняются в аккаунте. Локальный
+owner-only режим продолжает использовать прежний transport.

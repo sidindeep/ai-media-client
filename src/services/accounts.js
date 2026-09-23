@@ -41,6 +41,15 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
   }
   return {
     pool, wallet, pricing, workspaces, starterPack, content, get,
+    async createTelegramTask(telegramUserId, request, confirmationToken) {
+      const identity = (await pool.query('SELECT a.id,a.role FROM media_telegram_links l JOIN media_accounts a ON a.id=l.account_id WHERE l.telegram_user_id=$1', [String(telegramUserId)])).rows[0];
+      if (!identity) throw Object.assign(new Error('Сначала привяжите Telegram к аккаунту сайта'), { status: 403 });
+      if (!/^[a-f0-9-]{36}$/i.test(String(confirmationToken || ''))) throw new Error('Подтверждение генерации устарело');
+      const scoped = await this.scope(identity, identity.id);
+      const task = await scoped.dispatch('createTask', [{ ...request, requestId: `telegram:${identity.id}:${confirmationToken}` }]);
+      await (await get(identity.id)).history.update(task.id, { telegramUserId: String(telegramUserId) });
+      return task;
+    },
     async notifyContent(accountId) { const operation = services.get(accountId); if (operation) (await operation).events.emit('changed'); },
     async recover() {
       const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('queued','preparing','submitting','waiting','queuing','generating','unknown')")).rows;

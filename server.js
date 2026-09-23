@@ -5,6 +5,7 @@ const { createHttpServer } = require('./src/server/http');
 const { createKieAccounts } = require('./src/services/kie-accounts');
 const { createMediaService } = require('./src/services/media-service');
 const { createTelegramGateway } = require('./src/services/telegram-gateway');
+const { createTelegramLinkService } = require('./src/services/telegram-link');
 const { openDatabase } = require('./src/database/database');
 const { createDatabaseAvailability } = require('./src/database/availability');
 const { createAuth } = require('./src/auth/service');
@@ -63,7 +64,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
     throw error;
   }
-  let service, telegram, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer;
+  let service, telegram, telegramLinks, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer;
   const storage = createObjectStorage(config.storage);
   let closing = false, retryTimer, wakeRetry;
   const databaseAvailability = createDatabaseAvailability({ state: config.auth.enabled ? 'connecting' : 'disabled' });
@@ -118,6 +119,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       const starterPack = createStarterPack({ pool, config: config.starterPack });
       auth = createAuth({ pool, config: config.auth, providers: authProviders, starterPack });
       accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content });
+      telegramLinks = createTelegramLinkService(pool);
       await accounts.recover();
       ({ payments, commerce } = await createBusinessServices(pool));
       if (payments) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
@@ -131,11 +133,10 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       });
       console.log('Codex worker ready on loopback');
     }
-    // Legacy Telegram has no account binding yet: never bypass the wallet via the bot.
-    const telegramConfig = config.auth.enabled ? { ...config.telegram, enabled: false } : config.telegram;
-    telegram = createTelegramGateway({ service, config: telegramConfig, directory: config.dataDirectory });
-    const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled ? { disabledReason: 'account-linking-required' } : {}) });
-    server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, storage, payments, commerce });
+    telegram = createTelegramGateway({ service, config: config.telegram, directory: config.dataDirectory,
+      accountMode: config.auth.enabled, accounts, telegramLinks });
+    const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled && !telegramLinks ? { disabledReason: 'account-database-unavailable' } : {}) });
+    server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce });
     await server.recoverCodex();
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     telegram.start();
@@ -153,9 +154,11 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
             const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack });
             nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content: nextContent });
+            const nextTelegramLinks = createTelegramLinkService(nextPool);
             await nextAccounts.recover();
             if (closing) { await nextAccounts.close(); await nextContent?.close(); await nextPool.end(); return; }
-            pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts;
+            pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
+            telegram.setAccountServices(accounts, telegramLinks);
             ({ payments, commerce } = await createBusinessServices(pool));
             if (paymentTimer) clearInterval(paymentTimer);
             if (payments) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);

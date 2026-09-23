@@ -258,3 +258,21 @@ CREATE TABLE IF NOT EXISTS media_order_fulfillments (
 );
 
 INSERT INTO media_schema_versions(version) VALUES (5) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS media_telegram_links (
+  telegram_user_id text PRIMARY KEY CHECK (telegram_user_id ~ '^[0-9]{1,20}$'),
+  account_id uuid NOT NULL UNIQUE REFERENCES media_accounts(id) ON DELETE CASCADE,
+  username text,
+  linked_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS media_telegram_link_flows (
+  token_hash text PRIMARY KEY CHECK (token_hash ~ '^[a-f0-9]{64}$'),
+  account_id uuid NOT NULL REFERENCES media_accounts(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL,
+  telegram_user_id text,
+  consumed_at timestamptz,
+  CHECK (telegram_user_id IS NULL OR telegram_user_id ~ '^[0-9]{1,20}$')
+);
+CREATE INDEX IF NOT EXISTS media_telegram_link_flows_account ON media_telegram_link_flows(account_id);
+CREATE INDEX IF NOT EXISTS media_telegram_link_flows_expiry ON media_telegram_link_flows(expires_at);
+INSERT INTO media_schema_versions(version) VALUES (6) ON CONFLICT DO NOTHING;

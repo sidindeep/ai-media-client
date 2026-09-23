@@ -3,7 +3,8 @@ const path = require('node:path');
 const { History } = require('../history');
 const { createTelegramBot } = require('./telegram-bot');
 const { setTimeout: delay } = require('node:timers/promises');
-function createTelegramGateway({ service, config, directory, fetchImpl = fetch }) {
+function createTelegramGateway({ service, config, directory, fetchImpl = fetch, accountMode = false, accounts = null, telegramLinks = null }) {
+  let accountServices = { accounts, telegramLinks };
   const state = new History(path.join(directory, 'telegram-polling.json'));
   let running = false, loop, controller, lastError = null, notificationBusy = false;
   const enabled = config.enabled && Boolean(config.token);
@@ -19,7 +20,21 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch }
       return result.result;
     } catch { trace.write('telegram.error',{method});throw new Error('Telegram временно недоступен'); }
   }
-  const bot = createTelegramBot({ service, directory, allowedUsers: config.users, publicAccess: config.publicAccess, downloadFile: async (id, limit) => {
+  const resolveAccount = async telegramUserId => {
+    if (!accountMode) return { service };
+    if (!accountServices.accounts || !accountServices.telegramLinks) return null;
+    const identity = await accountServices.telegramLinks.accountFor(telegramUserId);
+    if (!identity) return null;
+    if (accountServices.accounts.starterPack && (await accountServices.accounts.starterPack.status(identity.id, identity.role)).active) return { blocked: true };
+    const accountService = await accountServices.accounts.scope(identity, identity.id);
+    return { service: { ...accountService, createTelegramTask: (request, token) => accountServices.accounts.createTelegramTask(telegramUserId, request, token) }, accountId: identity.id };
+  };
+  const bot = createTelegramBot({ service, directory, allowedUsers: config.users, publicAccess: config.publicAccess,
+    resolveAccount, completeLink: accountMode ? (token, telegramUserId, username) => {
+      if (!accountServices.telegramLinks) throw new Error('Сервис аккаунтов временно недоступен');
+      return accountServices.telegramLinks.complete(token, telegramUserId, username);
+    } : null,
+    downloadFile: async (id, limit) => {
     const file = await call('getFile', { file_id: id });
     if (!file?.file_path || file.file_size > limit || !/^[\w./-]+$/.test(file.file_path) || file.file_path.split('/').includes('..')) throw new Error('Не удалось получить файл Telegram');
     let response;
@@ -33,6 +48,20 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch }
   async function notifications() {
     if (notificationBusy) return; notificationBusy = true;
     try {
+      if (accountMode) {
+        if (!accountServices.telegramLinks || !accountServices.accounts) return;
+        for (const item of await accountServices.telegramLinks.pendingNotifications()) {
+          if (config.publicAccess === false && !config.users.includes(String(item.telegram_user_id))) continue;
+          const record = item.data;
+          const accountService = await accountServices.accounts.get(item.account_id);
+          const text = record.state === 'success'
+            ? `Готово · ${record.modelName}\n${accountService.resultUrls(record).join('\n')}`
+            : `${record.modelName}\n${record.state === 'unknown' ? 'Исход отправки неизвестен. Повторная отправка не выполнялась.' : require('../provider-errors').text(record) || 'Генерация не завершена.'}`;
+          await call('sendMessage', { chat_id: item.telegram_user_id, text: text.slice(0, 3900) });
+          await accountService.history.update(record.id, { telegramNotified: true });
+        }
+        return;
+      }
       for (const record of await service.history.list()) {
         if (!record.telegramChatId || record.telegramNotified || !['success', 'fail', 'unknown', 'blocked'].includes(record.state)) continue;
         if (config.publicAccess === false && !config.users.includes(String(record.telegramChatId))) continue;
@@ -67,6 +96,19 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch }
   return {
     status: () => ({ enabled: running, configured: enabled, lastError }),
     bot, pollOnce,
+    setAccountServices(nextAccounts, nextTelegramLinks) { accountServices = { accounts: nextAccounts, telegramLinks: nextTelegramLinks }; },
+    async createLink(accountId) {
+      if (!accountMode || !enabled || !running || lastError || !accountServices.telegramLinks) throw new Error('Telegram-бот сейчас недоступен. Проверьте его состояние и повторите позже.');
+      const me = await call('getMe', {});
+      if (!/^[A-Za-z0-9_]{5,32}$/.test(me?.username || '')) throw new Error('Не удалось получить имя Telegram-бота');
+      const token = await accountServices.telegramLinks.create(accountId);
+      return { url: `https://t.me/${me.username}?start=${token}`, expiresInSeconds: 600 };
+    },
+    async linkStatus(accountId) {
+      if (!accountMode || !accountServices.telegramLinks) return { linked: false, available: false };
+      return { ...(await accountServices.telegramLinks.get(accountId)), available: enabled && running && !lastError };
+    },
+    async unlink(accountId) { if (!accountMode || !accountServices.telegramLinks) return false; return accountServices.telegramLinks.unlink(accountId); },
     start() {
       if (!enabled || running) return;
       trace.write('telegram.start');running = true; controller = new AbortController();

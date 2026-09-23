@@ -1,0 +1,10 @@
+{
+  "models": [
+    { "id": "openai/gpt-oss-20b", "name": "GPT OSS 20B", "kind": "text" },
+    { "id": "openai/gpt-4o-mini", "name": "GPT-4o mini", "kind": "text" },
+    { "id": "openai/gpt-image-1-mini", "name": "GPT Image 1 Mini", "kind": "image" },
+    { "id": "openai/gpt-image-1", "name": "GPT Image 1", "kind": "image" },
+    { "id": "openai/gpt-image-2", "name": "GPT Image 2", "kind": "image" },
+    { "id": "black-forest-labs/flux.2-klein-4b", "name": "FLUX.2 Klein 4B", "kind": "image" }
+  ]
+}

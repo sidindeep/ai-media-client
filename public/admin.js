@@ -11,13 +11,79 @@ function showBalance() {
   void loadLedger();
 }
 function selectPanel() {
-  const panels = ['accountsPanel', 'starterPanel', 'credits', 'auditPanel', 'reconcilePanel', 'codexPanel'];
+  const panels = ['accountsPanel', 'starterPanel', 'credits', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'codexPanel'];
   const selected = panels.includes(location.hash.slice(1)) ? location.hash.slice(1) : panels[0];
   for (const id of panels) document.getElementById(id).hidden = id !== selected;
   document.querySelectorAll('.admin-tabs a').forEach(link => link.setAttribute('aria-current', link.hash === '#' + selected ? 'page' : 'false'));
 }
 window.addEventListener('hashchange', selectPanel);
 selectPanel();
+const kieStatsDate = value => new Date(value).toLocaleString('ru-RU');
+function kieStatsNode(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+function renderKieStats(stats) {
+  const summary = document.getElementById('kieStatsSummary');
+  summary.replaceChildren(...[
+    ['Отправлено генераций', stats.submitted],
+    ['Неопределённых ответов', stats.unknown],
+    ['Доля', `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(stats.ratePercent)}%`],
+    ['Попыток POST', stats.attempts],
+  ].map(([label, value]) => { const card = kieStatsNode('div', undefined, 'kie-stats-card'); card.append(kieStatsNode('span', label), kieStatsNode('strong', String(value))); return card; }));
+  const days = stats.daily;
+  const countChart = document.getElementById('kieStatsCountChart');
+  const maximum = Math.max(1, ...days.map(row => row.submitted));
+  countChart.setAttribute('aria-label', `По дням: ${days.map(row => `${row.date}: ${row.submitted} генераций, ${row.unknown} неопределённых`).join('; ') || 'Нет данных'}`);
+  countChart.replaceChildren(...days.map(row => {
+    const column = kieStatsNode('div', undefined, 'kie-stats-column');
+    column.title = `${row.date}: ${row.submitted} генераций, ${row.unknown} неопределённых`;
+    const bars = kieStatsNode('div', undefined, 'kie-stats-bars');
+    for (const [kind, value] of [['submitted', row.submitted], ['unknown', row.unknown]]) {
+      const bar = kieStatsNode('span', undefined, `kie-stats-bar kie-stats-${kind}`);
+      bar.style.height = `${Math.max(value ? 3 : 0, value / maximum * 100)}%`;
+      bars.append(bar);
+    }
+    column.append(bars, kieStatsNode('small', row.date.slice(5)));
+    return column;
+  }));
+  const rateChart = document.getElementById('kieStatsRateChart');
+  rateChart.setAttribute('aria-label', `Доля по дням: ${days.map(row => `${row.date}: ${row.submitted ? (row.unknown / row.submitted * 100).toFixed(1) : 0}%`).join('; ') || 'Нет данных'}`);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 600 130'); svg.setAttribute('preserveAspectRatio', 'none');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', days.map((row, index) => `${days.length === 1 ? 300 : index * 600 / (days.length - 1)},${120 - (row.unknown / row.submitted) * 110}`).join(' '));
+  line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#ee879f'); line.setAttribute('stroke-width', '3');
+  svg.append(line); rateChart.replaceChildren(svg);
+  const daily = document.getElementById('kieStatsDaily');
+  daily.replaceChildren(...days.map(row => kieStatsNode('p', `${row.date} · ${row.submitted} генераций · ${row.unknown} неопределённых · ${(row.unknown / row.submitted * 100).toFixed(2)}%`)));
+  const incidents = document.getElementById('kieStatsIncidents');
+  incidents.replaceChildren(...(stats.incidents.length ? stats.incidents.map(row => {
+    const card = kieStatsNode('article', undefined, 'kie-stats-incident');
+    card.append(kieStatsNode('strong', `${kieStatsDate(row.startedAt)} · ${row.accountName} · ${row.kieAccountId}`),
+      kieStatsNode('p', `Задача: ${row.jobId} · requestId: ${row.requestId || '—'} · чат: ${row.chatId || '—'} · модель: ${row.modelId || '—'}`),
+      kieStatsNode('p', `Причина: ${row.errorCode || 'нет кода'} · ${row.errorMessage || 'ответ createTask не установлен'}`));
+    const button = kieStatsNode('button', 'Открыть сверку'); button.type = 'button';
+    button.onclick = () => { document.getElementById('reconcileAccount').value = row.accountId; document.getElementById('reconcileJob').value = row.jobId; location.hash = 'reconcilePanel'; };
+    card.append(button); return card;
+  }) : [kieStatsNode('p', 'За выбранный период случаев нет.') ]));
+}
+let kieStatsBusy = false;
+async function loadKieStats() {
+  if (kieStatsBusy) return;
+  kieStatsBusy = true;
+  const status = document.getElementById('kieStatsStatus');
+  status.textContent = 'Загружаем данные…';
+  try { const stats = await adminRequest('/api/admin/kie-submissions?days=' + document.getElementById('kieStatsDays').value); renderKieStats(stats); status.textContent = `Обновлено ${kieStatsDate(new Date())}`; }
+  catch (error) { status.textContent = error.message; }
+  finally { kieStatsBusy = false; }
+}
+document.getElementById('kieStatsDays').onchange = () => void loadKieStats();
+document.getElementById('kieStatsRefresh').onclick = () => void loadKieStats();
+window.addEventListener('hashchange', () => { if (location.hash === '#kieSubmissionsPanel') void loadKieStats(); });
+if (location.hash === '#kieSubmissionsPanel') queueMicrotask(() => void loadKieStats());
 function renderAccounts() {
   const search = document.getElementById('accountSearch').value.trim().toLowerCase();
   const rows = accountRows.filter(row => [row.name, row.email, row.id].join(' ').toLowerCase().includes(search));

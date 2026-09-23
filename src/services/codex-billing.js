@@ -30,7 +30,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
           next.durationMs = Math.max(0, now.getTime() - started);
         }
       }
-      await settle(client, account, id(account, requestId), next.state);
+      await settle(client, account, id(account, requestId), next.state, next);
       await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId), JSON.stringify(next)]);
       return next;
     });
@@ -177,7 +177,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
           const started = Date.parse(current.data.startedAt || current.data.createdAt);
           const next = { ...current.data, state: 'cancelled', stage: 'cancelled', error: 'Генерация отменена при обновлении сервиса. Резерв возвращён.', completedAt: now.toISOString(), revision: Number(current.data.revision || 0) + 1, updatedAt: now.toISOString() };
           if (Number.isFinite(started)) next.durationMs = Math.max(0, now.getTime() - started);
-          await settle(client, row.account_id, row.id, 'cancelled');
+          await settle(client, row.account_id, row.id, 'cancelled', next);
           await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [row.account_id, row.id, JSON.stringify(next)]);
         });
       }

@@ -13,6 +13,11 @@
     if(!Number.isFinite(min)||!Number.isFinite(max))return null;
     return [...(auto!==undefined?[auto]:[]),...Array.from({length:max-min+1},(_,i)=>min+i)];
   }
+  function normalize(model,input){
+    const field=model.fields.find(f=>f.key==='duration');
+    if(field?.schema?.type==='string'&&typeof input.duration==='number'&&Number.isInteger(input.duration))input.duration=String(input.duration);
+    return input;
+  }
   function validate(model,input){const field=model.fields.find(f=>f.key==='duration'),allowed=field&&values(model,field);if(allowed&&input.duration!==undefined&&input.duration!==''&&!allowed.includes(Number(input.duration)))throw new Error('Недопустимая длительность. Разрешено: '+allowed.join(', ')+' сек.');}
-  return {values,validate};
+  return {values,normalize,validate};
 });

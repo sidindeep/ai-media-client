@@ -14,13 +14,14 @@ const now = ref(Date.now());
 const scrollBox = ref<HTMLElement | null>(null);
 const showLatestButton = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
+let resizeObserver: ResizeObserver | undefined;
 let saveFrame: number | undefined;
 let restoreRevision = 0;
 let restoring = false;
 let initialScrollRestored = false;
 let displayedChatId = studio.activeChatId;
 
-type SavedScrollPosition = { top: number; atBottom: boolean; updatedAt: number };
+type SavedScrollPosition = { top: number; atBottom: boolean; updatedAt: number; anchorId?: string; anchorOffset?: number };
 const BOTTOM_THRESHOLD = 32;
 const MAX_SAVED_CHATS = 100;
 
@@ -93,9 +94,17 @@ function savedScrollPositions(): Record<string, SavedScrollPosition> {
 
 function scrollMetrics() {
   const element = scrollBox.value;
-  if (!element) return null;
+  if (!element || !element.clientHeight || !element.getClientRects().length) return null;
   const bottomDistance = Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop);
-  return { top: Math.max(0, element.scrollTop), atBottom: bottomDistance <= BOTTOM_THRESHOLD };
+  const boxTop = element.getBoundingClientRect().top;
+  const anchor = Array.from(element.querySelectorAll<HTMLElement>('.chat-result-item'))
+    .find(item => item.getBoundingClientRect().bottom > boxTop + 1);
+  return {
+    top: Math.max(0, element.scrollTop),
+    atBottom: bottomDistance <= BOTTOM_THRESHOLD,
+    anchorId: anchor?.dataset.recordId,
+    anchorOffset: anchor ? anchor.getBoundingClientRect().top - boxTop : undefined,
+  };
 }
 
 function updateLatestButton() {
@@ -133,7 +142,7 @@ function handleScroll() {
 
 function setLatestPosition(behavior: ScrollBehavior = 'auto') {
   const element = scrollBox.value;
-  if (!element || restoring || studio.activeChatId !== displayedChatId) return;
+  if (!element || !scrollMetrics() || restoring || studio.activeChatId !== displayedChatId) return;
   element.scrollTo({ top: element.scrollHeight, behavior });
   if (behavior === 'auto') {
     updateLatestButton();
@@ -147,28 +156,28 @@ async function restoreScrollPosition(chatId: string) {
   const revision = ++restoreRevision;
   restoring = true;
   await nextTick();
-  await new Promise<void>(resolve => setTimeout(resolve, 0));
-  if (revision !== restoreRevision || studio.activeChatId !== chatId || !scrollBox.value) return;
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  if (revision !== restoreRevision || studio.activeChatId !== chatId || !scrollBox.value || !scrollMetrics()) return;
   const saved = savedScrollPositions()[chatId];
-  const maximum = Math.max(0, scrollBox.value.scrollHeight - scrollBox.value.clientHeight);
-  scrollBox.value.scrollTop = saved && !saved.atBottom ? Math.min(saved.top, maximum) : maximum;
+  const element = scrollBox.value;
+  const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+  if (saved && !saved.atBottom) {
+    const anchor = saved.anchorId && Array.from(element.querySelectorAll<HTMLElement>('.chat-result-item'))
+      .find(item => item.dataset.recordId === saved.anchorId);
+    element.scrollTop = anchor && Number.isFinite(saved.anchorOffset)
+      ? Math.max(0, element.scrollTop + anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - saved.anchorOffset!)
+      : Math.min(saved.top, maximum);
+  } else element.scrollTop = maximum;
   displayedChatId = chatId;
   restoring = false;
+  initialScrollRestored = true;
   updateLatestButton();
-  saveScrollPosition(chatId);
-}
-
-function keepLatestAfterMediaLoad() {
-  if (restoring || studio.activeChatId !== displayedChatId) return;
-  const saved = savedScrollPositions()[studio.activeChatId];
-  if (!saved || saved.atBottom) setLatestPosition();
-  else updateLatestButton();
 }
 
 async function revealSelected() {
   await nextTick();
-  if (restoring) return;
-  document.querySelector<HTMLElement>(`.chat-result-item[data-record-id="${CSS.escape(studio.selectedId || '')}"]`)
+  if (restoring || !scrollMetrics()) return;
+  scrollBox.value?.querySelector<HTMLElement>(`.chat-result-item[data-record-id="${CSS.escape(studio.selectedId || '')}"]`)
     ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -178,14 +187,17 @@ watch(() => studio.selectedId, () => {
   if (initialScrollRestored) void revealSelected();
 });
 watch(() => studio.activeChatId, (chatId, previousChatId) => {
-  if (previousChatId) saveScrollPosition(previousChatId);
+  if (previousChatId && !restoring) saveScrollPosition(previousChatId);
   displayedChatId = chatId;
+  initialScrollRestored = false;
   void restoreScrollPosition(chatId);
 }, { flush: 'sync' });
 watch(() => records.value.map(record => `${record.id}:${record.state}:${record.output?.length || 0}:${record.resultJson?.length || 0}`).join('|'), async () => {
-  if (restoring) return;
+  if (restoring || !initialScrollRestored) return;
   const chatId = studio.activeChatId;
-  const followLatest = scrollMetrics()?.atBottom ?? true;
+  const metrics = scrollMetrics();
+  if (!metrics) return;
+  const followLatest = metrics.atBottom;
   await nextTick();
   if (chatId !== studio.activeChatId || restoring) return;
   if (followLatest) setLatestPosition();
@@ -193,12 +205,21 @@ watch(() => records.value.map(record => `${record.id}:${record.state}:${record.o
 });
 onMounted(() => {
   timer = setInterval(() => { now.value = Date.now(); }, 1000);
-  void restoreScrollPosition(studio.activeChatId).then(() => { initialScrollRestored = true; });
+  resizeObserver = new ResizeObserver(() => {
+    if (restoring && scrollMetrics()) void restoreScrollPosition(studio.activeChatId);
+  });
+  if (scrollBox.value) resizeObserver.observe(scrollBox.value);
+  window.addEventListener('pagehide', handlePageHide);
+  void restoreScrollPosition(studio.activeChatId);
 });
+function handlePageHide() { if (!restoring) saveScrollPosition(); }
 onBeforeUnmount(() => {
   if (!restoring) saveScrollPosition(displayedChatId);
   if (timer) clearInterval(timer);
+  resizeObserver?.disconnect();
+  window.removeEventListener('pagehide', handlePageHide);
   if (saveFrame !== undefined) cancelAnimationFrame(saveFrame);
+  restoreRevision++;
 });
 </script>
 
@@ -215,9 +236,9 @@ onBeforeUnmount(() => {
           </header>
           <p class="chat-result-prompt">{{ prompt(record) }}</p>
           <div v-if="resultUrls(record).length" class="chat-result-media">
-            <video v-if="record.kind === 'video'" :src="resultUrls(record)[0]" controls playsinline @loadedmetadata="keepLatestAfterMediaLoad" @click.stop></video>
-            <audio v-else-if="record.kind === 'audio'" :src="resultUrls(record)[0]" controls @loadedmetadata="keepLatestAfterMediaLoad" @click.stop></audio>
-            <img v-else v-for="url in resultUrls(record)" :key="url" :src="url" :alt="t('generation.resultAlt')" @load="keepLatestAfterMediaLoad" />
+            <video v-if="record.kind === 'video'" :src="resultUrls(record)[0]" controls playsinline @click.stop></video>
+            <audio v-else-if="record.kind === 'audio'" :src="resultUrls(record)[0]" controls @click.stop></audio>
+            <img v-else v-for="url in resultUrls(record)" :key="url" :src="url" :alt="t('generation.resultAlt')" />
           </div>
           <pre v-else class="chat-result-output" :class="{ pending: activeStates.has(record.state) }">{{ previewText(record) }}</pre>
           <footer class="chat-result-meta"><span v-for="item in meta(record)" :key="item">{{ item }}</span></footer>

@@ -1,4 +1,4 @@
-import type { Account, Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, WorkspaceSync } from '../types';
+import type { Account, Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
 
 type RpcResult<T> = { result: T };
 
@@ -46,6 +46,10 @@ export async function getHistory(): Promise<GenerationRecord[]> {
   return rpc<GenerationRecord[]>('getHistory');
 }
 
+export function getSpending(input: { days: 7 | 30 | 90; category: SpendingCategory; cursor?: string | null; asOf?: string }) {
+  return rpc<SpendingPageData>('getSpending', [input]);
+}
+
 async function workspaceRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, headers: { ...accountHeaders(), ...(init.headers || {}), ...(init.body ? { 'Content-Type': 'application/json' } : {}) } });
   const body = await parse<{ result: T }>(response);
@@ -87,9 +91,10 @@ export const getStorageSettings = () => rpc<{ autoSave: boolean }>('storageSetti
 export const setAutoSave = (autoSave: boolean) => rpc<{ autoSave: boolean }>('setAutoSave', [autoSave]);
 export const logout = () => workspaceRequest<boolean>('/auth/logout', { method: 'POST', body: '{}' });
 
-export type CommerceOffer = { id: string; version: string; name: string; description: string; creditUnits: number; amountMinor: number; currency: string; active: boolean };
-export type CommerceOrder = { id: string; status: string; offer: CommerceOffer; amountMinor: number; currency: string; creditUnits: number; paymentId: string | null; confirmationUrl: string | null; createdAt: string; updatedAt: string };
+export type CommerceOffer = { id: string; version: string; name: string; description: string; creditUnits: number; amountMinor: number; currency: string; active: boolean; checkoutMode?: 'stub' | 'redirect' };
+export type CommerceOrder = { id: string; status: string; offer: CommerceOffer; amountMinor: number; currency: string; creditUnits: number; paymentId: string | null; confirmationUrl: string | null; checkoutMode?: 'stub' | 'redirect'; createdAt: string; updatedAt: string };
 export const getCommerceOffers = () => workspaceRequest<CommerceOffer[]>('/api/commerce/offers');
+export const listCommerceOrders = () => workspaceRequest<CommerceOrder[]>('/api/commerce/orders');
 export const createCommerceOrder = (offer: CommerceOffer, idempotencyKey: string) => workspaceRequest<CommerceOrder>('/api/commerce/orders', {
   method: 'POST', body: JSON.stringify({ offerId: offer.id, offerVersion: offer.version, idempotencyKey }),
 });
@@ -189,6 +194,37 @@ export async function submitCodex(input: Record<string, unknown>): Promise<Gener
 export async function getCodexJob(id: string): Promise<GenerationRecord> {
   const response = await fetch(`/api/codex/jobs/${encodeURIComponent(id)}`, { headers: accountHeaders() });
   return parse(response);
+}
+
+export async function getRouterAiCatalog(): Promise<RouterAiCatalog> {
+  return parse(await fetch('/api/routerai/models', { headers: accountHeaders() }));
+}
+
+export async function getRouterAiQuote(model: string): Promise<{ quote: { credits: number } | null; error?: string }> {
+  return parse(await fetch(`/api/routerai/quote?${new URLSearchParams({ model })}`, { headers: accountHeaders() }));
+}
+
+export async function submitRouterAi(input: Record<string, unknown>): Promise<GenerationRecord> {
+  return parse(await fetch('/api/routerai/jobs', { method: 'POST',
+    headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
+}
+
+export async function getRouterAiJob(id: string): Promise<GenerationRecord> {
+  return parse(await fetch(`/api/routerai/jobs/${encodeURIComponent(id)}`, { headers: accountHeaders() }));
+}
+
+export type RouterAiAdminModel = { id: string; name: string; kind: string; endpoint: string };
+export async function getRouterAiAdminCatalog(): Promise<{ models: RouterAiAdminModel[] }> {
+  return parse(await fetch('/api/routerai/admin/models', { headers: accountHeaders() }));
+}
+
+export async function submitRouterAiAdmin(input: { requestId: string; model: string; payload: Record<string, unknown>; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
+  return parse(await fetch('/api/routerai/admin/jobs', { method: 'POST',
+    headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
+}
+
+export async function getRouterAiAdminVideoStatus(jobId: string): Promise<Record<string, unknown>> {
+  return parse(await fetch(`/api/routerai/admin/jobs/${encodeURIComponent(jobId)}/video/status`, { headers: accountHeaders() }));
 }
 
 export function subscribeToChanges(onChange: (event: 'ready' | 'changed' | 'reset') => void): () => void {

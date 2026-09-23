@@ -4,6 +4,8 @@ const { createReadStream } = require('node:fs');
 const path = require('node:path');
 const { validateCodexRequest } = require('../services/codex-request');
 const { createCodexBilling } = require('../services/codex-billing');
+const { createRouterAiBilling, validateRouterAiRequest } = require('../services/routerai-billing');
+const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { buildInfo } = require('./build-info');
 const { checkDatabase, transientConnection } = require('../database/database');
 const trace = require('../generation-log');
@@ -138,6 +140,8 @@ async function sendStored(req, res, storage, file, attachment = false) {
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null }) {
   const release = buildInfo(config.root);
   let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
+  let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey, content: accounts.content }) : null;
+  const routerAiModels = createRouterAiCatalog();
   const connections = new Set();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
@@ -301,6 +305,60 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         for (const connection of connections) if (connection.accountId === user.id) connection.end();
         return json(res, 200, { result: true });
       }
+      if (url.pathname.startsWith('/api/routerai/')) {
+        await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
+        if (!routerAi) return json(res, 503, { error: 'RouterAI не настроен.' });
+        if (req.method === 'GET' && url.pathname === '/api/routerai/models') return json(res, 200, await routerAiModels.list(user.role));
+        if (url.pathname.startsWith('/api/routerai/admin/')) {
+          if (user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+          if (req.method === 'GET' && url.pathname === '/api/routerai/admin/models') return json(res, 200, await routerAiModels.all(user.role));
+          if (req.method === 'POST' && url.pathname === '/api/routerai/admin/jobs') {
+            if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
+            const raw = JSON.parse((await readBody(req, 300000)).toString('utf8'));
+            const binding = await accounts.workspaces.assertBinding(user.id, raw.projectId, raw.chatId);
+            return json(res, 200, await routerAi.submitAdmin(user.id, { ...raw, ...binding }, (await routerAiModels.all(user.role)).models));
+          }
+          const adminVideo = /^\/api\/routerai\/admin\/jobs\/([a-f0-9-]{36})\/video\/(status|content)$/.exec(url.pathname);
+          if (req.method === 'GET' && adminVideo) {
+            if (adminVideo[2] === 'status') return json(res, 200, await routerAi.adminVideo(user.id, adminVideo[1]));
+            const bytes = await routerAi.adminVideo(user.id, adminVideo[1], true);
+            res.writeHead(200, { ...headers, 'Content-Type': 'video/mp4', 'Content-Length': bytes.length,
+              'Content-Disposition': `attachment; filename="routerai-${adminVideo[1]}.mp4"`, 'Cache-Control': 'no-store' });
+            res.end(bytes); return;
+          }
+          return json(res, 404, { error: 'Не найдено' });
+        }
+        if (req.method === 'GET' && url.pathname === '/api/routerai/quote') {
+          try {
+            const allowed = (await routerAiModels.list(user.role)).models;
+            const model = allowed.find(item => item.id === url.searchParams.get('model'));
+            if (!model) return json(res, 403, { quote: null, error: 'Модель RouterAI недоступна.' });
+            return json(res, 200, { quote: routerAi.quote({ model: model.id }, user.role) });
+          }
+          catch { return json(res, 200, { quote: null, error: 'Цена модели RouterAI не опубликована.' }); }
+        }
+        const imageRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
+        if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
+          const file = await routerAi.image(user.id, imageRequest[1]);
+          return sendMedia(req, res, () => file.storageKey
+            ? sendStored(req, res, storage, file, url.searchParams.get('download') === '1' || file.type === 'image/svg+xml')
+            : sendFile(req, res, file.path, file.type, url.searchParams.get('download') === '1' || file.type === 'image/svg+xml'));
+        }
+        if (req.method === 'POST' && url.pathname === '/api/routerai/jobs') {
+          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
+          const allowed = (await routerAiModels.list(user.role)).models;
+          const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
+          const body = validateRouterAiRequest(raw, allowed);
+          const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
+          return json(res, 200, await routerAi.submit(user.id, { ...raw, ...binding }, user.role, allowed));
+        }
+        const jobRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
+        if (req.method === 'GET' && jobRequest) {
+          const job = await routerAi.get(user.id, jobRequest[1]);
+          return job ? json(res, 200, job) : json(res, 404, { error: 'Запрос не найден' });
+        }
+        return json(res, 404, { error: 'Не найдено' });
+      }
       if ((isLanding || isVueApp) && ['GET', 'HEAD'].includes(req.method)) {
         return await sendVueApplication(user);
       }
@@ -308,10 +366,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         starterPack: accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null } });
       if (accounts && url.pathname.startsWith('/api/commerce/')) {
         if (!commerce) return json(res, 503, { error: 'Платёжный модуль пока недоступен', code: 'PAYMENTS_DISABLED' });
-        if (req.method === 'GET' && url.pathname === '/api/commerce/offers') return json(res, 200, { result: config.commerce?.salesEnabled ? commerce.offers() : [] });
-        if (req.method === 'GET' && url.pathname === '/api/commerce/orders') return json(res, 200, { result: await commerce.listOrders(user.id) });
+        const checkoutMode = config.payments?.provider === 'yookassa-stub' ? 'stub' : 'redirect';
+        if (req.method === 'GET' && url.pathname === '/api/commerce/offers') return json(res, 200, { result: config.commerce?.salesEnabled ? commerce.offers().map(offer => ({ ...offer, checkoutMode })) : [] });
+        if (req.method === 'GET' && url.pathname === '/api/commerce/orders') return json(res, 200, { result: (await commerce.listOrders(user.id)).map(order => ({ ...order, checkoutMode })) });
         const orderMatch = /^\/api\/commerce\/orders\/([a-f0-9-]{36})(?:\/(checkout))?$/.exec(url.pathname);
-        if (req.method === 'GET' && orderMatch && !orderMatch[2]) return json(res, 200, { result: await commerce.getOrder(user.id, orderMatch[1]) });
+        if (req.method === 'GET' && orderMatch && !orderMatch[2]) return json(res, 200, { result: { ...await commerce.getOrder(user.id, orderMatch[1]), checkoutMode } });
         if (req.method === 'POST' && url.pathname === '/api/commerce/orders' && req.headers['x-media-client'] === 'web') {
           if (!config.commerce?.salesEnabled) return json(res, 503, { error: 'Продажа кредитов пока недоступна', code: 'SALES_DISABLED' });
           const body = JSON.parse((await readBody(req, 8192)).toString('utf8'));
@@ -320,7 +379,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (req.method === 'POST' && orderMatch?.[2] === 'checkout' && req.headers['x-media-client'] === 'web') {
           if (!config.commerce?.salesEnabled) return json(res, 503, { error: 'Продажа кредитов пока недоступна', code: 'SALES_DISABLED' });
           const returnUrl = `${config.auth.origin}/app?order=${encodeURIComponent(orderMatch[1])}`;
-          return json(res, 200, { result: await commerce.checkout(user.id, orderMatch[1], returnUrl) });
+          return json(res, 200, { result: { ...await commerce.checkout(user.id, orderMatch[1], returnUrl), checkoutMode } });
         }
         return json(res, 404, { error: 'Метод не найден' });
       }
@@ -337,6 +396,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         const rawSince = url.searchParams.get('since');
         const since = rawSince ? new Date(rawSince) : null;
         if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
+        if (!since) await accounts.workspaces.ensureDefaultChat(workspaceAccount);
         const activeIds = url.searchParams.getAll('active');
         if (activeIds.length > 20 || activeIds.some(id => !/^[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
         const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
@@ -378,6 +438,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (url.pathname === '/api/admin/kie-submissions' && req.method === 'GET') {
+          const { kieSubmissionStatistics } = require('../services/kie-submission-statistics');
+          return json(res, 200, { result: await kieSubmissionStatistics(accounts.pool, url.searchParams.get('days') || 30) });
+        }
         if (url.pathname.startsWith('/api/admin/codex/')) {
           const action = url.pathname.slice('/api/admin/codex/'.length);
           if (!((action === 'status' && req.method === 'GET') || (['start', 'cancel'].includes(action) && req.method === 'POST' && req.headers['x-media-client'] === 'web'))) return json(res, 404, { error: 'Не найдено' });
@@ -464,7 +528,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (!accounts?.content) throw Object.assign(new Error('Хранилище контента не подключено'), { status: 503 });
         const accountId = selected || user.id;
         const file = await accounts.content.file(accountId, contentRequest[1]);
-        return file.storageKey ? sendStored(req, res, storage, file, url.searchParams.has('download')) : sendFile(req, res, file.path, file.type, url.searchParams.has('download'));
+        const attachment = url.searchParams.has('download') || file.type === 'image/svg+xml';
+        return file.storageKey ? sendStored(req, res, storage, file, attachment) : sendFile(req, res, file.path, file.type, attachment);
       }
       if (user.role !== 'admin' && shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) return json(res, 403, { error: 'Доступ запрещён' });
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
@@ -516,6 +581,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;
   server.recoverCodex = () => codex?.recover();
+  server.recoverRouterAi = () => routerAi?.recover();
   server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null) => {
     codex?.close();
     auth = nextAuth;
@@ -523,7 +589,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     payments = nextPayments;
     commerce = nextCommerce;
     codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
+    routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey, content: accounts.content }) : null;
     await codex?.recover();
+    await routerAi?.recover();
   };
   server.closeEvents = () => { codex?.close(); for (const connection of connections) connection.end(); };
   return server;

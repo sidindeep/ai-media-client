@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as api from '../api/client';
 import { activeSubscriptionPromotion } from '../config/subscription-offers';
-import type { CommerceOffer } from '../api/client';
+import type { CommerceOffer, CommerceOrder } from '../api/client';
 import { useStudioStore } from '../stores/studio';
 import { applyStudioTheme } from '../theme';
 import type { Account, GenerationRecord } from '../types';
@@ -18,6 +18,7 @@ const account = ref<Account | null>(null);
 const notificationsOpen = ref(false);
 const subscriptionsOpen = ref(false);
 const commerceOffers = ref<CommerceOffer[]>([]);
+const recentCommerceOrder = ref<CommerceOrder | null>(null);
 const commerceLoading = ref(false);
 const commerceStatus = ref('');
 const seenIds = ref(new Set<string>());
@@ -101,9 +102,29 @@ function formatMoney(offer: CommerceOffer) {
 async function loadCommerceOffers() {
   commerceLoading.value = true;
   commerceStatus.value = '';
-  try { commerceOffers.value = await api.getCommerceOffers(); }
+  try {
+    commerceOffers.value = await api.getCommerceOffers();
+    try {
+      const orders = await api.listCommerceOrders();
+      recentCommerceOrder.value = orders[0] || null;
+      if (recentCommerceOrder.value) commerceStatus.value = commerceOrderStatus(recentCommerceOrder.value);
+    } catch { recentCommerceOrder.value = null; }
+  }
   catch { commerceOffers.value = []; commerceStatus.value = t('subscription.unavailable'); }
   finally { commerceLoading.value = false; }
+}
+
+function commerceOrderStatus(order: CommerceOrder) {
+  if (order.status === 'fulfilled') return t('subscription.completed');
+  if (order.status === 'payment_failed') return t('subscription.failed');
+  if (!order.paymentId) return t('subscription.orderCreated');
+  return order.checkoutMode === 'stub' ? t('subscription.stubPending') : t('subscription.pending');
+}
+
+function clearCompletedCheckoutKey(order: CommerceOrder) {
+  if (order.status === 'fulfilled' || order.status === 'payment_failed') {
+    sessionStorage.removeItem(`ai-media-checkout:${order.offer.id}:${order.offer.version}`);
+  }
 }
 
 function openSubscriptions() {
@@ -120,10 +141,13 @@ async function buyOffer(offer: CommerceOffer) {
     const idempotencyKey = sessionStorage.getItem(storageKey) || crypto.randomUUID();
     sessionStorage.setItem(storageKey, idempotencyKey);
     const order = await api.createCommerceOrder(offer, idempotencyKey);
+    recentCommerceOrder.value = order;
     const checkout = await api.checkoutCommerceOrder(order.id);
+    recentCommerceOrder.value = checkout;
     if (checkout.confirmationUrl) { window.location.assign(checkout.confirmationUrl); return; }
-    if (checkout.status === 'fulfilled') { sessionStorage.removeItem(storageKey); await loadAccount(); commerceStatus.value = t('subscription.completed'); }
-    else commerceStatus.value = t('subscription.pending');
+    clearCompletedCheckoutKey(checkout);
+    if (checkout.status === 'fulfilled') await loadAccount();
+    commerceStatus.value = commerceOrderStatus(checkout);
   } catch (cause) { commerceStatus.value = cause instanceof Error ? cause.message : t('subscription.unavailable'); }
   finally { commerceLoading.value = false; }
 }
@@ -136,8 +160,11 @@ async function restoreReturnedOrder() {
   subscriptionsOpen.value = true;
   commerceLoading.value = true;
   try {
+    await loadCommerceOffers();
     const order = await api.getCommerceOrder(orderId);
-    commerceStatus.value = order.status === 'fulfilled' ? t('subscription.completed') : order.status === 'payment_failed' ? t('subscription.failed') : t('subscription.pending');
+    recentCommerceOrder.value = order;
+    clearCompletedCheckoutKey(order);
+    commerceStatus.value = commerceOrderStatus(order);
     if (order.status === 'fulfilled') await loadAccount();
   } catch (cause) { commerceStatus.value = cause instanceof Error ? cause.message : t('subscription.unavailable'); }
   finally {
@@ -240,9 +267,10 @@ onBeforeUnmount(() => {
             <div><h3>{{ offer.name }}</h3><span>{{ formatMoney(offer) }}</span></div>
             <p>{{ offer.description }}</p>
             <ul><li>{{ t('subscription.creditCount', { count: formatCredits(offer.creditUnits / 1000) }) }}</li><li>{{ t('subscription.feature.balance') }}</li><li>{{ t('subscription.feature.models') }}</li></ul>
-            <button type="button" :disabled="commerceLoading" @click="buyOffer(offer)">{{ commerceLoading ? t('common.loading') : t('subscription.buy') }}</button>
+            <button type="button" :disabled="commerceLoading" @click="buyOffer(offer)">{{ commerceLoading ? t('common.loading') : offer.checkoutMode === 'stub' ? t('subscription.stubBuy') : t('subscription.buy') }}</button>
           </article>
         </div>
+        <p v-if="recentCommerceOrder && !commerceLoading" class="subscription-order">{{ t('subscription.lastOrder', { name: recentCommerceOrder.offer.name }) }}</p>
         <p v-if="commerceLoading && !commerceOffers.length" class="subscription-note">{{ t('common.loading') }}</p>
         <p v-else-if="commerceStatus" class="subscription-note" role="status">{{ commerceStatus }}</p>
         <p v-else-if="!commerceOffers.length" class="subscription-note">{{ t('subscription.unavailable') }}</p>

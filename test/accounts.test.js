@@ -83,6 +83,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request('/api/sources/' + 'a'.repeat(64))).status, 401);
   const alice = await login('alice'), bob = await login('bob'), owner = await login('owner'), otherIdentity = await login('alice', 'vk');
   assert.equal(alice.role, 'user'); assert.equal(owner.role, 'admin'); assert.notEqual(otherIdentity.id, alice.id);
+  const defaultChatRows = (await pool.query("SELECT account_id,id,project_id,mode,name FROM media_chats WHERE account_id=ANY($1::uuid[]) ORDER BY account_id", [[alice.id, bob.id, owner.id, otherIdentity.id]])).rows;
+  assert.equal(defaultChatRows.length, 4, 'registration creates one chat for each account');
+  assert.ok(defaultChatRows.every(row => row.project_id === null && row.mode === 'system' && row.name === 'Основной чат'));
+  const aliceDefaultChat = defaultChatRows.find(row => row.account_id === alice.id);
+  const ownerDefaultChat = defaultChatRows.find(row => row.account_id === owner.id);
   assert.equal(alice.wallet.balance, 150); assert.equal(alice.starterPack.active, true); assert.equal(alice.starterPack.modelAccess, 'gpt-only');
   assert.deepEqual(await result(rpc(alice, 'getCatalog')), { providers: [], models: [] });
   assert.equal((await rpc(alice, 'nativeQuote', [{ modelId, input }])).status, 403);
@@ -100,6 +105,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await pool.query('UPDATE media_wallets SET balance=0,held=0 WHERE account_id=ANY($1::uuid[])', [[alice.id, bob.id]]);
   const workspaceRequest = (user, path, method = 'GET', body) => request(path, { method, headers: { Cookie: user.cookie, 'X-Media-Client': 'web', 'X-Media-User': user.id, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const workspaceResult = async response => { const r = await response, body = await r.json(); assert.equal(r.status, 200, JSON.stringify(body)); return body.result; };
+  await pool.query('DELETE FROM media_chats WHERE account_id=$1', [bob.id]);
+  const recoveredChat = (await workspaceResult(workspaceRequest(bob, '/api/workspace/sync'))).chats;
+  assert.equal(recoveredChat.length, 1, 'a full workspace load creates a default chat for an older account');
+  assert.equal(recoveredChat[0].mode, 'system');
+  assert.equal((await workspaceResult(workspaceRequest(bob, '/api/workspace/sync'))).chats[0].id, recoveredChat[0].id, 'full loads do not duplicate the default chat');
   const project = await workspaceResult(workspaceRequest(alice, '/api/projects', 'POST', { name: 'Личный проект' }));
   const chat = await workspaceResult(workspaceRequest(alice, '/api/chats', 'POST', { name: 'Первый чат', projectId: project.id }));
   const activeProject = await workspaceResult(workspaceRequest(alice, '/api/projects', 'POST', { name: 'Рабочий проект' }));
@@ -109,10 +119,10 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.deepEqual(await result(rpc(alice, 'loadDrafts', [{ chatId: activeChat.id }])), chatDraft);
   assert.equal((await workspaceResult(workspaceRequest(alice, '/api/chats'))).find(item => item.id === chat.id).projectId, project.id);
   assert.deepEqual((await workspaceResult(workspaceRequest(alice, `/api/chats?projectId=${activeProject.id}`))).map(item => item.id), [activeChat.id]);
-  assert.deepEqual(await workspaceResult(workspaceRequest(alice, '/api/chats?projectId=')), []);
+  assert.deepEqual((await workspaceResult(workspaceRequest(alice, '/api/chats?projectId='))).map(item => item.id), [aliceDefaultChat.id]);
   assert.equal((await workspaceResult(workspaceRequest(bob, '/api/projects'))).some(item => item.id === project.id), false);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}/move`, 'POST', { projectId: null }))).projectId, null);
-  assert.deepEqual((await workspaceResult(workspaceRequest(alice, '/api/chats?projectId='))).map(item => item.id), [chat.id]);
+  assert.deepEqual(new Set((await workspaceResult(workspaceRequest(alice, '/api/chats?projectId='))).map(item => item.id)), new Set([aliceDefaultChat.id, chat.id]));
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}`, 'GET'))).name, 'Первый чат');
   assert.equal((await workspaceRequest(bob, `/api/chats/${chat.id}`)).status, 404);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/archive`, 'POST', {}))).archivedAt !== null, true);
@@ -130,6 +140,12 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await result(rpc(alice, 'saveDrafts', [draft]));
   assert.deepEqual(await result(rpc(alice, 'loadDrafts')), draft);
   assert.equal(await result(rpc(bob, 'loadDrafts')), null);
+  const olderDraft = { version: 1, tabs: [{ prompt: 'Прежний черновик' }] };
+  await (await runtime.accounts.get(bob.id)).dispatch('saveDrafts', [olderDraft]);
+  assert.deepEqual(await result(rpc(bob, 'loadDrafts')), olderDraft, 'older workspace drafts remain readable');
+  await result(rpc(bob, 'saveDrafts', [olderDraft]));
+  assert.ok((await pool.query("SELECT 1 FROM media_records WHERE account_id=$1 AND namespace='drafts' AND id=$2", [bob.id, `chat:${recoveredChat[0].id}`])).rows.length, 'the next save binds the older draft to the default chat');
+  assert.deepEqual((await pool.query("SELECT id FROM media_records WHERE account_id=$1 AND namespace='drafts'", [alice.id])).rows.map(row => row.id).sort(), [`chat:${activeChat.id}`, `chat:${aliceDefaultChat.id}`].sort());
   const savedPreset = await result(rpc(alice, 'saveGenerationPreset', [{ name: 'Мой Grok', provider: 'media', mode: 'video', quantity: 2, mediaModelId: modelId, mediaInput: { ...input, prompt: 'не сохранять', image_urls: ['https://example.test/private.png'] } }]));
   assert.equal(savedPreset.name, 'Мой Grok');
   assert.equal(Object.hasOwn(savedPreset, 'quantity'), false);
@@ -163,6 +179,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await runtime.accounts.wallet.grant(owner.id, owner.id, 5000, 'admin-test-balance', 'Тестовый баланс');
   const adminJob = await result(rpc(owner, 'createTask', [adminPayload]));
   assert.equal(adminJob.nativeQuote.amountUnits, 2500);
+  assert.equal(adminJob.chatId, ownerDefaultChat.id, 'a request without chatId uses the account default chat');
   assert.equal((await runtime.accounts.wallet.get(owner.id)).heldUnits, 2500);
   const adminService = await runtime.accounts.get(owner.id);
   adminService.queue.paused = false; await adminService.queue.tick(); adminService.queue.pause(); await adminService.queue.pollTick();
@@ -174,6 +191,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await result(rpc(alice, 'getHistory'))).length, 0);
   await runtime.accounts.wallet.grant(owner.id, alice.id, 5000, 'grant-once', 'Тестовый баланс');
   await runtime.accounts.wallet.grant(owner.id, alice.id, 5000, 'grant-once', 'Тестовый баланс');
+  const projectDefaultBinding = await runtime.accounts.workspaces.assertBinding(alice.id, activeProject.id);
+  assert.equal(projectDefaultBinding.projectId, activeProject.id);
+  assert.equal((await pool.query('SELECT project_id,mode FROM media_chats WHERE id=$1', [projectDefaultBinding.chatId])).rows[0].mode, 'system');
+  assert.equal((await pool.query('SELECT project_id FROM media_chats WHERE id=$1', [projectDefaultBinding.chatId])).rows[0].project_id, activeProject.id);
+  assert.equal((await rpc(alice, 'createTask', [{ modelId, input, requestId: randomUUID(), projectId: activeProject.id, chatId: aliceDefaultChat.id }])).status, 409, 'a standalone chat cannot be bound to another project');
   await assert.rejects(runtime.accounts.wallet.grant(owner.id, alice.id, 6000, 'grant-once', 'Тестовый баланс'));
   await assert.rejects(runtime.accounts.wallet.grant(bob.id, alice.id, 1000, 'grant-illegal', 'Нет прав'));
   const payload = { modelId, input, projectId: activeProject.id, chatId: activeChat.id, requestId: randomUUID() };
@@ -189,6 +211,12 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(finished.projectId, activeProject.id); assert.equal(finished.chatId, activeChat.id);
   assert.equal((await result(rpc(alice, 'getBalance'))).balanceUnits, 2500);
   assert.equal((await result(rpc(alice, 'getBalance'))).heldUnits, 0);
+  const spending = await result(rpc(alice, 'getSpending', [{ days: 30, category: 'all' }]));
+  assert.equal(spending.summary.spentUnits, 2500);
+  assert.equal(spending.summary.releasedUnits, 0);
+  assert.equal(spending.items[0].recordId, first.id);
+  assert.equal((await result(rpc(bob, 'getSpending'))).summary.spentUnits, 0);
+  assert.equal((await rpc(alice, 'getSpending', [{ days: 31 }])).status, 400);
   await own.history.update(first.id, { state: 'success' }); // Redelivery cannot charge twice.
   assert.equal((await result(rpc(alice, 'getBalance'))).balanceUnits, 2500);
   const resultDirectory = path.join(directory, 'accounts', alice.id, 'results');

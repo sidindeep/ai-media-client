@@ -4,8 +4,8 @@ import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
 import type { Chat, Project } from '../types';
 
-const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'history' }>();
-const emit = defineEmits<{ landing: []; home: []; workspace: []; history: [] }>();
+const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'history' | 'spending' }>();
+const emit = defineEmits<{ landing: []; home: []; workspace: []; history: []; spending: [] }>();
 const studio = useStudioStore();
 const { formatDate, formatNumber, t, tp } = useI18n();
 const activeTab = ref<'chats' | 'projects'>('chats');
@@ -13,23 +13,24 @@ const search = ref('');
 const collapsed = ref(false);
 const menuId = ref<string | null>(null);
 const selectedProjectId = ref<string | null>(null);
-type ProviderId = 'codex' | 'media';
+type ProviderId = 'codex' | 'media' | 'routerai';
 type ProviderItem = { id: ProviderId; accountId?: 'primary' | 'secondary'; label: string; detail: string; icon: string; configured?: boolean };
 const providerItems = computed<ProviderItem[]>(() => (studio.isAdmin ? [
   { id: 'codex' as const, label: 'Codex CLI', detail: `GPT · ${t('sidebar.textImages').toLocaleLowerCase()}`, icon: 'C' },
+  { id: 'routerai' as const, label: 'RouterAI', detail: t('sidebar.mediaAll'), icon: 'R', configured: Boolean(studio.routerAiCatalog?.models.length) },
   ...(['primary', 'secondary'] as const).map((accountId, index) => {
     const account = studio.catalog?.kieAccounts?.find(item => item.id === accountId);
     return { id: 'media' as const, accountId, label: account?.name || `Kie.ai · ${index + 1}`, detail: account?.configured ? t('sidebar.mediaAll') : t('sidebar.kieNotConfigured'), icon: 'K', configured: Boolean(account?.configured) };
   }),
 ] : [
   { id: 'codex' as const, label: t('provider.aiModels'), detail: t('sidebar.textImages'), icon: '✦' },
+  { id: 'routerai' as const, label: 'RouterAI', detail: t('sidebar.textImages'), icon: 'R', configured: Boolean(studio.routerAiCatalog?.models.length) },
   { id: 'media' as const, label: t('provider.mediaModels'), detail: t('sidebar.mediaAll'), icon: '◇' },
 ])
-  .filter(item => studio.fullModelAccess || item.id === 'codex')
+  .filter(item => (studio.fullModelAccess || item.id === 'codex') && (item.id !== 'routerai' || item.configured))
   .map(item => !studio.fullModelAccess && item.id === 'codex' ? { ...item, label: t('sidebar.gptModels'), detail: t('sidebar.starterAccess') } : item));
 const isActiveProvider = (item: ProviderItem) => item.id === studio.provider && (!item.accountId || item.accountId === studio.kieAccountId);
 const activeProvider = computed(() => providerItems.value.find(isActiveProvider) || providerItems.value[0]);
-const debugToolsVisible = computed(() => studio.release?.channel === 'debug');
 const formatStartupDuration = (milliseconds: number | null) => {
   if (milliseconds === null) return '—';
   if (milliseconds < 1000) return t('common.milliseconds', { count: milliseconds });
@@ -138,13 +139,17 @@ function diagnoseKie(item: ProviderItem, event: Event) {
         <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><circle cx="12" cy="12" r="8.25" /><path d="M12 7.5v4.75l3.25 2" /></svg></span>
         <span>{{ t('navigation.history') }}</span>
       </button>
+      <button type="button" class="sidebar-home-link" :class="{ active: props.activeSection === 'spending' }" :aria-label="t('spending.title')" :title="t('spending.title')" @click="emit('spending')">
+        <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17M7 14h4" /></svg></span>
+        <span>{{ t('spending.title') }}</span>
+      </button>
     </nav>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>
       <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="selectTab('chats')">{{ t('navigation.chats') }}</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="selectTab('projects')">{{ t('navigation.projects') }}</button></div>
       <div v-if="activeTab === 'chats'" class="sidebar-list">
         <div class="list-heading"><span>{{ t('sidebar.standaloneChats') }}</span><button type="button" class="subtle-button" :aria-label="t('navigation.newChat')" @click="() => addChat()">＋</button></div>
-        <button type="button" class="list-item" :class="{ selected: studio.activeChatId === 'system:recent' }" @click="selectChat(studio.systemChat)"><span class="list-icon">✦</span><span><strong>{{ t('navigation.earlier') }}</strong><small>{{ tp('sidebar.generations', studio.history.length) }}</small></span></button>
+        <button v-if="studio.systemChat.materialCount" type="button" class="list-item" :class="{ selected: studio.activeChatId === 'system:recent' }" @click="selectChat(studio.systemChat)"><span class="list-icon">✦</span><span><strong>{{ t('navigation.unassigned') }}</strong><small>{{ tp('sidebar.generations', studio.systemChat.materialCount) }}</small></span></button>
         <div v-if="groupedChats.today.length" class="group-label">{{ t('sidebar.today') }}</div>
         <div v-for="chat in groupedChats.today" :key="chat.id" class="sidebar-entry"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span class="list-icon">◌</span><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="menuId = menuId === chat.id ? null : chat.id">•••</button><div v-if="menuId === chat.id" class="entry-actions"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
         <div v-if="groupedChats.earlier.length" class="group-label">{{ t('navigation.earlier') }}</div>
@@ -162,7 +167,7 @@ function diagnoseKie(item: ProviderItem, event: Event) {
         </div>
         <p v-if="!filteredProjects.length" class="empty-copy">{{ t('sidebar.noProjects') }}</p>
       </div>
-      <details v-if="debugToolsVisible" class="sidebar-provider-menu">
+      <details class="sidebar-provider-menu">
         <summary><span class="sidebar-provider-icon" aria-hidden="true">{{ activeProvider.icon }}</span><span><small>{{ studio.isAdmin ? t('sidebar.supplier') : t('sidebar.modelCatalog') }}</small><strong>{{ activeProvider.label }}</strong></span><span class="sidebar-provider-chevron" aria-hidden="true">⌃</span></summary>
         <div class="sidebar-provider-options" role="menu">
           <div v-for="item in providerItems" :key="item.accountId || item.id" class="sidebar-provider-row"><button type="button" class="sidebar-provider-option" :class="{ active: isActiveProvider(item) }" :data-provider="item.id" :data-kie-account="item.accountId" :disabled="item.configured === false" role="menuitemradio" :aria-checked="isActiveProvider(item)" @click="selectProvider(item, $event)"><span class="provider-option-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span><span v-if="isActiveProvider(item)" aria-hidden="true">✓</span></button><button v-if="studio.isAdmin && item.id === 'media'" type="button" class="sidebar-provider-check" :aria-label="`${t('sidebar.checkKie')} · ${item.label}`" @click="diagnoseKie(item, $event)">{{ t('sidebar.checkKie') }}</button></div>

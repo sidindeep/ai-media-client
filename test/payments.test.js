@@ -9,6 +9,9 @@ const { createCommerce } = require('../src/commerce/service');
 const { createProductCatalog } = require('../src/commerce/catalog');
 const { createFakePaymentProvider } = require('./helpers/payment-provider');
 const { createYooKassaProvider, amountValue, parseAmount } = require('../src/payments/providers/yookassa');
+const { createYooKassaStubProvider } = require('../src/payments/providers/yookassa-stub');
+const { createHttpServer } = require('../src/server/http');
+const { loadConfig } = require('../src/server/config');
 
 async function fixture() {
   const pool = await openDatabase({}, testPool());
@@ -70,13 +73,58 @@ test('YooKassa adapter uses Basic auth, exact RUB string and verifies test envir
 
 test('published product catalog exposes the approved credit packages', () => {
   const offers = createProductCatalog(path.resolve(__dirname, '../config/product-offers.json')).list();
-  assert.deepEqual(offers.map(({ name, creditUnits, amountMinor, currency }) => ({ name, creditUnits, amountMinor, currency })), [
-    { name: 'Старт', creditUnits: 450, amountMinor: 49000, currency: 'RUB' },
-    { name: 'Базовый', creditUnits: 1000, amountMinor: 99000, currency: 'RUB' },
-    { name: 'Pro', creditUnits: 2200, amountMinor: 199000, currency: 'RUB' },
-    { name: 'Business', creditUnits: 6000, amountMinor: 499000, currency: 'RUB' },
-    { name: 'Agency', creditUnits: 13000, amountMinor: 999000, currency: 'RUB' },
+  const { SCALE } = require('../src/billing/pricing');
+  assert.deepEqual(offers.map(({ name, creditUnits, amountMinor, currency }) => ({ name, credits: creditUnits / SCALE, amountMinor, currency })), [
+    { name: 'Старт', credits: 450, amountMinor: 49000, currency: 'RUB' },
+    { name: 'Базовый', credits: 1000, amountMinor: 99000, currency: 'RUB' },
+    { name: 'Pro', credits: 2200, amountMinor: 199000, currency: 'RUB' },
+    { name: 'Business', credits: 6000, amountMinor: 499000, currency: 'RUB' },
+    { name: 'Agency', credits: 13000, amountMinor: 999000, currency: 'RUB' },
   ]);
+});
+
+test('offer card HTTP checkout reaches the YooKassa stub without charging or granting credits', async t => {
+  const pool = await openDatabase({}, testPool());
+  const accountId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Buyer')", [accountId]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,0)', [accountId]);
+  const config = loadConfig({ MEDIA_PORT: '0', MEDIA_PAYMENTS_ENABLED: 'true', MEDIA_SALES_ENABLED: 'true', MEDIA_PAYMENTS_PROVIDER: 'yookassa-stub' });
+  const provider = createYooKassaStubProvider();
+  let commerce;
+  const payments = createPayments({ pool, provider, onEvent: event => commerce.handlePaymentEvent(event) });
+  commerce = createCommerce({ pool, catalog: createProductCatalog(config.commerce.offersFile), paymentClient: payments,
+    paymentContext: { clientId: config.payments.clientId, environment: config.payments.environment } });
+  const server = createHttpServer({ config, service: {}, accounts: { pool }, auth: { user: async () => ({ id: accountId, role: 'user' }), providers: () => [] }, payments, commerce });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeIdleConnections(); await new Promise(resolve => server.close(resolve)); await pool.end(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const get = async route => { const response = await fetch(base + route); assert.equal(response.status, 200); return (await response.json()).result; };
+  const post = async (route, body = {}) => {
+    const response = await fetch(base + route, { method: 'POST', headers: { 'X-Media-Client': 'web', 'X-Media-User': accountId, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const payload = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(payload));
+    return payload.result;
+  };
+  const offers = await get('/api/commerce/offers');
+  assert.equal(offers.length, 5);
+  assert.equal(offers[0].checkoutMode, 'stub');
+  const offer = offers[0];
+  const order = await post('/api/commerce/orders', { offerId: offer.id, offerVersion: offer.version, idempotencyKey: 'card-stub-checkout' });
+  const checked = await post(`/api/commerce/orders/${order.id}/checkout`);
+  assert.equal(checked.status, 'awaiting_payment');
+  assert.equal(checked.checkoutMode, 'stub');
+  assert.equal(checked.confirmationUrl, null);
+  assert.ok(checked.paymentId);
+  assert.equal((await post(`/api/commerce/orders/${order.id}/checkout`)).paymentId, checked.paymentId);
+  assert.equal((await get(`/api/commerce/orders/${order.id}`)).paymentId, checked.paymentId);
+  assert.equal((await get('/api/commerce/orders'))[0].checkoutMode, 'stub');
+  assert.equal((await pool.query('SELECT provider_id,state FROM payment_attempts WHERE payment_id=$1', [checked.paymentId])).rows[0].provider_id, 'yookassa-stub');
+  assert.equal(Number((await pool.query('SELECT balance FROM media_wallets WHERE account_id=$1', [accountId])).rows[0].balance), 0);
+  assert.equal(Number((await pool.query('SELECT count(*) AS count FROM media_order_fulfillments WHERE order_id=$1', [order.id])).rows[0].count), 0);
+});
+
+test('YooKassa stub cannot be selected for live payments', () => {
+  assert.throws(() => loadConfig({ MEDIA_PAYMENTS_PROVIDER: 'yookassa-stub', MEDIA_PAYMENTS_ENVIRONMENT: 'live' }), /только в test/);
 });
 
 test('payment bounded context does not import product modules or query product tables', async () => {

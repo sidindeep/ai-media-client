@@ -51,6 +51,9 @@ function loadConfig(env = process.env) {
   }
   const paymentEnvironment = env.MEDIA_PAYMENTS_ENVIRONMENT || 'test';
   if (!['test', 'live'].includes(paymentEnvironment)) throw new Error('MEDIA_PAYMENTS_ENVIRONMENT должен быть test или live');
+  const paymentProvider = env.MEDIA_PAYMENTS_PROVIDER || 'yookassa';
+  if (!['yookassa', 'yookassa-stub'].includes(paymentProvider)) throw new Error('Неизвестный платёжный провайдер');
+  if (paymentProvider === 'yookassa-stub' && paymentEnvironment !== 'test') throw new Error('Заглушка ЮKassa доступна только в test');
   if (env.MEDIA_SALES_ENABLED === 'true' && env.MEDIA_PAYMENTS_ENABLED !== 'true') throw new Error('Продажи нельзя включить без платёжного модуля');
   return {
     root, host, port, dataDirectory, kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
@@ -61,9 +64,10 @@ function loadConfig(env = process.env) {
     commerce: { offersFile, salesEnabled: env.MEDIA_SALES_ENABLED === 'true' },
     payments: {
       enabled: env.MEDIA_PAYMENTS_ENABLED === 'true', environment: paymentEnvironment,
-      clientId: env.MEDIA_PAYMENTS_CLIENT_ID || 'ai-media-client', provider: env.MEDIA_PAYMENTS_PROVIDER || 'yookassa',
+      clientId: env.MEDIA_PAYMENTS_CLIENT_ID || 'ai-media-client', provider: paymentProvider,
       yooKassa: { shopId: env.YOOKASSA_SHOP_ID || '', secretKey: env.YOOKASSA_SECRET_KEY || '' },
     },
+    routerAi: { apiKey: env.ROUTERAI_API_KEY || '' },
     codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
       embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },
     database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1' },

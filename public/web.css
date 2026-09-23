@@ -136,6 +136,17 @@ button,input,select { min-height:40px; }
 .admin-tabs { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:18px; border-bottom:1px solid #344056; }
 .admin-tabs a,#adminLink { padding:10px 16px; border-radius:10px; text-decoration:none; color:#d6d0ff; }
 .admin-tabs a[aria-current=page] { background:#6955c5; color:#fff; }
+.kie-stats-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:18px 0; }
+.kie-stats-card,.kie-stats-incident { border:1px solid #344056; border-radius:12px; padding:14px; margin:8px 0; }
+.kie-stats-card span,.kie-stats-card strong { display:block; }
+.kie-stats-card strong { font-size:1.7rem; margin-top:6px; }
+.kie-stats-chart { display:flex; align-items:flex-end; gap:3px; height:170px; overflow-x:auto; padding:8px 0 14px; border-bottom:1px solid #344056; }
+.kie-stats-column { flex:1 0 20px; min-width:20px; height:100%; display:flex; flex-direction:column; align-items:center; }
+.kie-stats-bars { flex:1; width:100%; display:flex; align-items:flex-end; gap:1px; }
+.kie-stats-bar { width:50%; min-height:0; border-radius:3px 3px 0 0; }
+.kie-stats-submitted { background:#6955c5; }.kie-stats-unknown { background:#ee879f; }
+.kie-stats-column small { font-size:10px; white-space:nowrap; }
+#kieStatsRateChart svg { width:100%; height:100%; min-width:320px; }
 .admin-account-row { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 0; border-bottom:1px solid #344056; }
 .admin-account-row p { margin:6px 0; font-size:13px; color:#acbad1; overflow-wrap:anywhere; }
 .account-card button:disabled,.studio-dialog button:disabled { opacity:.5; cursor:wait; }

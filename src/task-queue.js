@@ -7,8 +7,8 @@ const remoteStates=['waiting','queuing','generating'];
 const queueStates=new Set(['queued','preparing','submitting',...remoteStates,'unknown','blocked']);
 const providerMayHaveCharged=record=>Boolean(record?.taskId||record?.providerAcceptedAt||['submitting',...remoteStates,'unknown'].includes(record?.state));
 class TaskQueue {
-  constructor({store,prepare,create,poll,complete=async()=>{},notify=()=>{},interval=2000,concurrency=5}) {
-    Object.assign(this,{store,prepare,create,poll,complete,notify,interval});
+  constructor({store,prepare,create,beforeCreate=async()=>{},onRateLimit=()=>{},poll,complete=async()=>{},notify=()=>{},interval=2000,concurrency=5}) {
+    Object.assign(this,{store,prepare,create,beforeCreate,onRateLimit,poll,complete,notify,interval});
     for(const phase of ['prepare','create','poll','complete']){const action=this[phase];this[phase]=(...args)=>trace.run(args[0],()=>trace.step('task.'+phase,{state:args[0].state,input:phase==='prepare'?args[0].input:phase==='create'?args[1]:undefined},()=>action(...args)));}
     this.paused=true;this.running=false;this.polling=false;this.timer=null;this.pollTimer=null;this.error=null;this.closed=false;
     this.setConcurrency(concurrency);
@@ -105,14 +105,22 @@ class TaskQueue {
     try {input=await this.prepare(record);}
     catch(error){try{await this.store.update(record.id,{state:'blocked',error:error.message,errorInfo:error.errorInfo||errors.classify({code:error.code,message:trace.clean(error.message),stage:'prepare'})},['preparing']);}catch{}this.notify();return;}
     if(!(await this.store.list()).some(item=>item.id===record.id)){return;}
+    try { await this.beforeCreate(record); }
+    catch(error){try{await this.store.update(record.id,{state:'blocked',error:error.message},['preparing']);}catch{}this.notify();return;}
+    if(!(await this.store.list()).some(item=>item.id===record.id)){return;}
     // Pause stops selecting new items. An item that already owns a slot keeps
     // moving forward, so its visible state never rewinds to queued.
     if(this.closed){try{await this.store.update(record.id,{state:'queued'},['preparing']);}catch{}return;}
     const generationStartedAt=new Date().toISOString();
-    try{await this.store.update(record.id,{state:'submitting',generationStartedAt,submittingAt:generationStartedAt},['preparing']);}catch{return;}this.notify();
+    try{await this.store.update(record.id,{state:'submitting',generationStartedAt,submittingAt:generationStartedAt,retryAfterAt:null},['preparing']);}catch{return;}this.notify();
     let taskId;
     try {taskId=(await this.create(record,input)).taskId;if(!taskId)throw new Error('API не вернул ID задачи');}
     catch(error){
+      if(error.outcome==='rejected' && Number(error.providerCode??error.status)===429){
+        const retryAfterAt = new Date(Number(this.onRateLimit(record)) || Date.now()+10_000).toISOString();
+        try{await this.store.update(record.id,{state:'queued',error:null,submittingAt:null,generationStartedAt:null,retryAfterAt},['submitting']);}catch{}
+        this.notify();return;
+      }
       const rejected=error.code==='INSUFFICIENT_CREDITS'||error.outcome==='rejected';
       const generationCompletedAt=new Date().toISOString();
       try{await this.store.update(record.id,{state:rejected?'fail':'unknown',error:error.message,errorInfo:errors.classify({code:error.errorInfo?.providerCode??error.status??error.code,message:trace.clean(error.errorInfo?.providerMessage||error.message),stage:'submit',outcome:rejected?'rejected':(error.outcome==='rejected'?'rejected':'unknown')}),...(rejected?{failureCode:error.code,...this.finishTiming({generationStartedAt},generationCompletedAt)}:{})},['submitting']);}catch{}
@@ -129,7 +137,8 @@ class TaskQueue {
       const records=await this.store.list();
       const active=records.filter(item=>remoteStates.includes(item.state)||['preparing','submitting'].includes(item.state)).length;
       const available=this.paused||this.closed?0:Math.max(0,this.concurrency-active);
-      const queued=records.filter(item=>item.state==='queued'&&!item.queueHidden).reverse().slice(0,available);
+      const now=Date.now();
+      const queued=records.filter(item=>item.state==='queued'&&!item.queueHidden&&(!item.retryAfterAt||Date.parse(item.retryAfterAt)<=now)).reverse().slice(0,available);
       const results=await Promise.allSettled(queued.map(record=>this.submitRecord(record)));
       const failure=results.find(result=>result.status==='rejected');
       this.error=failure?failure.reason.message:null;

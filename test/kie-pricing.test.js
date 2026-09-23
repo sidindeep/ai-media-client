@@ -46,6 +46,56 @@ test('Kie dynamic pricing matches dotted model versions to hyphenated official p
   assert.equal(quoteKie(model, { resolution: '720p', duration: 4, generate_audio: true }, tariffData).credits, 28);
 });
 
+test('Kie prices Grok Imagine Video 1.5 by its exact description id when the page URL uses a marketing name', () => {
+  const model = { id: 'kie:grok-imagine-video-1-5-preview', apiModel: 'grok-imagine-video-1-5-preview', providerId: 'kie' };
+  const tariffData = { fetchedAt: '2026-09-23T00:00:00Z', rows: [
+    { modelDescription: 'grok-imagine-video-1-5-preview, image-to-video, 720p', creditPrice: '4.5', creditUnit: 'per second', anchor: 'https://kie.ai/grok-imagine-video-1.5' },
+    { modelDescription: 'grok-imagine-video-1-5-preview, image-to-video, 480p', creditPrice: '2.4', creditUnit: 'per second', anchor: 'https://kie.ai/grok-imagine-video-1.5' },
+  ] };
+  assert.equal(quoteKie(model, { prompt: 'A scene', resolution: '720p', duration: 8 }, tariffData).credits, 36);
+  assert.equal(quoteKie(model, { prompt: 'A scene', resolution: '480p', duration: 8 }, tariffData).credits, 19.2);
+  assert.throws(() => quoteKie(model, { resolution: '1080p', duration: 8 }, tariffData), /параметров/);
+});
+
+test('Kie selects documented Seedream quality and Ideogram rendering speed variants', () => {
+  const seedream = { id: 'kie:seedream/5-pro-text-to-image', apiModel: 'seedream/5-pro-text-to-image', providerId: 'kie' };
+  const seedreamRows = ['1K', '2K'].map((resolution, index) => ({
+    modelDescription: `seedream 5 Pro, text-to-image, ${resolution}`, creditPrice: String(index ? 14 : 7),
+    creditUnit: 'per image', anchor: 'https://kie.ai/seedream-5-0-pro?model=seedream%2F5-pro-text-to-image',
+  }));
+  assert.equal(quoteKie(seedream, { quality: 'basic' }, { rows: seedreamRows }).credits, 7);
+  assert.equal(quoteKie(seedream, { quality: 'high' }, { rows: seedreamRows }).credits, 14);
+
+  const ideogram = { id: 'kie:ideogram/v3-text-to-image', apiModel: 'ideogram/v3-text-to-image', providerId: 'kie' };
+  const ideogramRows = ['TURBO', 'BALANCED', 'QUALITY'].map((speed, index) => ({
+    modelDescription: `ideogram v3, text-to-image, ${speed}`, creditPrice: String([3.5, 7, 10][index]),
+    creditUnit: 'per image', anchor: 'https://kie.ai/ideogram?model=ideogram%2Fv3-text-to-image',
+  }));
+  assert.equal(quoteKie(ideogram, { rendering_speed: 'TURBO', image_size: 'square_hd' }, { rows: ideogramRows }).credits, 3.5);
+  assert.equal(quoteKie(ideogram, { rendering_speed: 'QUALITY', image_size: 'square_hd' }, { rows: ideogramRows }).credits, 10);
+});
+
+test('Kie does not mistake image size for an uploaded reference image', () => {
+  const model = { id: 'kie:demo/mixed', apiModel: 'demo/mixed', providerId: 'kie' };
+  const rows = [
+    { modelDescription: 'demo/mixed, text-to-image', creditPrice: '4', creditUnit: 'per image', anchor: 'https://kie.ai/demo?model=demo%2Fmixed' },
+    { modelDescription: 'demo/mixed, image-to-image', creditPrice: '6', creditUnit: 'per image', anchor: 'https://kie.ai/demo?model=demo%2Fmixed' },
+  ];
+  assert.equal(quoteKie(model, { image_size: 'square_hd' }, { rows }).credits, 4);
+  assert.equal(quoteKie(model, { image_size: 'square_hd', image_urls: ['https://example.test/source.png'] }, { rows }).credits, 6);
+});
+
+test('Grok video upscale prices the selected output tier, not the source resolution', () => {
+  const model = { id: 'kie:grok-imagine/upscale', apiModel: 'grok-imagine/upscale', providerId: 'kie' };
+  const rows = [
+    { modelDescription: 'grok-imagine, upscale, 720P → 1080P', creditPrice: '20', creditUnit: 'per upscale', anchor: 'https://kie.ai/grok-imagine?model=grok-imagine%2Fupscale' },
+    { modelDescription: 'grok-imagine, upscale, 480P → 1080P', creditPrice: '30', creditUnit: 'per upscale', anchor: 'https://kie.ai/grok-imagine?model=grok-imagine%2Fupscale' },
+    { modelDescription: 'grok-imagine, upscale, 360p→720p', creditPrice: '10', creditUnit: 'per upscale', anchor: 'https://kie.ai/grok-imagine?model=grok-imagine%2Fupscale' },
+  ];
+  assert.equal(quoteKie(model, { resolution: '720p' }, { rows }).credits, 10);
+  assert.throws(() => quoteKie(model, { resolution: '1080p' }, { rows }), /параметров/);
+});
+
 test('Kie pricing uses exact versioned fallbacks for ByteDance V1 models missing from the live catalog', () => {
   const quote = (apiModel, resolution, duration) => quoteKie(
     { id: `kie:${apiModel}`, apiModel, providerId: 'kie' },

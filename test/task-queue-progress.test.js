@@ -79,6 +79,62 @@ test('queue prepares and submits every available slot concurrently', async () =>
   queue.close();
 });
 
+test('queue waits before marking submission and requeues a confirmed 429', async () => {
+  const store = new Store();
+  let allow, attempts = 0, throttled = 0;
+  const gate = new Promise(resolve => { allow = resolve; });
+  const queue = new TaskQueue({ store, prepare: async row => row.input,
+    beforeCreate: () => gate, onRateLimit: () => { throttled++; return Date.now() - 1; },
+    create: async () => { attempts++; if (attempts === 1) throw Object.assign(new Error('Rate limited'), { providerCode: 429, outcome: 'rejected' }); return { taskId: 'accepted' }; },
+    poll: async () => ({ state: 'waiting' }) });
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  const task = await queue.enqueue({ input: {} });
+  queue.start();
+  const first = queue.tick();
+  await waitFor(() => store.rows[0]?.state === 'preparing');
+  assert.equal(store.rows[0].submittingAt, undefined);
+  allow();
+  await first;
+  assert.equal(store.rows[0].state, 'queued');
+  assert.equal(store.rows[0].generationStartedAt, null);
+  assert.match(store.rows[0].retryAfterAt, /T/);
+  assert.equal(throttled, 1);
+  await queue.tick();
+  assert.equal(store.rows[0].state, 'waiting');
+  assert.equal(attempts, 2);
+  queue.close();
+});
+
+test('confirmed 429 stays queued across restart until its retry time', async () => {
+  const store = new Store();
+  let attempts = 0;
+  const options = { store, prepare: async row => row.input,
+    onRateLimit: () => Date.now() + 60_000,
+    create: async () => { attempts++; if (attempts === 1) throw Object.assign(new Error('Rate limited'), { status: 429, outcome: 'rejected' }); return { taskId: 'accepted' }; },
+    poll: async () => ({ state: 'success' }) };
+  let queue = new TaskQueue(options);
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  const task = await queue.enqueue({ input: {} });
+  queue.start();
+  await queue.tick();
+  assert.equal(store.rows[0].state, 'queued');
+  assert.equal(attempts, 1);
+  queue.close();
+  queue = new TaskQueue(options);
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  await queue.recover();
+  await queue.tick();
+  assert.equal(store.rows[0].state, 'queued');
+  assert.equal(attempts, 1);
+  await store.update(task.id, { retryAfterAt: new Date(Date.now() - 1).toISOString() }, ['queued']);
+  await queue.tick();
+  assert.equal(store.rows[0].state, 'waiting');
+  assert.equal(attempts, 2);
+  await queue.pollTick();
+  assert.equal(store.rows[0].state, 'success');
+  queue.close();
+});
+
 test('queue polls active jobs without blocking a free submission slot', async () => {
   const store = new Store();
   store.rows = [

@@ -19,6 +19,7 @@ const ICON_ROOT = '/app/model-icons';
 
 export const MODEL_BRANDS: ModelBrand[] = [
   { id: 'codex', label: 'Codex', icon: `${ICON_ROOT}/chatgpt.webp`, accent: '#8f75ff' },
+  { id: 'routerai', label: 'RouterAI', accent: '#67b7ff' },
   { id: 'kling', label: 'Kling', icon: `${ICON_ROOT}/kling.webp`, accent: '#32d6bc' },
   { id: 'seedance', label: 'Seedance', icon: `${ICON_ROOT}/seedance.webp`, accent: '#8f5cff' },
   { id: 'veo', label: 'Veo', icon: `${ICON_ROOT}/veo.webp`, accent: '#4f8cff' },
@@ -47,9 +48,25 @@ export const MODEL_BRANDS: ModelBrand[] = [
 
 const brandsById = new Map(MODEL_BRANDS.map(brand => [brand.id, brand]));
 
-export function modelBrand(id: string) {
+export function modelBrand(id: string): ModelBrand {
+  if (id.startsWith('routerai:')) {
+    const slug = id.slice('routerai:'.length);
+    const label = slug.split('-').map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ');
+    return { id, label, accent: '#67b7ff' };
+  }
   const brand = brandsById.get(id) || brandsById.get('other')!;
   return brand.id === 'other' ? { ...brand, label: t('model.other') } : brand;
+}
+
+export function routerAiModelBrandId(id: string) {
+  const vendor = id.replace(/^~/, '').split('/')[0]?.toLowerCase() || 'other';
+  const known: Record<string, string> = {
+    'black-forest-labs': 'flux', 'bytedance-seed': 'seedream', 'x-ai': 'grok',
+    'openai': 'openai', 'google': 'google', 'qwen': 'qwen', 'recraft': 'recraft',
+    'runway': 'runway', 'ideogram': 'ideogram', 'minimax': 'minimax',
+    'alibaba': 'wan', 'elevenlabs': 'elevenlabs', 'suno': 'suno',
+  };
+  return known[vendor] || `routerai:${vendor}`;
 }
 
 export function mediaModelBrandId(id: string, name: string) {

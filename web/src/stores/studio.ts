@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
-import type { Catalog, Chat, CodexCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { Catalog, Chat, CodexCatalog, RouterAiCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 import { normalizeMediaInput } from '../domain/media-fields';
 import { t } from '../i18n';
 
@@ -20,6 +20,7 @@ const STATE_ORDER: Record<string, number> = { queued: 0, preparing: 1, submittin
 export const useStudioStore = defineStore('studio', () => {
   const catalog = ref<Catalog | null>(null);
   const codexCatalog = ref<CodexCatalog | null>(null);
+  const routerAiCatalog = ref<RouterAiCatalog | null>(null);
   const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
   const pendingSubmissions = ref<GenerationRecord[]>([]);
@@ -45,13 +46,14 @@ export const useStudioStore = defineStore('studio', () => {
   const dataLoadElapsedMs = ref<number | null>(null);
   const readyElapsedMs = ref<number | null>(null);
   const prompt = ref('');
-  const provider = ref<'codex' | 'media'>('codex');
+  const provider = ref<'codex' | 'media' | 'routerai'>('codex');
   const kieAccountId = ref<'primary' | 'secondary'>('primary');
   const mode = ref<GenerationMode>('image');
   const mediaModelId = ref('');
   const mediaInput = ref<Record<string, unknown>>({});
   const sourceFiles = ref<SourceAttachment[]>([]);
   const codexModel = ref('');
+  const routerAiModel = ref('');
   const codexEffort = ref('');
   const codexSpeed = ref('standard');
   const codexKind = ref<'image' | 'text'>('image');
@@ -64,6 +66,7 @@ export const useStudioStore = defineStore('studio', () => {
   let syncCursor: string | null = null;
   let syncInFlight: Promise<void> | null = null;
   let syncAgain = false;
+  let workspaceSelectionRestored = false;
 
   function resetStartupTimings() {
     // The first attempt includes document navigation; explicit retries start a new measurement.
@@ -84,10 +87,10 @@ export const useStudioStore = defineStore('studio', () => {
   let startupPollTimer: ReturnType<typeof setTimeout> | undefined;
   let startupPollInFlight = false;
 
-  const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: t('navigation.earlier'), mode: 'system', projectId: null, context: {}, materialCount: history.value.length }));
+  const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: t('navigation.unassigned'), mode: 'system', projectId: null, context: {}, materialCount: history.value.filter(item => !item.chatId).length }));
   function recordIsVisible(item: GenerationRecord) {
     if (activeChatId.value !== 'system:recent') return item.chatId === activeChatId.value;
-    return activeProjectId.value ? item.projectId === activeProjectId.value : true;
+    return !item.chatId && (!activeProjectId.value || item.projectId === activeProjectId.value);
   }
   const visibleHistory = computed(() => history.value.filter(recordIsVisible));
   const visiblePending = computed(() => {
@@ -100,6 +103,10 @@ export const useStudioStore = defineStore('studio', () => {
   const accountActive = computed(() => [...pendingSubmissions.value, ...history.value].filter(item => ACTIVE_STATES.includes(item.state as typeof ACTIVE_STATES[number])));
   const completed = computed(() => visibleHistory.value.filter(item => COMPLETED_STATES.includes(item.state as typeof COMPLETED_STATES[number])));
   const currentCodexModel = computed(() => codexCatalog.value?.models.find(model => model.id === codexModel.value) || codexCatalog.value?.models[0]);
+  const routerAiModels = computed(() => routerAiCatalog.value?.models.filter(model => model.kind === mode.value
+    || mode.value === 'text' && ['embeddings', 'rerank', 'decisions'].includes(model.kind)
+    || mode.value === 'audio' && model.kind === 'transcription') || []);
+  const currentRouterAiModel = computed(() => routerAiModels.value.find(model => model.id === routerAiModel.value) || routerAiModels.value[0]);
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
 
@@ -134,6 +141,9 @@ export const useStudioStore = defineStore('studio', () => {
     if (!model.efforts.includes(codexEffort.value)) codexEffort.value = model.defaultEffort || model.efforts[0] || 'medium';
     if (!['standard', 'fast'].includes(codexSpeed.value)) codexSpeed.value = 'fast';
     if (!['auto', '1:1', '16:9', '9:16', '3:2', '2:3'].includes(codexAspectRatio.value)) codexAspectRatio.value = 'auto';
+  }
+  function normalizeRouterAiControls() {
+    if (!routerAiModels.value.some(model => model.id === routerAiModel.value)) routerAiModel.value = routerAiModels.value[0]?.id || '';
   }
 
   function recomputeWorkspaceCounts() {
@@ -221,9 +231,15 @@ export const useStudioStore = defineStore('studio', () => {
     chats.value = nextChats.filter(chat => !chat.archivedAt)
       .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')) || left.id.localeCompare(right.id));
     recomputeWorkspaceCounts();
+    if (activeChatId.value !== 'system:recent' && !chats.value.some(chat => chat.id === activeChatId.value)) {
+      activeChatId.value = chats.value.find(chat => chat.mode === 'system' && !chat.projectId)?.id || chats.value[0]?.id || 'system:recent';
+      workspaceSelectionRestored = false;
+    }
+    if (snapshot.full && activeChatId.value === 'system:recent' && (!workspaceSelectionRestored || systemChat.value.materialCount === 0)) {
+      activeChatId.value = chats.value.find(chat => chat.mode === 'system' && !chat.projectId)?.id || chats.value[0]?.id || 'system:recent';
+    }
     if (selectedId.value && !visibleRecords.value.some(item => item.id === selectedId.value)) selectedId.value = null;
     if (!selectedId.value && (active.value[0] || visibleRecords.value[0])) selectedId.value = (active.value[0] || visibleRecords.value[0]).id;
-    if (activeChatId.value !== 'system:recent' && !chats.value.some(chat => chat.id === activeChatId.value)) activeChatId.value = 'system:recent';
     if (activeChatId.value !== 'system:recent') activeProjectId.value = chats.value.find(chat => chat.id === activeChatId.value)?.projectId || null;
     else if (activeProjectId.value && !projects.value.some(project => project.id === activeProjectId.value)) activeProjectId.value = null;
     syncCodexPolling();
@@ -239,7 +255,7 @@ export const useStudioStore = defineStore('studio', () => {
     syncInFlight = (async () => {
       do {
         syncAgain = false;
-        const activeIds = history.value.filter(item => item.providerId !== 'codex' && MEDIA_POLL_STATES.has(item.state)).map(item => item.id);
+        const activeIds = history.value.filter(item => !['codex', 'routerai'].includes(item.providerId) && MEDIA_POLL_STATES.has(item.state)).map(item => item.id);
         applyWorkspaceSync(await api.getWorkspaceSync(syncCursor, activeIds));
       } while (syncAgain);
     })();
@@ -263,18 +279,18 @@ export const useStudioStore = defineStore('studio', () => {
 
   function codexJobIdsToPoll() {
     return history.value
-      .filter(item => item.providerId === 'codex' && CODEX_POLL_STATES.has(item.state))
-      .map(item => item.id.startsWith('codex:') ? item.id.slice('codex:'.length) : item.id)
-      .filter(id => /^[a-f0-9-]{36}$/.test(id));
+      .filter(item => ['codex', 'routerai'].includes(item.providerId) && CODEX_POLL_STATES.has(item.state))
+      .map(item => ({ providerId: item.providerId, id: item.id.replace(/^(codex|routerai):/, '') }))
+      .filter(item => /^[a-f0-9-]{36}$/.test(item.id));
   }
 
   async function pollCodexJobs() {
     if (codexPollInFlight) return;
-    const ids = [...new Set(codexJobIdsToPoll())];
+    const ids = codexJobIdsToPoll();
     if (!ids.length) { stopCodexPolling(); return; }
     codexPollInFlight = true;
     try {
-      const statuses = await Promise.allSettled(ids.map(id => api.getCodexJob(id)));
+      const statuses = await Promise.allSettled(ids.map(item => item.providerId === 'routerai' ? api.getRouterAiJob(item.id) : api.getCodexJob(item.id)));
       if (statuses.some(status => status.status === 'fulfilled')) await refresh();
     } catch {
       // A transient history/queue failure must not stop status reconciliation.
@@ -306,23 +322,25 @@ export const useStudioStore = defineStore('studio', () => {
     prompt.value = tab && typeof tab === 'object' && typeof tab.prompt === 'string' ? tab.prompt : '';
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
-      if (tab.provider === 'codex' || tab.provider === 'media') provider.value = tab.provider;
+      if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai') provider.value = tab.provider;
       if (typeof tab.mediaModelId === 'string') mediaModelId.value = tab.mediaModelId;
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
       if (typeof tab.codexModel === 'string') codexModel.value = tab.codexModel;
+      if (typeof tab.routerAiModel === 'string') routerAiModel.value = tab.routerAiModel;
       if (typeof tab.codexEffort === 'string') codexEffort.value = tab.codexEffort;
       if (typeof tab.codexSpeed === 'string') codexSpeed.value = tab.codexSpeed;
       if (typeof tab.codexAspectRatio === 'string') codexAspectRatio.value = tab.codexAspectRatio;
     }
     normalizeCodexControls();
+    normalizeRouterAiControls();
     normalizeMediaControls();
     normalizeCurrentMediaInput();
     draftReady.value = true;
   }
 
   function hasMediaJobsToPoll() {
-    return history.value.some(item => item.providerId !== 'codex' && MEDIA_POLL_STATES.has(item.state));
+    return history.value.some(item => !['codex', 'routerai'].includes(item.providerId) && MEDIA_POLL_STATES.has(item.state));
   }
 
   async function pollMediaJobs() {
@@ -346,7 +364,7 @@ export const useStudioStore = defineStore('studio', () => {
   async function saveCurrentDraft() {
     if (!draftReady.value) return;
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
   async function createProject(name: string) { const project = await api.createProject(name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
@@ -354,30 +372,35 @@ export const useStudioStore = defineStore('studio', () => {
   async function renameProject(id: string, name: string) { const project = await api.renameProject(id, name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
   async function renameChat(id: string, name: string) { const chat = await api.renameChat(id, name); const index = chats.value.findIndex(item => item.id === id); if (index >= 0) chats.value[index] = chat; return chat; }
   async function moveChat(id: string, projectId: string | null) { const chat = await api.moveChat(id, projectId); chats.value = mergeById(chats.value, [chat]); recomputeWorkspaceCounts(); if (activeChatId.value === id) activeProjectId.value = chat.projectId || null; return chat; }
-  async function archiveChat(id: string) { const wasActive = activeChatId.value === id; await api.archiveChat(id); chats.value = chats.value.filter(chat => chat.id !== id); recomputeWorkspaceCounts(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
-  async function archiveProject(id: string) { const wasActive = activeProjectId.value === id; await api.archiveProject(id); projects.value = projects.value.filter(project => project.id !== id); chats.value = chats.value.filter(chat => chat.projectId !== id); recomputeWorkspaceCounts(); if (wasActive) { activeChatId.value = 'system:recent'; activeProjectId.value = null; await loadDraftForActive(); } }
+  async function archiveChat(id: string) { const wasActive = activeChatId.value === id; await api.archiveChat(id); chats.value = chats.value.filter(chat => chat.id !== id); await refresh(); recomputeWorkspaceCounts(); if (wasActive) { activeChatId.value = chats.value.find(chat => chat.mode === 'system' && !chat.projectId)?.id || chats.value[0]?.id || 'system:recent'; activeProjectId.value = chats.value.find(chat => chat.id === activeChatId.value)?.projectId || null; await loadDraftForActive(); } }
+  async function archiveProject(id: string) { const wasActive = activeProjectId.value === id; await api.archiveProject(id); projects.value = projects.value.filter(project => project.id !== id); chats.value = chats.value.filter(chat => chat.projectId !== id); recomputeWorkspaceCounts(); if (wasActive) { activeChatId.value = chats.value.find(chat => chat.mode === 'system' && !chat.projectId)?.id || chats.value[0]?.id || 'system:recent'; activeProjectId.value = chats.value.find(chat => chat.id === activeChatId.value)?.projectId || null; await loadDraftForActive(); } }
   function selectChat(id: string) { activeChatId.value = id; activeProjectId.value = chats.value.find(chat => chat.id === id)?.projectId || null; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
   function selectProject(id: string) { activeProjectId.value = id; activeChatId.value = chats.value.find(chat => chat.projectId === id)?.id || 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
-  function selectStandalone() { activeProjectId.value = null; if (activeChatId.value !== 'system:recent' && chats.value.find(chat => chat.id === activeChatId.value)?.projectId) activeChatId.value = 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
+  function selectStandalone() { activeProjectId.value = null; if (activeChatId.value !== 'system:recent' && chats.value.find(chat => chat.id === activeChatId.value)?.projectId) activeChatId.value = chats.value.find(chat => chat.mode === 'system' && !chat.projectId)?.id || 'system:recent'; selectedId.value = visibleRecords.value[0]?.id || null; void loadDraftForActive(); }
 
   function setMode(value: GenerationMode) {
     if (!fullModelAccess.value && ['video', 'audio'].includes(value)) throw new Error(t('studio.mediaLocked'));
     const previousMediaModel = mediaModelId.value;
     mode.value = value;
-    if (value === 'text') { provider.value = 'codex'; codexKind.value = 'text'; }
-    else if (value === 'image') { codexKind.value = 'image'; if (!['codex', 'media'].includes(provider.value)) provider.value = 'codex'; }
-    else { provider.value = 'media'; }
+    if (value === 'text') { if (provider.value === 'media') provider.value = 'codex'; codexKind.value = 'text'; }
+    else if (value === 'image') { codexKind.value = 'image'; }
+    else if (provider.value !== 'routerai' || !isAdmin.value) { provider.value = 'media'; }
     normalizeMediaControls();
+    normalizeRouterAiControls();
     if (previousMediaModel !== mediaModelId.value) { mediaInput.value = {}; sourceFiles.value = []; }
   }
 
-  function setProvider(value: 'codex' | 'media') {
-    if (value === 'media' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
+  function setProvider(value: 'codex' | 'media' | 'routerai') {
+    if (value !== 'codex' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
     provider.value = value;
     if (value === 'codex') {
       if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
       codexKind.value = mode.value === 'text' ? 'text' : 'image';
       normalizeCodexControls();
+    } else if (value === 'routerai') {
+      if (!isAdmin.value && !['text', 'image'].includes(mode.value)) mode.value = 'image';
+      sourceFiles.value = [];
+      normalizeRouterAiControls();
     } else {
       if (!['image', 'video', 'audio'].includes(mode.value)) mode.value = 'image';
       normalizeMediaControls();
@@ -402,6 +425,7 @@ export const useStudioStore = defineStore('studio', () => {
       codexSpeed: codexSpeed.value,
       codexAspectRatio: codexAspectRatio.value,
     };
+    if (provider.value === 'routerai') return currentRouterAiModel.value ? { ...base, provider: 'routerai', routerAiModel: currentRouterAiModel.value.id } : null;
     const model = currentMediaModel.value;
     if (!model) return null;
     const allowed = new Set((model.fields || []).filter(field => field.type !== 'files' && !/prompt/i.test(field.key)).map(field => field.key));
@@ -438,6 +462,13 @@ export const useStudioStore = defineStore('studio', () => {
       mediaModelId.value = available.id;
       mediaInput.value = JSON.parse(JSON.stringify(preset.mediaInput || {}));
       normalizeCurrentMediaInput();
+    } else if (preset.provider === 'routerai') {
+      const available = routerAiCatalog.value?.models.find(model => model.id === preset.routerAiModel && model.kind === preset.mode);
+      if (!available) throw new Error(t('studio.selectModel'));
+      mode.value = available.kind === 'transcription' ? 'audio'
+        : (available.kind === 'image' || available.kind === 'video' || available.kind === 'audio') ? available.kind : 'text';
+      provider.value = 'routerai';
+      routerAiModel.value = available.id;
     } else {
       const available = codexCatalog.value?.models.find(model => model.id === preset.codexModel);
       if (!available) throw new Error(t('studio.presetCodexUnavailable'));
@@ -463,7 +494,9 @@ export const useStudioStore = defineStore('studio', () => {
   function presetMatchesCurrent(preset: GenerationPreset) {
     const current = currentPresetPayload('');
     if (!current) return false;
-    const comparable = (value: Partial<GenerationPreset>) => stable(value.provider === 'media' ? {
+    const comparable = (value: Partial<GenerationPreset>) => stable(value.provider === 'routerai' ? {
+      provider: value.provider, mode: value.mode, routerAiModel: value.routerAiModel,
+    } : value.provider === 'media' ? {
       provider: value.provider, mode: value.mode,
       mediaModelId: value.mediaModelId, mediaInput: value.mediaInput || {},
     } : {
@@ -475,13 +508,14 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
-  watch([prompt, mode, provider, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch([prompt, mode, provider, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, routerAiModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
   function restoreWorkspaceSelection() {
+    workspaceSelectionRestored = false;
     try {
       const saved = JSON.parse(localStorage.getItem('media-studio-workspace') || 'null');
-      if (saved?.chatId === 'system:recent' || /^[a-f0-9-]{36}$/.test(saved?.chatId || '')) activeChatId.value = saved.chatId;
+      if (saved?.chatId === 'system:recent' || /^[a-f0-9-]{36}$/.test(saved?.chatId || '')) { activeChatId.value = saved.chatId; workspaceSelectionRestored = true; }
       if (saved?.projectId === null || /^[a-f0-9-]{36}$/.test(saved?.projectId || '')) activeProjectId.value = saved.projectId;
     } catch { /* ignore damaged browser state */ }
   }
@@ -491,7 +525,7 @@ export const useStudioStore = defineStore('studio', () => {
     error.value = '';
     if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
-      [catalog.value, codexCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
+      [catalog.value, codexCatalog.value, routerAiCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
       const defaults = codexCatalog.value?.uiDefaults;
       const models = codexCatalog.value?.models || [];
       codexModel.value = models.find(model => model.id === defaults?.model)?.id
@@ -503,6 +537,7 @@ export const useStudioStore = defineStore('studio', () => {
       codexSpeed.value = defaults?.speed || 'standard';
       codexKind.value = defaults?.kind === 'text' ? 'text' : 'image';
       normalizeCodexControls();
+      normalizeRouterAiControls();
       mediaModelId.value = mediaModelsFor(mode.value).find(model => model.startupDefault)?.id || mediaModelsFor(mode.value)[0]?.id || '';
       syncCursor = null;
       await refresh();
@@ -585,9 +620,20 @@ export const useStudioStore = defineStore('studio', () => {
     startupPollTimer = undefined;
   }
 
-  async function submit() {
-    const submittedPrompt = prompt.value.trim();
+  async function submit(routerAiPayload?: Record<string, unknown>) {
+    const submittedPrompt = prompt.value.trim() || (provider.value === 'routerai' && currentRouterAiModel.value?.kind === 'transcription'
+      ? t('routerai.admin.transcriptionPrompt') : '');
     if (!submittedPrompt) throw new Error(t('studio.enterPrompt'));
+    if (activeChatId.value === 'system:recent') {
+      let target = chats.value.find(chat => chat.mode === 'system' && chat.projectId === activeProjectId.value);
+      if (!target) {
+        target = await api.createChat('Основной чат', activeProjectId.value);
+        chats.value = mergeById(chats.value, [target]);
+        recomputeWorkspaceCounts();
+      }
+      activeChatId.value = target.id;
+      await saveCurrentDraft();
+    }
     const context = { projectId: activeProjectId.value, chatId: activeChatId.value === 'system:recent' ? null : activeChatId.value };
     const requestId = crypto.randomUUID();
     const optimisticId = `pending:${requestId}`;
@@ -605,6 +651,30 @@ export const useStudioStore = defineStore('studio', () => {
           kind: mode.value === 'text' ? 'text' : 'image', sourceFiles: sourceFiles.value.map(item => item.ref), ...context, requestId });
         pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
         if (selectedId.value === optimisticId) selectedId.value = `codex:${job.id || requestId}`;
+        await refresh().catch(() => {});
+        return job;
+      } catch (error) {
+        await refreshFull().catch(() => {});
+        const accepted = history.value.find(item => item.requestId === requestId);
+        if (accepted) { acceptServerRecord(optimisticId, accepted); return accepted; }
+        failOptimisticRecord(optimisticId, error);
+        throw error;
+      }
+    }
+    if (provider.value === 'routerai') {
+      const model = currentRouterAiModel.value;
+      if (!model) throw new Error(t('studio.selectModel'));
+      optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'routerai', providerName: 'RouterAI',
+        modelId: model.id, modelName: model.name, kind: model.kind, state: 'queued', createdAt, queuedAt: createdAt,
+        input: { prompt: submittedPrompt }, ...context };
+      pendingSubmissions.value.unshift(optimistic);
+      selectedId.value = optimisticId;
+      try {
+        const job = ['text', 'image'].includes(model.kind)
+          ? await api.submitRouterAi({ requestId, model: model.id, prompt: submittedPrompt, ...context })
+          : await api.submitRouterAiAdmin({ requestId, model: model.id, payload: routerAiPayload || {}, ...context });
+        pendingSubmissions.value = pendingSubmissions.value.filter(item => item.id !== optimisticId);
+        if (selectedId.value === optimisticId) selectedId.value = `routerai:${job.id || requestId}`;
         await refresh().catch(() => {});
         return job;
       } catch (error) {
@@ -654,7 +724,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   async function clearWaiting() {
     await api.clearQueue();
-    if (selectedId.value && accountActive.value.some(item => item.id === selectedId.value && item.providerId !== 'codex')) selectedId.value = null;
+    if (selectedId.value && accountActive.value.some(item => item.id === selectedId.value && !['codex', 'routerai'].includes(item.providerId))) selectedId.value = null;
     await refreshFull();
   }
 
@@ -666,6 +736,12 @@ export const useStudioStore = defineStore('studio', () => {
       if (record.modelId) codexModel.value = record.modelId;
       if (typeof record.input?.effort === 'string') codexEffort.value = record.input.effort;
       if (typeof record.input?.speed === 'string') codexSpeed.value = record.input.speed;
+    } else if (record.providerId === 'routerai') {
+      const selectedModel = routerAiCatalog.value?.models.find(model => model.id === record.modelId);
+      if (selectedModel?.kind === 'transcription') mode.value = 'audio';
+      else if (selectedModel && ['embeddings', 'rerank', 'decisions'].includes(selectedModel.kind)) mode.value = 'text';
+      provider.value = 'routerai';
+      if (record.modelId) routerAiModel.value = record.modelId;
     } else {
       provider.value = 'media';
       kieAccountId.value = isAdmin.value && record.kieAccountId === 'secondary' ? 'secondary' : 'primary';
@@ -683,10 +759,10 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, release, history, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, routerAiCatalog, release, history, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
-    codexModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
+    codexModel, routerAiModel, routerAiModels, currentRouterAiModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,
     loadDraftForActive,

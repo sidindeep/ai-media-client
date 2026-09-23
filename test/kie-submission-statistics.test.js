@@ -1,0 +1,36 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { testPool } = require('./helpers/pg-pool');
+const { AccountRecords } = require('../src/database/records');
+const { kieSubmissionStatistics } = require('../src/services/kie-submission-statistics');
+
+test('ambiguous Kie submissions remain measurable after record removal and retries count as one generation', async t => {
+  const pool = testPool();
+  t.after(() => pool.end());
+  await pool.query(await fs.readFile(path.join(__dirname, '../src/database/schema.sql'), 'utf8'));
+  const accountId = randomUUID();
+  await pool.query('INSERT INTO media_accounts(id,display_name) VALUES($1,$2)', [accountId, 'Тест']);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,1000)', [accountId]);
+  const history = new AccountRecords(pool, accountId, 'history');
+  const first = randomUUID(), second = randomUUID();
+  const base = { kieAccountId: 'primary', modelId: 'model', chatId: randomUUID() };
+  await history.update(first, { ...base, requestId: 'request-1', state: 'submitting' });
+  await history.update(first, { state: 'unknown', error: 'Ответ потерян', errorInfo: { code: 'ETIMEDOUT' } }, ['submitting']);
+  await history.remove(first, 'cancelled');
+  await history.update(second, { ...base, requestId: 'request-2', state: 'submitting' });
+  await history.update(second, { state: 'queued', errorInfo: { code: '429' } }, ['submitting']);
+  await history.update(second, { state: 'submitting' }, ['queued']);
+  await history.update(second, { state: 'waiting', taskId: 'kie-task-2' }, ['submitting']);
+  const stats = await kieSubmissionStatistics(pool, 30);
+  assert.equal(stats.submitted, 2);
+  assert.equal(stats.unknown, 1);
+  assert.equal(stats.ratePercent, 50);
+  assert.equal(stats.attempts, 3);
+  assert.equal(stats.incidents[0].jobId, first);
+  assert.equal(stats.incidents[0].errorCode, 'ETIMEDOUT');
+  assert.equal(stats.incidents[0].chatId, base.chatId);
+  await assert.rejects(kieSubmissionStatistics(pool, 365), /Некорректный период/);
+});

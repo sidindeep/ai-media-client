@@ -53,6 +53,13 @@ function modelCandidates(model, rows) {
   const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
   if (exact.length) return exact;
 
+  // Kie sometimes publishes an exact API model id in the tariff description
+  // while the page URL uses a marketing name (Grok Imagine Video 1.5 is one
+  // example). Never override an explicit, different ?model= identity.
+  const described = rows.filter(row => pathModelIdFromAnchor(row.anchor)
+    && aliases.has(String(row.modelDescription || '').split(',')[0].trim()));
+  if (described.length) return described;
+
   // Some Kie price-list pages omit the provider namespace from their anchor
   // (for example bytedance/seedance-2-5 is published at /seedance-2-5).
   // Only use this suffix fallback when the anchor has no explicit ?model= id;
@@ -95,17 +102,25 @@ function decimalUnits(value) {
 }
 
 function hasInput(input, fragment) {
-  return Object.entries(input || {}).some(([key, value]) => key.toLowerCase().includes(fragment)
+  const mediaField = fragment === 'image'
+    ? /(?:image|frame).*(?:url|file|ref)|(?:url|file|ref).*(?:image|frame)|^(?:images?|frames?)$/i
+    : /video.*(?:url|file|ref)|(?:url|file|ref).*video|^videos?$/i;
+  return Object.entries(input || {}).some(([key, value]) => mediaField.test(key)
     && (Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== ''));
 }
 
-function candidateScore(row, input) {
+function candidateScore(row, input, model) {
   const description = String(row.modelDescription || '');
   let score = 0;
+  const seedreamPro = ['seedream/5-pro-text-to-image', 'seedream/5-pro-image-to-image'].includes(model.apiModel);
+  const qualityResolution = seedreamPro ? { basic: '1K', high: '2K' }[String(input?.quality || '').toLowerCase()] : undefined;
   for (const key of ['resolution', 'quality', 'mode', 'duration']) {
-    const value = input?.[key] ?? input?.[`output_${key}`];
+    const value = key === 'resolution' ? input?.resolution ?? input?.image_resolution ?? input?.output_resolution ?? qualityResolution
+      : key === 'mode' ? input?.mode ?? input?.rendering_speed
+        : input?.[key] ?? input?.[`output_${key}`];
     const matches = key === 'duration' ? containsDuration(description, value)
-      : key === 'resolution' ? containsResolution(description, value)
+      : key === 'resolution' ? containsResolution(model.apiModel === 'grok-imagine/upscale'
+        ? description.split(/→|->/).at(-1) : description, value)
         : containsValue(description, value);
     if (value !== undefined && value !== null && value !== '' && matches) score += 4;
   }
@@ -131,7 +146,7 @@ function characterCount(value) {
 function selectTariff(model, input, rows) {
   const candidates = modelCandidates(model, rows);
   if (!candidates.length) throw new Error('Цена этой модели Kie ещё не опубликована');
-  const scored = candidates.map(row => ({ row, score: candidateScore(row, input) })).sort((a, b) => b.score - a.score);
+  const scored = candidates.map(row => ({ row, score: candidateScore(row, input, model) })).sort((a, b) => b.score - a.score);
   const best = scored.filter(item => item.score === scored[0].score).map(item => item.row);
   const variants = new Map(best.map(row => [`${row.creditPrice}:${row.creditUnit}`, row]));
   if (variants.size !== 1) throw new Error('Цена выбранных параметров Kie ещё не определена');

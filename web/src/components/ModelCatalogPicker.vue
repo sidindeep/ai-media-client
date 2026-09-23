@@ -27,7 +27,9 @@ const matchingModels = computed(() => {
   if (!normalizedSearch.value) return props.models;
   return props.models.filter(model => `${model.label} ${model.description || ''} ${modelBrand(model.groupId).label}`.toLocaleLowerCase(locale.value).includes(normalizedSearch.value));
 });
-const groups = computed(() => MODEL_BRANDS.map(({ id }) => ({
+const groupIds = computed(() => [...MODEL_BRANDS.map(brand => brand.id), ...new Set(props.models.map(model => model.groupId))]
+  .filter((id, index, values) => values.indexOf(id) === index));
+const groups = computed(() => groupIds.value.map(id => ({
   ...modelBrand(id),
   count: props.models.filter(model => model.groupId === id).length,
   matchCount: matchingModels.value.filter(model => model.groupId === id).length,

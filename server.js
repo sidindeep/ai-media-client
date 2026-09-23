@@ -16,6 +16,7 @@ const { createObjectStorage } = require('./src/object-storage');
 const { createContentService } = require('./src/services/content-service');
 const { createPayments } = require('./src/payments/service');
 const { createYooKassaProvider } = require('./src/payments/providers/yookassa');
+const { createYooKassaStubProvider } = require('./src/payments/providers/yookassa-stub');
 const { createProductCatalog } = require('./src/commerce/catalog');
 const { createCommerce } = require('./src/commerce/service');
 
@@ -76,7 +77,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     if (!config.payments?.enabled) return { payments: null, commerce: null };
     const activePaymentProvider = paymentProvider || (config.payments.provider === 'yookassa'
       ? createYooKassaProvider({ ...config.payments.yooKassa, environment: config.payments.environment })
-      : null);
+      : config.payments.provider === 'yookassa-stub' ? createYooKassaStubProvider() : null);
     if (!activePaymentProvider) throw new Error('Платёжный провайдер не поддерживается');
     let nextCommerce;
     const nextPayments = createPayments({ pool: activePool, provider: activePaymentProvider, onEvent: event => nextCommerce.handlePaymentEvent(event) });
@@ -138,6 +139,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled && !telegramLinks ? { disabledReason: 'account-database-unavailable' } : {}) });
     server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce });
     await server.recoverCodex();
+    await server.recoverRouterAi();
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     telegram.start();
     if (startupChecks) void checkProviderReadiness(service, readiness);

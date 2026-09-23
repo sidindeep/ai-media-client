@@ -156,6 +156,7 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
     } },
     scope: async () => service,
     workspaces: {
+      ensureDefaultChat: async accountId => { assert.equal(accountId, user.id); return { id: 'chat-full' }; },
       listProjects: async () => [{ id: 'project-full' }],
       listChats: async () => [{ id: 'chat-full' }],
       listProjectChanges: async (_account, since, before) => [{ id: `project:${since}:${before}` }],
@@ -183,7 +184,7 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   assert.match(delta.chats[0].id, /^chat:2026-09-21T10:00:00.000Z:2026-09-21T10:00:05.000Z$/);
   assert.deepEqual(calls.filter(call => call.method.startsWith('getHistory')), [
     { method: 'getHistory', args: [] },
-    { method: 'getHistoryDelta', args: [{ since: '2026-09-21T10:00:00.000Z', before: '2026-09-21T10:00:05.000Z' }] },
+    { method: 'getHistoryDelta', args: [{ since: '2026-09-21T10:00:00.000Z', before: '2026-09-21T10:00:05.000Z', activeIds: [] }] },
   ]);
 });
 async function directory() {
@@ -363,6 +364,20 @@ test('media quote falls back to a refreshed official Kie tariff when local and c
   const quote = await service.nativeQuote('bytedance/seedance-2-5', { prompt: 'Тест', resolution: '720p', duration: 10, reference_video_urls: [source.ref] }, [{ ...source, fieldKey: 'reference_video_urls', durationSeconds: 1 }]);
   assert.equal(quote.credits, 1069.439, 'server metadata wins over forged browser duration');
   assert.equal(fetches, 2, 'a cache miss refreshes the official Kie list once');
+});
+
+test('a forced paid-submit quote does not download the whole Kie list twice when a price is absent', async t => {
+  const dir = await directory(); let fetches = 0;
+  const tariffFetcher = async () => {
+    fetches++;
+    return { ok: true, async json() { return { code: 200, data: { pages: 1, records: [
+      { modelDescription: 'Other model', creditPrice: '1', creditUnit: 'per request', anchor: 'https://kie.ai/other-model' },
+    ] } }; } };
+  };
+  const service = await createMediaService({ directory: dir, provider: fakeProvider(), pricing: {}, tariffFetcher });
+  t.after(() => cleanup(dir, service));
+  await assert.rejects(service.nativeQuote('bytedance/seedream', { prompt: 'A scene' }, [], true), /не опубликована/);
+  assert.equal(fetches, 1);
 });
 
 test('provider diagnostics checks Kie auth, live tariff and selected model without generation', async t => {

@@ -7,9 +7,9 @@ const { createHash, randomUUID } = require('node:crypto');
 const { transaction } = require('../database/database');
 
 const UUID = /^[a-f0-9-]{36}$/;
-const TYPES = /^(?:image\/(?:png|jpeg|webp|gif)|video\/(?:mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/;
+const TYPES = /^(?:image\/(?:png|jpeg|webp|gif|svg\+xml)|video\/(?:mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/;
 const EXTENSIONS = new Map([
-  ['image/png', '.png'], ['image/jpeg', '.jpg'], ['image/webp', '.webp'], ['image/gif', '.gif'],
+  ['image/png', '.png'], ['image/jpeg', '.jpg'], ['image/webp', '.webp'], ['image/gif', '.gif'], ['image/svg+xml', '.svg'],
   ['video/mp4', '.mp4'], ['video/webm', '.webm'], ['video/quicktime', '.mov'],
 ]);
 

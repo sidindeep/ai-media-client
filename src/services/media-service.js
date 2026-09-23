@@ -59,6 +59,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const storageSettings = async () => ({ directory: content ? 'Единое хранилище контента' : storage ? 'Общее S3-хранилище' : 'Хранилище сервиса', autoSave: content ? true : (await preference('storage', {})).autoSave === true });
   function validate(model, input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Некорректные параметры генерации');
+    require('../duration').normalize(model, input);
     require('../duration').validate(model, input);
     if (model.inputSchema && !ajv.validate(model.inputSchema, input)) throw new Error('Проверьте параметры: ' + ajv.errorsText());
     buildRequest(model, input);
@@ -126,6 +127,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       validate(findModel(record.modelId), input); return input;
     },
     create: (record, input) => accountProvider(record.kieAccountId).create(findModel(record.modelId), input),
+    beforeCreate: record => accountProvider(record.kieAccountId).waitForCreate?.(),
+    onRateLimit: record => accountProvider(record.kieAccountId).rateLimited?.(),
     poll: record => accountProvider(record.kieAccountId).poll(findModel(record.modelId), record.taskId),
     complete: async record => {
       if (content || (await storageSettings()).autoSave) await saveResults(record.id).catch(() => {});
@@ -186,7 +189,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           // A newly published model or price variant may not be present in the
           // 24-hour account cache. Refresh the official Kie list once before
           // rejecting the paid request.
-          if (!/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error;
+          if (forceRefresh || !/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error;
           tariffData = await tariffs.get(true);
           quote = quoteKie(model, input, tariffData, pricingContext);
         }
@@ -358,7 +361,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         case 'saveTemplate': return templates.save(args[0]);
         case 'removeTemplate': return templates.remove(args[0]);
         case 'listGenerationPresets': return presets.list();
-        case 'saveGenerationPreset': return presets.save(args[0]);
+        case 'saveGenerationPreset': return presets.save(args[0], args[1]);
         case 'removeGenerationPreset': return presets.remove(args[0]);
         case 'loadDrafts': return (await drafts.list()).find(item => item.id === (args[0]?.chatId ? `chat:${args[0].chatId}` : 'workspace'))?.data || null;
         case 'saveDrafts': {

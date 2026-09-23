@@ -2,6 +2,9 @@ const { randomUUID } = require('node:crypto');
 
 const modes = new Set(['text', 'image', 'video', 'audio']);
 const codexRatios = new Set(['auto', '1:1', '16:9', '9:16', '3:2', '2:3']);
+const routerAiCatalog = require('../config/routerai-models.json');
+const { createRouterAiCatalog } = require('./providers/routerai/catalog');
+const liveRouterAiCatalog = createRouterAiCatalog();
 
 function shortString(value, limit, error) {
   if (typeof value !== 'string' || !value.trim() || value.length > limit) throw new Error(error);
@@ -20,7 +23,7 @@ class GenerationPresets {
 
   async list() { return (await this.store.list()).filter(row => !row.deleted).map(row => { const { quantity: _quantity, ...preset } = row; return preset; }); }
 
-  async save(input) {
+  async save(input, options = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Некорректный пресет');
     const existingRows = await this.list();
     const existing = input.id ? existingRows.find(row => row.id === input.id) : null;
@@ -29,7 +32,7 @@ class GenerationPresets {
     const name = shortString(input.name, 80, 'Введите название пресета до 80 символов');
     const provider = input.provider;
     const mode = input.mode;
-    if (!['codex', 'media'].includes(provider) || !modes.has(mode)) throw new Error('Некорректный режим пресета');
+    if (!['codex', 'media', 'routerai'].includes(provider) || !modes.has(mode)) throw new Error('Некорректный режим пресета');
 
     let settings;
     if (provider === 'media') {
@@ -39,6 +42,14 @@ class GenerationPresets {
       const rawInput = input.mediaInput && typeof input.mediaInput === 'object' && !Array.isArray(input.mediaInput) ? input.mediaInput : {};
       const mediaInput = jsonCopy(Object.fromEntries(Object.entries(rawInput).filter(([key]) => allowed.has(key))));
       settings = { mediaModelId: model.id, mediaInput };
+    } else if (provider === 'routerai') {
+      const routerAiModel = shortString(input.routerAiModel, 120, 'Выберите модель RouterAI');
+      const models = options?.routerAiRole === 'admin' ? (await liveRouterAiCatalog.all('admin')).models : routerAiCatalog.models;
+      const selected = models.find(model => model.id === routerAiModel);
+      const selectedMode = selected?.kind === 'transcription' ? 'audio'
+        : ['embeddings', 'rerank', 'decisions'].includes(selected?.kind) ? 'text' : selected?.kind;
+      if (selectedMode !== mode) throw new Error('Модель RouterAI не соответствует режиму пресета');
+      settings = { routerAiModel };
     } else {
       if (!['text', 'image'].includes(mode)) throw new Error('Codex поддерживает пресеты текста и изображений');
       const codexModel = shortString(input.codexModel, 120, 'Выберите модель Codex');

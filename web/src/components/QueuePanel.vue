@@ -13,13 +13,13 @@ const statusKey = (state: string): TranslationKey | null => state === 'running' 
   fail: 'queue.status.fail', blocked: 'queue.status.blocked', cancelled: 'queue.status.cancelled', unconfirmed: 'queue.status.unconfirmed',
 } as Record<string, TranslationKey>)[state] || null;
 const removableStates = new Set(['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'unknown', 'blocked']);
-const removableItems = computed(() => studio.history.filter(item => item.providerId !== 'codex' && removableStates.has(item.state)));
+const removableItems = computed(() => studio.history.filter(item => !['codex', 'routerai'].includes(item.providerId) && removableStates.has(item.state)));
 const sentStates = new Set(['submitting', 'waiting', 'queuing', 'generating', 'unknown']);
 function sentToKie(item: GenerationRecord) {
   return Boolean(item.providerAcceptedAt || sentStates.has(item.state));
 }
 function canRemove(item: GenerationRecord) {
-  return !item.optimistic && item.providerId !== 'codex';
+  return !item.optimistic && !['codex', 'routerai'].includes(item.providerId);
 }
 async function removeItem(item: GenerationRecord) {
   const warning = studio.isAdmin

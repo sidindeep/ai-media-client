@@ -6,9 +6,20 @@ async function lockWallet(client, accountId) {
   if (!row) throw new Error('Счёт не найден');
   return { balance: Number(row.balance), held: Number(row.held) };
 }
-async function entry(client, accountId, kind, reference, amount, actor = null, note = '') {
-  await client.query('INSERT INTO media_ledger(id,account_id,kind,reference,amount,actor_id,note) VALUES($1,$2,$3,$4,$5,$6,$7)',
-    [randomUUID(), accountId, kind, reference, amount, actor, note]);
+function spendingDetails(jobId, record) {
+  if (!record) return {};
+  const rawKind = record.modelKind || record.kind;
+  const category = ['image', 'video', 'text', 'audio'].includes(rawKind) ? rawKind : 'other';
+  const provider = jobId.startsWith('codex:') ? 'codex' : jobId.startsWith('routerai:') ? 'routerai' : 'media';
+  return {
+    category,
+    modelName: String(record.modelName || record.model || record.modelId || '').slice(0, 200),
+    recordId: provider === 'media' ? jobId : `${provider}:${record.id}`,
+  };
+}
+async function entry(client, accountId, kind, reference, amount, actor = null, note = '', details = {}) {
+  await client.query('INSERT INTO media_ledger(id,account_id,kind,reference,amount,actor_id,note,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+    [randomUUID(), accountId, kind, reference, amount, actor, note, JSON.stringify(details)]);
 }
 async function reserve(client, accountId, jobId, quote) {
   const amount = units(quote.amountUnits);
@@ -20,7 +31,7 @@ async function reserve(client, accountId, jobId, quote) {
   await entry(client, accountId, 'reserve', jobId, amount);
 }
 // Called in the SAME transaction that persists the terminal job state.
-async function settle(client, accountId, jobId, state) {
+async function settle(client, accountId, jobId, state, record) {
   if (!['success', 'fail', 'cancelled', 'blocked'].includes(state)) return;
   await lockWallet(client, accountId);
   const reservation = (await client.query('SELECT * FROM media_reservations WHERE job_id=$1 AND account_id=$2 FOR UPDATE', [jobId, accountId])).rows[0];
@@ -28,7 +39,7 @@ async function settle(client, accountId, jobId, state) {
   const captured = state === 'success';
   await client.query('UPDATE media_wallets SET held=held-$2,balance=balance-$3 WHERE account_id=$1', [accountId, reservation.amount, captured ? reservation.amount : 0]);
   await client.query('UPDATE media_reservations SET state=$2 WHERE job_id=$1', [jobId, captured ? 'captured' : 'released']);
-  await entry(client, accountId, captured ? 'capture' : 'release', jobId, reservation.amount);
+  await entry(client, accountId, captured ? 'capture' : 'release', jobId, reservation.amount, null, '', spendingDetails(jobId, record));
 }
 function createWallet(pool, { onPurchase } = {}) {
   return {

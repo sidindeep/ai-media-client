@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.vue';
 import Composer from './components/Composer.vue';
 import ChatResults from './components/ChatResults.vue';
 import HistoryPage from './components/HistoryPage.vue';
+import SpendingPage from './components/SpendingPage.vue';
 import HomePage from './components/HomePage.vue';
 import LandingPage from './components/LandingPage.vue';
 import QueuePanel from './components/QueuePanel.vue';
@@ -12,7 +13,7 @@ import AccountMenu from './components/AccountMenu.vue';
 import HeaderAccountActions from './components/HeaderAccountActions.vue';
 import LocaleSwitcher from './components/LocaleSwitcher.vue';
 import { getStartupStatus, setAccountContext, subscribeToChanges } from './api/client';
-import { mediaModelBrandId, modelBrand } from './domain/model-catalog';
+import { mediaModelBrandId, modelBrand, routerAiModelBrandId } from './domain/model-catalog';
 import { useI18n } from './i18n';
 import { useStudioStore } from './stores/studio';
 import type { GenerationRecord } from './types';
@@ -20,13 +21,15 @@ import type { GenerationRecord } from './types';
 const studio = useStudioStore();
 const { t } = useI18n();
 const rightOpen = ref(false);
-type AppSection = 'landing' | 'home' | 'workspace' | 'history';
-const sectionFromPath = (): AppSection => window.location.pathname === '/' || window.location.pathname === '/index.html' ? 'landing' : window.location.pathname === '/app/home' ? 'home' : window.location.pathname.includes('/history') ? 'history' : 'workspace';
+type AppSection = 'landing' | 'home' | 'workspace' | 'history' | 'spending';
+const sectionFromPath = (): AppSection => window.location.pathname === '/' || window.location.pathname === '/index.html' ? 'landing' : window.location.pathname === '/app/home' ? 'home' : window.location.pathname === '/app/spending' ? 'spending' : window.location.pathname.includes('/history') ? 'history' : 'workspace';
 const activeSection = ref<AppSection>(sectionFromPath());
 const initialReady = ref(false);
 const sessionAuthenticated = ref(false);
 const mobileView = ref<'chats' | 'workspace' | 'results'>('workspace');
-const activeChatName = computed(() => studio.activeChatId === 'system:recent' ? t('navigation.earlier') : studio.chats.find(chat => chat.id === studio.activeChatId)?.name || t('navigation.newChat'));
+const spendingRefreshKey = ref(0);
+const spendingRecordIds = computed(() => new Set(studio.history.map(record => record.id)));
+const activeChatName = computed(() => studio.activeChatId === 'system:recent' ? t('navigation.unassigned') : studio.chats.find(chat => chat.id === studio.activeChatId)?.name || t('navigation.newChat'));
 const showPromptSuggestions = computed(() => {
   const activeChat = studio.chats.find(chat => chat.id === studio.activeChatId);
   return studio.activeChatId !== 'system:recent' && Boolean(activeChat)
@@ -68,6 +71,9 @@ const promptSuggestions = computed(() => ({
   ],
 }[studio.mode]));
 const welcomeModel = computed(() => {
+  if (studio.provider === 'routerai') {
+    return { name: studio.currentRouterAiModel?.name || t('provider.selectModel'), provider: 'RouterAI', brand: modelBrand(studio.currentRouterAiModel ? routerAiModelBrandId(studio.currentRouterAiModel.id) : 'routerai') };
+  }
   if (studio.provider === 'codex') {
     const model = studio.currentCodexModel;
     return { name: model?.name || (studio.isAdmin ? 'Codex' : t('provider.aiModel')), provider: studio.isAdmin ? 'Codex' : t('provider.aiModels'), brand: modelBrand('codex') };
@@ -93,6 +99,7 @@ function startLiveUpdates() {
       eventStreamReady = true;
       return;
     }
+    spendingRefreshKey.value++;
     void Promise.all([event === 'reset' ? studio.refreshFull() : studio.refresh(), studio.refreshAccess()]).catch(() => {});
   });
 }
@@ -138,6 +145,19 @@ function showHistory() {
   mobileView.value = 'workspace';
 }
 
+function showSpending() {
+  navigate('spending');
+  rightOpen.value = false;
+  mobileView.value = 'workspace';
+}
+
+function selectSpendingResult(recordId: string) {
+  const record = studio.history.find(item => item.id === recordId);
+  if (!record) return;
+  showHistory();
+  selectHistoryResult(record);
+}
+
 async function showWorkspace() {
   if (!studio.accountReady) {
     if (!sessionAuthenticated.value) {
@@ -159,7 +179,7 @@ function showHome() {
 
 function navigate(section: AppSection, replace = false) {
   activeSection.value = section;
-  const path = section === 'landing' ? '/' : section === 'home' ? '/app/home' : section === 'history' ? '/app/history' : '/app';
+  const path = section === 'landing' ? '/' : section === 'home' ? '/app/home' : section === 'history' ? '/app/history' : section === 'spending' ? '/app/spending' : '/app';
   if (window.location.pathname !== path) window.history[replace ? 'replaceState' : 'pushState']({ section }, '', path);
 }
 
@@ -210,11 +230,11 @@ onBeforeUnmount(() => {
     <div class="site-boot-content"><img class="site-boot-logo" src="/brand-logo.png" alt="AI Media Client"><span class="site-boot-line"></span><p>{{ startupTitle }}</p><small>{{ studio.providerReadiness === 'checking' ? t('boot.services') : t('boot.necessaryData') }}</small><button v-if="studio.error" type="button" @click="studio.initialize">{{ t('common.retry') }}</button></div>
   </div>
   <LandingPage v-show="initialReady && activeSection === 'landing'" :active="activeSection === 'landing'" :authenticated="sessionAuthenticated" :account-ready="studio.accountReady" @home="showLanding" @studio="showWorkspace" @history="showHistory" />
-  <div v-show="initialReady && activeSection !== 'landing' && studio.accountReady" class="studio-app" :class="[`mobile-view-${mobileView}`, { 'right-panel-open': rightOpen }]">
-    <Sidebar :active-section="activeSection" @landing="showLanding" @home="showHome" @workspace="showWorkspace" @history="showHistory" />
+  <div v-if="initialReady && activeSection !== 'landing' && studio.accountReady" class="studio-app" :class="[`mobile-view-${mobileView}`, { 'right-panel-open': rightOpen }]">
+    <Sidebar :active-section="activeSection" @landing="showLanding" @home="showHome" @workspace="showWorkspace" @history="showHistory" @spending="showSpending" />
     <main class="studio-main">
-      <header class="studio-header"><div><span class="eyebrow">{{ activeSection === 'home' ? 'AI MEDIA CLIENT' : activeSection === 'history' ? t('navigation.resultsLibrary') : t('navigation.currentChat', { name: activeChatName }) }}</span><h1>{{ activeSection === 'home' ? t('navigation.home') : activeSection === 'history' ? t('navigation.history') : t('navigation.generation') }}</h1></div><div class="header-actions"><LocaleSwitcher /><HeaderAccountActions :ready="studio.accountReady" @select-notification="selectHistoryResult" /><button v-if="activeSection !== 'home'" type="button" class="results-toggle" @click="rightOpen = true">{{ t('navigation.queueAndResults') }}</button><AccountMenu :ready="studio.accountReady" @history="showHistory" /></div></header>
-      <div class="studio-grid" :class="{ 'history-mode': activeSection === 'history', 'home-mode': activeSection === 'home' }"><HomePage v-if="activeSection === 'home'" @workspace="showWorkspace" /><HistoryPage v-else-if="activeSection === 'history'" @select="selectHistoryResult" @workspace="showWorkspace" /><div v-else class="studio-center" :class="{ 'has-chat-results': studio.visibleRecords.length }"><section class="welcome" :class="{ 'welcome-compact': studio.visibleRecords.length }" :aria-label="t('provider.currentModel')"><span class="welcome-model-icon" :style="{ '--brand-accent': welcomeModel.brand.accent }"><img v-if="welcomeModel.brand.icon" :src="welcomeModel.brand.icon" alt=""><span v-else>{{ welcomeModel.brand.label.slice(0, 1) }}</span></span><h2>{{ welcomeModel.name }}</h2><p>{{ welcomeModel.provider }} · {{ modeLabels[studio.mode] }}</p><div v-if="showPromptSuggestions" class="welcome-suggestions" :aria-label="t('provider.promptIdeas')"><button v-for="suggestion in promptSuggestions" :key="suggestion[0]" type="button" @click="usePromptSuggestion(suggestion[1])">{{ suggestion[0] }}</button></div></section><ChatResults v-show="studio.visibleRecords.length" @select="selectResult" /><Composer /></div><div v-if="activeSection === 'workspace'" class="studio-right"><button type="button" class="right-close" :aria-label="t('provider.closeResults')" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel @history="showHistory" @workspace="showWorkspace" /></div></div>
+      <header class="studio-header"><div><span class="eyebrow">{{ activeSection === 'home' ? 'AI MEDIA CLIENT' : activeSection === 'history' ? t('navigation.resultsLibrary') : activeSection === 'spending' ? t('spending.eyebrow') : t('navigation.currentChat', { name: activeChatName }) }}</span><h1>{{ activeSection === 'home' ? t('navigation.home') : activeSection === 'history' ? t('navigation.history') : activeSection === 'spending' ? t('spending.title') : t('navigation.generation') }}</h1></div><div class="header-actions"><LocaleSwitcher /><HeaderAccountActions :ready="studio.accountReady" @select-notification="selectHistoryResult" /><button v-if="activeSection === 'workspace'" type="button" class="results-toggle" @click="rightOpen = true">{{ t('navigation.queueAndResults') }}</button><AccountMenu :ready="studio.accountReady" @history="showHistory" /></div></header>
+      <div class="studio-grid" :class="{ 'history-mode': activeSection === 'history', 'spending-mode': activeSection === 'spending', 'home-mode': activeSection === 'home' }"><HomePage v-if="activeSection === 'home'" @workspace="showWorkspace" /><HistoryPage v-else-if="activeSection === 'history'" @select="selectHistoryResult" @workspace="showWorkspace" /><SpendingPage v-else-if="activeSection === 'spending'" :refresh-key="spendingRefreshKey" :available-record-ids="spendingRecordIds" @result="selectSpendingResult" /><div v-else class="studio-center" :class="{ 'has-chat-results': studio.visibleRecords.length }"><section class="welcome" :class="{ 'welcome-compact': studio.visibleRecords.length }" :aria-label="t('provider.currentModel')"><span class="welcome-model-icon" :style="{ '--brand-accent': welcomeModel.brand.accent }"><img v-if="welcomeModel.brand.icon" :src="welcomeModel.brand.icon" alt=""><span v-else>{{ welcomeModel.brand.label.slice(0, 1) }}</span></span><h2>{{ welcomeModel.name }}</h2><p>{{ welcomeModel.provider }} · {{ modeLabels[studio.mode] }}</p><div v-if="showPromptSuggestions" class="welcome-suggestions" :aria-label="t('provider.promptIdeas')"><button v-for="suggestion in promptSuggestions" :key="suggestion[0]" type="button" @click="usePromptSuggestion(suggestion[1])">{{ suggestion[0] }}</button></div></section><ChatResults v-show="studio.visibleRecords.length" @select="selectResult" /><Composer /></div><div v-if="activeSection === 'workspace'" class="studio-right"><button type="button" class="right-close" :aria-label="t('provider.closeResults')" @click="rightOpen = false">×</button><QueuePanel /><ResultPanel @history="showHistory" @workspace="showWorkspace" /></div></div>
     </main>
     <nav class="mobile-nav" :aria-label="t('navigation.sections')"><button type="button" :class="{ active: mobileView === 'chats' }" @click="mobileView = 'chats'">{{ t('navigation.chats') }}</button><button type="button" :class="{ active: mobileView === 'workspace' }" @click="mobileView = 'workspace'">{{ t('navigation.work') }}</button><button type="button" :class="{ active: mobileView === 'results' }" @click="mobileView = 'results'">{{ t('navigation.results') }}</button></nav>
   </div>

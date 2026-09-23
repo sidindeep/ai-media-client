@@ -1,3 +1,14 @@
+export type SpendingCategory = 'all' | 'image' | 'video' | 'text' | 'audio' | 'other';
+export type SpendingItem = {
+  id: string; kind: 'capture' | 'release'; amountUnits: number; createdAt: string;
+  category: Exclude<SpendingCategory, 'all'>; modelName: string | null; recordId: string | null;
+};
+export type SpendingPageData = {
+  days: 7 | 30 | 90; category: SpendingCategory; asOf: string;
+  summary: { spentUnits: number; releasedUnits: number; topCategory: Exclude<SpendingCategory, 'all'> | null };
+  items: SpendingItem[]; nextCursor: string | null;
+};
+
 export type GenerationState =
   | 'queued'
   | 'preparing'
@@ -51,11 +62,12 @@ export type Catalog = {
 export type GenerationPreset = {
   id: string;
   name: string;
-  provider: 'codex' | 'media';
+  provider: 'codex' | 'media' | 'routerai';
   mode: 'text' | 'image' | 'video' | 'audio';
   mediaModelId?: string;
   mediaInput?: Record<string, unknown>;
   codexModel?: string;
+  routerAiModel?: string;
   codexEffort?: string;
   codexSpeed?: string;
   codexAspectRatio?: string;
@@ -64,6 +76,8 @@ export type GenerationPreset = {
 };
 
 export type GenerationRecord = {
+  contentAssetId?: string;
+  providerVideoId?: string;
   kieAccountId?: 'primary' | 'secondary';
   id: string;
   requestId?: string;
@@ -193,3 +207,5 @@ export type CodexCatalog = {
   models: CodexModel[];
   uiDefaults?: { model?: string; effort?: string; speed?: string; kind?: string };
 };
+
+export type RouterAiCatalog = { models: Array<{ id: string; name: string; description?: string; kind: 'text' | 'image' | 'video' | 'audio' | 'transcription' | 'embeddings' | 'rerank' | 'decisions'; endpoint?: string }> };

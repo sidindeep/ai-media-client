@@ -30,6 +30,24 @@ CREATE TABLE IF NOT EXISTS media_records (
 CREATE INDEX IF NOT EXISTS media_records_recent ON media_records(account_id,namespace,updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS media_request_once ON media_records(account_id,(data->>'requestId'))
   WHERE namespace='history' AND data->>'requestId' IS NOT NULL;
+CREATE TABLE IF NOT EXISTS media_kie_submissions (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES media_accounts(id),
+  job_id text NOT NULL,
+  request_id text,
+  kie_account_id text NOT NULL,
+  project_id text,
+  chat_id text,
+  model_id text,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  outcome text NOT NULL CHECK (outcome IN ('pending','accepted','rejected','unknown')),
+  provider_task_id text,
+  error_code text,
+  error_message text
+);
+CREATE INDEX IF NOT EXISTS media_kie_submissions_recent ON media_kie_submissions(started_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS media_kie_submissions_job ON media_kie_submissions(account_id,job_id,id DESC);
 CREATE TABLE IF NOT EXISTS media_reservations (
   job_id text PRIMARY KEY, account_id uuid NOT NULL REFERENCES media_accounts(id),
   amount bigint NOT NULL CHECK (amount > 0), price_version text NOT NULL,
@@ -276,3 +294,9 @@ CREATE TABLE IF NOT EXISTS media_telegram_link_flows (
 CREATE INDEX IF NOT EXISTS media_telegram_link_flows_account ON media_telegram_link_flows(account_id);
 CREATE INDEX IF NOT EXISTS media_telegram_link_flows_expiry ON media_telegram_link_flows(expires_at);
 INSERT INTO media_schema_versions(version) VALUES (6) ON CONFLICT DO NOTHING;
+
+-- Immutable display details for completed spending operations.
+ALTER TABLE media_ledger ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS media_records_account_record ON media_records(account_id,id);
+INSERT INTO media_schema_versions(version) VALUES (7) ON CONFLICT DO NOTHING;
+INSERT INTO media_schema_versions(version) VALUES (8) ON CONFLICT DO NOTHING;

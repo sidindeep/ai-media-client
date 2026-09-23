@@ -26,7 +26,22 @@ function applyOverrides(models) {
     const field=model.fields.find(item=>item.key==='duration');
     if(!field||field.options?.length)continue;
     const allowed=durationRules.values(model,field);
-    if(allowed?.length&&allowed.length<=120)field.options=allowed;
+    if(allowed?.length&&allowed.length<=120)field.options=field.schema?.type==='string'?allowed.map(String):allowed;
+  }
+  // Kie marks tempo as optional, but the imported default is null while the
+  // wire schema requires an integer whenever the property is present.
+  const sounds=result.find(model=>model.apiModel==='ai-music-api/sounds');
+  const tempo=sounds?.fields.find(field=>field.key==='sound_tempo');
+  if(tempo?.default===null){
+    delete tempo.default;
+    delete tempo.schema.default;
+    delete sounds.inputSchema.properties.sound_tempo.default;
+  }
+  const soundKey=sounds?.fields.find(field=>field.key==='sound_key');
+  if(soundKey?.default==='Any'&&!soundKey.options.includes('Any')){
+    soundKey.options.unshift('Any');
+    soundKey.schema.enum.unshift('Any');
+    sounds.inputSchema.properties.sound_key.enum.unshift('Any');
   }
   // Some Kie schemas describe file limits in prose but omit maxItems.
   for(const model of result)for(const field of model.fields.filter(f=>f.type==='files'&&!f.scalar)){

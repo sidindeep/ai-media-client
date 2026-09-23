@@ -8,6 +8,7 @@ const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
 const { generationHistory, generationHistorySince } = require('./generation-history');
+const { spendingHistory } = require('./spending-history');
 const { createWorkspaces } = require('./workspaces');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
@@ -29,6 +30,13 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
   } });
   const pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
   const routedProvider = createProviderRouter([provider]);
+  async function dispatchDraft(accountId, service, method, args) {
+    const suppliedChatId = method === 'saveDrafts' ? args[1]?.chatId || args[0]?.chatId : args[0]?.chatId;
+    const { chatId } = await workspaces.assertBinding(accountId, null, suppliedChatId);
+    if (method === 'saveDrafts') return service.dispatch(method, [args[0], { chatId }]);
+    const draft = await service.dispatch(method, [{ chatId }]);
+    return draft ?? (suppliedChatId ? null : service.dispatch(method, []));
+  }
   async function get(accountId) {
     if (!services.has(accountId)) {
       const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates', 'presets'].map(name => [name, new AccountRecords(pool, accountId, name)]));
@@ -72,8 +80,11 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         ...service,
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
+          if (method === 'getSpending') return spendingHistory(pool, accountId, args[0]);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
           if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, undefined, args[0]?.activeIds);
+          if (['loadDrafts', 'saveDrafts'].includes(method)) return dispatchDraft(accountId, service, method, args);
+          if (method === 'saveGenerationPreset') return service.dispatch(method, [args[0], { routerAiRole: 'admin' }]);
           if (method === 'createTask') {
             await starterPack?.assertProvider(accountId, account.role, 'media');
             return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
@@ -97,6 +108,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             }
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
             case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord, args[0]?.activeIds);
+            case 'loadDrafts': case 'saveDrafts': return dispatchDraft(accountId, service, method, args);
             case 'createTask': {
               await starterPack?.assertProvider(accountId, account.role, 'media');
               if (args[0]?.kieAccountId != null && args[0].kieAccountId !== 'primary') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
@@ -110,6 +122,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
               return publicRecord(row);
             }
             case 'getBalance': return wallet.get(accountId);
+            case 'getSpending': return spendingHistory(pool, accountId, args[0]);
             case 'nativeQuote': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'diagnoseProvider': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'nativeLedger': return wallet.ledger(accountId);
@@ -119,7 +132,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             case 'getTariffDescriptions': return { entries: {} };
             case 'keyStatus': case 'startQueue': case 'pauseQueue': case 'setConcurrency': case 'cancelQueued':
             case 'removeQueued': case 'clearQueue': case 'acknowledgeTask': case 'getFavoriteModels': case 'setFavoriteModels':
-            case 'listTemplates': case 'saveTemplate': case 'removeTemplate': case 'listGenerationPresets': case 'saveGenerationPreset': case 'removeGenerationPreset': case 'loadDrafts': case 'saveDrafts':
+            case 'saveGenerationPreset': return service.dispatch(method, [args[0], { routerAiRole: 'user' }]);
+            case 'listTemplates': case 'saveTemplate': case 'removeTemplate': case 'listGenerationPresets': case 'removeGenerationPreset':
             case 'storageSettings': case 'setAutoSave': case 'saveResults': return service.dispatch(method, args);
             default: throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
           }
@@ -181,7 +195,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         }
         const row = (await client.query("SELECT namespace,data FROM media_records WHERE account_id=$1 AND namespace IN ('history','codex') AND id=$2 FOR UPDATE", [accountId, jobId])).rows[0];
         if (!['unknown', 'unconfirmed'].includes(row?.data.state)) throw new Error('Задача не требует ручной сверки');
-        await settle(client, accountId, jobId, outcome);
+        await settle(client, accountId, jobId, outcome, row.data);
         await client.query('INSERT INTO media_reconciliations(job_id,account_id,actor_id,outcome,evidence) VALUES($1,$2,$3,$4,$5)', [jobId, accountId, actorId, outcome, evidence]);
         const record = { ...row.data, state: outcome, error: null, errorInfo: null, reconciled: true, generationCompletedAt: new Date().toISOString(), revision: Number(row.data.revision || 0) + 1, updatedAt: new Date().toISOString() };
         await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace=$4 AND id=$2", [accountId, jobId, JSON.stringify(record), row.namespace]);

@@ -31,3 +31,16 @@ Kie общие. Выбор не меняет глобальный аккаунт
 Реализация: `src/services/kie-accounts.js`, `media-service.js`, `accounts.js`,
 `src/assets.js`, `web/src/components/Sidebar.vue`, `web/src/stores/studio.ts`.
 Проверки: `test/kie-accounts.test.js`, `test/accounts.test.js`.
+
+## Серверный вход в Kie
+
+В Compose отдельный Chromium хранит профиль в томе `ai-media-kie-session`, а
+администратор открывает его по loopback-ссылке. В одиночном Docker-образе
+Chromium работает на виртуальном экране с профилем `/app/data/kie-browser`.
+CDP слушает только loopback контейнера. Администратор получает кадры и передаёт
+мышь/клавиатуру через `/api/admin/kie-session/{frame,input}`; доступ требует
+административной сессии, same-origin и маркера клиента для команд. Содержимое
+страницы и введённый текст не записываются сервисом, cookie и CDP-адрес не
+выдаются в API. `status` проверяет только cookie авторизации на странице Kie.
+Для публичного домена требуется HTTPS и постоянный том `/app/data`. Сама сессия
+не меняет выбор API-ключа и источник тарифа.

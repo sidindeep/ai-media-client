@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 const { loadConfig } = require('./src/server/config');
 const { createHttpServer } = require('./src/server/http');
 const { createKieAccounts } = require('./src/services/kie-accounts');
@@ -65,7 +66,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
     throw error;
   }
-  let service, telegram, telegramLinks, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer;
+  let service, telegram, telegramLinks, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer, kieBrowser, kieDisplay;
   const storage = createObjectStorage(config.storage);
   let closing = false, retryTimer, wakeRetry;
   const databaseAvailability = createDatabaseAvailability({ state: config.auth.enabled ? 'connecting' : 'disabled' });
@@ -103,6 +104,11 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       codexWorker.stopActive(); codexWorker.closeAllConnections();
       if (codexWorker.listening) await new Promise(resolve => codexWorker.close(resolve));
     }
+    if (kieBrowser && kieBrowser.exitCode === null && kieBrowser.signalCode === null) {
+      kieBrowser.kill('SIGTERM');
+      await new Promise(resolve => { kieBrowser.once('exit', resolve); setTimeout(resolve, 3000).unref(); });
+    }
+    if (kieDisplay && kieDisplay.exitCode === null && kieDisplay.signalCode === null) kieDisplay.kill('SIGTERM');
     if (server?.listening) { server.closeIdleConnections(); await new Promise(resolve => server.close(resolve)); }
     await service?.close();
     await accounts?.close();
@@ -111,6 +117,21 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await lock.close(); await fs.unlink(lockPath).catch(() => {});
   };
   try {
+    if (config.kieBrowser?.embedded) {
+      const profile = path.resolve(config.dataDirectory, '..', 'kie-browser');
+      await fs.mkdir(profile, { recursive: true, mode: 0o700 });
+      kieDisplay = spawn('/usr/bin/Xvfb', [':99', '-screen', '0', '1280x900x24', '-nolisten', 'tcp'], { stdio: 'ignore' });
+      kieDisplay.on('error', error => console.error('Kie display failed:', error.message));
+      await new Promise(resolve => setTimeout(resolve, 500));
+      kieBrowser = spawn('/usr/bin/chromium', [
+        '--no-sandbox', '--disable-dev-shm-usage', '--disable-extensions',
+        '--no-first-run', '--no-default-browser-check', '--remote-debugging-address=127.0.0.1',
+        '--remote-debugging-port=9222', `--user-data-dir=${profile}`, '--window-size=1280,900',
+        'https://kie.ai/api-key',
+      ], { stdio: 'ignore', env: { ...process.env, DISPLAY: ':99' } });
+      kieBrowser.on('error', error => console.error('Kie browser failed:', error.message));
+      kieBrowser.on('exit', code => { if (!closing) console.error('Kie browser exited:', code); });
+    }
     provider = provider || await createKieAccounts({ primaryKey: config.kieKey, secondaryKey: config.kieSecondaryKey });
     if (storage) await storage.check();
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy' });

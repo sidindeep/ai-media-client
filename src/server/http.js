@@ -455,6 +455,16 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (url.pathname === '/api/admin/kie-session/status' && req.method === 'GET') {
           return json(res, 200, { result: await kieBrowserSession.status() });
         }
+        if (url.pathname === '/api/admin/kie-session/frame' && req.method === 'GET') {
+          if (!config.kieBrowser?.embedded) return json(res, 404, { error: 'Встроенный браузер не включён' });
+          return json(res, 200, { result: await kieBrowserSession.frame() });
+        }
+        if (url.pathname === '/api/admin/kie-session/input' && req.method === 'POST') {
+          if (!config.kieBrowser?.embedded || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Встроенный браузер не включён' });
+          const action = JSON.parse((await readBody(req, 4096)).toString('utf8'));
+          await kieBrowserSession.input(action);
+          return json(res, 200, { result: { ok: true } });
+        }
         if (url.pathname === '/api/admin/credit-conversion' && req.method === 'GET') {
           return json(res, 200, { result: accounts.conversion.snapshot() });
         }

@@ -218,14 +218,36 @@ void loadAccounts().catch(error => { document.getElementById('adminStatus').text
 (() => {
   const status = document.getElementById('kieSessionStatus');
   const open = document.getElementById('kieSessionOpen');
+  const show = document.getElementById('kieSessionShow');
   const refresh = document.getElementById('kieSessionRefresh');
-  let timer, busy = false;
+  const viewer = document.getElementById('kieBrowserViewer');
+  const browserStatus = document.getElementById('kieBrowserStatus');
+  const frame = document.getElementById('kieBrowserFrame');
+  const textInput = document.getElementById('kieBrowserText');
+  let timer, frameTimer, busy = false, frameBusy = false, inputQueue = Promise.resolve();
+  const visible = () => location.hash === '#kieSessionPanel' && !viewer.hidden;
+  async function updateFrame() {
+    if (!visible() || frameBusy) return;
+    frameBusy = true; clearTimeout(frameTimer);
+    try {
+      const value = await adminRequest('/api/admin/kie-session/frame');
+      frame.src = 'data:image/jpeg;base64,' + value.image;
+      browserStatus.textContent = '';
+    } catch (error) { browserStatus.textContent = error.message || 'Экран браузера недоступен'; }
+    finally { frameBusy = false; if (visible()) frameTimer = setTimeout(() => void updateFrame(), 1200); }
+  }
+  function send(action) {
+    inputQueue = inputQueue.then(() => adminRequest('/api/admin/kie-session/input', { method: 'POST', body: JSON.stringify(action) }))
+      .then(() => { if (visible()) void updateFrame(); })
+      .catch(error => { browserStatus.textContent = error.message; });
+  }
   async function update() {
     if (busy) return;
     busy = true; clearTimeout(timer); refresh.disabled = true;
     try {
       const value = await adminRequest('/api/admin/kie-session/status');
       status.textContent = ({ connected: 'Вход в кабинет Kie выполнен.', disconnected: 'Вход в Kie ещё не выполнен.', unavailable: 'Браузер Kie на сервере недоступен.' })[value.state] || 'Неизвестный статус.';
+      show.hidden = !value.embedded;
       if (value.loginUrl && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(value.loginUrl)) {
         open.href = value.loginUrl; open.hidden = false;
       } else { open.removeAttribute('href'); open.hidden = true; }
@@ -235,9 +257,30 @@ void loadAccounts().catch(error => { document.getElementById('adminStatus').text
       if (location.hash === '#kieSessionPanel') timer = setTimeout(() => void update(), 3000);
     }
   }
+  show.onclick = () => { viewer.hidden = !viewer.hidden; show.textContent = viewer.hidden ? 'Открыть серверный браузер' : 'Скрыть серверный браузер'; if (visible()) void updateFrame(); else clearTimeout(frameTimer); };
+  frame.onclick = event => {
+    const rect = frame.getBoundingClientRect();
+    send({ type: 'click', x: Math.round((event.clientX - rect.left) * frame.naturalWidth / rect.width), y: Math.round((event.clientY - rect.top) * frame.naturalHeight / rect.height) });
+    frame.focus();
+  };
+  frame.onkeydown = event => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (['Enter', 'Tab', 'Backspace', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) send({ type: 'key', key: event.key });
+    else if ([...event.key].length === 1) send({ type: 'text', text: event.key });
+    else return;
+    event.preventDefault();
+  };
+  frame.onpaste = event => { const value = event.clipboardData?.getData('text'); if (value) send({ type: 'text', text: value.slice(0, 2048) }); event.preventDefault(); };
+  frame.onwheel = event => { send({ type: 'scroll', deltaY: Math.max(-1200, Math.min(1200, Math.round(event.deltaY))) }); event.preventDefault(); };
+  document.getElementById('kieBrowserSendText').onclick = () => { if (textInput.value) send({ type: 'text', text: textInput.value }); textInput.value = ''; frame.focus(); };
+  textInput.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); document.getElementById('kieBrowserSendText').click(); } };
+  document.getElementById('kieBrowserBackspace').onclick = () => send({ type: 'key', key: 'Backspace' });
+  document.getElementById('kieBrowserTab').onclick = () => send({ type: 'key', key: 'Tab' });
+  document.getElementById('kieBrowserEnter').onclick = () => send({ type: 'key', key: 'Enter' });
+  document.getElementById('kieBrowserReload').onclick = () => send({ type: 'reload' });
   refresh.onclick = () => void update();
-  window.addEventListener('hashchange', () => { clearTimeout(timer); if (location.hash === '#kieSessionPanel') void update(); });
-  window.addEventListener('pagehide', () => clearTimeout(timer));
+  window.addEventListener('hashchange', () => { clearTimeout(timer); clearTimeout(frameTimer); if (location.hash === '#kieSessionPanel') { void update(); if (visible()) void updateFrame(); } });
+  window.addEventListener('pagehide', () => { clearTimeout(timer); clearTimeout(frameTimer); });
   if (location.hash === '#kieSessionPanel') void update();
 })();
 

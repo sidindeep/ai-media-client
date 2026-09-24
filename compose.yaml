@@ -18,6 +18,7 @@ services:
       MEDIA_CODEX_EMBEDDED: 'false'
       MEDIA_KIE_BROWSER_CDP: http://kie-browser:9222
       MEDIA_KIE_BROWSER_LOGIN_URL: http://127.0.0.1:5808/
+      MEDIA_KIE_BROWSER_EMBEDDED: 'false'
     ports:
       - "127.0.0.1:3000:3000"
     volumes:

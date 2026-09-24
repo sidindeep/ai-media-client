@@ -376,3 +376,4 @@ header .brand-caption { margin: 3px 0 0; color: #777780; font-size: 9px; letter-
 :root[data-theme='light'] #codexGeneration .preview-empty { border-color: #d6d0c8; color: #6c655e; background: radial-gradient(circle at 50% 42%, #fff4ec 0, #f1ede8 60%); }
 :root[data-theme='light'] #codexGeneration #codexOutput.card { border-color: #d7d1c9; background: #fff; }
 :root[data-theme='light'] .codex-active .service-card { border-color: #d9c6bc; background: #fff9f5; }
+.kie-browser-viewer{max-width:1280px;margin-top:1rem}.kie-browser-viewer img{display:block;width:100%;height:auto;min-height:240px;background:#fff;border:1px solid #596577;cursor:crosshair}.kie-browser-viewer img:focus{outline:3px solid #8d7eff}.kie-browser-viewer .account-controls{margin-top:.75rem;flex-wrap:wrap}.kie-browser-viewer input{min-width:12rem;flex:1}

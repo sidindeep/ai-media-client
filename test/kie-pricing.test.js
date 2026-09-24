@@ -57,6 +57,31 @@ test('Kie prices Grok Imagine Video 1.5 by its exact description id when the pag
   assert.throws(() => quoteKie(model, { resolution: '1080p', duration: 8 }, tariffData), /параметров/);
 });
 
+test('Kie prices GPT Image 2.5 Flare modes from their shared marketing page', () => {
+  const rows = ['image-to-image', 'text-to-image'].flatMap(mode => ['1K', '2K', '4K'].map((resolution, index) => ({
+    modelDescription: `gpt-image-2-5-flare, ${mode}, ${resolution}`,
+    creditPrice: String([6, 10, 16][index]), creditUnit: 'per image',
+    anchor: 'https://kie.ai/gpt-image-2-5',
+  })));
+  const tariffData = { fetchedAt: '2026-09-24T00:00:00Z', rows };
+  for (const mode of ['image-to-image', 'text-to-image']) {
+    const apiModel = `gpt-image-2-5-flare-${mode}`;
+    const model = { id: `kie:${apiModel}`, apiModel, providerId: 'kie' };
+    for (const [resolution, credits] of [['1K', 6], ['2K', 10], ['4K', 16]]) {
+      assert.equal(quoteKie(model, { resolution }, tariffData).credits, credits);
+    }
+    assert.throws(() => quoteKie(model, {}, tariffData), /параметров/);
+    assert.throws(() => quoteKie(model, { resolution: '2K' }, {
+      rows: rows.filter(row => !row.modelDescription.includes(`, ${mode},`)),
+    }), /не опубликована/);
+  }
+  const imageModel = { id: 'kie:gpt-image-2-5-flare-image-to-image', apiModel: 'gpt-image-2-5-flare-image-to-image', providerId: 'kie' };
+  assert.throws(() => quoteKie(imageModel, { resolution: '2K' }, { rows: [{
+    modelDescription: 'gpt-image-2-5-flare, image-to-image, 2K', creditPrice: '10',
+    creditUnit: 'per image', anchor: 'https://kie.ai/gpt-image-2-5?model=other-model',
+  }] }), /не опубликована/);
+});
+
 test('Kie selects documented Seedream quality and Ideogram rendering speed variants', () => {
   const seedream = { id: 'kie:seedream/5-pro-text-to-image', apiModel: 'seedream/5-pro-text-to-image', providerId: 'kie' };
   const seedreamRows = ['1K', '2K'].map((resolution, index) => ({

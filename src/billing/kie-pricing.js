@@ -54,10 +54,15 @@ function modelCandidates(model, rows) {
   if (exact.length) return exact;
 
   // Kie sometimes publishes an exact API model id in the tariff description
-  // while the page URL uses a marketing name (Grok Imagine Video 1.5 is one
-  // example). Never override an explicit, different ?model= identity.
-  const described = rows.filter(row => pathModelIdFromAnchor(row.anchor)
-    && aliases.has(String(row.modelDescription || '').split(',')[0].trim()));
+  // while the page URL uses a marketing name. GPT Image 2.5 separates the
+  // model family and image mode with a comma. Never override an explicit,
+  // different ?model= identity.
+  const described = rows.filter(row => {
+    if (!pathModelIdFromAnchor(row.anchor)) return false;
+    const [descriptionId, mode] = String(row.modelDescription || '').split(',').map(part => part.trim());
+    return aliases.has(descriptionId)
+      || (/^(?:text|image)-to-image$/i.test(mode) && aliases.has(`${descriptionId}-${mode}`));
+  });
   if (described.length) return described;
 
   // Some Kie price-list pages omit the provider namespace from their anchor

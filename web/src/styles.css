@@ -217,6 +217,10 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .studio-right { display: flex; flex-direction: column; gap: 12px; padding: 2px 2px 2px 0; }
 .queue-card, .result-card { border-color: rgba(55, 55, 75, .7); border-radius: 14px; background: rgba(15, 16, 25, .74); box-shadow: none; }
 .queue-card { flex: 0 0 auto; margin-bottom: 0; padding: 15px; }.result-card { flex: 1 0 auto; min-width: 0; padding: 16px; }
+.studio-right { overflow-x: hidden; }
+.queue-card, .queue-list, .queue-row, .queue-item, .queue-item > span:nth-child(2) { min-width: 0; }
+.queue-list { grid-template-columns: minmax(0, 1fr); }
+.queue-item { grid-template-columns: 9px minmax(0, 1fr) auto; }
 .panel-heading { margin-bottom: 14px; }.panel-heading h2 { font-size: 14px; }.result-placeholder { min-height: 180px; }
 
 .sidebar-brand { padding-bottom: 18px; }.sidebar-toolbar { margin: 17px 0 10px; }.sidebar-tabs button { padding-block: 9px; font-size: 12px; }.sidebar-list { min-height: 0; overflow-y: auto; padding-top: 13px; scrollbar-width: thin; }.list-item { padding-block: 9px; }

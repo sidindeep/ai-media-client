@@ -4,8 +4,7 @@ const costs = require('./costs');
 const {randomUUID}=require('node:crypto');
 const {insufficientCredits,creditErrorMessage}=require('./api-errors');
 const remoteStates=['waiting','queuing','generating'];
-const queueStates=new Set(['queued','preparing','submitting',...remoteStates,'unknown','blocked']);
-const providerMayHaveCharged=record=>Boolean(record?.taskId||record?.providerAcceptedAt||['submitting',...remoteStates,'unknown'].includes(record?.state));
+const removableStates=new Set(['queued','preparing','blocked']);
 class TaskQueue {
   constructor({store,prepare,create,beforeCreate=async()=>{},onRateLimit=()=>{},poll,complete=async()=>{},notify=()=>{},interval=2000,concurrency=5}) {
     Object.assign(this,{store,prepare,create,beforeCreate,onRateLimit,poll,complete,notify,interval});
@@ -40,17 +39,16 @@ class TaskQueue {
   async cancel(id) {await this.store.update(id,{state:'cancelled'},['queued']);this.notify();}
   async remove(id, notify=true) {
     const record=(await this.store.list()).find(item=>item.id===id);
-    if(!record||!queueStates.has(record.state))return {removed:false,providerMayHaveCharged:false};
-    const charged=providerMayHaveCharged(record);
-    const removed=await this.store.remove(id,charged?'success':'cancelled',[record.state]);
+    if(!record||!removableStates.has(record.state)||record.taskId||record.providerAcceptedAt)return {removed:false,providerMayHaveCharged:false};
+    const removed=await this.store.remove(id,'cancelled',[record.state]);
     if(notify)this.notify(removed?{full:true}:undefined);
-    return {removed:Boolean(removed),providerMayHaveCharged:Boolean(removed)&&charged};
+    return {removed:Boolean(removed),providerMayHaveCharged:false};
   }
   async clear() {
     this.pause();
     const results=[];
     for(let attempt=0;attempt<5;attempt++){
-      const records=(await this.store.list()).filter(record=>queueStates.has(record.state));
+      const records=(await this.store.list()).filter(record=>removableStates.has(record.state));
       if(!records.length)break;
       for(const record of records)results.push(await this.remove(record.id,false));
     }

@@ -393,10 +393,11 @@ function renderQueueTasks(){
     }
     if(record.error){const error=document.createElement('p');error.className='hint';error.textContent=providerErrors.text(record);row.append(error);}
     const view=document.createElement('button');view.textContent='Показать';view.onclick=()=>{previewSelection=record.id;updatePreview();$('previewModel').scrollIntoView({block:'nearest'});};row.append(view);
-    const remove=document.createElement('button');remove.textContent='Удалить из очереди';remove.onclick=()=>{
-      if(kieMayHaveCharged(record)&&!confirm('Kie уже получил или мог получить эту задачу. Токены Kie могли быть списаны: удаление не отменит генерацию и не вернёт списание. Удалить запись полностью?'))return;
-      window.desktop.removeQueued(record.id).then(refreshHistory).catch(error=>setStatus(error.message,true));
-    };row.append(remove);
+    if(['queued','preparing','blocked'].includes(record.state)&&!kieMayHaveCharged(record)){
+      const remove=document.createElement('button');remove.textContent='Удалить из очереди';remove.onclick=()=>{
+        window.desktop.removeQueued(record.id).then(refreshHistory).catch(error=>setStatus(error.message,true));
+      };row.append(remove);
+    }
     (['success','fail'].includes(record.state)?$('recentQueueTasks'):$('queueTasks')).append(row);
   }
   if(!unfinished.length)$('queueTasks').textContent='Нет активных или ожидающих задач';
@@ -601,8 +602,6 @@ $('followCurrent').addEventListener('click',()=>{previewSelection=null;updatePre
 $('editPreview').addEventListener('click',()=>{const button=[...document.querySelectorAll('[data-repeat-id]')].find(b=>b.dataset.repeatId===previewRecord?.id);if(button)button.click();else { $('historySearch').value='';$('historyFilter').value='all';historyPage=Math.floor(Math.max(0,historyRecords.findIndex(record=>record.id===previewRecord?.id))/historyPageSize);renderHistory();[...document.querySelectorAll('[data-repeat-id]')].find(b=>b.dataset.repeatId===previewRecord?.id)?.click(); }});
 $('startQueue').addEventListener('click',()=>window.desktop.startQueue().then(refreshHistory).catch(error=>setStatus(error.message,true)));
 $('clearQueue').addEventListener('click',()=>{
-  const queueRecords=historyRecords.filter(record=>['queued','preparing','submitting','waiting','queuing','generating','unknown','blocked'].includes(record.state));
-  if(queueRecords.some(kieMayHaveCharged)&&!confirm('Среди задач есть уже отправленные в Kie. Токены Kie могли быть списаны: очистка не отменит генерации и не вернёт списания. Удалить все записи очереди полностью?'))return;
   window.desktop.clearQueue().then(refreshHistory).catch(error=>setStatus(error.message,true));
 });
 $('queueConcurrency').addEventListener('change',async()=>{try{await window.desktop.setConcurrency(Number($('queueConcurrency').value));}catch(error){setStatus(error.message,true);}await refreshHistory();});

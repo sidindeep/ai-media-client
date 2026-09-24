@@ -15,7 +15,7 @@ const { createWorkspaces } = require('./workspaces');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
   const fields = ['id', 'requestId', 'revision', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote',
-    'queuedAt', 'preparingAt', 'submittingAt', 'providerAcceptedAt', 'providerFirstCheckedAt', 'providerStateChangedAt', 'lastCheckedAt', 'resultReceivedAt', 'resultSavedAt',
+    'queuedAt', 'preparingAt', 'submittingAt', 'providerAcceptedAt', 'providerChargeConfirmedAt', 'providerFreeConfirmedAt', 'providerFirstCheckedAt', 'providerStateChangedAt', 'lastCheckedAt', 'resultReceivedAt', 'resultSavedAt',
     'progress', 'providerDurationMs', 'generationStartedAt', 'generationCompletedAt', 'generationDurationMs', 'projectId', 'chatId'];
   const result = Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]]));
   Object.assign(result, { providerId: 'media', providerName: record.providerName || 'Медиастудия', model: record.modelId,
@@ -23,9 +23,11 @@ function publicRecord(record) {
   if (['unknown', 'unconfirmed'].includes(record.state)) result.error = record.nativeQuote?.status === 'unavailable'
     ? 'Статус уточняется. Кредиты не списаны; обратитесь в поддержку.'
     : 'Статус уточняется. Резерв сохранён; обратитесь в поддержку.';
-  else if (['fail', 'blocked'].includes(record.state)) result.error = record.nativeQuote?.status === 'unavailable'
-    ? 'Генерация не выполнена. Кредиты не списаны.'
-    : 'Генерация не выполнена. Резерв возвращён.';
+  else if (['fail', 'blocked'].includes(record.state)) result.error = record.providerChargeConfirmedAt
+    ? 'Генерация не выполнена. Кредиты списаны после подтверждённого расхода у поставщика.'
+    : record.nativeQuote?.status === 'unavailable'
+      ? 'Генерация не выполнена. Кредиты не списаны.'
+      : 'Генерация не выполнена. Резерв возвращён.';
   return result;
 }
 function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack, storage, content = null }) {

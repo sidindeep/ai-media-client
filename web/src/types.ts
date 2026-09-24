@@ -111,6 +111,8 @@ export type GenerationRecord = {
   preparingAt?: string;
   submittingAt?: string;
   providerAcceptedAt?: string;
+  providerChargeConfirmedAt?: string;
+  providerFreeConfirmedAt?: string;
   providerFirstCheckedAt?: string;
   providerStateChangedAt?: string;
   lastCheckedAt?: string;

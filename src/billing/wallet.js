@@ -32,12 +32,12 @@ async function reserve(client, accountId, jobId, quote) {
 }
 // Called in the SAME transaction that persists the terminal job state.
 async function settle(client, accountId, jobId, state, record, actualAmountUnits) {
-  if (!['success', 'fail', 'cancelled', 'blocked'].includes(state)) return;
+  if (!['success', 'fail', 'cancelled', 'blocked', 'provider_charged', 'provider_free'].includes(state)) return;
   await lockWallet(client, accountId);
   const reservation = (await client.query('SELECT * FROM media_reservations WHERE job_id=$1 AND account_id=$2 FOR UPDATE', [jobId, accountId])).rows[0];
   if (!reservation || reservation.state !== 'held') return;
   const reserved = units(Number(reservation.amount));
-  const captured = state === 'success';
+  const captured = state === 'success' || state === 'provider_charged';
   const charge = captured ? (actualAmountUnits === undefined ? reserved : units(actualAmountUnits)) : 0;
   if (charge > reserved) throw new Error('Фактическая стоимость превышает зарезервированный лимит');
   await client.query('UPDATE media_wallets SET held=held-$2,balance=balance-$3 WHERE account_id=$1', [accountId, reserved, charge]);

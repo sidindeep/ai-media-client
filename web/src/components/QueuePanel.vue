@@ -12,27 +12,16 @@ const statusKey = (state: string): TranslationKey | null => state === 'running' 
   queuing: 'queue.status.queuing', generating: 'queue.status.generating', unknown: 'queue.status.unknown', success: 'queue.status.success',
   fail: 'queue.status.fail', blocked: 'queue.status.blocked', cancelled: 'queue.status.cancelled', unconfirmed: 'queue.status.unconfirmed',
 } as Record<string, TranslationKey>)[state] || null;
-const removableStates = new Set(['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'unknown', 'blocked']);
-const removableItems = computed(() => studio.history.filter(item => !['codex', 'routerai'].includes(item.providerId) && removableStates.has(item.state)));
-const sentStates = new Set(['submitting', 'waiting', 'queuing', 'generating', 'unknown']);
-function sentToKie(item: GenerationRecord) {
-  return Boolean(item.providerAcceptedAt || sentStates.has(item.state));
-}
+const removableStates = new Set(['queued', 'preparing', 'blocked']);
+const removableItems = computed(() => studio.history.filter(item => canRemove(item)));
 function canRemove(item: GenerationRecord) {
-  return !item.optimistic && !['codex', 'routerai'].includes(item.providerId);
+  return !item.optimistic && !['codex', 'routerai'].includes(item.providerId)
+    && removableStates.has(item.state) && !item.providerAcceptedAt;
 }
 async function removeItem(item: GenerationRecord) {
-  const warning = studio.isAdmin
-    ? t('queue.removeWarningAdmin')
-    : t('queue.removeWarning');
-  if (sentToKie(item) && !confirm(warning)) return;
   await studio.remove(item.id);
 }
 async function clearAll() {
-  const warning = studio.isAdmin
-    ? t('queue.clearWarningAdmin')
-    : t('queue.clearWarning');
-  if (removableItems.value.some(sentToKie) && !confirm(warning)) return;
   await studio.clearWaiting();
 }
 function statusLabel(item: { providerId: string; state: string; optimistic?: boolean }) {

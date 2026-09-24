@@ -37,7 +37,17 @@ class AccountRecords {
       const record = { ...(old || { id }), ...changes, revision: Number(old?.revision || 0) + 1, updatedAt: new Date().toISOString() };
       if (this.namespace === 'history') {
         if (!old && record.nativeQuote?.amountUnits) await reserve(client, this.accountId, id, record.nativeQuote);
-        await settle(client, this.accountId, id, record.state, record);
+        const reportedCost = record.creditsConsumed;
+        const consumed = Number(reportedCost);
+        const costKnown = (typeof reportedCost === 'number' || (typeof reportedCost === 'string' && reportedCost.trim() !== ''))
+          && Number.isFinite(consumed) && consumed >= 0;
+        const providerCharged = Boolean(record.taskId && costKnown && consumed > 0);
+        if (providerCharged && record.nativeQuote?.amountUnits && !record.providerChargeConfirmedAt) record.providerChargeConfirmedAt = new Date().toISOString();
+        if (record.state === 'success' && record.taskId && costKnown && consumed === 0 && !record.providerChargeConfirmedAt)
+          record.providerFreeConfirmedAt = record.providerFreeConfirmedAt || new Date().toISOString();
+        const settlementState = providerCharged ? 'provider_charged'
+          : record.state === 'success' && record.taskId && costKnown && consumed === 0 ? 'provider_free' : record.state;
+        await settle(client, this.accountId, id, settlementState, record);
         await journalKieSubmission(client, this.accountId, old, record);
         if (!old || old.state !== record.state) {
           await appendGenerationEvent(client, this.accountId, 'kie', record, !old ? 'created' : record.state,
@@ -54,6 +64,7 @@ class AccountRecords {
       const old = (await client.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3 FOR UPDATE', [this.accountId, this.namespace, id])).rows[0]?.data;
       if (!old) return null;
       if (expectedStates && !expectedStates.includes(old.state)) return null;
+      if (this.namespace === 'history' && (!['queued', 'preparing', 'blocked'].includes(old.state) || old.taskId || old.providerAcceptedAt)) return null;
       if (this.namespace === 'history') await settle(client, this.accountId, id, settlementState, old);
       if (this.namespace === 'history' && old.state === 'submitting') {
         await client.query(`UPDATE media_kie_submissions SET outcome='unknown',finished_at=now(),error_code='RECORD_REMOVED_DURING_SUBMIT'

@@ -270,7 +270,20 @@ test('removing an unsent item deletes it and prevents a preparation race from re
   queue.close();
 });
 
-test('clearing deletes every queue item, preserves completed history and marks submitted work as chargeable', async () => {
+test('removing a submitted item keeps its record and provider result path', async () => {
+  const store = new Store();
+  store.rows = [{ id: 'remote', state: 'generating', taskId: 'provider-job', input: {} }];
+  const queue = new TaskQueue({ store, prepare: async row => row.input,
+    create: async () => ({ taskId: 'another-job' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.png"]}' }) });
+  queue.schedule = () => {}; queue.schedulePoll = () => {};
+  assert.deepEqual(await queue.remove('remote'), { removed: false, providerMayHaveCharged: false });
+  await queue.pollTick();
+  assert.equal((await store.list())[0].state, 'success');
+  assert.deepEqual(store.removals, []);
+  queue.close();
+});
+
+test('clearing removes only unsent items and keeps submitted work for polling', async () => {
   const store = new Store();
   store.rows = [
     { id: 'queued', state: 'queued' },
@@ -280,17 +293,15 @@ test('clearing deletes every queue item, preserves completed history and marks s
   ];
   const queue = new TaskQueue({ store, prepare: async row => row.input, create: async () => ({ taskId: 'provider' }), poll: async () => ({ state: 'waiting' }) });
   queue.schedule = () => {}; queue.schedulePoll = () => {};
-  assert.deepEqual(await queue.clear(), { removed: 3, providerMayHaveCharged: true });
-  assert.deepEqual((await store.list()).map(row => row.id), ['complete']);
+  assert.deepEqual(await queue.clear(), { removed: 1, providerMayHaveCharged: false });
+  assert.deepEqual((await store.list()).map(row => row.id), ['remote', 'unknown', 'complete']);
   assert.deepEqual(store.removals, [
     { id: 'queued', settlementState: 'cancelled' },
-    { id: 'remote', settlementState: 'success' },
-    { id: 'unknown', settlementState: 'success' },
   ]);
   queue.close();
 });
 
-test('clear retries a state transition and settles from the locked current state', async () => {
+test('clear leaves an item that became submitting before removal', async () => {
   class RacingStore extends Store {
     async remove(id, settlementState, expectedStates) {
       if (!this.changed) {
@@ -303,7 +314,7 @@ test('clear retries a state transition and settles from the locked current state
   const store = new RacingStore(); store.rows = [{ id: 'racing', state: 'preparing' }];
   const queue = new TaskQueue({ store, prepare: async row => row.input, create: async () => ({ taskId: 'provider' }), poll: async () => ({ state: 'waiting' }) });
   queue.schedule = () => {}; queue.schedulePoll = () => {};
-  assert.deepEqual(await queue.clear(), { removed: 1, providerMayHaveCharged: true });
-  assert.deepEqual(store.removals, [{ id: 'racing', settlementState: 'success' }]);
+  assert.deepEqual(await queue.clear(), { removed: 0, providerMayHaveCharged: false });
+  assert.deepEqual(store.removals, []);
   queue.close();
 });

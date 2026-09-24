@@ -180,7 +180,7 @@ export const en = {
   'queue.otherChats': '{count} more tasks in other chats on this account',
   'queue.resume': 'Resume',
   'queue.pause': 'Pause',
-  'queue.clear': 'Clear all',
+  'queue.clear': 'Remove unsent',
   'queue.remove': 'Remove from queue',
   'queue.empty': 'The queue is clear. A new task will appear here after you start it.',
   'queue.unavailable': 'The queue is temporarily unavailable. Try again later.',

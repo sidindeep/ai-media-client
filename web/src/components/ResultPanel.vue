@@ -161,10 +161,11 @@ const receipt = computed(() => {
       queuing: t(`result.receipt.${prefix}.queuing` as 'result.receipt.admin.queuing'),
       generating: t(`result.receipt.${prefix}.generating` as 'result.receipt.admin.generating'),
     };
-    return t('result.receipt.elapsed', { message: messages[record.state] || generationStateLabel(record.state), duration: duration.value, check: ['waiting', 'queuing', 'generating'].includes(record.state) ? ` ${lastProviderCheck.value}` : '' });
+    return t('result.receipt.elapsed', { message: messages[record.state] || generationStateLabel(record.state), duration: duration.value, check: ['waiting', 'queuing', 'generating'].includes(record.state) ? ` ${lastProviderCheck.value}` : '' })
+      + (record.providerChargeConfirmedAt ? ` ${t('result.receipt.charged')}.` : '');
   }
   if (activeStates.has(record.state)) return t('result.receipt.active', { provider: isAdmin.value ? `${generationProviderLabel(record, studio.catalog)}: ` : '', state: generationStateLabel(record.state), duration: duration.value, details: isAdmin.value ? t('result.receipt.adminPendingDetails') : '' });
-  const costAction = record.state === 'success' ? t('result.receipt.charged') : ['fail', 'blocked', 'cancelled'].includes(record.state) ? t('result.receipt.refunded') : t('result.receipt.reserved');
+  const costAction = record.providerFreeConfirmedAt ? t('result.receipt.refunded') : record.state === 'success' || record.providerChargeConfirmedAt ? t('result.receipt.charged') : ['fail', 'blocked', 'cancelled'].includes(record.state) ? t('result.receipt.refunded') : t('result.receipt.reserved');
   const parts = [record.state === 'success' ? (isAdmin.value ? t('result.receipt.responseFrom', { provider: generationProviderLabel(record, studio.catalog) }) : t('result.receipt.received')) : `${resultError(record, isAdmin.value)}.`];
   if (credits.value != null) parts.push(t('result.receipt.creditCost', { action: costAction, count: formatCreditCost(credits.value) }));
   if (record.generationDurationMs != null) parts.push(t('result.receipt.generationTime', { duration: duration.value }));

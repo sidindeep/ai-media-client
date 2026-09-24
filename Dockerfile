@@ -6,7 +6,7 @@ RUN node resolve-git-commit.cjs .git > /commit
 
 FROM node:24-bookworm-slim AS runtime
 ARG CODEX_VERSION=0.155.0
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates chromium xvfb fonts-liberation \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates chromium xvfb fonts-liberation util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global @openai/codex@${CODEX_VERSION} && npm cache clean --force
 WORKDIR /app
@@ -25,7 +25,7 @@ USER node
 ENV MEDIA_HOST=0.0.0.0 MEDIA_CODEX_EMBEDDED=true CODEX_HOME=/app/data/codex-auth MEDIA_KIE_BROWSER_EMBEDDED=true
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD node -e "fetch('http://127.0.0.1:'+(process.env.MEDIA_PORT||process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "mkdir -p \"${MEDIA_DATA_DIR:-data/service}\" && exec flock -F -n -E 73 \"${MEDIA_DATA_DIR:-data/service}/service.lock\" env MEDIA_LOCK_HELD_BY_FLOCK=1 node server.js"]
 
 FROM node:24-bookworm-slim AS test
 WORKDIR /app

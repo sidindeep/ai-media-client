@@ -61,10 +61,12 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
   }
   const lockPath = path.join(config.dataDirectory, 'service.lock');
   let lock;
-  try { lock = await fs.open(lockPath, 'wx'); await lock.writeFile(String(process.pid)); }
-  catch (error) {
-    if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
-    throw error;
+  if (process.env.MEDIA_LOCK_HELD_BY_FLOCK !== '1') {
+    try { lock = await fs.open(lockPath, 'wx'); await lock.writeFile(String(process.pid)); }
+    catch (error) {
+      if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
+      throw error;
+    }
   }
   let service, telegram, telegramLinks, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer, kieBrowser, kieDisplay;
   const storage = createObjectStorage(config.storage);
@@ -114,7 +116,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await accounts?.close();
     await content?.close();
     await pool?.end();
-    await lock.close(); await fs.unlink(lockPath).catch(() => {});
+    if (lock) { await lock.close(); await fs.unlink(lockPath).catch(() => {}); }
   };
   try {
     if (config.kieBrowser?.embedded) {

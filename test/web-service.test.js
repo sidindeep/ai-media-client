@@ -366,7 +366,7 @@ test('media quote falls back to a refreshed official Kie tariff when local and c
   assert.equal(fetches, 2, 'a cache miss refreshes the official Kie list once');
 });
 
-test('a forced paid-submit quote does not download the whole Kie list twice when a price is absent', async t => {
+test('a forced paid-submit quote warns without downloading the whole Kie list twice when a price is absent', async t => {
   const dir = await directory(); let fetches = 0;
   const tariffFetcher = async () => {
     fetches++;
@@ -376,7 +376,9 @@ test('a forced paid-submit quote does not download the whole Kie list twice when
   };
   const service = await createMediaService({ directory: dir, provider: fakeProvider(), pricing: {}, tariffFetcher });
   t.after(() => cleanup(dir, service));
-  await assert.rejects(service.nativeQuote('bytedance/seedream', { prompt: 'A scene' }, [], true), /не опубликована/);
+  const quote = await service.nativeQuote('bytedance/seedream', { prompt: 'A scene' }, [], true);
+  assert.equal(quote.status, 'unavailable');
+  assert.equal(quote.amountUnits, null);
   assert.equal(fetches, 1);
 });
 

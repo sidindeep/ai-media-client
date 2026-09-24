@@ -423,6 +423,7 @@ export const en = {
   'composer.diagnosticMechanism.generation': 'Generation',
   'composer.diagnosticLoadError': 'Could not load diagnostics',
   'composer.priceUnavailable': 'Price unavailable',
+  'composer.priceUnknownWarning': 'Price unknown. Generation is available without an upfront credit charge.',
   'composer.drop.waitChat': 'Wait for the chat to load before adding a file',
   'composer.drop.waitUpload': 'Wait for the current upload to finish',
   'composer.drop.modelUnsupported': 'The selected model does not support source files',

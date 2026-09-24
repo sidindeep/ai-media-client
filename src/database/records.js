@@ -36,7 +36,7 @@ class AccountRecords {
       if (expectedStates && !expectedStates.includes(old?.state)) throw new Error('Состояние задачи уже изменилось');
       const record = { ...(old || { id }), ...changes, revision: Number(old?.revision || 0) + 1, updatedAt: new Date().toISOString() };
       if (this.namespace === 'history') {
-        if (!old && record.nativeQuote) await reserve(client, this.accountId, id, record.nativeQuote);
+        if (!old && record.nativeQuote?.amountUnits) await reserve(client, this.accountId, id, record.nativeQuote);
         await settle(client, this.accountId, id, record.state, record);
         await journalKieSubmission(client, this.accountId, old, record);
         if (!old || old.state !== record.state) {

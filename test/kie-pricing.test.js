@@ -82,6 +82,22 @@ test('Kie prices GPT Image 2.5 Flare modes from their shared marketing page', ()
   }] }), /не опубликована/);
 });
 
+test('Kie matches a flattened full model id without mixing standard and Pro Wan 2.7 prices', () => {
+  const standard = { id: 'kie:wan/2-7-image', apiModel: 'wan/2-7-image', providerId: 'kie' };
+  const pro = { id: 'kie:wan/2-7-image-pro', apiModel: 'wan/2-7-image-pro', providerId: 'kie' };
+  const tariffData = { fetchedAt: '2026-09-24T00:00:00Z', rows: [
+    { modelDescription: 'wan 2.7 image', creditPrice: '4.8', creditUnit: 'per image', anchor: 'https://kie.ai/wan-2-7-image' },
+    { modelDescription: 'wan 2.7 image pro', creditPrice: '12', creditUnit: 'per image', anchor: 'https://kie.ai/wan-2-7-image?model=wan%2F2-7-image-pro' },
+  ] };
+  assert.equal(quoteKie(standard, { resolution: '2K', n: 1 }, tariffData).credits, 4.8);
+  assert.equal(quoteKie(standard, { resolution: '2K', n: 3 }, tariffData).credits, 14.4);
+  assert.equal(quoteKie(standard, { resolution: '2K' }, tariffData).credits, 19.2);
+  assert.equal(quoteKie(standard, { resolution: '2K', enable_sequential: true }, tariffData).credits, 57.6);
+  assert.equal(quoteKie(pro, { resolution: '2K', n: 1 }, tariffData).credits, 12);
+  assert.equal(quoteKie(pro, { resolution: '2K' }, tariffData).credits, 48);
+  assert.throws(() => quoteKie(standard, { n: 0 }, tariffData), /количество изображений/);
+});
+
 test('Kie selects documented Seedream quality and Ideogram rendering speed variants', () => {
   const seedream = { id: 'kie:seedream/5-pro-text-to-image', apiModel: 'seedream/5-pro-text-to-image', providerId: 'kie' };
   const seedreamRows = ['1K', '2K'].map((resolution, index) => ({

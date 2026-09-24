@@ -113,11 +113,12 @@ function createTelegramBot({ service, directory, allowedUsers = [], publicAccess
       let quote = null;
       if (context.accountId) {
         try { quote = await activeService.dispatch('nativeQuote', [{ modelId: model.id, input: data.input, sourceFiles: data.sourceFiles }]); }
-        catch { return reply('Для этой модели пока нет опубликованной цены. Генерация не запущена.', menu); }
+        catch { quote = null; }
       }
       const confirmation = { token: randomUUID(), request: { modelId: model.id, input: data.input, sourceFiles: data.sourceFiles } };
       await save({ confirmation });
-      const price = quote ? `Цена: ${quote.credits} кредитов. Перед отправкой сервер проверит актуальный тариф и баланс.` : 'Генерация расходует кредиты серверного аккаунта.';
+      const price = quote?.credits != null ? `Цена: ${quote.credits} кредитов. Перед отправкой сервер проверит актуальный тариф и баланс.`
+        : context.accountId ? 'Цена неизвестна. Генерация доступна без предварительного списания кредитов.' : 'Генерация расходует кредиты серверного аккаунта.';
       return reply(`Запустить «${model.name}»?\n\n${String(data.input.prompt || '').slice(0, 1200)}\n\nИсходников: ${data.sourceFiles.length}. ${price}`, [[button('Подтвердить запуск', `go:${confirmation.token}`)], [button('Назад', 'draft')]]);
     }
     if (text.startsWith('go:')) {

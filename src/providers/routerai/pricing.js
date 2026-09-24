@@ -1,3 +1,5 @@
+const { calculate } = require('../../billing/quote-engine');
+
 function unavailable(message = 'Цена выбранных параметров RouterAI не определена') {
   return Object.assign(new Error(message), { status: 400 });
 }
@@ -29,19 +31,19 @@ function quoteRouterAi(model, request) {
     const supported = new Set(['prompt', 'duration', 'resolution', 'aspect_ratio']);
     if (Object.keys(payload).some(key => !supported.has(key))) throw unavailable('Цена дополнительных параметров видео RouterAI не определена');
     if (Object.entries(pricing).some(([key, value]) => key !== 'seconds' && Number(value) > 0)) throw unavailable();
-    rubles = rate * duration;
+    rubles = calculate({ strategy: 'second', rate, quantity: duration });
   } else {
     const nonzero = Object.entries(pricing).filter(([, value]) => Number(value) > 0);
     if (nonzero.length !== 1) throw unavailable('Стоимость этой модели RouterAI зависит от фактического расхода');
     const [key, value] = nonzero[0];
     const unit = priceUnits[key];
-    if (unit === 'request') rubles = Number(value);
+    if (unit === 'request') rubles = calculate({ strategy: 'request', rate: value });
     else if (unit === 'image' && request.endpoint === 'images') {
       if (Array.isArray(model.image_pricing) && model.image_pricing.some(item => item.variant != null)) throw unavailable();
       if (Object.keys(payload).some(field => !['prompt', 'n'].includes(field))) throw unavailable();
       const count = Number(payload.n ?? 1);
       if (!Number.isSafeInteger(count) || count < 1 || count > 16) throw unavailable();
-      rubles = Number(value) * count;
+      rubles = calculate({ strategy: 'image', rate: value, quantity: count });
     } else throw unavailable('Стоимость этой модели RouterAI зависит от фактического расхода');
   }
   if (!Number.isFinite(rubles) || rubles <= 0) throw unavailable();

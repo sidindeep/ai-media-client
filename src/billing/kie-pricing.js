@@ -1,4 +1,7 @@
 const { units, SCALE } = require('./pricing');
+const { calculate } = require('./quote-engine');
+const { normalizePricingInput } = require('./normalize-request');
+const { modelIdFromAnchor, modelCandidates } = require('./kie-tariff-resolver');
 const fallbackConfig = require('../../config/kie-price-fallbacks.json');
 
 function buildFallbackIndex(config) {
@@ -26,54 +29,6 @@ function buildFallbackIndex(config) {
 }
 
 const fallbackIndex = buildFallbackIndex(fallbackConfig);
-
-function modelIdFromAnchor(anchor) {
-  try {
-    const url = new URL(anchor);
-    const queryModel = url.searchParams.get('model');
-    if (queryModel) return queryModel;
-    return decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, '');
-  } catch { return ''; }
-}
-
-function pathModelIdFromAnchor(anchor) {
-  try {
-    const url = new URL(anchor);
-    if (url.searchParams.has('model')) return '';
-    return decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, '');
-  } catch { return ''; }
-}
-
-function comparablePathModelId(value) {
-  return String(value || '').trim().toLowerCase().replace(/[._]+/g, '-').replace(/-+/g, '-');
-}
-
-function modelCandidates(model, rows) {
-  const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
-  const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
-  if (exact.length) return exact;
-
-  // Kie sometimes publishes an exact API model id in the tariff description
-  // while the page URL uses a marketing name. GPT Image 2.5 separates the
-  // model family and image mode with a comma. Never override an explicit,
-  // different ?model= identity.
-  const described = rows.filter(row => {
-    if (!pathModelIdFromAnchor(row.anchor)) return false;
-    const [descriptionId, mode] = String(row.modelDescription || '').split(',').map(part => part.trim());
-    return aliases.has(descriptionId)
-      || (/^(?:text|image)-to-image$/i.test(mode) && aliases.has(`${descriptionId}-${mode}`));
-  });
-  if (described.length) return described;
-
-  // Some Kie price-list pages omit the provider namespace from their anchor
-  // (for example bytedance/seedance-2-5 is published at /seedance-2-5).
-  // Only use this suffix fallback when the anchor has no explicit ?model= id;
-  // an explicit id remains authoritative and must match exactly.
-  const suffixes = new Set([...aliases]
-    .map(alias => comparablePathModelId(alias.split('/').pop()))
-    .filter(Boolean));
-  return rows.filter(row => suffixes.has(comparablePathModelId(pathModelIdFromAnchor(row.anchor))));
-}
 
 function normalized(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -178,30 +133,32 @@ function referencedVideoDuration(input, context) {
   return total;
 }
 
-function multiplier(row, input, context) {
+function imageCount(input, model, defaultCount) {
+  const count = Number(input?.num_images ?? input?.number_of_images ?? input?.output_count ?? input?.image_count ?? input?.n ?? defaultCount);
+  if (!Number.isSafeInteger(count) || count <= 0) throw new Error('Для расчёта цены нужно количество изображений');
+  return count;
+}
+
+function multiplier(row, input, context, model) {
   const unit = String(row.creditUnit || '').trim().toLowerCase();
   if (unit === 'per second') {
     const duration = Number(input?.duration);
     if (!Number.isSafeInteger(duration) || duration <= 0) throw new Error('Для расчёта цены нужна длительность в секундах');
     // Kie publishes Seedance reference-video tariffs as Price × (Input +
     // Output), not merely Price × Output. Use server-verified media metadata.
-    return duration + (/\bwith video(?:\s+input)?\b/i.test(String(row.modelDescription || '')) && hasInput(input, 'video')
-      ? referencedVideoDuration(input, context) : 0);
+    return calculate({ strategy: 'second', rate: 1, quantity: duration + (/\bwith video(?:\s+input)?\b/i.test(String(row.modelDescription || '')) && hasInput(input, 'video')
+      ? referencedVideoDuration(input, context) : 0) });
   }
   if (unit === 'per image') {
-    const count = Number(input?.num_images ?? input?.number_of_images ?? input?.output_count ?? input?.image_count ?? 1);
-    if (!Number.isSafeInteger(count) || count <= 0) throw new Error('Для расчёта цены нужно количество изображений');
-    return count;
+    return calculate({ strategy: 'image', rate: 1, quantity: imageCount(input, model, 1) });
   }
   if (unit === 'per 2 images') {
-    const count = Number(input?.num_images ?? input?.number_of_images ?? input?.output_count ?? input?.image_count ?? 2);
-    if (!Number.isSafeInteger(count) || count <= 0) throw new Error('Для расчёта цены нужно количество изображений');
-    return Math.ceil(count / 2);
+    return calculate({ strategy: 'imageBundle', rate: 1, quantity: imageCount(input, model, 2), bundleSize: 2 });
   }
   if (unit === 'per 1000 characters') {
     const count = characterCount(input?.text ?? input?.dialogue ?? input);
     if (!count) throw new Error('Для расчёта цены нужен текст');
-    return Math.ceil(count / 1000);
+    return calculate({ strategy: 'characterBundle', rate: 1, quantity: count, bundleSize: 1000 });
   }
   if (['', 'per video', 'per vedio', 'per request', 'per generation', 'per upscale'].includes(unit)) return 1;
   throw new Error('Единица тарифа Kie пока не поддерживается');
@@ -229,6 +186,7 @@ function fallbackQuote(model, input) {
 
 function quoteKie(model, input, tariffData, context = {}) {
   if (!model || model.providerId !== 'kie') throw new Error('Модель Kie не найдена');
+  input = normalizePricingInput(model, input);
   const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
   const candidates = modelCandidates(model, rows);
   if (!candidates.length) {
@@ -238,7 +196,7 @@ function quoteKie(model, input, tariffData, context = {}) {
     throw new Error('Цена этой модели Kie ещё не опубликована');
   }
   const row = selectTariff(model, input || {}, rows);
-  const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context)));
+  const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model)));
   return {
     amountUnits,
     credits: amountUnits / SCALE,

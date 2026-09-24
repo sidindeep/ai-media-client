@@ -50,3 +50,26 @@ test('spending counts captures and releases separately with account filters and 
   assert.equal(new Set([...first.items, ...second.items].map(item => item.id)).size, 33);
   await assert.rejects(spendingHistory(pool, account, { days: 31 }), /Некорректный фильтр/);
 });
+
+test('measured settlement captures actual cost and returns unused hold exactly once', async t => {
+  const pool = testPool();
+  t.after(() => pool.end());
+  await pool.query(await fs.readFile(path.join(__dirname, '../src/database/schema.sql'), 'utf8'));
+  const account = randomUUID();
+  await pool.query('INSERT INTO media_accounts(id,display_name) VALUES($1,$2)', [account, account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  await transaction(pool, async client => {
+    await reserve(client, account, 'bounded-job', { amountUnits: 4000, version: 'v1' });
+    await settle(client, account, 'bounded-job', 'success', { id: 'bounded-job', kind: 'image' }, 1300);
+    await settle(client, account, 'bounded-job', 'success', { id: 'bounded-job', kind: 'image' }, 1300);
+  });
+  const wallet = (await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0];
+  assert.deepEqual(wallet, { balance: 8700, held: 0 });
+  const ledger = (await pool.query("SELECT kind,amount FROM media_ledger WHERE reference='bounded-job' ORDER BY kind", [])).rows;
+  assert.deepEqual(ledger, [{ kind: 'capture', amount: 1300 }, { kind: 'release', amount: 2700 }, { kind: 'reserve', amount: 4000 }]);
+  await transaction(pool, async client => {
+    await reserve(client, account, 'over-limit-job', { amountUnits: 1000, version: 'v1' });
+    await assert.rejects(settle(client, account, 'over-limit-job', 'success', {}, 1001), /превышает/);
+  });
+  assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, 1000);
+});

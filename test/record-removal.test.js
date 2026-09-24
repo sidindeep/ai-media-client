@@ -28,4 +28,9 @@ test('record deletion releases unsent reservations and captures provider-submitt
   assert.equal((await records.list()).length, 0);
   assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [accountId])).rows[0], { balance: 7500, held: 0 });
   assert.deepEqual((await pool.query('SELECT kind FROM media_ledger WHERE account_id=$1 ORDER BY created_at', [accountId])).rows.map(row => row.kind), ['reserve', 'release', 'reserve', 'capture']);
+
+  await records.update('unpriced', { state: 'queued', nativeQuote: { status: 'unavailable', amountUnits: null } });
+  await records.update('unpriced', { state: 'success' });
+  assert.equal((await pool.query('SELECT count(*) AS count FROM media_reservations WHERE job_id=$1', ['unpriced'])).rows[0].count, 0);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [accountId])).rows[0], { balance: 7500, held: 0 });
 });

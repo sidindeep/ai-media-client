@@ -421,6 +421,7 @@ export const ru = {
   'composer.diagnosticMechanism.generation': 'Генерация',
   'composer.diagnosticLoadError': 'Не удалось получить диагностику',
   'composer.priceUnavailable': 'Цена недоступна',
+  'composer.priceUnknownWarning': 'Цена неизвестна. Генерация доступна без предварительного списания кредитов.',
   'composer.drop.waitChat': 'Дождитесь загрузки чата перед добавлением файла',
   'composer.drop.waitUpload': 'Дождитесь завершения текущей загрузки',
   'composer.drop.modelUnsupported': 'Выбранная модель не поддерживает исходные файлы',

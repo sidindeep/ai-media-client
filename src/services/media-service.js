@@ -12,6 +12,8 @@ const { models, providers } = require('../catalog');
 const { buildRequest } = require('../adapters');
 const costs = require('../costs');
 const { createCreditConversion } = require('../billing/conversion');
+const { normalizePricingInput } = require('../billing/normalize-request');
+const { evaluateQuote, unpricedQuote } = require('../billing/quote-engine');
 const { download } = require('../downloads');
 const { mediaDurationSeconds } = require('../media-duration');
 const Ajv = require('ajv');
@@ -181,29 +183,31 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     configured: () => provider.isConfigured(),
     async nativeQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
       const started = Date.now();
+      const model = findModel(modelId);
+      const pricingContext = { sourceFiles: await trustedSourceFiles(sourceFiles) };
       try {
-        const model = findModel(modelId);
-        const pricingContext = { sourceFiles: await trustedSourceFiles(sourceFiles) };
         let tariffData = await tariffs.get(forceRefresh);
         let quote;
-        try { quote = quoteKie(model, input, tariffData, pricingContext); }
-        catch (error) {
+        let evaluated = evaluateQuote(() => quoteKie(model, input, tariffData, pricingContext), error =>
+          /ещё не опубликована/.test(error.message) ? 'tariff_not_found' : 'price_unavailable');
+        if (evaluated.status === 'unavailable') {
+          const error = evaluated.error;
           // A newly published model or price variant may not be present in the
           // 24-hour account cache. Refresh the official Kie list once before
           // rejecting the paid request.
           if (forceRefresh || !/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error;
           tariffData = await tariffs.get(true);
-          quote = quoteKie(model, input, tariffData, pricingContext);
+          evaluated = evaluateQuote(() => quoteKie(model, input, tariffData, pricingContext));
+          if (evaluated.status === 'unavailable') throw evaluated.error;
         }
+        quote = evaluated.quote;
         const productQuote = creditConversion.quote('kie', quote);
         addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${productQuote.credits} кредитов`, Date.now() - started);
         return productQuote;
       } catch (error) {
         addProviderDiagnostic('quote', 'error', diagnosticMessage(error), Date.now() - started);
         trace.write('pricing.quote.error', { modelId, error });
-        const message = error instanceof Error ? error.message : 'неизвестная ошибка';
-        if (/^(?:Цена|Некоррект|Для расчёта)/.test(message)) throw error;
-        throw new Error(`Цена Kie временно недоступна: ${message}`);
+        return unpricedQuote(/ещё не опубликована/.test(diagnosticMessage(error)) ? 'tariff_not_found' : 'price_unavailable');
       }
     },
     async diagnoseProvider(modelId, input = {}, sourceFiles = [], kieAccountId = 'primary') {
@@ -298,6 +302,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         const kieAccountId = request?.kieAccountId ?? 'primary';
         const selectedProvider = accountProvider(kieAccountId);
         const model = findModel(request?.modelId);
+        request = { ...request, input: normalizePricingInput(model, request.input) };
         validate(model, request.input);
         if (!Array.isArray(request.sourceFiles || []) || (request.sourceFiles || []).length > 100) throw new Error('Некорректный список исходников');
         if (request.requestId && (typeof request.requestId !== 'string' || request.requestId.length > 150)) throw new Error('Некорректный идентификатор запроса');

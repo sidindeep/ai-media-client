@@ -719,3 +719,4 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 :root[data-theme='light'] .spending-operation small, :root[data-theme='light'] .spending-list-head span { color: #746e7e; }
 :root[data-theme='light'] .spending-operation-end button { color: #654bb4; }
 :root[data-theme='light'] .spending-more { border-color: #cbbde3; color: #574292; background: #f0ebfa; }
+.quote.warning { color: #f5c36b; }

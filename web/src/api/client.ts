@@ -104,7 +104,7 @@ export const createCommerceOrder = (offer: CommerceOffer, idempotencyKey: string
 export const checkoutCommerceOrder = (orderId: string) => workspaceRequest<CommerceOrder>(`/api/commerce/orders/${encodeURIComponent(orderId)}/checkout`, { method: 'POST', body: '{}' });
 export const getCommerceOrder = (orderId: string) => workspaceRequest<CommerceOrder>(`/api/commerce/orders/${encodeURIComponent(orderId)}`);
 
-export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number; amountUnits: number }> {
+export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number | null; amountUnits: number | null; status?: string; warning?: string }> {
   return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }
 
@@ -217,7 +217,7 @@ export async function getRouterAiCatalog(): Promise<RouterAiCatalog> {
   return parse(await fetch('/api/routerai/models', { headers: accountHeaders() }));
 }
 
-export async function getRouterAiQuote(model: string, payload: Record<string, unknown> = {}): Promise<{ quote: { credits: number; amountUnits: number } | null; error?: string }> {
+export async function getRouterAiQuote(model: string, payload: Record<string, unknown> = {}): Promise<{ quote: { credits: number | null; amountUnits: number | null; status?: string; warning?: string } | null; error?: string }> {
   return parse(await fetch(`/api/routerai/quote?${new URLSearchParams({ model, payload: JSON.stringify(payload) })}`, { headers: accountHeaders() }));
 }
 

@@ -20,8 +20,12 @@ function publicRecord(record) {
   const result = Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]]));
   Object.assign(result, { providerId: 'media', providerName: record.providerName || 'Медиастудия', model: record.modelId,
     taskId: record.id, resultJson: record.resultJson, localFiles: record.localFiles });
-  if (['unknown', 'unconfirmed'].includes(record.state)) result.error = 'Статус уточняется. Резерв сохранён; обратитесь в поддержку.';
-  else if (['fail', 'blocked'].includes(record.state)) result.error = 'Генерация не выполнена. Резерв возвращён.';
+  if (['unknown', 'unconfirmed'].includes(record.state)) result.error = record.nativeQuote?.status === 'unavailable'
+    ? 'Статус уточняется. Кредиты не списаны; обратитесь в поддержку.'
+    : 'Статус уточняется. Резерв сохранён; обратитесь в поддержку.';
+  else if (['fail', 'blocked'].includes(record.state)) result.error = record.nativeQuote?.status === 'unavailable'
+    ? 'Генерация не выполнена. Кредиты не списаны.'
+    : 'Генерация не выполнена. Резерв возвращён.';
   return result;
 }
 function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack, storage, content = null }) {

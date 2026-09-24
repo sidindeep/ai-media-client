@@ -24,7 +24,7 @@ const modeItems = computed(() => [
 const uploading = ref(false);
 const submitting = ref(false);
 const submitError = ref('');
-const quote = ref<{ credits: number; amountUnits?: number } | null>(null);
+const quote = ref<{ credits: number | null; amountUnits?: number | null; status?: string; warning?: string } | null>(null);
 const quoteError = ref('');
 const quoteLoading = ref(false);
 const diagnosticOpen = ref(false);
@@ -67,13 +67,12 @@ const dropDescription = computed(() => {
 });
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
-const total = computed(() => quote.value ? roundedCreditCost(quote.value.credits) : null);
-const unavailableMediaPrice = computed(() => studio.provider === 'media'
-  && /^(?:Цена этой модели Kie ещё не опубликована|Цена выбранных параметров Kie ещё не определена|Единица тарифа Kie пока не поддерживается)/.test(quoteError.value));
+const total = computed(() => quote.value?.credits != null ? roundedCreditCost(quote.value.credits) : null);
+const quoteWarning = computed(() => quote.value?.status === 'unavailable' ? t('composer.priceUnknownWarning') : '');
 const quoteErrorMessage = computed(() => {
   if (!quoteError.value) return '';
   if (!studio.isAdmin) return publicServiceError(quoteError.value, t('composer.quoteRetry'));
-  return studio.provider === 'media' && !unavailableMediaPrice.value ? t('composer.quoteRetryKie', { error: quoteError.value }) : quoteError.value;
+  return studio.provider === 'media' ? t('composer.quoteRetryKie', { error: quoteError.value }) : quoteError.value;
 });
 const modelChoice = computed({
   get: () => studio.provider === 'codex' ? studio.codexModel : studio.provider === 'routerai' ? studio.routerAiModel : studio.mediaModelId,
@@ -102,7 +101,7 @@ const promptValue = computed({
 const promptPlaceholder = computed(() => studio.mode === 'audio'
   ? promptField.value?.key === 'text' ? t('composer.promptVoice') : t('composer.promptAudio')
   : t('composer.promptDefault'));
-const selectedModelPrice = computed(() => quote.value ? `${formatCreditCost(quote.value.credits)} ${t('common.creditsShort')}` : undefined);
+const selectedModelPrice = computed(() => quote.value?.credits != null ? `${formatCreditCost(quote.value.credits)} ${t('common.creditsShort')}` : undefined);
 const valueErrors = computed(() => Object.fromEntries(currentFields.value.flatMap(field => {
   if (field.type === 'files' || /prompt/i.test(field.key)) return [];
   const message = mediaFieldValueError(field, studio.mediaInput[field.key] ?? field.default);
@@ -524,7 +523,6 @@ function submissionSelection() {
 
 async function submit(event?: Event) {
   if (submitting.value || uploading.value) return;
-  if (unavailableMediaPrice.value) { submitError.value = quoteErrorMessage.value; return; }
   if (hasFieldErrors.value) {
     const [key, message] = Object.entries(allFieldErrors.value)[0] || [];
     const field = currentFields.value.find(item => item.key === key);
@@ -532,7 +530,8 @@ async function submit(event?: Event) {
     return;
   }
   if (missingRequiredFields.value.length) { submitError.value = t('composer.completeRequired'); return; }
-  if (studio.provider !== 'media' && !quote.value) { submitError.value = studio.isAdmin ? (quoteError.value || t('composer.waitQuote')) : publicServiceError(quoteError.value, t('composer.waitQuote')); return; }
+  if (studio.provider === 'codex' && !quote.value) { submitError.value = studio.isAdmin ? (quoteError.value || t('composer.waitQuote')) : publicServiceError(quoteError.value, t('composer.waitQuote')); return; }
+  if (studio.provider === 'routerai' && !quote.value) { submitError.value = quoteError.value || t('composer.waitQuote'); return; }
   if (!studio.prompt.trim() && !(studio.provider === 'routerai' && studio.currentRouterAiModel?.kind === 'transcription' && routerAiAudioFile.value)) { submitError.value = t('composer.enterPrompt'); return; }
   const selectedAtClick = submissionSelection();
   submitError.value = '';
@@ -547,7 +546,7 @@ async function submit(event?: Event) {
     finally { uploading.value = false; }
     if (submissionSelection() !== selectedAtClick) { submitError.value = t('composer.selectionChanged'); return; }
     animateToQueue(event);
-    try { await studio.submit(specialPayload, studio.provider === 'routerai' ? quote.value?.amountUnits : undefined); }
+    try { await studio.submit(specialPayload, studio.provider === 'routerai' ? quote.value?.amountUnits ?? undefined : undefined); }
     catch (error) { const message = error instanceof Error ? error.message : ''; submitError.value = studio.isAdmin ? (message || t('composer.startError')) : publicServiceError(message, t('composer.startError')); }
   } finally { uploading.value = false; submitting.value = false; }
 }
@@ -583,8 +582,9 @@ async function submit(event?: Event) {
           <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || t('composer.format')" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
           <label v-else class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select></label>
         </template>
-        <span v-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button v-if="studio.isAdmin" type="button" class="details-button" @click="openDiagnostics">{{ t('composer.details') }}</button></span>
-        <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || unavailableMediaPrice || (studio.provider !== 'media' && total === null) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
+        <span v-if="quoteWarning" class="quote warning" role="status">{{ quoteWarning }}</span>
+        <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button v-if="studio.isAdmin" type="button" class="details-button" @click="openDiagnostics">{{ t('composer.details') }}</button></span>
+        <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
       </div>
       <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>{{ t('composer.advanced') }}</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldError(field) }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldError(field)" class="field-error">{{ fieldError(field) }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
       <details v-if="routerAiSpecial" class="advanced-settings"><summary>{{ t('composer.advanced') }}</summary><div class="advanced-grid">

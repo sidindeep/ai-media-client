@@ -31,15 +31,19 @@ async function reserve(client, accountId, jobId, quote) {
   await entry(client, accountId, 'reserve', jobId, amount);
 }
 // Called in the SAME transaction that persists the terminal job state.
-async function settle(client, accountId, jobId, state, record) {
+async function settle(client, accountId, jobId, state, record, actualAmountUnits) {
   if (!['success', 'fail', 'cancelled', 'blocked'].includes(state)) return;
   await lockWallet(client, accountId);
   const reservation = (await client.query('SELECT * FROM media_reservations WHERE job_id=$1 AND account_id=$2 FOR UPDATE', [jobId, accountId])).rows[0];
   if (!reservation || reservation.state !== 'held') return;
+  const reserved = units(Number(reservation.amount));
   const captured = state === 'success';
-  await client.query('UPDATE media_wallets SET held=held-$2,balance=balance-$3 WHERE account_id=$1', [accountId, reservation.amount, captured ? reservation.amount : 0]);
-  await client.query('UPDATE media_reservations SET state=$2 WHERE job_id=$1', [jobId, captured ? 'captured' : 'released']);
-  await entry(client, accountId, captured ? 'capture' : 'release', jobId, reservation.amount, null, '', spendingDetails(jobId, record));
+  const charge = captured ? (actualAmountUnits === undefined ? reserved : units(actualAmountUnits)) : 0;
+  if (charge > reserved) throw new Error('Фактическая стоимость превышает зарезервированный лимит');
+  await client.query('UPDATE media_wallets SET held=held-$2,balance=balance-$3 WHERE account_id=$1', [accountId, reserved, charge]);
+  await client.query('UPDATE media_reservations SET state=$2 WHERE job_id=$1', [jobId, charge ? 'captured' : 'released']);
+  if (charge) await entry(client, accountId, 'capture', jobId, charge, null, '', spendingDetails(jobId, record));
+  if (reserved > charge) await entry(client, accountId, 'release', jobId, reserved - charge, null, '', spendingDetails(jobId, record));
 }
 function createWallet(pool, { onPurchase } = {}) {
   return {

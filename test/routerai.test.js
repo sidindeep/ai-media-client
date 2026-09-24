@@ -60,10 +60,39 @@ test('RouterAI errors never expose response body or key', async () => {
     error.status === 402 && !error.message.includes('secret response') && !error.message.includes('test-key'));
 });
 
-test('RouterAI quote fails closed when the live tariff is unavailable', async () => {
+test('RouterAI quote warns when the live tariff is unavailable', async () => {
   const pricing = createPricing({ version: 'test', models: { 'routerai:admin-catalog': { baseUnits: 4000 } } });
   const billing = createRouterAiBilling({ accounts: { pricing }, apiKey: 'test-key', content: {}, tariffFetcher: async () => null });
-  await assert.rejects(billing.quote({ model: 'maker/video-1', endpoint: 'videos' }, 'admin'), /не найден/);
+  const quote = await billing.quote({ model: 'maker/video-1', endpoint: 'videos' }, 'admin');
+  assert.equal(quote.status, 'unavailable');
+  assert.equal(quote.amountUnits, null);
+});
+
+test('RouterAI runs a variable-cost text model without reserving or charging credits', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), requestId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Variable pricing')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,0)', [account]);
+  let sent = 0;
+  const billing = createRouterAiBilling({ accounts: { pool }, apiKey: 'test-key', content: {},
+    tariffFetcher: async model => ({ id: model, pricing: { prompt: 0.1, completion: 0.2 },
+      pricing_units: { prompt: 'token', completion: 'token' } }),
+    fetchImpl: async () => { sent++; return { ok: true, json: async () => ({ choices: [{ message: { content: 'Ответ' } }], usage: { cost: 3 } }) }; } });
+  const request = { requestId, model: 'openai/gpt-oss-20b', prompt: 'Привет' };
+  const created = await billing.submit(account, request);
+  assert.equal(created.nativeQuote.status, 'unavailable');
+  let job;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    job = await billing.get(account, requestId);
+    if (job.state !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(job.state, 'success');
+  assert.equal(job.providerCostRub, 3);
+  assert.equal(sent, 1);
+  assert.equal((await pool.query('SELECT count(*) AS count FROM media_reservations WHERE account_id=$1', [account])).rows[0].count, 0);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0], { balance: 0, held: 0 });
 });
 
 test('Admin API request reserves once and saves the provider response', async t => {

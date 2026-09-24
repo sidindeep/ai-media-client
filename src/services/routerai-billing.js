@@ -2,6 +2,7 @@ const { transaction } = require('../database/database');
 const { reserve, settle, lockWallet } = require('../billing/wallet');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { quoteRouterAi } = require('../providers/routerai/pricing');
+const { evaluateQuote, unpricedQuote } = require('../billing/quote-engine');
 const { appendGenerationEvent } = require('./generation-journal');
 const { createCreditConversion } = require('../billing/conversion');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
@@ -48,7 +49,14 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
   const client = createRouterAiClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
   const id = (account, requestId) => `routerai:${account}:${requestId}`;
   const conversion = accounts.conversion || createCreditConversion();
-  const quote = async (request, _role = 'user', force = false) => conversion.quote('routerai', quoteRouterAi(await tariffFetcher(request.model, force), request));
+  const quote = async (request, _role = 'user', force = false) => {
+    try {
+      const model = await tariffFetcher(request.model, force);
+      const result = evaluateQuote(() => quoteRouterAi(model, request), () => 'price_unavailable');
+      if (result.status === 'unavailable') return unpricedQuote('price_unavailable');
+      return conversion.quote('routerai', result.quote);
+    } catch { return unpricedQuote('price_unavailable'); }
+  };
   async function get(account, requestId) {
     return (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
   }
@@ -104,7 +112,9 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
             if (['failed', 'error', 'cancelled', 'canceled'].includes(state)) return finish(account, request.requestId, { state: 'fail', error: 'RouterAI не создал видео.' });
             await new Promise(resolve => setTimeout(resolve, 5000));
           }
-          return finish(account, request.requestId, { state: 'unknown', error: 'Видеозадача RouterAI выполняется дольше 12 минут. Резерв сохранён до проверки.' });
+          return finish(account, request.requestId, { state: 'unknown', error: request.nativeQuote?.amountUnits == null
+            ? 'Видеозадача RouterAI выполняется дольше 12 минут. Результат требует проверки.'
+            : 'Видеозадача RouterAI выполняется дольше 12 минут. Резерв сохранён до проверки.' });
         }
         if (result.type === 'text' && request.modelKind === 'audio') {
           const wav = streamedWav(result.data);
@@ -161,7 +171,8 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
     } catch (error) {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(error.status);
       return finish(account, request.requestId, { state: rejected ? 'fail' : 'unknown',
-        error: rejected ? error.message : 'Результат RouterAI требует проверки. Резерв кредитов сохранён.' });
+        error: rejected ? error.message : request.nativeQuote?.amountUnits == null
+          ? 'Результат RouterAI требует проверки.' : 'Результат RouterAI требует проверки. Резерв кредитов сохранён.' });
     }
   }
   async function save(account, request, role) {
@@ -173,7 +184,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       return existing;
     }
     const nativeQuote = await quote(request, role, true);
-    if (request.quotedAmountUnits !== undefined && request.quotedAmountUnits !== nativeQuote.amountUnits) {
+    if (request.quotedAmountUnits !== undefined && nativeQuote.amountUnits !== null && request.quotedAmountUnits !== nativeQuote.amountUnits) {
       throw Object.assign(new Error('Тариф RouterAI изменился. Обновите цену перед отправкой.'), { status: 409 });
     }
     let fresh = false;
@@ -184,7 +195,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
         if (!matches(previous)) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
         return previous;
       }
-      await reserve(db, account, id(account, request.requestId), nativeQuote);
+      if (nativeQuote.amountUnits !== null) await reserve(db, account, id(account, request.requestId), nativeQuote);
       const createdAt = new Date().toISOString();
       const record = { ...request, id: request.requestId, state: 'running', revision: 1, nativeQuote, createdAt, updatedAt: createdAt };
       await db.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'routerai',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
@@ -192,7 +203,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       fresh = true;
       return record;
     });
-    if (fresh) void process(account, request).catch(() => {});
+    if (fresh) void process(account, job).catch(() => {});
     return job;
   }
   async function submit(account, raw, role = 'user', allowedModels = catalog.models) {
@@ -225,7 +236,9 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
   return { quote, submit, submitAdmin, adminVideo, get,
     async recover() {
       const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='routerai' AND data->>'state'='running'")).rows;
-      for (const row of rows) await finish(row.account_id, row.data.id, { state: 'unknown', error: 'Сервис перезапущен во время запроса RouterAI. Резерв сохранён до проверки.' });
+      for (const row of rows) await finish(row.account_id, row.data.id, { state: 'unknown', error: row.data.nativeQuote?.amountUnits == null
+        ? 'Сервис перезапущен во время запроса RouterAI. Результат требует проверки.'
+        : 'Сервис перезапущен во время запроса RouterAI. Резерв сохранён до проверки.' });
     },
     async image(account, requestId) {
       const job = await get(account, requestId);

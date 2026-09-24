@@ -13,12 +13,13 @@ const { buildRequest } = require('../adapters');
 const costs = require('../costs');
 const { createCreditConversion } = require('../billing/conversion');
 const { normalizePricingInput } = require('../billing/normalize-request');
-const { evaluateQuote, unpricedQuote } = require('../billing/quote-engine');
+const { unpricedQuote } = require('../billing/quote-engine');
+const { resolvePriceSources } = require('../billing/price-sources');
 const { download } = require('../downloads');
 const { mediaDurationSeconds } = require('../media-duration');
 const Ajv = require('ajv');
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, conversion, tariffFetcher, storage = null, storagePrefix = '', content = null, accountId = null }) {
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, conversion, tariffFetcher, accountQuote, storage = null, storagePrefix = '', content = null, accountId = null }) {
   if (!stores) trace.configure(path.join(directory, 'logs'));
   const history = stores?.history || new History(path.join(directory, 'history.json'));
   const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
@@ -27,14 +28,13 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   const assets = new Assets(path.join(directory, 'sources'), { storage, prefix: storagePrefix, content, accountId });
   const templates = new PromptTemplates(path.join(directory, 'templates.json'), stores?.templates);
   const tariffs = new (require('../tariffs').Tariffs)(preferences, tariffFetcher || fetch);
-  const { quoteKie } = require('../billing/kie-pricing');
+  const { quoteKie, quoteKiePublic, quoteKieDocumented } = require('../billing/kie-pricing');
   const creditConversion = conversion || createCreditConversion({ kieRubPerCredit: rubPerCredit });
   const events = new EventEmitter();
   const ajv = new Ajv({ strict: false, validateFormats: false });
   const pendingSaves = new Map();
   const providerDiagnostics = [];
-  // `pricing` only marks account mode, where a quote must be reserved. Kie
-  // price values themselves always come from Kie's live public tariff API.
+  // `pricing` marks account mode, where a verified quote can be reserved.
   const nativeBilling = Boolean(pricing);
   const accountProvider = (id = 'primary') => {
     if (provider.selectAccount) return provider.selectAccount(id);
@@ -186,22 +186,29 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const model = findModel(modelId);
       const pricingContext = { sourceFiles: await trustedSourceFiles(sourceFiles) };
       try {
-        let tariffData = await tariffs.get(forceRefresh);
-        let quote;
-        let evaluated = evaluateQuote(() => quoteKie(model, input, tariffData, pricingContext), error =>
-          /ещё не опубликована/.test(error.message) ? 'tariff_not_found' : 'price_unavailable');
-        if (evaluated.status === 'unavailable') {
-          const error = evaluated.error;
-          // A newly published model or price variant may not be present in the
-          // 24-hour account cache. Refresh the official Kie list once before
-          // rejecting the paid request.
-          if (forceRefresh || !/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error;
-          tariffData = await tariffs.get(true);
-          evaluated = evaluateQuote(() => quoteKie(model, input, tariffData, pricingContext));
-          if (evaluated.status === 'unavailable') throw evaluated.error;
+        const validateQuote = raw => creditConversion.quote('kie', raw);
+        let resolved = await resolvePriceSources([
+          { id: 'account', quote: accountQuote && (() => accountQuote(model, input, pricingContext)) },
+        ], validateQuote);
+        if (!resolved.quote) {
+          let tariffData = await tariffs.get(forceRefresh);
+          const resolve = data => resolvePriceSources([
+            { id: 'public', quote: () => quoteKiePublic(model, input, data, pricingContext) },
+            { id: 'documented', quote: () => quoteKieDocumented(model, input, data) },
+          ], validateQuote);
+          resolved = await resolve(tariffData);
+          if (!resolved.quote) {
+            const error = resolved.attempts.find(item => item.source === 'public')?.error;
+            // A newly published model or price variant may not be present in the
+            // 24-hour account cache. Refresh the official Kie list once before
+            // rejecting the paid request.
+            if (forceRefresh || !/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error || new Error('Цена Kie недоступна');
+            tariffData = await tariffs.get(true);
+            resolved = await resolve(tariffData);
+            if (!resolved.quote) throw resolved.attempts.find(item => item.source === 'public')?.error || new Error('Цена Kie недоступна');
+          }
         }
-        quote = evaluated.quote;
-        const productQuote = creditConversion.quote('kie', quote);
+        const productQuote = { ...resolved.value, source: resolved.source };
         addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${productQuote.credits} кредитов`, Date.now() - started);
         return productQuote;
       } catch (error) {

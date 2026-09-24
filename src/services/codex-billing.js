@@ -15,7 +15,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
   const id = (account, requestId) => `codex:${account}:${requestId}`;
   const get = async (account, requestId) => (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
   const conversion = accounts.conversion || createCreditConversion();
-  const quote = request => conversion.quote('codex', accounts.pricing.quote(priceKey(request)));
+  const quote = request => ({ ...conversion.quote('codex', accounts.pricing.quote(priceKey(request))), source: 'configured' });
   const imagePath = (account, requestId) => path.join(dataDirectory, 'codex-images', account, requestId + '.png');
   const imageKey = (account, requestId) => `accounts/${account}/codex-images/${requestId}.png`;
   async function update(account, requestId, patch) {

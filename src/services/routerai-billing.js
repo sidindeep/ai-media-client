@@ -2,7 +2,8 @@ const { transaction } = require('../database/database');
 const { reserve, settle, lockWallet } = require('../billing/wallet');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { quoteRouterAi } = require('../providers/routerai/pricing');
-const { evaluateQuote, unpricedQuote } = require('../billing/quote-engine');
+const { unpricedQuote } = require('../billing/quote-engine');
+const { resolvePriceSources } = require('../billing/price-sources');
 const { appendGenerationEvent } = require('./generation-journal');
 const { createCreditConversion } = require('../billing/conversion');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
@@ -45,16 +46,18 @@ function validateRouterAiRequest(raw, models = catalog.models) {
     ...(raw.projectId ? { projectId: raw.projectId } : {}), ...(raw.chatId ? { chatId: raw.chatId } : {}) };
 }
 
-function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFetcher }) {
+function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFetcher, accountQuote, documentedQuote }) {
   const client = createRouterAiClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
   const id = (account, requestId) => `routerai:${account}:${requestId}`;
   const conversion = accounts.conversion || createCreditConversion();
   const quote = async (request, _role = 'user', force = false) => {
     try {
-      const model = await tariffFetcher(request.model, force);
-      const result = evaluateQuote(() => quoteRouterAi(model, request), () => 'price_unavailable');
-      if (result.status === 'unavailable') return unpricedQuote('price_unavailable');
-      return conversion.quote('routerai', result.quote);
+      const result = await resolvePriceSources([
+        { id: 'account', quote: accountQuote && (() => accountQuote(request)) },
+        { id: 'public', quote: async () => quoteRouterAi(await tariffFetcher(request.model, force), request) },
+        { id: 'documented', quote: documentedQuote && (() => documentedQuote(request)) },
+      ], raw => conversion.quote('routerai', raw));
+      return result.quote ? { ...result.value, source: result.source } : unpricedQuote('price_unavailable');
     } catch { return unpricedQuote('price_unavailable'); }
   };
   async function get(account, requestId) {

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { quoteKie, modelIdFromAnchor } = require('../src/billing/kie-pricing');
+const { quoteKie, quoteKiePublic, quoteKieDocumented, modelIdFromAnchor } = require('../src/billing/kie-pricing');
 const specialModels = require('../src/kie-special.json');
 
 const flux = { id: 'kie:flux-2/pro-image-to-image', apiModel: 'flux-2/pro-image-to-image', providerId: 'kie' };
@@ -180,6 +180,16 @@ test('Kie pricing uses exact versioned fallbacks for ByteDance V1 models missing
   assert.equal(quote('bytedance/v1-pro-image-to-video', '720P', 10).credits, 60);
   assert.equal(quote('bytedance/v1-pro-fast-image-to-video', '720p', 5).credits, 16);
   assert.equal(quote('bytedance/v1-pro-fast-image-to-video', '1080p', 10).credits, 72);
+});
+
+test('Kie documented price cannot override a published but ambiguous live variant', () => {
+  const model = { id: 'kie:bytedance/v1-lite-text-to-video', apiModel: 'bytedance/v1-lite-text-to-video', providerId: 'kie' };
+  const input = { resolution: '720p', duration: 5 };
+  const live = { rows: [{ modelDescription: 'other variant', creditPrice: '99', creditUnit: 'per video',
+    anchor: 'https://kie.ai/seedance-v1?model=bytedance%2Fv1-lite-text-to-video' }] };
+  assert.equal(quoteKieDocumented(model, input, live), null);
+  assert.equal(quoteKieDocumented(model, input, { rows: [] }).credits, 22.5);
+  assert.throws(() => quoteKiePublic(model, input, { rows: [] }), /временно недоступна/);
 });
 
 test('Kie ByteDance V1 fallback covers every configured catalog variant exactly', () => {

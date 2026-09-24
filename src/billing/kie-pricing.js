@@ -184,7 +184,7 @@ function fallbackQuote(model, input) {
   };
 }
 
-function quoteKie(model, input, tariffData, context = {}) {
+function checkedInput(model, input) {
   if (!model || model.providerId !== 'kie') throw new Error('Модель Kie не найдена');
   input = normalizePricingInput(model, input);
   // The shared Veo page publishes a flat per-video rate without a duration
@@ -192,11 +192,14 @@ function quoteKie(model, input, tariffData, context = {}) {
   if (model.adapter === 'veo' && Number(input.duration ?? 8) !== 8) {
     throw new Error('Цена выбранной длительности Kie ещё не определена');
   }
+  return input;
+}
+
+function quoteKiePublic(model, input, tariffData, context = {}) {
+  input = checkedInput(model, input);
   const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
   const candidates = modelCandidates(model, rows);
   if (!candidates.length) {
-    const fallback = fallbackQuote(model, input || {});
-    if (fallback) return fallback;
     if (!rows.length) throw new Error('Цена Kie временно недоступна');
     throw new Error('Цена этой модели Kie ещё не опубликована');
   }
@@ -211,4 +214,20 @@ function quoteKie(model, input, tariffData, context = {}) {
   };
 }
 
-module.exports = { quoteKie, modelIdFromAnchor, selectTariff, fallbackQuote };
+function quoteKieDocumented(model, input, tariffData) {
+  input = checkedInput(model, input);
+  // A published live model must not be silently overridden by an older page.
+  if (modelCandidates(model, Array.isArray(tariffData?.rows) ? tariffData.rows : []).length) return null;
+  return fallbackQuote(model, input);
+}
+
+function quoteKie(model, input, tariffData, context = {}) {
+  try { return quoteKiePublic(model, input, tariffData, context); }
+  catch (error) {
+    const fallback = quoteKieDocumented(model, input, tariffData);
+    if (fallback) return fallback;
+    throw error;
+  }
+}
+
+module.exports = { quoteKie, quoteKiePublic, quoteKieDocumented, modelIdFromAnchor, selectTariff, fallbackQuote };

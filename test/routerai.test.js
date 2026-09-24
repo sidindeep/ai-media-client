@@ -68,6 +68,19 @@ test('RouterAI quote warns when the live tariff is unavailable', async () => {
   assert.equal(quote.amountUnits, null);
 });
 
+test('RouterAI quote tries account, public and documented prices in order', async () => {
+  const called = [];
+  const conversion = { quote: (_provider, raw) => ({ amountUnits: Math.ceil(raw.amount * 1000), credits: raw.amount, version: raw.version }) };
+  const billing = createRouterAiBilling({ accounts: { conversion }, apiKey: 'test-key', content: {},
+    accountQuote: async () => { called.push('account'); return null; },
+    tariffFetcher: async () => { called.push('public'); return null; },
+    documentedQuote: () => { called.push('documented'); return { amount: 3, version: 'documented-1' }; } });
+  const result = await billing.quote({ model: 'maker/video-1', endpoint: 'videos' }, 'admin');
+  assert.deepEqual(called, ['account', 'public', 'documented']);
+  assert.equal(result.source, 'documented');
+  assert.equal(result.amountUnits, 3000);
+});
+
 test('RouterAI runs a variable-cost text model without reserving or charging credits', async t => {
   const pool = await openDatabase({}, testPool());
   t.after(() => pool.end());

@@ -187,6 +187,11 @@ function fallbackQuote(model, input) {
 function quoteKie(model, input, tariffData, context = {}) {
   if (!model || model.providerId !== 'kie') throw new Error('Модель Kie не найдена');
   input = normalizePricingInput(model, input);
+  // The shared Veo page publishes a flat per-video rate without a duration
+  // dimension. Its verified estimate covers the 8-second request only.
+  if (model.adapter === 'veo' && Number(input.duration ?? 8) !== 8) {
+    throw new Error('Цена выбранной длительности Kie ещё не определена');
+  }
   const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
   const candidates = modelCandidates(model, rows);
   if (!candidates.length) {

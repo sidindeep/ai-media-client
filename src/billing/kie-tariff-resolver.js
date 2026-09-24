@@ -20,6 +20,15 @@ function comparablePathModelId(value) {
 }
 
 function modelCandidates(model, rows) {
+  if (model.adapter === 'veo') {
+    const tier = { veo3: 'Quality', veo3_fast: 'Fast', veo3_lite: 'Lite' }[model.wireModel];
+    const mode = { TEXT_2_VIDEO: 'text-to-video', FIRST_AND_LAST_FRAMES_2_VIDEO: 'image-to-video',
+      REFERENCE_2_VIDEO: 'reference-to-video' }[model.mode];
+    if (!tier || !mode) return [];
+    return rows.filter(row => comparablePathModelId(pathModelIdFromAnchor(row.anchor)) === 'veo-3-1'
+      && new RegExp(`^Google veo 3\\.1,\\s*${mode},\\s*${tier}-`, 'i').test(String(row.modelDescription || '')));
+  }
+
   const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
   const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
   if (exact.length) return exact;

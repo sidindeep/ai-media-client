@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { quoteKie, modelIdFromAnchor } = require('../src/billing/kie-pricing');
+const specialModels = require('../src/kie-special.json');
 
 const flux = { id: 'kie:flux-2/pro-image-to-image', apiModel: 'flux-2/pro-image-to-image', providerId: 'kie' };
 const rows = [
@@ -20,6 +21,30 @@ test('Kie dynamic pricing resolves an exact model id from an anchor path', () =>
   const row = { modelDescription: 'nano-banana-2-lite, 1k', creditPrice: '4', creditUnit: 'per image', anchor: 'https://kie.ai/nano-banana-2-lite' };
   assert.equal(modelIdFromAnchor(row.anchor), 'nano-banana-2-lite');
   assert.equal(quoteKie(model, { aspect_ratio: 'auto' }, { fetchedAt: '2026-09-20T00:00:00Z', rows: [row] }).credits, 4);
+});
+
+test('Veo 3.1 shared pricing page resolves the exact mode, tier and resolution', () => {
+  const prices = {
+    Quality: { 'text-to-video': 250, 'image-to-video': 250 },
+    Fast: { 'text-to-video': 60, 'image-to-video': 60, 'reference-to-video': 60 },
+    Lite: { 'text-to-video': 30, 'image-to-video': 30, 'reference-to-video': 30 },
+  };
+  const rows = Object.entries(prices).flatMap(([tier, modes]) => Object.entries(modes).flatMap(([mode, price]) => [
+    { modelDescription: `Google veo 3.1, ${mode}, ${tier}-720p`, creditPrice: String(price), creditUnit: 'per video', anchor: 'https://kie.ai/veo-3-1' },
+    { modelDescription: `Google veo 3.1, ${mode}, ${tier}-1080p`, creditPrice: String(price + 5), creditUnit: 'per video', anchor: 'https://kie.ai/veo-3-1' },
+  ]));
+  rows.push({ modelDescription: 'Google veo 3.1, text-to-video, Lite-720p', creditPrice: '1', creditUnit: 'per video',
+    anchor: 'https://kie.ai/veo-3-1?model=other-model' });
+  for (const model of specialModels.filter(item => item.adapter === 'veo')) {
+    const tier = { veo3: 'Quality', veo3_fast: 'Fast', veo3_lite: 'Lite' }[model.wireModel];
+    const mode = { TEXT_2_VIDEO: 'text-to-video', FIRST_AND_LAST_FRAMES_2_VIDEO: 'image-to-video',
+      REFERENCE_2_VIDEO: 'reference-to-video' }[model.mode];
+    const input = { prompt: 'Scene', resolution: '720p' };
+    assert.equal(quoteKie(model, input, { rows }).credits, prices[tier][mode], model.id);
+    assert.equal(quoteKie(model, { ...input, resolution: '1080p' }, { rows }).credits, prices[tier][mode] + 5, model.id);
+    assert.throws(() => quoteKie(model, { ...input, resolution: '4K' }, { rows }), /параметров/, model.id);
+    assert.throws(() => quoteKie(model, { ...input, duration: 4 }, { rows }), /длительности/, model.id);
+  }
 });
 
 test('Kie dynamic pricing resolves provider-prefixed models from a short official anchor', () => {

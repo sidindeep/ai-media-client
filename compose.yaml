@@ -30,6 +30,7 @@ services:
     environment:
       CHROMIUM_APP_URL: https://kie.ai/api-key
       CHROMIUM_REMOTE_DEBUGGING: '1'
+      CHROMIUM_CUSTOM_ARGS: --disable-extensions
       WEB_TERMINAL: '0'
       VNC_LISTENING_PORT: '-1'
     ports:

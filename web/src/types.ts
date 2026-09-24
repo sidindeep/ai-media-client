@@ -200,6 +200,7 @@ export type ReleaseInfo = {
   version: string;
   channel: string;
   build: string;
+  commit: string | null;
   builtAt?: string | null;
 };
 

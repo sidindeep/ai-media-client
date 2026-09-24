@@ -235,7 +235,7 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.source-preview img').alt"), /dropped-source\.png/);
     await evaluate("document.querySelector('.source-remove').click();void 0");
     assert.equal(await evaluate("document.querySelector('.source-preview')"), null);
-    await until("document.querySelector('.sidebar-version')?.textContent.includes('сборка')");
+    await until("document.querySelector('.sidebar-version')?.textContent.includes('коммит')");
     assert.equal(await evaluate("document.querySelector('.sidebar .brand-mark')?.tagName"), 'A');
     assert.equal(await evaluate("document.querySelector('.sidebar .brand-mark')?.getAttribute('href')"), '/');
     assert.equal(await evaluate("document.querySelector('.sidebar .brand-mark')?.getAttribute('aria-label')"), 'На главную');
@@ -705,8 +705,8 @@ app.whenReady().then(async () => {
     await until("document.querySelector('#grantAccount').options.length===2");
     await until("document.querySelector('#accountEmail')?.textContent==='admin@example.test'");
     assert.equal(await evaluate("document.querySelector('#accountEmail').hidden"), false);
-    await until("document.querySelector('#appVersion').textContent.includes('сборка')");
-    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия \d+\.\d+\.\d+(?: · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2})? · сборка [a-f0-9]{12}/);
+    await until("document.querySelector('#appVersion').textContent.includes('коммит')");
+    assert.match(await evaluate("document.querySelector('#appVersion').textContent"), /DEBUG · Версия \d+\.\d+\.\d+(?: · \d{2}\.\d{2}\.\d{4} \d{2}:\d{2})? · коммит [a-f0-9]{12}/);
     await evaluate("location.hash='codexPanel';void 0");
     await until("document.querySelector('#codexLoginStatus').textContent==='Codex ещё не подключён.'");
     await evaluate("document.querySelector('#codexLoginStart').click();void 0");

@@ -51,7 +51,7 @@ export const en = {
   'common.milliseconds': '{count} ms',
   'common.seconds': '{count} sec',
   'common.version': 'Version {version}',
-  'common.build': 'build {build}',
+  'common.build': 'commit {build}',
 
   'navigation.home': 'Home',
   'navigation.overview': 'Overview',
@@ -628,7 +628,7 @@ export const en = {
 
   'landing.metaTitle': 'AI Media Client — create images and video with AI',
   'landing.metaDescription': 'AI Media Client is one studio for generating images, video and text with modern AI models.',
-  'landing.version': 'Version {version}{date} · build {build}',
+  'landing.version': 'Version {version}{date} · commit {build}',
   'landing.skip': 'Skip to content',
   'landing.pageNavigation': 'Page navigation',
   'landing.possibilities': 'Capabilities',

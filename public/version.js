@@ -9,7 +9,7 @@
       ? new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
         .format(builtAt).replace(',', '')
       : null;
-    label.textContent = `${release.channel === 'debug' ? 'DEBUG · ' : ''}Версия ${release.version}${builtLabel ? ` · ${builtLabel}` : ''} · сборка ${release.build}`;
+    label.textContent = `${release.channel === 'debug' ? 'DEBUG · ' : ''}Версия ${release.version}${builtLabel ? ` · ${builtLabel}` : ''} · коммит ${release.commit?.slice(0, 12) || 'недоступен'}`;
     label.title = release.builtAt ? `Собрано: ${new Date(release.builtAt).toLocaleString('ru-RU')}` : 'Запуск из исходников';
   }).catch(() => { label.textContent = 'DEBUG · версия сервера недоступна'; });
 })();

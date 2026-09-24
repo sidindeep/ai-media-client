@@ -49,7 +49,7 @@ export const ru = {
   'common.milliseconds': '{count} мс',
   'common.seconds': '{count} с',
   'common.version': 'Версия {version}',
-  'common.build': 'сборка {build}',
+  'common.build': 'коммит {build}',
 
   'navigation.home': 'Главная',
   'navigation.overview': 'Обзор',
@@ -626,7 +626,7 @@ export const ru = {
 
   'landing.metaTitle': 'AI Media Client — создавайте изображения и видео с AI',
   'landing.metaDescription': 'AI Media Client — единая студия для генерации изображений, видео и текста с помощью современных AI-моделей.',
-  'landing.version': 'Версия {version}{date} · сборка {build}',
+  'landing.version': 'Версия {version}{date} · коммит {build}',
   'landing.skip': 'К содержанию',
   'landing.pageNavigation': 'Навигация по странице',
   'landing.possibilities': 'Возможности',

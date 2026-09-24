@@ -96,7 +96,7 @@ const releaseLabel = computed(() => {
   const date = builtAt && !Number.isNaN(builtAt.getTime())
     ? formatDate(builtAt, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', '')
     : null;
-  return `${release.channel === 'debug' ? 'DEBUG · ' : ''}${t('landing.version', { version: release.version, date: date ? ` · ${date}` : '', build: release.build })}`;
+  return `${release.channel === 'debug' ? 'DEBUG · ' : ''}${t('landing.version', { version: release.version, date: date ? ` · ${date}` : '', build: release.commit?.slice(0, 12) || '—' })}`;
 });
 
 function askName(label: string, current = '') {

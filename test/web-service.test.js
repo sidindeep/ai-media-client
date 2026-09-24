@@ -47,6 +47,7 @@ test('temporary database failure keeps the public landing and Vue shell availabl
   assert.equal(release.channel, 'debug');
   assert.equal((await fetch(base + '/version.js')).status, 200);
   assert.match(release.build, /^[a-f0-9]{12}$/);
+  assert.match(release.commit, /^[a-f0-9]{40,64}$/);
 });
 test('protected scripts retry transient session reads without initializing account storage or bypassing access', async t => {
   let attempts = 0, failure = 'once', role = 'user';

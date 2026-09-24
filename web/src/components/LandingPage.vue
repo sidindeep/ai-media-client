@@ -175,7 +175,7 @@ async function updateVersion() {
     const date = builtAt && !Number.isNaN(builtAt.getTime())
       ? formatDate(builtAt, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', '')
       : null;
-    const label = `${release.channel === 'debug' ? 'DEBUG · ' : ''}${t('landing.version', { version: release.version, date: date ? ` · ${date}` : '', build: release.build })}`;
+    const label = `${release.channel === 'debug' ? 'DEBUG · ' : ''}${t('landing.version', { version: release.version, date: date ? ` · ${date}` : '', build: release.commit?.slice(0, 12) || '—' })}`;
     const node = root.value?.querySelector<HTMLElement>('#appVersion');
     if (node) node.textContent = label;
   } catch { /* The public page stays usable when release metadata is unavailable. */ }

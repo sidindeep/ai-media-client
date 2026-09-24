@@ -15,5 +15,12 @@
 !scripts/
 !scripts/migrate-content-assets.cjs
 !scripts/audit-content.cjs
+!scripts/resolve-git-commit.cjs
 !test/
 !test/**
+!.git
+.git/**
+!.git/HEAD
+!.git/packed-refs
+!.git/refs/
+!.git/refs/**

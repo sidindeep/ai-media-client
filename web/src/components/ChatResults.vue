@@ -7,6 +7,8 @@ import { generationProviderLabel } from '../domain/provider-label';
 import { resultError, resultModelLabel } from '../domain/result-presentation';
 import { useI18n } from '../i18n';
 import { generationDuration, generationStateLabel, reasoningEffortLabel } from '../i18n/presentation';
+import ExpandableResultImage from './ExpandableResultImage.vue';
+import { resultDownloadUrl } from '../domain/result-download';
 
 const emit = defineEmits<{ select: [id: string] }>();
 const studio = useStudioStore();
@@ -239,10 +241,17 @@ onBeforeUnmount(() => {
           <div v-if="resultUrls(record).length" class="chat-result-media">
             <video v-if="record.kind === 'video'" :src="resultUrls(record)[0]" controls playsinline @click.stop></video>
             <audio v-else-if="record.kind === 'audio'" :src="resultUrls(record)[0]" controls @click.stop></audio>
-            <img v-else v-for="url in resultUrls(record)" :key="url" :src="url" :alt="t('generation.resultAlt')" />
+            <ExpandableResultImage v-else v-for="(url, index) in resultUrls(record)" :key="url" :src="url"
+              :download-url="resultDownloadUrl(record, index, url)" :alt="t('generation.resultAlt')" />
           </div>
           <pre v-else class="chat-result-output" :class="{ pending: activeStates.has(record.state) }">{{ previewText(record) }}</pre>
           <footer class="chat-result-meta"><span v-for="item in meta(record)" :key="item">{{ item }}</span></footer>
+        </div>
+        <div v-if="resultUrls(record).length" class="chat-result-download-row">
+          <a class="chat-result-download" :href="resultDownloadUrl(record, 0, resultUrls(record)[0])" download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>
+            {{ t('common.download') }}
+          </a>
         </div>
       </article>
     </div>

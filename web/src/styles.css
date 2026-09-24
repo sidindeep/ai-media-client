@@ -293,6 +293,22 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .chat-result-output.pending { min-height: 88px; display: grid; place-items: center; color: #807b91; text-align: center; }
 .chat-result-meta { display: flex; flex-wrap: wrap; gap: 5px 11px; margin-top: 11px; color: #666176; font-size: 8px; }
 .chat-result-meta span:not(:last-child)::after { margin-left: 11px; color: #3f3b4b; content: "·"; }
+.chat-result-download-row { display: flex; justify-content: flex-end; width: min(92%, 700px); max-width: 100%; }
+.chat-result-download { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; gap: 8px; border: 1px solid #a28aff; border-radius: 9px; padding: 8px 16px; color: #fff; background: linear-gradient(135deg, #7454d8, #9366ef); box-shadow: 0 6px 18px rgba(115, 84, 216, .3); font-size: 12px; font-weight: 700; text-decoration: none; transition: background .16s ease, box-shadow .16s ease, transform .16s ease; }
+.chat-result-download:hover, .chat-result-download:focus-visible { outline: 0; background: linear-gradient(135deg, #8668ed, #a57bff); box-shadow: 0 8px 24px rgba(133, 100, 237, .45), 0 0 0 3px rgba(162, 138, 255, .2); transform: translateY(-1px); }
+.chat-result-download svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.expandable-result-image { cursor: zoom-in; }
+.expandable-result-image:focus-visible { outline: 3px solid #a28aff; outline-offset: 3px; }
+.result-image-lightbox { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; border: 0; padding: 14px; color: #fff; background: rgba(5, 6, 12, .96); }
+.result-image-lightbox[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+.result-image-lightbox::backdrop { background: rgba(5, 6, 12, .96); }
+.result-image-lightbox-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.result-image-lightbox-download { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 9px; border: 1px solid #a28aff; border-radius: 10px; padding: 8px 16px; color: #fff; background: #7454d8; font-size: 13px; font-weight: 700; text-decoration: none; }
+.result-image-lightbox-download:hover, .result-image-lightbox-download:focus-visible { outline: 0; background: #916bf0; box-shadow: 0 0 0 3px rgba(162, 138, 255, .28); }
+.result-image-lightbox-download svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.result-image-lightbox-close { width: 42px; height: 42px; border: 1px solid #5b566d; border-radius: 10px; color: #fff; background: #22202e; font-size: 27px; line-height: 1; cursor: pointer; }
+.result-image-lightbox-close:hover, .result-image-lightbox-close:focus-visible { border-color: #a28aff; outline: 0; background: #3a3159; }
+.result-image-lightbox-image { display: block; max-width: 100%; max-height: 100%; align-self: center; justify-self: center; object-fit: contain; }
 .sidebar-provider-menu { position: relative; flex: 0 0 auto; margin-top: auto; padding-top: 12px; border-top: 1px solid #252635; }
 .sidebar-provider-menu summary { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid #2d2e40; border-radius: 11px; padding: 8px; color: #d8d4e5; background: #13141e; cursor: pointer; list-style: none; }
 .sidebar-provider-menu summary::-webkit-details-marker { display: none; }
@@ -314,6 +330,7 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
   .chat-latest-button { bottom: 8px; width: 40px; height: 40px; }
   .chat-prompt { max-width: 88%; }
   .chat-result-card { width: 96%; padding: 12px; }
+  .chat-result-download-row { width: 96%; }
   .has-chat-results .composer-card { max-height: min(58%, 470px); }
   .composer-card { height: auto !important; max-height: 100% !important; }
   .composer-tabs { gap: 18px; padding-inline: 13px; }

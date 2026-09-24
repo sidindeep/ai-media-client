@@ -37,6 +37,8 @@ export const ru = {
   'common.retry': 'Повторить',
   'common.checking': 'Проверяю…',
   'common.download': 'Скачать',
+  'result.expandImage': 'Развернуть изображение',
+  'result.expandedImage': 'Просмотр изображения',
   'common.search': 'Поиск',
   'common.clearSearch': 'Очистить поиск',
   'common.noPrompt': 'Без промпта',

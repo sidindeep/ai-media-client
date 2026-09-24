@@ -546,6 +546,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       const result = /^\/api\/results\/([a-f0-9-]{36})\/(\d+)$/.exec(url.pathname);
       if (result) {
+        if (url.searchParams.has('download')) await service.saveResults(result[1]);
         const file = await service.resultFile(result[1], Number(result[2]));
         return await sendMedia(req, res, () => file.storageKey
           ? sendStored(req, res, storage, file, url.searchParams.has('download'))

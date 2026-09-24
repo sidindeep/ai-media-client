@@ -39,6 +39,8 @@ export const en = {
   'common.retry': 'Retry',
   'common.checking': 'Checking…',
   'common.download': 'Download',
+  'result.expandImage': 'Expand image',
+  'result.expandedImage': 'Image preview',
   'common.search': 'Search',
   'common.clearSearch': 'Clear search',
   'common.noPrompt': 'No prompt',

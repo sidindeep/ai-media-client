@@ -8,6 +8,8 @@ import { generationProviderLabel } from '../domain/provider-label';
 import { resultError, resultModelLabel } from '../domain/result-presentation';
 import { useI18n } from '../i18n';
 import { generationDuration, generationStateLabel, reasoningEffortLabel } from '../i18n/presentation';
+import ExpandableResultImage from './ExpandableResultImage.vue';
+import { resultDownloadUrl } from '../domain/result-download';
 
 const emit = defineEmits<{ history: []; workspace: [] }>();
 const studio = useStudioStore();
@@ -26,11 +28,11 @@ const presentedOutput = computed(() => {
     ? prompt
     : record.output;
 });
-const resultUrls = computed(() => {
+const resultUrls = computed<string[]>(() => {
   if (!studio.selected) return [];
   const local = (studio.selected.localFiles || []).map(file => file.previewUrl || file.url).filter(Boolean) as string[];
   if (local.length) return local;
-  try { const value = JSON.parse(studio.selected.resultJson || '{}'); return Array.isArray(value.resultUrls) ? value.resultUrls : []; } catch { return []; }
+  try { const value = JSON.parse(studio.selected.resultJson || '{}'); return Array.isArray(value.resultUrls) ? value.resultUrls.filter((url: unknown): url is string => typeof url === 'string') : []; } catch { return []; }
 });
 const credits = computed(() => studio.selected?.nativeQuote?.credits);
 const usage = computed(() => studio.selected?.usage || null);
@@ -199,7 +201,8 @@ async function refreshStatus() {
     <div v-if="resultUrls.length" class="result-media">
       <video v-if="studio.selected?.kind === 'video'" :src="resultUrls[0]" controls playsinline></video>
       <audio v-else-if="studio.selected?.kind === 'audio'" :src="resultUrls[0]" controls></audio>
-      <img v-else v-for="url in resultUrls" :key="url" :src="url" :alt="t('generation.resultAlt')" />
+      <ExpandableResultImage v-else v-for="(url, index) in resultUrls" :key="url" :src="url"
+        :download-url="resultDownloadUrl(studio.selected, index, url)" :alt="t('generation.resultAlt')" />
     </div>
     <pre v-if="presentedOutput" class="result-output">{{ presentedOutput }}</pre>
     <pre v-if="videoStatus" class="result-output">{{ JSON.stringify(videoStatus, null, 2) }}</pre>
@@ -209,6 +212,6 @@ async function refreshStatus() {
     <div v-if="isAdmin && usage" class="token-breakdown"><div><span>{{ t('result.totalTokens') }}</span><strong>{{ formatCount(tokens) }}</strong></div><dl><div><dt>{{ t('result.inputTokens') }}</dt><dd>{{ formatCount(inputTokens) }}</dd></div><div><dt>{{ t('result.outputTokens') }}</dt><dd>{{ formatCount(outputTokens) }}</dd></div><div v-if="cachedTokens != null"><dt>{{ t('result.cachedTokens') }}</dt><dd>{{ formatCount(cachedTokens) }}</dd></div><div v-if="reasoningTokens != null"><dt>{{ t('result.reasoningTokens') }}</dt><dd>{{ formatCount(reasoningTokens) }}</dd></div></dl></div>
     <p v-else-if="isAdmin && isCodex && isActive" class="token-pending">{{ t('result.tokensPending') }}</p>
     <div v-if="studio.selected" class="timing-details"><span>{{ t('result.started') }} <strong>{{ timestamp(studio.selected.generationStartedAt || studio.selected.createdAt) }}</strong></span><span>{{ t('result.completed') }} <strong>{{ timestamp(studio.selected.generationCompletedAt) }}</strong></span></div>
-    <div v-if="studio.selected" class="result-actions"><a v-if="resultUrls[0]" class="action-button" :href="(studio.selected.localFiles?.[0]?.url || resultUrls[0])" download>{{ t('common.download') }}</a><button v-if="routerAiVideoJobId && isAdmin" type="button" class="action-button" @click="checkRouterAiVideo">{{ t('routerai.admin.videoStatus') }}</button><a v-if="routerAiVideoJobId && videoReady" class="action-button" :href="`/api/routerai/admin/jobs/${routerAiVideoJobId}/video/content`" download>{{ t('routerai.admin.videoDownload') }}</a><button v-if="isActive || ['unknown', 'unconfirmed'].includes(studio.selected.state)" type="button" class="action-button" :disabled="refreshing" @click="refreshStatus">{{ refreshing ? t('common.checking') : t('result.checkStatus') }}</button><button type="button" class="action-button" @click="prepare(studio.selected)">{{ t('result.repeat') }}</button><button type="button" class="action-button" @click="prepare(studio.selected)">{{ t('result.editPrompt') }}</button><button type="button" class="action-button" @click="openHistory">{{ t('result.openHistory') }}</button></div>
+    <div v-if="studio.selected" class="result-actions"><a v-if="resultUrls[0]" class="action-button" :href="resultDownloadUrl(studio.selected, 0, resultUrls[0])" download>{{ t('common.download') }}</a><button v-if="routerAiVideoJobId && isAdmin" type="button" class="action-button" @click="checkRouterAiVideo">{{ t('routerai.admin.videoStatus') }}</button><a v-if="routerAiVideoJobId && videoReady" class="action-button" :href="`/api/routerai/admin/jobs/${routerAiVideoJobId}/video/content`" download>{{ t('routerai.admin.videoDownload') }}</a><button v-if="isActive || ['unknown', 'unconfirmed'].includes(studio.selected.state)" type="button" class="action-button" :disabled="refreshing" @click="refreshStatus">{{ refreshing ? t('common.checking') : t('result.checkStatus') }}</button><button type="button" class="action-button" @click="prepare(studio.selected)">{{ t('result.repeat') }}</button><button type="button" class="action-button" @click="prepare(studio.selected)">{{ t('result.editPrompt') }}</button><button type="button" class="action-button" @click="openHistory">{{ t('result.openHistory') }}</button></div>
   </section>
 </template>

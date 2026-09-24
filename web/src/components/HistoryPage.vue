@@ -7,6 +7,8 @@ import { generationProviderLabel } from '../domain/provider-label';
 import { resultError, resultModelLabel } from '../domain/result-presentation';
 import { useI18n } from '../i18n';
 import { generationDuration, generationStateLabel, reasoningEffortLabel } from '../i18n/presentation';
+import ExpandableResultImage from './ExpandableResultImage.vue';
+import { resultDownloadUrl } from '../domain/result-download';
 
 const emit = defineEmits<{ select: [record: GenerationRecord]; workspace: [] }>();
 const studio = useStudioStore();
@@ -18,7 +20,7 @@ const selectedPrompt = computed(() => {
   const prompt = selectedRecord.value?.input?.prompt;
   return typeof prompt === 'string' && prompt.trim() ? prompt : t('common.noPrompt');
 });
-const selectedUrls = computed(() => {
+const selectedUrls = computed<string[]>(() => {
   const record = selectedRecord.value;
   if (!record) return [];
   const local = (record.localFiles || []).map(file => file.previewUrl || file.url).filter(Boolean) as string[];
@@ -59,14 +61,15 @@ function creditCost(record: GenerationRecord) { return record.nativeQuote?.credi
             <div v-if="selectedUrls.length" class="history-detail-media">
               <video v-if="selectedRecord.kind === 'video'" :src="selectedUrls[0]" controls playsinline></video>
               <audio v-else-if="selectedRecord.kind === 'audio'" :src="selectedUrls[0]" controls></audio>
-              <template v-else><img v-for="url in selectedUrls" :key="url" :src="url" :alt="t('generation.resultAlt')"></template>
+              <template v-else><ExpandableResultImage v-for="(url, index) in selectedUrls" :key="url" :src="url"
+                :download-url="resultDownloadUrl(selectedRecord, index, url)" :alt="t('generation.resultAlt')" /></template>
             </div>
             <pre v-if="selectedRecord.output" class="history-detail-output">{{ selectedRecord.output }}</pre>
             <p v-else-if="selectedRecord.error" class="history-detail-error">{{ resultError(selectedRecord, studio.isAdmin) }}</p>
             <p v-else-if="!selectedUrls.length" class="history-detail-empty">{{ t('history.noPreview') }}</p>
           </div>
           <dl class="history-detail-facts"><div v-if="studio.isAdmin"><dt>{{ t('history.provider') }}</dt><dd>{{ generationProviderLabel(selectedRecord, studio.catalog) }}</dd></div><div><dt>{{ t('history.created') }}</dt><dd>{{ timestamp(selectedRecord.createdAt) || '—' }}</dd></div><div><dt>{{ t('history.time') }}</dt><dd>{{ formatDuration(selectedRecord.generationDurationMs) || '—' }}</dd></div><div><dt>{{ t('history.cost') }}</dt><dd>{{ creditCost(selectedRecord) }}</dd></div><div v-if="studio.isAdmin"><dt>{{ t('history.tokens') }}</dt><dd>{{ formatCount(totalTokens(selectedRecord)) || '—' }}</dd></div></dl>
-          <a v-if="selectedUrls[0]" class="action-button history-detail-download" :href="selectedRecord.localFiles?.[0]?.url || selectedUrls[0]" download>{{ t('history.download') }}</a>
+          <a v-if="selectedUrls[0]" class="action-button history-detail-download" :href="resultDownloadUrl(selectedRecord, 0, selectedUrls[0])" download>{{ t('history.download') }}</a>
         </div>
         <div v-else class="history-detail-placeholder"><span aria-hidden="true">→</span><strong>{{ t('history.select') }}</strong><p>{{ t('history.selectHint') }}</p></div>
       </aside>

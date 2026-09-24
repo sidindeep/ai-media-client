@@ -275,7 +275,12 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const record = (await history.list()).find(item => item.id === id);
       if (!Number.isInteger(index) || index < 0 || !record?.localFiles?.[index]) throw new Error('Файл не найден');
       const file = record.localFiles[index];
-      if (file.assetId) return content.file(accountId,file.assetId);
+      if (file.assetId) {
+        const stored = await content.file(accountId,file.assetId);
+        const extension = ({ 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
+          'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov' })[stored.type] || '';
+        return { ...stored, name: extension && !path.extname(stored.name) ? `${stored.name}${extension}` : stored.name };
+      }
       if (file.storageKey) {
         if (!storage || !file.storageKey.startsWith(`${storagePrefix}/results/`)) throw new Error('Файл вне S3-хранилища результатов');
         return file;

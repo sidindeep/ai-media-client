@@ -230,6 +230,11 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await own.history.update(first.id, { localFiles: [{ path: resultFile, url: 'https://example.test/result.png', size: 14 }] });
   assert.equal((await request(`/api/results/${first.id}/0`, { headers: { Cookie: bob.cookie } })).status, 400);
   assert.equal(await request(`/api/results/${first.id}/0`, { headers: { Cookie: alice.cookie } }).then(r => r.text()), 'private-result');
+  const downloadResponse = await request(`/api/results/${first.id}/0?download=1`, { headers: { Cookie: alice.cookie } });
+  assert.equal(downloadResponse.status, 200);
+  assert.match(downloadResponse.headers.get('content-disposition'), /^attachment; filename="test\.png"$/);
+  assert.equal(await downloadResponse.text(), 'private-result');
+  assert.equal((await request(`/api/results/${first.id}/0?download=1`, { headers: { Cookie: bob.cookie } })).status, 400);
   assert.equal((await request(`/api/results/${first.id}/0?account=${alice.id}`, { headers: { Cookie: owner.cookie } })).status, 200);
   const queued = await result(rpc(alice, 'createTask', [{ ...payload, requestId: randomUUID() }]));
   await result(rpc(alice, 'cancelQueued', [queued.id]));

@@ -68,6 +68,7 @@ function loadConfig(env = process.env) {
       yooKassa: { shopId: env.YOOKASSA_SHOP_ID || '', secretKey: env.YOOKASSA_SECRET_KEY || '' },
     },
     routerAi: { apiKey: env.ROUTERAI_API_KEY || '' },
+    kieBrowser: { cdpUrl: env.MEDIA_KIE_BROWSER_CDP || '', loginUrl: env.MEDIA_KIE_BROWSER_LOGIN_URL || '' },
     codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
       embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },
     database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1' },

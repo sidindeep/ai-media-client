@@ -11,7 +11,7 @@ function showBalance() {
   void loadLedger();
 }
 function selectPanel() {
-  const panels = ['accountsPanel', 'starterPanel', 'credits', 'conversionPanel', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'codexPanel'];
+  const panels = ['accountsPanel', 'starterPanel', 'credits', 'conversionPanel', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'kieSessionPanel', 'codexPanel'];
   const selected = panels.includes(location.hash.slice(1)) ? location.hash.slice(1) : panels[0];
   for (const id of panels) document.getElementById(id).hidden = id !== selected;
   document.querySelectorAll('.admin-tabs a').forEach(link => link.setAttribute('aria-current', link.hash === '#' + selected ? 'page' : 'false'));
@@ -214,6 +214,32 @@ document.getElementById('grantForm').onsubmit = async event => {
   finally { button.disabled = false; document.getElementById('grantSelf').disabled = false; }
 };
 void loadAccounts().catch(error => { document.getElementById('adminStatus').textContent = error.message; });
+
+(() => {
+  const status = document.getElementById('kieSessionStatus');
+  const open = document.getElementById('kieSessionOpen');
+  const refresh = document.getElementById('kieSessionRefresh');
+  let timer, busy = false;
+  async function update() {
+    if (busy) return;
+    busy = true; clearTimeout(timer); refresh.disabled = true;
+    try {
+      const value = await adminRequest('/api/admin/kie-session/status');
+      status.textContent = ({ connected: 'Вход в кабинет Kie выполнен.', disconnected: 'Вход в Kie ещё не выполнен.', unavailable: 'Браузер Kie на сервере недоступен.' })[value.state] || 'Неизвестный статус.';
+      if (value.loginUrl && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(value.loginUrl)) {
+        open.href = value.loginUrl; open.hidden = false;
+      } else { open.removeAttribute('href'); open.hidden = true; }
+    } catch (error) { status.textContent = error.message; open.hidden = true; }
+    finally {
+      busy = false; refresh.disabled = false;
+      if (location.hash === '#kieSessionPanel') timer = setTimeout(() => void update(), 3000);
+    }
+  }
+  refresh.onclick = () => void update();
+  window.addEventListener('hashchange', () => { clearTimeout(timer); if (location.hash === '#kieSessionPanel') void update(); });
+  window.addEventListener('pagehide', () => clearTimeout(timer));
+  if (location.hash === '#kieSessionPanel') void update();
+})();
 
 // Poll only while this panel is visible; returning to it recovers an active login.
 (() => {

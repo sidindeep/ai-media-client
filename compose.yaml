@@ -16,12 +16,27 @@ services:
       MEDIA_DATA_DIR: data/service
       MEDIA_CODEX_URL: http://codex:3210
       MEDIA_CODEX_EMBEDDED: 'false'
+      MEDIA_KIE_BROWSER_CDP: http://kie-browser:9222
+      MEDIA_KIE_BROWSER_LOGIN_URL: http://127.0.0.1:5808/
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./data/service:/app/data/service
     stop_grace_period: 60s
     networks: [default, codex-link]
+  kie-browser:
+    image: jlesage/chromium@sha256:e42de7469bce122b8a69d4f62101850ece45c41ed7ed952f2b506f99947093ae
+    restart: unless-stopped
+    environment:
+      CHROMIUM_APP_URL: https://kie.ai/api-key
+      CHROMIUM_REMOTE_DEBUGGING: '1'
+      WEB_TERMINAL: '0'
+      VNC_LISTENING_PORT: '-1'
+    ports:
+      - "127.0.0.1:5808:5800"
+    volumes:
+      - kie-session:/config
+    networks: [default]
   codex:
     build:
       context: .
@@ -53,6 +68,8 @@ services:
     image: ai-media-web-tg-tests:local
     command: [node, --test, test/payments.test.js]
 volumes:
+  kie-session:
+    name: ai-media-kie-session
   codex-auth:
     external: true
     name: ${MEDIA_CODEX_AUTH_VOLUME:-llm-providers_codex-auth}

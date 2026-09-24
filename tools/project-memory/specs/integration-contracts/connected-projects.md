@@ -35,6 +35,7 @@ sendMessage/answerCallbackQuery; серверный токен, private allowlis
 | Kie balance | /api/v1/chat/credit | Снимок баланса для сверки, не распределение расхода по задачам |
 | Kie pricing | /client/v1/model-pricing/page | Публичные тарифы, без пользовательских входов/ключа |
 | Kie account pricing | /api/v1/playground/getConsumeCredits | Авторизованная отдельная browser partition; не тот же секрет, что API-ключ |
+| Kie browser login (локальный Compose) | Chromium в отдельном контейнере и томе `ai-media-kie-session` | Админка показывает только статус сессии и локальную ссылку на окно входа; cookie не пересылается в веб-сервис |
 | GI — https://github.com/Dimosfil/general-instructions.git | Источник скопированных инструкций | Не dependency/submodule/runtime приложения |
 
 Специальные пути Veo/Runway/Flux/4o берутся из модели (kie-special.json) и нормализуются adapters.js. Источник истины по актуальному провайдерскому контракту — документация Kie; локальные импорты являются снимками. Обновление каталога ручное через scripts/import-*.js, не автоматически при старте.

@@ -8,6 +8,7 @@ const { createRouterAiBilling, validateRouterAiRequest } = require('../services/
 const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { readProviderStatus } = require('../services/provider-status');
+const { createKieBrowserSession } = require('../services/kie-browser-session');
 const { buildInfo } = require('./build-info');
 const { checkDatabase, transientConnection } = require('../database/database');
 const trace = require('../generation-log');
@@ -141,6 +142,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
 }
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null }) {
   const release = buildInfo(config.root);
+  const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
   let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
   const routerAiModels = createRouterAiCatalog();
   let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
@@ -450,6 +452,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (url.pathname === '/api/admin/kie-session/status' && req.method === 'GET') {
+          return json(res, 200, { result: await kieBrowserSession.status() });
+        }
         if (url.pathname === '/api/admin/credit-conversion' && req.method === 'GET') {
           return json(res, 200, { result: accounts.conversion.snapshot() });
         }

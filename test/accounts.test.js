@@ -135,6 +135,9 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(conversionSnapshot.providers.find(row => row.id === 'kie').sourceUnit, 'Кредит Kie');
   assert.equal((await request('/api/admin/codex/status')).status, 401);
   assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: alice.cookie } })).status, 403);
+  assert.equal((await request('/api/admin/kie-session/status')).status, 401);
+  assert.equal((await request('/api/admin/kie-session/status', { headers: { Cookie: alice.cookie } })).status, 403);
+  assert.deepEqual(await result(request('/api/admin/kie-session/status', { headers: { Cookie: owner.cookie } })), { state: 'unavailable', loginUrl: null });
   assert.equal((await request('/api/admin/codex/start', { method: 'POST', headers: { Cookie: alice.cookie, 'X-Media-User': alice.id, 'X-Media-Client': 'web' } })).status, 403);
   assert.equal((await request('/api/admin/codex/start', { method: 'POST', headers: { Cookie: owner.cookie } })).status, 409);
   assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: owner.cookie } })).status, 503);

@@ -31,6 +31,13 @@ export function mediaFieldValueError(field: MediaField, value: unknown): string 
 export function normalizeMediaInput(fields: MediaField[], input: Record<string, unknown>) {
   const normalized = { ...input };
   for (const field of fields) {
+    if (field.type === 'files') {
+      const value = normalized[field.key];
+      if (value !== undefined && value !== null) {
+        normalized[field.key] = mediaFileValue(field, Array.isArray(value) ? value : [value]);
+      }
+      continue;
+    }
     const options = mediaFieldOptions(field);
     const value = normalized[field.key];
     if (!options.length || value === '' || value === null || value === undefined || options.some(option => matchesOption(option, value))) continue;
@@ -40,6 +47,14 @@ export function normalizeMediaInput(fields: MediaField[], input: Record<string, 
     normalized[field.key] = fallback;
   }
   return normalized;
+}
+
+export function mediaFileValue(field: MediaField, refs: unknown[]): string | unknown[] | undefined {
+  if (!refs.length) return undefined;
+  // Cardinality (maxFiles) does not determine the wire type: a one-file field
+  // can still require an array containing one URL.
+  const scalar = field.schema?.type === 'array' ? false : field.schema?.type === 'string' ? true : field.scalar === true;
+  return scalar ? String(refs[0]) : refs;
 }
 
 export function mediaSourceDurationRange(field?: MediaField): { min: number; max: number } | null {

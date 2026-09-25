@@ -7,7 +7,7 @@ import type { MediaField } from '../types';
 import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import AspectRatioPicker from './AspectRatioPicker.vue';
 import PresetBar from './PresetBar.vue';
-import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, mediaSourceDurationRange, parseMediaFieldValue } from '../domain/media-fields';
+import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, mediaFileValue, mediaSourceDurationRange, parseMediaFieldValue } from '../domain/media-fields';
 import { mediaModelBrandId, routerAiModelBrandId } from '../domain/model-catalog';
 import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
@@ -426,7 +426,10 @@ async function uploadFiles(files: File[], field?: MediaField) {
       const item = { ...saved, ref: saved.ref, name: file.name, type: file.type, fieldKey: field?.key, ...(durationSeconds === null ? {} : { durationSeconds }) };
       studio.sourceFiles.push(item); added.push(item.ref);
     }
-    if (field) updateField(field.key, field.scalar || field.maxFiles === 1 ? added.at(-1) : [...(Array.isArray(studio.mediaInput[field.key]) ? studio.mediaInput[field.key] as string[] : []), ...added]);
+    if (field) {
+      const previous = studio.mediaInput[field.key];
+      updateField(field.key, mediaFileValue(field, [...(Array.isArray(previous) ? previous : previous ? [previous] : []), ...added]));
+    }
   } catch (error) { submitError.value = error instanceof Error ? error.message : t('composer.files.uploadError'); }
   finally { uploading.value = false; }
 }
@@ -482,7 +485,8 @@ function removeFile(index: number) {
   const item = studio.sourceFiles[index]; studio.sourceFiles.splice(index, 1);
   if (item.fieldKey) {
     const remaining = studio.sourceFiles.filter(file => file.fieldKey === item.fieldKey).map(file => file.ref);
-    updateField(item.fieldKey, remaining.length > 1 ? remaining : remaining[0] || undefined);
+    const field = fileFields.value.find(candidate => candidate.key === item.fieldKey);
+    if (field) updateField(item.fieldKey, mediaFileValue(field, remaining));
   }
 }
 function animateToQueue(event?: Event) {

@@ -142,6 +142,9 @@ function imageCount(input, model, defaultCount) {
 function multiplier(row, input, context, model) {
   const unit = String(row.creditUnit || '').trim().toLowerCase();
   if (unit === 'per second') {
+    if (model.apiModel === 'kling-2.6/motion-control') {
+      return calculate({ strategy: 'second', rate: 1, quantity: referencedVideoDuration(input, context) });
+    }
     const duration = Number(input?.duration);
     if (!Number.isSafeInteger(duration) || duration <= 0) throw new Error('Для расчёта цены нужна длительность в секундах');
     // Kie publishes Seedance reference-video tariffs as Price × (Input +

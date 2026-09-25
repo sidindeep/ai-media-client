@@ -60,6 +60,20 @@ test('Kie dynamic pricing resolves provider-prefixed models from a short officia
   assert.throws(() => quoteKie(model, input, tariffData), /длительность исходного видео/);
 });
 
+test('Kling 2.6 motion control uses trusted source video duration and selected resolution', () => {
+  const model = { id: 'kie:kling-2.6/motion-control', apiModel: 'kling-2.6/motion-control', providerId: 'kie' };
+  const tariffData = { fetchedAt: '2026-09-25T00:00:00Z', rows: [
+    { modelDescription: 'kling 2.6 motion control, video-to-video, 720P', creditPrice: '11', creditUnit: 'per second', anchor: 'https://kie.ai/kling-2.6-motion-control' },
+    { modelDescription: 'kling 2.6 motion control, video to video, 1080P', creditPrice: '18', creditUnit: 'per second', anchor: 'https://kie.ai/kling-2.6-motion-control' },
+  ] };
+  const ref = 'https://local-assets.invalid/reference-video';
+  const input = { mode: '720p', duration: 1, video_urls: [ref] };
+  const context = { sourceFiles: [{ ref, type: 'video/mp4', durationSeconds: 5.25 }] };
+  assert.equal(quoteKie(model, input, tariffData, context).credits, 57.75);
+  assert.equal(quoteKie(model, { ...input, mode: '1080p' }, tariffData, context).credits, 94.5);
+  assert.throws(() => quoteKie(model, input, tariffData), /длительность исходного видео/);
+});
+
 test('Kie dynamic pricing matches dotted model versions to hyphenated official paths', () => {
   const model = { id: 'kie:bytedance/seedance-1.5-pro', apiModel: 'bytedance/seedance-1.5-pro', providerId: 'kie' };
   const tariffData = { fetchedAt: '2026-09-22T00:00:00Z', rows: [

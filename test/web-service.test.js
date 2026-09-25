@@ -390,6 +390,27 @@ test('media quote falls back to a refreshed official Kie tariff when local and c
   assert.equal(fetches, 2, 'a cache miss refreshes the official Kie list once');
 });
 
+test('Kling 2.6 motion control quotes from stored video metadata before generation', async t => {
+  const dir = await directory();
+  const rows = [
+    { modelDescription: 'kling 2.6 motion control, video-to-video, 720P', creditPrice: '11', creditUnit: 'per second', anchor: 'https://kie.ai/kling-2.6-motion-control' },
+    { modelDescription: 'kling 2.6 motion control, video to video, 1080P', creditPrice: '18', creditUnit: 'per second', anchor: 'https://kie.ai/kling-2.6-motion-control' },
+  ];
+  const tariffFetcher = async () => ({ ok: true, async json() { return { code: 200, data: { pages: 1, records: rows } }; } });
+  const service = await createMediaService({ directory: dir, provider: fakeProvider(), tariffFetcher });
+  t.after(() => cleanup(dir, service));
+  const source = await service.saveSource({ name: 'motion.mp4', type: 'video/mp4', bytes: mp4Bytes(5.25) });
+  const input = { video_urls: [source.ref], duration: 1 };
+  const browserFiles = [{ ...source, fieldKey: 'video_urls', durationSeconds: 30 }];
+  const standard = await service.nativeQuote('kling-2.6/motion-control', { ...input, mode: '720p' }, browserFiles);
+  const pro = await service.nativeQuote('kling-2.6/motion-control', { ...input, mode: '1080p' }, browserFiles);
+  assert.equal(standard.source, 'public');
+  assert.ok(standard.credits > 0);
+  assert.ok(pro.credits > standard.credits);
+  assert.equal(standard.credits, (await service.nativeQuote('kling-2.6/motion-control',
+    { ...input, mode: '720p', duration: 30 }, browserFiles)).credits, 'browser duration cannot change the quote');
+});
+
 test('a forced paid-submit quote warns without downloading the whole Kie list twice when a price is absent', async t => {
   const dir = await directory(); let fetches = 0;
   const tariffFetcher = async () => {

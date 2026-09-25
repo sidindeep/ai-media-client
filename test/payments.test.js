@@ -127,6 +127,13 @@ test('YooKassa stub cannot be selected for live payments', () => {
   assert.throws(() => loadConfig({ MEDIA_PAYMENTS_PROVIDER: 'yookassa-stub', MEDIA_PAYMENTS_ENVIRONMENT: 'live' }), /только в test/);
 });
 
+test('test sales without YooKassa keys select the no-charge stub', () => {
+  const config = loadConfig({ MEDIA_PAYMENTS_ENABLED: 'true', MEDIA_SALES_ENABLED: 'true', MEDIA_PAYMENTS_ENVIRONMENT: 'test', MEDIA_PAYMENTS_PROVIDER: 'yookassa' });
+  assert.equal(config.payments.provider, 'yookassa-stub');
+  assert.equal(loadConfig({ MEDIA_PAYMENTS_ENVIRONMENT: 'live', MEDIA_PAYMENTS_PROVIDER: 'yookassa' }).payments.provider, 'yookassa');
+  assert.equal(loadConfig({ MEDIA_PAYMENTS_ENVIRONMENT: 'test', MEDIA_PAYMENTS_PROVIDER: 'yookassa', YOOKASSA_SHOP_ID: 'shop', YOOKASSA_SECRET_KEY: 'key' }).payments.provider, 'yookassa');
+});
+
 test('payment bounded context does not import product modules or query product tables', async () => {
   const fs = require('node:fs/promises');
   const files = ['contracts.js', 'service.js', 'providers/yookassa.js'];

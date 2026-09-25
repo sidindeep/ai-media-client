@@ -36,6 +36,8 @@ COPY server.js ./
 COPY src ./src
 COPY public ./public
 COPY config ./config
+COPY scripts/resolve-git-commit.cjs ./scripts/
+COPY --from=revision /commit /opt/media-commit
 COPY test ./test
 CMD ["node", "--test", "test/*.test.js"]
 

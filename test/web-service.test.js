@@ -10,6 +10,8 @@ const { createTelegramBot } = require('../src/services/telegram-bot');
 const { createTelegramGateway } = require('../src/services/telegram-gateway');
 const { models } = require('../src/catalog');
 const { createDatabaseAvailability } = require('../src/database/availability');
+const { openDatabase } = require('../src/database/database');
+const { testPool } = require('./helpers/pg-pool');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
@@ -217,6 +219,27 @@ test('service starts the Vue shell while the database connects in the background
   assert.equal(startup.authenticated, false);
   assert.equal((await fetch(base + '/api/rpc/getHistory', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Media-Client': 'web' }, body: '[]' })).status, 503);
   assert.ok(attempts >= 1);
+});
+
+test('missing live YooKassa keys do not block database recovery or the website', async t => {
+  const dir = await directory();
+  const config = { ...loadConfig({ MEDIA_PORT: '0', DATABASE_URL: 'postgres://unused/test', MEDIA_PAYMENTS_ENABLED: 'true',
+    MEDIA_SALES_ENABLED: 'true', MEDIA_PAYMENTS_ENVIRONMENT: 'live', MEDIA_PAYMENTS_PROVIDER: 'yookassa' }), dataDirectory: dir };
+  const runtime = await start({ config, provider: fakeProvider(), startupChecks: false,
+    databaseOpener: async () => openDatabase({}, testPool()) });
+  t.after(() => cleanup(dir, runtime));
+  const base = `http://127.0.0.1:${runtime.server.address().port}`;
+  let health;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    health = await fetch(base + '/api/health').then(response => response.json());
+    if (health.database.state === 'connected') break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(health.database.state, 'connected');
+  assert.equal(health.ok, true);
+  assert.equal(health.payments.enabled, false);
+  assert.equal(health.payments.salesEnabled, false);
+  assert.equal((await fetch(base)).status, 200);
 });
 
 test('web serves shared forms, no credentials UI, strict API boundary and persistent drafts', async t => {

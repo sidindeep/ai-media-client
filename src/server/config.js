@@ -51,7 +51,9 @@ function loadConfig(env = process.env) {
   }
   const paymentEnvironment = env.MEDIA_PAYMENTS_ENVIRONMENT || 'test';
   if (!['test', 'live'].includes(paymentEnvironment)) throw new Error('MEDIA_PAYMENTS_ENVIRONMENT должен быть test или live');
-  const paymentProvider = env.MEDIA_PAYMENTS_PROVIDER || 'yookassa';
+  const requestedPaymentProvider = env.MEDIA_PAYMENTS_PROVIDER || 'yookassa';
+  const paymentProvider = requestedPaymentProvider === 'yookassa' && paymentEnvironment === 'test'
+    && (!env.YOOKASSA_SHOP_ID || !env.YOOKASSA_SECRET_KEY) ? 'yookassa-stub' : requestedPaymentProvider;
   if (!['yookassa', 'yookassa-stub'].includes(paymentProvider)) throw new Error('Неизвестный платёжный провайдер');
   if (paymentProvider === 'yookassa-stub' && paymentEnvironment !== 'test') throw new Error('Заглушка ЮKassa доступна только в test');
   if (env.MEDIA_SALES_ENABLED === 'true' && env.MEDIA_PAYMENTS_ENABLED !== 'true') throw new Error('Продажи нельзя включить без платёжного модуля');

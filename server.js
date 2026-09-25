@@ -78,6 +78,10 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
   Object.defineProperty(readiness, 'database', { enumerable: true, get: () => databaseAvailability.snapshot() });
   const createBusinessServices = async activePool => {
     if (!config.payments?.enabled) return { payments: null, commerce: null };
+    if (config.payments.provider === 'yookassa' && (!config.payments.yooKassa.shopId || !config.payments.yooKassa.secretKey)) {
+      console.error('Платежи ЮKassa отключены: нужны shopId и secretKey');
+      return { payments: null, commerce: null };
+    }
     const activePaymentProvider = paymentProvider || (config.payments.provider === 'yookassa'
       ? createYooKassaProvider({ ...config.payments.yooKassa, environment: config.payments.environment })
       : config.payments.provider === 'yookassa-stub' ? createYooKassaStubProvider() : null);
@@ -182,12 +186,13 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             const nextTelegramLinks = createTelegramLinkService(nextPool);
             await nextAccounts.recover();
             if (closing) { await nextAccounts.close(); await nextContent?.close(); await nextPool.end(); return; }
+            const nextBusiness = await createBusinessServices(nextPool);
+            await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce);
             pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
+            payments = nextBusiness.payments; commerce = nextBusiness.commerce;
             telegram.setAccountServices(accounts, telegramLinks);
-            ({ payments, commerce } = await createBusinessServices(pool));
             if (paymentTimer) clearInterval(paymentTimer);
             if (payments) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
-            await server.setAccountServices(auth, accounts, payments, commerce);
             databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
           } catch (error) {
             if (nextAccounts) await nextAccounts.close().catch(() => {});

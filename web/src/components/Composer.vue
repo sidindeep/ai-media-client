@@ -68,7 +68,9 @@ const dropDescription = computed(() => {
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
 const total = computed(() => quote.value?.credits != null ? roundedCreditCost(quote.value.credits) : null);
-const quoteWarning = computed(() => quote.value?.status === 'unavailable' ? t('composer.priceUnknownWarning') : '');
+const quoteWarning = computed(() => quote.value?.status === 'unavailable'
+  ? t(studio.mediaModelId === 'kie:kling-2.6/motion-control' ? 'composer.motionControlPriceWarning' : 'composer.priceUnknownWarning')
+  : '');
 const quoteErrorMessage = computed(() => {
   if (!quoteError.value) return '';
   if (!studio.isAdmin) return publicServiceError(quoteError.value, t('composer.quoteRetry'));

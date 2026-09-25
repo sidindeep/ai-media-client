@@ -422,6 +422,7 @@ export const ru = {
   'composer.diagnosticLoadError': 'Не удалось получить диагностику',
   'composer.priceUnavailable': 'Цена недоступна',
   'composer.priceUnknownWarning': 'Цена неизвестна. Генерация доступна без предварительного списания кредитов.',
+  'composer.motionControlPriceWarning': 'Цена зависит от длительности загруженного видео и разрешения (720p или 1080p). Точная стоимость пока не рассчитана. Генерация доступна без предварительного списания кредитов.',
   'composer.drop.waitChat': 'Дождитесь загрузки чата перед добавлением файла',
   'composer.drop.waitUpload': 'Дождитесь завершения текущей загрузки',
   'composer.drop.modelUnsupported': 'Выбранная модель не поддерживает исходные файлы',

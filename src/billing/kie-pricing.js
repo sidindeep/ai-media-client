@@ -198,6 +198,16 @@ function checkedInput(model, input) {
   return input;
 }
 
+function seedreamProInputSurcharge(model, input, rows) {
+  if (model.apiModel !== 'seedream/5-pro-image-to-image') return 0;
+  const extraImages = Math.max(0, (Array.isArray(input.image_urls) ? input.image_urls.length : 0) - 1);
+  if (!extraImages) return 0;
+  const rates = new Set(rows.filter(row => /^seedream 5(?:\.0)? pro,\s*input image,\s*first image free$/i.test(String(row.modelDescription || ''))
+    && String(row.creditUnit || '').trim().toLowerCase() === 'per image').map(row => decimalUnits(row.creditPrice)));
+  if (rates.size !== 1) throw new Error('Цена выбранных параметров Kie ещё не определена');
+  return [...rates][0] * extraImages;
+}
+
 function quoteKiePublic(model, input, tariffData, context = {}) {
   input = checkedInput(model, input);
   const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
@@ -207,7 +217,8 @@ function quoteKiePublic(model, input, tariffData, context = {}) {
     throw new Error('Цена этой модели Kie ещё не опубликована');
   }
   const row = selectTariff(model, input || {}, rows);
-  const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model)));
+  const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model))
+    + seedreamProInputSurcharge(model, input, rows));
   return {
     amountUnits,
     credits: amountUnits / SCALE,

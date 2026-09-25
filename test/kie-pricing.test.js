@@ -146,6 +146,18 @@ test('Kie selects documented Seedream quality and Ideogram rendering speed varia
   assert.equal(quoteKie(seedream, { quality: 'basic' }, { rows: seedreamRows }).credits, 7);
   assert.equal(quoteKie(seedream, { quality: 'high' }, { rows: seedreamRows }).credits, 14);
 
+  const seedreamImage = { id: 'kie:seedream/5-pro-image-to-image', apiModel: 'seedream/5-pro-image-to-image', providerId: 'kie' };
+  const imageRows = ['1K', '2K'].map((resolution, index) => ({
+    modelDescription: `seedream 5 Pro, image-to-image, ${resolution}`, creditPrice: String(index ? 14 : 7),
+    creditUnit: 'per image', anchor: 'https://kie.ai/seedream-5-0-pro',
+  }));
+  const surcharge = { modelDescription: 'seedream 5 Pro, input image, First image free', creditPrice: '0.5', creditUnit: 'per image', anchor: '' };
+  assert.equal(quoteKie(seedreamImage, { quality: 'basic', image_urls: ['source-1'] }, { rows: [...seedreamRows, ...imageRows, surcharge] }).credits, 7);
+  assert.equal(quoteKie(seedreamImage, { quality: 'high', image_urls: ['source-1'] }, { rows: [...seedreamRows, ...imageRows, surcharge] }).credits, 14);
+  assert.equal(quoteKie(seedreamImage, { quality: 'basic', image_urls: ['source-1', 'source-2'] }, { rows: [...imageRows, surcharge] }).credits, 7.5);
+  assert.throws(() => quoteKie(seedreamImage, { quality: 'basic', image_urls: ['source-1', 'source-2'] }, { rows: imageRows }), /параметров/);
+  assert.throws(() => quoteKie(seedreamImage, { quality: 'basic', image_urls: ['source-1'] }, { rows: seedreamRows }), /не опубликована/);
+
   const ideogram = { id: 'kie:ideogram/v3-text-to-image', apiModel: 'ideogram/v3-text-to-image', providerId: 'kie' };
   const ideogramRows = ['TURBO', 'BALANCED', 'QUALITY'].map((speed, index) => ({
     modelDescription: `ideogram v3, text-to-image, ${speed}`, creditPrice: String([3.5, 7, 10][index]),

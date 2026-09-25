@@ -33,6 +33,13 @@ function modelCandidates(model, rows) {
   const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
   if (exact.length) return exact;
 
+  // Kie publishes this model's output tiers on a shared page without ?model=.
+  if (model.apiModel === 'seedream/5-pro-image-to-image') {
+    const shared = rows.filter(row => comparablePathModelId(pathModelIdFromAnchor(row.anchor)) === 'seedream-5-0-pro'
+      && /^seedream 5(?:\.0)? pro,\s*image-to-image,\s*(?:1K|2K)$/i.test(String(row.modelDescription || '')));
+    if (shared.length) return shared;
+  }
+
   // A description may carry the exact API id while the URL is a marketing page.
   // An explicit, different ?model= id is always authoritative.
   const described = rows.filter(row => {

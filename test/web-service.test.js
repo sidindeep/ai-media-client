@@ -411,6 +411,29 @@ test('Kling 2.6 motion control quotes from stored video metadata before generati
     { ...input, mode: '720p', duration: 30 }, browserFiles)).credits, 'browser duration cannot change the quote');
 });
 
+test('Seedream 5 Pro image-to-image quotes the published quality and input-image tiers', async t => {
+  const dir = await directory();
+  const rows = [
+    { modelDescription: 'seedream 5 Pro, text-to-image, 1K', creditPrice: '7', creditUnit: 'per image', anchor: 'https://kie.ai/seedream-5-0-pro?model=seedream%2F5-pro-text-to-image' },
+    { modelDescription: 'seedream 5 Pro, image-to-image, 1K', creditPrice: '7', creditUnit: 'per image', anchor: 'https://kie.ai/seedream-5-0-pro' },
+    { modelDescription: 'seedream 5 Pro, image-to-image, 2K', creditPrice: '14', creditUnit: 'per image', anchor: 'https://kie.ai/seedream-5-0-pro' },
+    { modelDescription: 'seedream 5 Pro, input image, First image free', creditPrice: '0.5', creditUnit: 'per image', anchor: '' },
+  ];
+  const tariffFetcher = async () => ({ ok: true, async json() { return { code: 200, data: { pages: 1, records: rows } }; } });
+  const service = await createMediaService({ directory: dir, provider: fakeProvider(), tariffFetcher });
+  t.after(() => cleanup(dir, service));
+  const first = await service.saveSource({ name: 'first.png', type: 'image/png', bytes: Buffer.from('first-image') });
+  const second = await service.saveSource({ name: 'second.png', type: 'image/png', bytes: Buffer.from('second-image') });
+  const quote = (quality, refs) => service.nativeQuote('seedream/5-pro-image-to-image', { quality, image_urls: refs }, refs.map(ref => ({ ref })));
+  const basic = await quote('basic', [first.ref]);
+  const high = await quote('high', [first.ref]);
+  const twoInputs = await quote('basic', [first.ref, second.ref]);
+  assert.equal(basic.source, 'public');
+  assert.ok(basic.credits > 0);
+  assert.ok(high.credits > basic.credits);
+  assert.ok(twoInputs.credits > basic.credits);
+});
+
 test('a forced paid-submit quote warns without downloading the whole Kie list twice when a price is absent', async t => {
   const dir = await directory(); let fetches = 0;
   const tariffFetcher = async () => {

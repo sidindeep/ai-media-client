@@ -64,11 +64,13 @@ export const getProjects = (includeArchived = false) => workspaceRequest<Project
 export const createProject = (name: string) => workspaceRequest<Project>('/api/projects', { method: 'POST', body: JSON.stringify({ name }) });
 export const renameProject = (id: string, name: string) => workspaceRequest<Project>(`/api/projects/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
 export const archiveProject = (id: string) => workspaceRequest<Project>(`/api/projects/${encodeURIComponent(id)}/archive`, { method: 'POST', body: '{}' });
+export const restoreProject = (id: string) => workspaceRequest<Project>(`/api/projects/${encodeURIComponent(id)}/restore`, { method: 'POST', body: '{}' });
 export const getChats = (projectId?: string | null, includeArchived = false) => workspaceRequest<Chat[]>(`/api/chats?${projectId === undefined ? '' : `projectId=${encodeURIComponent(projectId || '')}&`}includeArchived=${includeArchived}`);
 export const createChat = (name: string, projectId?: string | null) => workspaceRequest<Chat>('/api/chats', { method: 'POST', body: JSON.stringify({ name, projectId: projectId ?? null }) });
 export const renameChat = (id: string, name: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
 export const moveChat = (id: string, projectId: string | null) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/move`, { method: 'POST', body: JSON.stringify({ projectId }) });
 export const archiveChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/archive`, { method: 'POST', body: '{}' });
+export const restoreChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/restore`, { method: 'POST', body: '{}' });
 export const getChat = (id: string) => workspaceRequest<Chat & { records: GenerationRecord[] }>(`/api/chats/${encodeURIComponent(id)}`);
 export const getWorkspaceSync = (since?: string | null, activeIds: string[] = []) => {
   const query = new URLSearchParams();

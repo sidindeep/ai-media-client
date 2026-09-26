@@ -125,8 +125,15 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.deepEqual(new Set((await workspaceResult(workspaceRequest(alice, '/api/chats?projectId='))).map(item => item.id)), new Set([aliceDefaultChat.id, chat.id]));
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}`, 'GET'))).name, 'Первый чат');
   assert.equal((await workspaceRequest(bob, `/api/chats/${chat.id}`)).status, 404);
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}/move`, 'POST', { projectId: project.id }))).projectId, project.id);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/archive`, 'POST', {}))).archivedAt !== null, true);
   assert.equal((await workspaceRequest(alice, `/api/chats/${chat.id}/archive`, 'POST', {})).status, 200);
+  assert.ok((await workspaceResult(workspaceRequest(alice, '/api/chats?includeArchived=true'))).some(item => item.id === chat.id && item.archivedAt));
+  assert.equal((await workspaceRequest(bob, `/api/chats/${chat.id}/restore`, 'POST', {})).status, 404);
+  assert.equal((await workspaceRequest(alice, `/api/chats/${chat.id}/restore`, 'POST', {})).status, 409, 'a chat in an archived project cannot be restored first');
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/restore`, 'POST', {}))).archivedAt, null);
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}/restore`, 'POST', {}))).archivedAt, null);
+  assert.ok((await workspaceResult(workspaceRequest(alice, '/api/chats'))).some(item => item.id === chat.id));
   assert.equal((await request('/api/admin/accounts', { headers: { Cookie: alice.cookie } })).status, 403);
   assert.equal((await request('/api/admin/credit-conversion')).status, 401);
   assert.equal((await request('/api/admin/credit-conversion', { headers: { Cookie: alice.cookie } })).status, 403);

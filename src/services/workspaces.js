@@ -115,6 +115,12 @@ function createWorkspaces(pool) {
       await pool.query('UPDATE media_chats SET archived_at=COALESCE(archived_at,now()),updated_at=now() WHERE account_id=$1 AND project_id=$2', [accountId, pid]);
       return project(await projectRow(accountId, pid));
     },
+    async restoreProject(accountId, projectId) {
+      const pid = id(projectId, 'Проект'), current = await projectRow(accountId, pid);
+      if (!current.archived_at) throw bad('Проект не в архиве', 409);
+      await pool.query('UPDATE media_projects SET archived_at=NULL,updated_at=now() WHERE account_id=$1 AND id=$2', [accountId, pid]);
+      return project(await projectRow(accountId, pid));
+    },
     async listChats(accountId, { projectId, includeArchived = false } = {}) {
       const params = [accountId], filters = ['c.account_id=$1'];
       if (projectId === null) filters.push('c.project_id IS NULL');
@@ -155,6 +161,13 @@ function createWorkspaces(pool) {
       const cid = id(chatId, 'Чат'), current = await chatRow(accountId, cid);
       await pool.query('UPDATE media_chats SET archived_at=COALESCE(archived_at,now()),updated_at=now() WHERE account_id=$1 AND id=$2', [accountId, cid]);
       if (current.mode === 'system' && !current.project_id) await transaction(pool, client => ensureDefaultChatRow(client, accountId));
+      return chat(await chatRow(accountId, cid));
+    },
+    async restoreChat(accountId, chatId) {
+      const cid = id(chatId, 'Чат'), current = await chatRow(accountId, cid);
+      if (!current.archived_at) throw bad('Чат не в архиве', 409);
+      if (current.project_id && (await projectRow(accountId, current.project_id)).archived_at) throw bad('Сначала восстановите проект', 409);
+      await pool.query('UPDATE media_chats SET archived_at=NULL,updated_at=now() WHERE account_id=$1 AND id=$2', [accountId, cid]);
       return chat(await chatRow(accountId, cid));
     },
     async getChat(accountId, chatId) {

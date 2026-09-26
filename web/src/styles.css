@@ -38,11 +38,12 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .sidebar-home-icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .sidebar-primary-nav + .sidebar-toolbar { margin-top: 8px; }
 .sidebar-toolbar { display: grid; grid-template-columns: 1fr 42px; gap: 8px; margin: 22px 0 14px; }
+.sidebar-toolbar.archive-mode { grid-template-columns: 1fr; }
 .search { display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #2d2e40; border-radius: 11px; color: #9592ab; background: #13141e; }
 .search input { width: 100%; border: 0; outline: 0; color: #eee; background: transparent; padding: 10px 0; }
 .icon-button, .subtle-button { border: 1px solid #303143; border-radius: 10px; color: #bcb8d0; background: #171824; }
 .icon-button { font-size: 22px; }
-.sidebar-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #2b2c3c; }
+.sidebar-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid #2b2c3c; }
 .sidebar-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 10px; color: #89869d; background: transparent; }
 .sidebar-tabs button.active { border-color: #805ff0; color: #fff; }
 .sidebar-list { padding-top: 19px; }
@@ -66,6 +67,13 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .list-item small { margin-top: 3px; color: #817e98; font-size: 11px; }
 .sidebar-entry { position: relative; display: flex; align-items: center; }.sidebar-entry .list-item { flex: 1; min-width: 0; padding-right: 32px; }.entry-menu { position: absolute; top: 8px; right: 7px; border: 0; color: #817e98; background: transparent; font-size: 12px; }.entry-actions { position: fixed; z-index: 100; display: grid; min-width: 145px; padding: 5px; border: 1px solid #37384c; border-radius: 10px; background: #181925; box-shadow: 0 12px 30px #0008; }.entry-actions button { border: 0; padding: 8px 9px; color: #d7d3e6; background: transparent; text-align: left; font-size: 11px; }.entry-actions button:hover { background: #292642; }.group-label { margin: 16px 6px 5px; color: #77738b; font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .empty-copy, .empty-state { color: #79768e; font-size: 13px; }
+.archive-entry { display: flex; align-items: center; gap: 8px; padding: 8px 4px; }
+.archive-entry-copy { flex: 1; min-width: 0; }
+.archive-entry-copy strong, .archive-entry-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archive-entry-copy strong { font-size: 11px; }
+.archive-entry-copy small { margin-top: 3px; color: #817e98; font-size: 10px; }
+.archive-entry button { border: 1px solid #403957; border-radius: 8px; padding: 6px 8px; color: #c9b9f9; background: #211c35; font-size: 10px; }
+.archive-error { color: #ef9ba7; }
 .sidebar-bottom { display: flex; align-items: flex-start; gap: 8px; margin-top: auto; padding: 14px 4px 0; border-top: 1px solid #252635; color: #8f8ba6; font-size: 12px; }
 .sidebar-status-copy { min-width: 0; }
 .sidebar-status-copy > span, .sidebar-startup-timing { display: block; }
@@ -592,6 +600,7 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 :root[data-theme='light'] :is(.composer-tabs button, .preset-bar-label) { color: #777180; }
 :root[data-theme='light'] .composer-tabs button.active { color: #5c43b5; }
 :root[data-theme='light'] .sidebar-tabs button.active { color: #5c43b5; }
+:root[data-theme='light'] .archive-entry button { border-color: #d8d3df; color: #5c43b5; background: #f0ecf8; }
 :root[data-theme='light'] :is(.preset-chip, .select-pill, .model-picker-trigger, .aspect-picker-trigger, .details-button, .advanced-grid input, .advanced-grid select, .advanced-grid textarea) { border-color: #d9d5df; color: #393441; background: #fff; }
 :root[data-theme='light'] .model-picker-trigger strong { color: #312d38; }
 :root[data-theme='light'] :is(.preset-chip.active, .provider-selector button.active) { border-color: #b69bd8; color: #49377e; background: #eee7fa; }

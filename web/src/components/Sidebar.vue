@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
-import { getProviderStatus } from '../api/client';
+import { getChats, getProjects, getProviderStatus, restoreChat as restoreChatRequest, restoreProject as restoreProjectRequest } from '../api/client';
 import type { ProviderStatus } from '../api/client';
 import { useI18n } from '../i18n';
 import type { Chat, Project } from '../types';
@@ -10,8 +10,12 @@ const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'h
 const emit = defineEmits<{ landing: []; home: []; workspace: []; history: []; spending: [] }>();
 const studio = useStudioStore();
 const { formatDate, formatNumber, t, tp } = useI18n();
-const activeTab = ref<'chats' | 'projects'>('chats');
+const activeTab = ref<'chats' | 'projects' | 'archive'>('chats');
 const search = ref('');
+const archivedChats = ref<Chat[]>([]);
+const archivedProjects = ref<Project[]>([]);
+const archiveLoading = ref(false);
+const archiveError = ref('');
 const collapsed = ref(false);
 const menuId = ref<string | null>(null);
 const menuPosition = ref({ top: '0px', left: '0px' });
@@ -90,6 +94,22 @@ const groupedChats = computed(() => {
   for (const chat of filteredChats.value) ((chat.updatedAt && new Date(chat.updatedAt).toDateString() === day) ? today : earlier).push(chat);
   return { today, earlier };
 });
+const visibleArchivedChats = computed(() => archivedChats.value.filter(chat => chat.name.toLowerCase().includes(search.value.trim().toLowerCase())));
+const visibleArchivedProjects = computed(() => archivedProjects.value.filter(project => project.name.toLowerCase().includes(search.value.trim().toLowerCase())));
+function archivedProjectName(chat: Chat) {
+  return archivedProjects.value.find(project => project.id === chat.projectId)?.name
+    || studio.projects.find(project => project.id === chat.projectId)?.name || '';
+}
+async function loadArchive() {
+  archiveLoading.value = true;
+  archiveError.value = '';
+  try {
+    const [projects, chats] = await Promise.all([getProjects(true), getChats(undefined, true)]);
+    archivedProjects.value = projects.filter(project => project.archivedAt);
+    archivedChats.value = chats.filter(chat => chat.archivedAt);
+  } catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
+  finally { archiveLoading.value = false; }
+}
 const releaseLabel = computed(() => {
   const release = studio.release;
   if (!release) return t('sidebar.versionUnavailable');
@@ -138,9 +158,20 @@ function toggleEntryMenu(id: string, event: MouseEvent) {
   };
   menuId.value = id;
 }
-function selectTab(tab: 'chats' | 'projects') {
+function selectTab(tab: 'chats' | 'projects' | 'archive') {
   activeTab.value = tab; search.value = ''; menuId.value = null;
   if (tab === 'chats') selectedProjectId.value = null;
+  if (tab === 'archive') void loadArchive();
+}
+async function restoreArchivedChat(chat: Chat) {
+  archiveError.value = '';
+  try { await restoreChatRequest(chat.id); await studio.refreshWorkspaces(); await loadArchive(); }
+  catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
+}
+async function restoreArchivedProject(project: Project) {
+  archiveError.value = '';
+  try { await restoreProjectRequest(project.id); await studio.refreshWorkspaces(); await loadArchive(); }
+  catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
 }
 function openProject(project: Project) {
   selectedProjectId.value = selectedProjectId.value === project.id ? null : project.id;
@@ -153,7 +184,7 @@ function projectChats(project: Project) {
 }
 async function primaryAdd() {
   if (activeTab.value === 'chats') return addChat();
-  return addProject();
+  if (activeTab.value === 'projects') return addProject();
 }
 const primaryActionLabel = computed(() => activeTab.value === 'chats' ? t('navigation.newChat') : t('sidebar.newProject'));
 function selectProvider(item: ProviderItem, event: Event) {
@@ -194,8 +225,8 @@ function checkProvider() {
       </button>
     </nav>
     <template v-if="!collapsed">
-      <div class="sidebar-toolbar"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>
-      <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="selectTab('chats')">{{ t('navigation.chats') }}</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="selectTab('projects')">{{ t('navigation.projects') }}</button></div>
+      <div class="sidebar-toolbar" :class="{ 'archive-mode': activeTab === 'archive' }"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button v-if="activeTab !== 'archive'" class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>
+      <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="selectTab('chats')">{{ t('navigation.chats') }}</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="selectTab('projects')">{{ t('navigation.projects') }}</button><button type="button" :class="{ active: activeTab === 'archive' }" @click="selectTab('archive')">{{ t('sidebar.archiveTab') }}</button></div>
       <div v-if="activeTab === 'chats'" class="sidebar-list" @scroll="menuId = null">
         <div class="list-heading"><span>{{ t('sidebar.standaloneChats') }}</span><button type="button" class="subtle-button" :aria-label="t('navigation.newChat')" @click="() => addChat()">＋</button></div>
         <button v-if="studio.systemChat.materialCount" type="button" class="list-item" :class="{ selected: studio.activeChatId === 'system:recent' }" @click="selectChat(studio.systemChat)"><span class="list-icon">✦</span><span><strong>{{ t('navigation.unassigned') }}</strong><small>{{ tp('sidebar.generations', studio.systemChat.materialCount) }}</small></span></button>
@@ -205,7 +236,7 @@ function checkProvider() {
         <div v-for="chat in groupedChats.earlier" :key="chat.id" class="sidebar-entry"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span class="list-icon">◌</span><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="toggleEntryMenu(chat.id, $event)">•••</button><div v-if="menuId === chat.id" class="entry-actions" :style="menuPosition"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
         <p v-if="!filteredChats.length" class="empty-copy">{{ t('sidebar.noStandaloneChats') }}</p>
       </div>
-      <div v-else class="sidebar-list project-list-view" @scroll="menuId = null">
+      <div v-else-if="activeTab === 'projects'" class="sidebar-list project-list-view" @scroll="menuId = null">
         <div class="list-heading"><span>{{ t('sidebar.workspaces') }}</span><button type="button" class="subtle-button" :aria-label="t('sidebar.newProject')" @click="addProject">＋</button></div>
         <div v-for="project in filteredProjects" :key="project.id" class="project-tree">
           <div class="sidebar-entry"><button type="button" class="list-item project-toggle" :class="{ expanded: selectedProjectId === project.id }" :aria-expanded="selectedProjectId === project.id" @click="openProject(project)"><span class="project-icon">◈</span><span><strong>{{ project.name }}</strong><small>{{ tp('sidebar.chats', project.chatCount) }} · {{ tp('sidebar.materials', project.materialCount) }}</small></span><span class="project-chevron" aria-hidden="true">›</span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.projectActions')" @click.stop="toggleEntryMenu(project.id, $event)">•••</button><div v-if="menuId === project.id" class="entry-actions" :style="menuPosition"><button type="button" @click="renameProject(project)">{{ t('sidebar.rename') }}</button><button type="button" @click="addChat(project.id); menuId = null">{{ t('navigation.newChat') }}</button><button type="button" @click="archiveProject(project)">{{ t('sidebar.archive') }}</button></div></div>
@@ -215,6 +246,17 @@ function checkProvider() {
           </div>
         </div>
         <p v-if="!filteredProjects.length" class="empty-copy">{{ t('sidebar.noProjects') }}</p>
+      </div>
+      <div v-else class="sidebar-list archive-list">
+        <p v-if="archiveLoading" class="empty-copy">{{ t('sidebar.archiveLoading') }}</p>
+        <p v-if="archiveError" class="empty-copy archive-error" role="alert">{{ archiveError }}</p>
+        <template v-if="visibleArchivedProjects.length"><div class="group-label">{{ t('sidebar.archivedProjects') }}</div>
+          <div v-for="project in visibleArchivedProjects" :key="project.id" class="archive-entry"><span class="project-icon">◈</span><span class="archive-entry-copy"><strong>{{ project.name }}</strong><small>{{ t('sidebar.restoreProjectFirst') }}</small></span><button type="button" @click="restoreArchivedProject(project)">{{ t('sidebar.restore') }}</button></div>
+        </template>
+        <template v-if="visibleArchivedChats.length"><div class="group-label">{{ t('sidebar.archivedChats') }}</div>
+          <div v-for="chat in visibleArchivedChats" :key="chat.id" class="archive-entry"><span class="list-icon">◌</span><span class="archive-entry-copy"><strong>{{ chat.name }}</strong><small>{{ archivedProjectName(chat) || tp('sidebar.materials', chat.materialCount) }}</small></span><button type="button" @click="restoreArchivedChat(chat)">{{ t('sidebar.restore') }}</button></div>
+        </template>
+        <p v-if="!archiveLoading && !archiveError && !visibleArchivedProjects.length && !visibleArchivedChats.length" class="empty-copy">{{ t('sidebar.archiveEmpty') }}</p>
       </div>
       <details class="sidebar-provider-menu" @toggle="loadMenuStatuses">
         <summary><span class="sidebar-provider-icon" aria-hidden="true">{{ activeProvider.icon }}</span><span><small>{{ studio.isAdmin ? t('sidebar.supplier') : t('sidebar.modelCatalog') }}</small><strong>{{ activeProvider.label }}</strong><small v-if="studio.isAdmin && statusLabel(activeProvider)" class="sidebar-provider-balance">{{ statusLabel(activeProvider) }}</small></span><span class="sidebar-provider-chevron" aria-hidden="true">⌃</span></summary>

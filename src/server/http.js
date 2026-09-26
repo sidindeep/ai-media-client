@@ -423,7 +423,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         ]);
         return json(res, 200, { result: { cursor, full: !since, records, projects, chats, queue } });
       }
-      if (accounts && /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|move))?)?$/.test(url.pathname)) {
+      if (accounts && /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|restore|move))?)?$/.test(url.pathname)) {
         const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
         const workspaceAccount = selectedWorkspaceAccount || user.id;
         const workspaceService = await accounts.scope(user, selectedWorkspaceAccount);
@@ -436,6 +436,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.createProject(workspaceAccount, (await workspaceBody(4096)).name));
           if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameProject(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
           if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveProject(workspaceAccount, resourceId));
+          if (req.method === 'POST' && resourceId && action === 'restore' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.restoreProject(workspaceAccount, resourceId));
         }
         if (resource === 'chats') {
           if (req.method === 'GET' && !resourceId) {
@@ -446,6 +447,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.createChat(workspaceAccount, await workspaceBody(8192)));
           if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameChat(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
           if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveChat(workspaceAccount, resourceId));
+          if (req.method === 'POST' && resourceId && action === 'restore' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.restoreChat(workspaceAccount, resourceId));
           if (req.method === 'POST' && resourceId && action === 'move' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.moveChat(workspaceAccount, resourceId, (await workspaceBody(4096)).projectId ?? null));
         }
         return json(res, 404, { error: 'Метод не найден' });

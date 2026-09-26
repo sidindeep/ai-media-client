@@ -15,7 +15,17 @@ function spendingDetails(jobId, record) {
     category,
     modelName: String(record.modelName || record.model || record.modelId || '').slice(0, 200),
     recordId: provider === 'media' ? jobId : `${provider}:${record.id}`,
+    contentCount: generatedContentCount(record),
   };
+}
+function generatedContentCount(record) {
+  if (record.state !== 'success') return 0;
+  if (record.contentAssetId || record.hasImage) return 1;
+  let result = record.resultJson;
+  if (typeof result === 'string') {
+    try { result = JSON.parse(result); } catch { return 0; }
+  }
+  return Array.isArray(result?.resultUrls) ? result.resultUrls.filter(url => typeof url === 'string' && url.length > 0).length : 0;
 }
 async function entry(client, accountId, kind, reference, amount, actor = null, note = '', details = {}) {
   await client.query('INSERT INTO media_ledger(id,account_id,kind,reference,amount,actor_id,note,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',

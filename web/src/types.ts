@@ -1,11 +1,11 @@
 export type SpendingCategory = 'all' | 'image' | 'video' | 'text' | 'audio' | 'other';
 export type SpendingItem = {
   id: string; kind: 'capture' | 'release'; amountUnits: number; createdAt: string;
-  category: Exclude<SpendingCategory, 'all'>; modelName: string | null; recordId: string | null;
+  category: Exclude<SpendingCategory, 'all'>; modelName: string | null; recordId: string | null; contentCount: number;
 };
 export type SpendingPageData = {
-  days: 7 | 30 | 90; category: SpendingCategory; asOf: string;
-  summary: { spentUnits: number; releasedUnits: number; topCategory: Exclude<SpendingCategory, 'all'> | null };
+  days: 7 | 30 | 90 | null; category: SpendingCategory; asOf: string; since: string;
+  summary: { spentUnits: number; releasedUnits: number; contentCount: number; topCategory: Exclude<SpendingCategory, 'all'> | null };
   items: SpendingItem[]; nextCursor: string | null;
 };
 export type GenerationJournalItem = {

@@ -47,7 +47,7 @@ export async function getHistory(): Promise<GenerationRecord[]> {
   return rpc<GenerationRecord[]>('getHistory');
 }
 
-export function getSpending(input: { days: 7 | 30 | 90; category: SpendingCategory; cursor?: string | null; asOf?: string }) {
+export function getSpending(input: { days?: 7 | 30 | 90; from?: string; to?: string; category: SpendingCategory; cursor?: string | null; asOf?: string }) {
   return rpc<SpendingPageData>('getSpending', [input]);
 }
 export function getGenerationJournal(input: { provider: 'all' | 'kie' | 'routerai' | 'codex'; offset?: number }) {

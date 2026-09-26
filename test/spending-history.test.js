@@ -19,7 +19,7 @@ test('spending counts captures and releases separately with account filters and 
   }
   await transaction(pool, async client => {
     await reserve(client, account, 'image-job', { amountUnits: 2500, version: 'v1' });
-    await settle(client, account, 'image-job', 'success', { id: 'image-job', kind: 'image', modelName: 'Image model' });
+    await settle(client, account, 'image-job', 'success', { id: 'image-job', state: 'success', kind: 'image', modelName: 'Image model', resultJson: '{"resultUrls":["https://example.test/1.png","https://example.test/2.png"]}' });
     await reserve(client, account, 'video-job', { amountUnits: 1500, version: 'v1' });
     await settle(client, account, 'video-job', 'fail', { id: 'video-job', kind: 'video', modelName: 'Video model' });
   });
@@ -29,13 +29,19 @@ test('spending counts captures and releases separately with account filters and 
   assert.equal(all.summary.spentUnits, 2500);
   assert.equal(all.summary.releasedUnits, 1500);
   assert.equal(all.summary.topCategory, 'image');
+  assert.equal(all.summary.contentCount, 2);
   assert.equal(all.items.length, 2);
   assert.equal(all.items.find(item => item.kind === 'capture').modelName, 'Image model');
+  assert.equal(all.items.find(item => item.kind === 'capture').contentCount, 2);
   assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' })).summary.spentUnits, 0);
   assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' })).summary.releasedUnits, 1500);
   assert.equal((await spendingHistory(pool, other, { days: 30, category: 'all' })).summary.spentUnits, 9999);
   await pool.query("UPDATE media_ledger SET created_at=now()-interval '40 days' WHERE reference='image-job'");
   assert.equal((await spendingHistory(pool, account, { days: 30 })).summary.spentUnits, 0);
+  const range = await spendingHistory(pool, account, { from: new Date(Date.now() - 45 * 86400000).toISOString(), to: new Date(Date.now() - 35 * 86400000).toISOString() });
+  assert.equal(range.summary.spentUnits, 2500);
+  assert.equal(range.summary.contentCount, 2);
+  assert.equal(range.days, null);
   for (let index = 0; index < 32; index++) {
     await pool.query(`INSERT INTO media_ledger(id,account_id,kind,reference,amount,details)
       VALUES($1,$2,'capture',$3,1000,'{"category":"text"}')`, [randomUUID(), account, `extra-${index}`]);
@@ -49,6 +55,7 @@ test('spending counts captures and releases separately with account filters and 
   assert.equal(second.nextCursor, null);
   assert.equal(new Set([...first.items, ...second.items].map(item => item.id)).size, 33);
   await assert.rejects(spendingHistory(pool, account, { days: 31 }), /Некорректный фильтр/);
+  await assert.rejects(spendingHistory(pool, account, { from: new Date().toISOString() }), /Некорректный диапазон/);
 });
 
 test('measured settlement captures actual cost and returns unused hold exactly once', async t => {

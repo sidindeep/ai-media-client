@@ -23,6 +23,14 @@ test('spending counts captures and releases separately with account filters and 
     await reserve(client, account, 'video-job', { amountUnits: 1500, version: 'v1' });
     await settle(client, account, 'video-job', 'fail', { id: 'video-job', kind: 'video', modelName: 'Video model' });
   });
+  await pool.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'history','image-job','{}')", [account]);
+  for (const [position, size] of [1024, 2048].entries()) {
+    const assetId = randomUUID();
+    await pool.query(`INSERT INTO content_assets(account_id,id,storage_key,original_name,mime_type,size_bytes,status)
+      VALUES($1,$2,$3,'result.png','image/png',$4,'ready')`, [account, assetId, `accounts/${account}/content/${assetId}`, size]);
+    await pool.query(`INSERT INTO content_links(account_id,namespace,record_id,asset_id,role,position)
+      VALUES($1,'history','image-job',$2,'result',$3)`, [account, assetId, position]);
+  }
   await pool.query(`INSERT INTO media_ledger(id,account_id,kind,reference,amount,details)
     VALUES($1,$2,'capture','other-job',9999,'{"category":"text"}')`, [randomUUID(), other]);
   const all = await spendingHistory(pool, account, { days: 30, category: 'all' });
@@ -30,9 +38,11 @@ test('spending counts captures and releases separately with account filters and 
   assert.equal(all.summary.releasedUnits, 1500);
   assert.equal(all.summary.topCategory, 'image');
   assert.equal(all.summary.contentCount, 2);
+  assert.equal(all.summary.contentBytes, 3072);
   assert.equal(all.items.length, 2);
   assert.equal(all.items.find(item => item.kind === 'capture').modelName, 'Image model');
   assert.equal(all.items.find(item => item.kind === 'capture').contentCount, 2);
+  assert.equal(all.items.find(item => item.kind === 'capture').contentBytes, 3072);
   assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' })).summary.spentUnits, 0);
   assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' })).summary.releasedUnits, 1500);
   assert.equal((await spendingHistory(pool, other, { days: 30, category: 'all' })).summary.spentUnits, 9999);
@@ -41,6 +51,7 @@ test('spending counts captures and releases separately with account filters and 
   const range = await spendingHistory(pool, account, { from: new Date(Date.now() - 45 * 86400000).toISOString(), to: new Date(Date.now() - 35 * 86400000).toISOString() });
   assert.equal(range.summary.spentUnits, 2500);
   assert.equal(range.summary.contentCount, 2);
+  assert.equal(range.summary.contentBytes, 3072);
   assert.equal(range.days, null);
   for (let index = 0; index < 32; index++) {
     await pool.query(`INSERT INTO media_ledger(id,account_id,kind,reference,amount,details)

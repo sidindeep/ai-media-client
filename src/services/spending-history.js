@@ -33,7 +33,8 @@ const entries = `WITH entries AS (
     COALESCE(NULLIF(l.details->>'recordId',''),
       CASE WHEN r.namespace='history' THEN r.id WHEN r.namespace IN ('codex','routerai')
         THEN r.namespace || ':' || (r.data->>'id') END) AS record_id,
-    GREATEST(COALESCE((l.details->>'contentCount')::integer,0),COALESCE(results.content_count,0)) AS content_count
+    GREATEST(COALESCE((l.details->>'contentCount')::integer,0),COALESCE(results.content_count,0)) AS content_count,
+    COALESCE(results.content_bytes,0) AS content_bytes
   FROM media_ledger l
   LEFT JOIN LATERAL (
     SELECT namespace,id,data FROM media_records
@@ -41,7 +42,10 @@ const entries = `WITH entries AS (
     LIMIT 1
   ) r ON true
   LEFT JOIN LATERAL (
-    SELECT count(*)::integer AS content_count FROM content_links c
+    SELECT count(*)::integer AS content_count,
+      COALESCE(SUM(CASE WHEN a.status='ready' THEN a.size_bytes ELSE 0 END),0)::bigint AS content_bytes
+    FROM content_links c
+    JOIN content_assets a ON a.account_id=c.account_id AND a.id=c.asset_id
     WHERE c.account_id=l.account_id AND c.role='result'
       AND c.namespace=r.namespace AND c.record_id=r.id
   ) results ON true
@@ -53,18 +57,26 @@ async function spendingHistory(pool, accountId, input) {
   const params = [accountId, filter.since, filter.asOf, filter.category];
   const categoryWhere = "($4='all' OR category=$4)";
   const [groups, page] = await Promise.all([
-    pool.query(`${entries} SELECT category,kind,SUM(amount)::text AS amount,SUM(CASE WHEN kind='capture' THEN content_count ELSE 0 END)::text AS content_count FROM entries WHERE ${categoryWhere} GROUP BY category,kind`, params),
-    pool.query(`${entries} SELECT id,kind,amount,created_at,category,model_name,record_id,content_count
+    pool.query(`${entries} SELECT category,kind,SUM(amount)::text AS amount,
+      SUM(CASE WHEN kind='capture' THEN content_count ELSE 0 END)::text AS content_count,
+      SUM(CASE WHEN kind='capture' THEN content_bytes ELSE 0 END)::text AS content_bytes
+      FROM entries WHERE ${categoryWhere} GROUP BY category,kind`, params),
+    pool.query(`${entries} SELECT id,kind,amount,created_at,category,model_name,record_id,content_count,content_bytes
       FROM entries WHERE ${categoryWhere}
         AND ($5::timestamptz IS NULL OR (created_at,id)<($5::timestamptz,$6::uuid))
       ORDER BY created_at DESC,id DESC LIMIT ${PAGE_SIZE + 1}`,
     [...params, filter.cursor?.[0] || null, filter.cursor?.[1] || null]),
   ]);
-  let spentUnits = 0, releasedUnits = 0, contentCount = 0;
+  let spentUnits = 0, releasedUnits = 0, contentCount = 0, contentBytes = 0;
   const byCategory = {};
   for (const row of groups.rows) {
     const amount = Number(row.amount);
-    if (row.kind === 'capture') { spentUnits += amount; contentCount += Number(row.content_count); byCategory[row.category] = (byCategory[row.category] || 0) + amount; }
+    if (row.kind === 'capture') {
+      spentUnits += amount;
+      contentCount += Number(row.content_count);
+      contentBytes += Number(row.content_bytes);
+      byCategory[row.category] = (byCategory[row.category] || 0) + amount;
+    }
     else releasedUnits += amount;
   }
   const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || null;
@@ -72,10 +84,11 @@ async function spendingHistory(pool, accountId, input) {
   const last = rows.at(-1);
   return {
     days: filter.days, category: filter.category, asOf: filter.asOf, since: filter.since,
-    summary: { spentUnits, releasedUnits, contentCount, topCategory },
+    summary: { spentUnits, releasedUnits, contentCount, contentBytes, topCategory },
     items: rows.map(row => ({ id: row.id, kind: row.kind, amountUnits: Number(row.amount),
       createdAt: row.created_at, category: row.category, modelName: row.model_name || null, recordId: row.record_id || null,
-      contentCount: row.kind === 'capture' ? Number(row.content_count) : 0 })),
+      contentCount: row.kind === 'capture' ? Number(row.content_count) : 0,
+      contentBytes: row.kind === 'capture' ? Number(row.content_bytes) : 0 })),
     nextCursor: page.rows.length > PAGE_SIZE && last
       ? Buffer.from(JSON.stringify([new Date(last.created_at).toISOString(), last.id])).toString('base64url') : null,
   };

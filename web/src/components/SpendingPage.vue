@@ -31,6 +31,12 @@ let lastRefreshAt = 0;
 const categories: SpendingCategory[] = ['all', 'image', 'video', 'text', 'audio', 'other'];
 
 function credits(units: number) { return formatNumber(units / 1000, { maximumFractionDigits: 3 }); }
+function formatSize(bytes: number) {
+  if (bytes >= 1024 ** 3) return t('spending.sizeGiB', { size: formatNumber(bytes / 1024 ** 3, { maximumFractionDigits: 2 }) });
+  if (bytes >= 1024 ** 2) return t('spending.sizeMiB', { size: formatNumber(bytes / 1024 ** 2, { maximumFractionDigits: 1 }) });
+  if (bytes >= 1024) return t('spending.sizeKiB', { size: formatNumber(bytes / 1024, { maximumFractionDigits: 1 }) });
+  return t('spending.sizeBytes', { size: formatNumber(bytes) });
+}
 function categoryLabel(value: SpendingCategory) { return t(`spending.category.${value}` as 'spending.category.all'); }
 function date(value: string) { return formatDate(value, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 function spendingFilter() {
@@ -153,14 +159,14 @@ onBeforeUnmount(() => { if (refreshTimer) clearTimeout(refreshTimer); });
       <article><span>{{ days === null ? t('spending.spentRange') : t('spending.spent', { days }) }}</span><strong>{{ data ? credits(data.summary.spentUnits) : '—' }}</strong><small>{{ t('spending.credits') }}</small></article>
       <article><span>{{ t('spending.top') }}</span><strong>{{ data?.summary.topCategory ? categoryLabel(data.summary.topCategory) : '—' }}</strong></article>
       <article><span>{{ t('spending.released') }}</span><strong class="spending-positive">{{ data ? `+${credits(data.summary.releasedUnits)}` : '—' }}</strong><small>{{ t('spending.credits') }}</small></article>
-      <article><span>{{ t('spending.generated') }}</span><strong>{{ data ? data.summary.contentCount : '—' }}</strong></article>
+      <article><span>{{ t('spending.generated') }}</span><strong>{{ data ? data.summary.contentCount : '—' }}</strong><small>{{ data ? t('spending.storageSize', { size: formatSize(data.summary.contentBytes) }) : '—' }}</small></article>
     </div>
     <div class="spending-list-head"><h3>{{ t('spending.operations') }}</h3><span>{{ t('spending.reserveHint') }}</span></div>
     <p v-if="error" class="spending-error" role="alert">{{ error }} <button type="button" @click="load(true)">{{ t('common.retry') }}</button></p>
     <p v-if="loading" class="spending-state" role="status">{{ t('common.loading') }}</p>
     <p v-else-if="!items.length && !error" class="spending-state">{{ t('spending.empty') }}</p>
     <ol v-else class="spending-list">
-      <li v-for="item in items" :key="item.id"><div class="spending-operation"><span :class="{ released: item.kind === 'release' }">{{ item.kind === 'capture' ? '−' : '+' }}</span><div><strong>{{ item.kind === 'capture' ? t('spending.charge') : t('spending.release') }} · {{ item.modelName || categoryLabel(item.category) }}</strong><small>{{ categoryLabel(item.category) }} · {{ date(item.createdAt) }}<template v-if="item.kind === 'capture'"> · {{ t('spending.files', { count: item.contentCount }) }}</template></small></div></div><div class="spending-operation-end"><strong :class="{ 'spending-positive': item.kind === 'release' }">{{ item.kind === 'capture' ? '−' : '+' }}{{ credits(item.amountUnits) }} {{ t('common.creditsShort') }}</strong><button v-if="item.recordId && availableRecordIds.has(item.recordId)" type="button" @click="emit('result', item.recordId)">{{ t('spending.openResult') }}</button></div></li>
+      <li v-for="item in items" :key="item.id"><div class="spending-operation"><span :class="{ released: item.kind === 'release' }">{{ item.kind === 'capture' ? '−' : '+' }}</span><div><strong>{{ item.kind === 'capture' ? t('spending.charge') : t('spending.release') }} · {{ item.modelName || categoryLabel(item.category) }}</strong><small>{{ categoryLabel(item.category) }} · {{ date(item.createdAt) }}<template v-if="item.kind === 'capture'"> · {{ t('spending.files', { count: item.contentCount }) }} · {{ t('spending.storageSize', { size: formatSize(item.contentBytes) }) }}</template></small></div></div><div class="spending-operation-end"><strong :class="{ 'spending-positive': item.kind === 'release' }">{{ item.kind === 'capture' ? '−' : '+' }}{{ credits(item.amountUnits) }} {{ t('common.creditsShort') }}</strong><button v-if="item.recordId && availableRecordIds.has(item.recordId)" type="button" @click="emit('result', item.recordId)">{{ t('spending.openResult') }}</button></div></li>
     </ol>
     <button v-if="data?.nextCursor" class="spending-more" type="button" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? t('common.loading') : t('spending.more') }}</button>
     <div class="spending-list-head"><div><h3>{{ t('journal.title') }}</h3><span>{{ t('journal.lead') }}</span></div></div>

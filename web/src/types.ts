@@ -168,6 +168,8 @@ export type QueueStatus = {
 export type WorkspaceSync = {
   cursor: string;
   full: boolean;
+  historyNext?: string | null;
+  unassignedCount?: number;
   records: GenerationRecord[];
   projects: Project[];
   chats: Chat[];

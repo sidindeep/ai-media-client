@@ -102,6 +102,86 @@ test('Codex worker accepts over 100 simultaneous jobs while isolating accounts a
   finishes.at(-1)('ok');
 });
 
+test('Codex worker stores image bytes outside status and serves them after restart', async t => {
+  const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-result-test-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const account = randomUUID(), input = { ...request(), kind: 'image' };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+  const start = async run => {
+    const server = createCodexWorker(run, { resultDirectory: directory });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    return { server, base: `http://127.0.0.1:${server.address().port}` };
+  };
+  const stop = server => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); });
+  const headers = { 'x-account-id': account };
+  const first = await start(async () => ({ output: 'Изображение создано.', imageBase64: png.toString('base64'), usage: sampleUsage }));
+  assert.equal((await fetch(first.base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) })).status, 202);
+  let job;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    job = await fetch(first.base + '/jobs/' + input.requestId, { headers }).then(response => response.json());
+    if (job.state === 'success') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(job.state, 'success');
+  assert.equal(job.hasImage, true);
+  assert.equal(job.imageBase64, undefined);
+  await stop(first.server);
+  const second = await start(() => { throw new Error('must not regenerate'); });
+  t.after(() => stop(second.server));
+  const restored = await fetch(second.base + '/jobs/' + input.requestId, { headers }).then(response => response.json());
+  assert.equal(restored.state, 'success');
+  assert.equal(restored.imageBase64, undefined);
+  const image = await fetch(second.base + '/jobs/' + input.requestId + '/image', { headers });
+  assert.equal(image.status, 200);
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), png);
+});
+
+test('Codex worker rejects a full queue before accepting a paid request', async t => {
+  const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-cap-test-'));
+  const server = createCodexWorker(() => new Promise(() => {}), { resultDirectory: directory, maxPendingJobs: 2 });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeIdleConnections(); await new Promise(resolve => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const headers = { 'x-account-id': randomUUID() };
+  const first = request(), second = request();
+  const post = value => fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(value) });
+  assert.equal((await post(first)).status, 202);
+  assert.equal((await post(second)).status, 202);
+  assert.equal((await post(first)).status, 200);
+  const rejected = await post(request());
+  assert.equal(rejected.status, 429);
+  assert.equal((await rejected.json()).accepted, false);
+});
+
+test('Codex billing retrieves durable worker PNG before capturing the reservation', async t => {
+  const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-billing-image-test-'));
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+  const worker = createCodexWorker(async () => ({ output: 'Изображение создано.', imageBase64: png.toString('base64'), usage: sampleUsage }), { resultDirectory: directory });
+  await new Promise(resolve => worker.listen(0, '127.0.0.1', resolve));
+  const pool = await openDatabase({}, testPool());
+  t.after(async () => { worker.closeIdleConnections(); await new Promise(resolve => worker.close(resolve)); await pool.end(); await fs.rm(directory, { recursive: true, force: true }); });
+  const account = randomUUID(), input = { ...request(), kind: 'image' }, stored = [];
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Codex image')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  const accounts = { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) };
+  const base = `http://127.0.0.1:${worker.address().port}`;
+  const billing = createCodexBilling({ accounts, url: base, storage: { put: async (_key, bytes) => { stored.push(Buffer.from(bytes)); } } });
+  t.after(() => billing.close());
+  await billing.submit(account, input);
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const remote = await fetch(base + '/jobs/' + input.requestId, { headers: { 'x-account-id': account } }).then(response => response.json());
+    if (remote.state === 'success') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal((await billing.status(account, input.requestId)).state, 'success');
+  assert.deepEqual(stored, [png]);
+  assert.equal((await fetch(base + '/jobs/' + input.requestId + '/image', { headers: { 'x-account-id': account } })).status, 404);
+  assert.equal(Number((await accounts.pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held), 0);
+});
+
 test('Codex credit reservations survive replay, failure and unknown transport', async t => {
   const pool = await openDatabase({}, testPool());
   const account = randomUUID(), second = randomUUID();
@@ -109,12 +189,13 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
     await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Test')", [id]);
     await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [id]);
   }
-  let mode = 'running', sent = 0;
+  let mode = 'running', sent = 0, polled = 0;
   const accounts = { pool, wallet: createWallet(pool), pricing: createPricing({ version: 'test', models: { [priceKey(request())]: { baseUnits: 1000 } } }) };
   const billing = createCodexBilling({ accounts, url: 'http://worker', fetchImpl: async (_url, options) => {
     if (options.method === 'POST') sent++;
+    else polled++;
     if (mode === 'network') throw new Error('network');
-    if (mode === 'reject') return { ok: false, status: 429, json: async () => ({ error: 'busy' }) };
+    if (mode === 'reject') return { ok: false, status: 403, json: async () => ({ error: 'forbidden' }) };
     if (mode === 'missing') return { ok: false, status: 404, json: async () => ({ error: 'missing' }) };
     return { ok: true, json: async () => ({ state: mode, output: 'Ответ', usage: sampleUsage, error: 'failed' }) };
   } });
@@ -123,6 +204,13 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
   const [a,b] = await Promise.all([billing.submit(account, input), billing.submit(account, input)]);
   assert.equal(a.id, b.id); assert.equal(sent, 1);
   assert.equal((await accounts.wallet.get(account)).heldUnits, 1000);
+  const beforePoll = polled;
+  const concurrent = await Promise.all(Array.from({ length: 8 }, () => billing.status(account, input.requestId)));
+  assert.ok(concurrent.every(job => job.state === 'running'));
+  assert.equal(polled - beforePoll, 1);
+  const beforeReads = polled;
+  assert.equal((await billing.read(account, input.requestId)).state, 'running');
+  assert.equal(polled, beforeReads);
   await assert.rejects(billing.status(second, input.requestId), /не найден/);
   mode = 'success';
   assert.deepEqual((await billing.status(account, input.requestId)).usage, sampleUsage);
@@ -158,4 +246,62 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
   await assert.rejects(billing.submit(account, { ...request(), speed: 'standard' }), /Цена/);
   await pool.query('UPDATE media_wallets SET balance=0 WHERE account_id=$1', [second]);
   const prior = sent; await assert.rejects(billing.submit(second, request()), /Недостаточно/); assert.equal(sent, prior);
+});
+
+test('Codex retries only an explicit unaccepted 429 after restart', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), input = request();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Codex retry')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  const accounts = { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) };
+  let sends = 0;
+  const options = { accounts, url: 'http://worker', retryDelayMs: 150,
+    fetchImpl: async (_url, requestOptions) => {
+      if (requestOptions.method === 'POST') {
+        sends++;
+        if (sends === 1) return { ok: false, status: 429, json: async () => ({ error: 'busy', accepted: false }) };
+        return { ok: true, json: async () => ({ state: 'running' }) };
+      }
+      return { ok: true, json: async () => ({ state: 'success', output: 'Готово', usage: sampleUsage }) };
+    } };
+  const first = createCodexBilling(options);
+  t.after(() => first.close());
+  const queued = await first.submit(account, input);
+  assert.equal(queued.state, 'queued');
+  assert.equal((await first.status(account, input.requestId)).state, 'queued');
+  assert.equal(sends, 1);
+  assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, 1000);
+  first.close();
+  const second = createCodexBilling(options);
+  t.after(() => second.close());
+  await second.recover();
+  let job;
+  for (let i = 0; i < 100; i++) {
+    job = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex'", [account])).rows[0].data;
+    if (job.state === 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(job.state, 'running');
+  assert.equal(sends, 2);
+  assert.equal((await second.status(account, input.requestId)).state, 'success');
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0],
+    { balance: 9000, held: 0 });
+});
+
+test('Codex does not repeat a 429 without proof that the worker rejected it', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), input = request();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Unknown 429')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  let sends = 0;
+  const billing = createCodexBilling({ accounts: { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) },
+    url: 'http://worker', retryDelayMs: 10,
+    fetchImpl: async () => { sends++; return { ok: false, status: 429, json: async () => ({ error: 'busy' }) }; } });
+  t.after(() => billing.close());
+  assert.equal((await billing.submit(account, input)).state, 'unknown');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(sends, 1);
+  assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, 1000);
 });

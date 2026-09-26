@@ -10,6 +10,37 @@ const { loadConfig } = require('../src/server/config');
 const { createPricing } = require('../src/billing/pricing');
 const modelId = 'kie:grok-imagine-video-1-5-preview';
 const input = { prompt: 'Тест', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
+test('non-history records update without taking the wallet lock', async () => {
+  const statements = [];
+  const client = {
+    async query(sql) { statements.push(sql); return { rows: [] }; },
+    release() {},
+  };
+  const pool = { connect: async () => client };
+  const { AccountRecords } = require('../src/database/records');
+  await new AccountRecords(pool, randomUUID(), 'drafts').update('draft', { text: 'saved' });
+  assert.equal(statements.some(sql => sql.includes('media_wallets')), false);
+  assert.equal(statements.some(sql => sql.includes('INSERT INTO media_records')), true);
+});
+test('queued creation atomically reserves credits and writes one journal event', async t => {
+  const { openDatabase } = require('../src/database/database');
+  const { AccountRecords } = require('../src/database/records');
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const accountId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Queue')", [accountId]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,2500)', [accountId]);
+  const history = new AccountRecords(pool, accountId, 'history');
+  const quote = { amountUnits: 2500, credits: 2.5, version: 'test-price' };
+  const first = await history.createQueued(randomUUID(), { state: 'queued', requestId: randomUUID(), nativeQuote: quote });
+  assert.equal(first.revision, 1);
+  await assert.rejects(history.createQueued(randomUUID(), { state: 'queued', requestId: randomUUID(), nativeQuote: quote }), /Недостаточно кредитов/);
+  await history.createQueued(randomUUID(), { state: 'queued', requestId: randomUUID() });
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [accountId])).rows[0], { balance: 2500, held: 2500 });
+  assert.equal(Number((await pool.query("SELECT count(*) AS n FROM media_records WHERE account_id=$1 AND namespace='history'", [accountId])).rows[0].n), 2);
+  assert.equal(Number((await pool.query("SELECT count(*) AS n FROM media_records WHERE account_id=$1 AND namespace='generation-journal'", [accountId])).rows[0].n), 2);
+  assert.equal(Number((await pool.query("SELECT count(*) AS n FROM media_ledger WHERE account_id=$1 AND kind='reserve'", [accountId])).rows[0].n), 1);
+});
 test('connection retries support both pg pool interfaces without replaying queries', async () => {
   const { retryConnections } = require('../src/database/database');
   let attempts = 0, releases = 0;
@@ -21,6 +52,27 @@ test('connection retries support both pg pool interfaces without replaying queri
   let denied = 0;
   const bad = retryConnections({ connect: async () => { denied++; throw Object.assign(new Error('Login denied'), { code: '28P01' }); } });
   await assert.rejects(bad.connect()); assert.equal(denied, 1);
+});
+
+test('idle account services are released after listeners and queue work end', async t => {
+  const { openDatabase } = require('../src/database/database');
+  const { createAccounts } = require('../src/services/accounts');
+  const directory = await fs.mkdtemp(path.join(__dirname, '../artifacts/account-idle-test-'));
+  const pool = await openDatabase({}, testPool());
+  const accountId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Idle')", [accountId]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,0)', [accountId]);
+  const config = { ...loadConfig({}), dataDirectory: directory };
+  const accounts = createAccounts({ pool, config, provider: { id: 'kie', isConfigured: () => false }, idleServiceMs: 1 });
+  t.after(async () => { await accounts.close(); await pool.end(); await fs.rm(directory, { recursive: true, force: true }); });
+  const first = await accounts.get(accountId);
+  const listener = () => {};
+  first.events.on('changed', listener);
+  await accounts.sweepIdle(Date.now() + 1000);
+  assert.equal(await accounts.get(accountId), first);
+  first.events.off('changed', listener);
+  await accounts.sweepIdle(Date.now() + 1000);
+  assert.notEqual(await accounts.get(accountId), first);
 });
 
 test('native prices use exact minor units, explicit tariffs, no provider cost conversion', () => {
@@ -281,6 +333,10 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(await downloadResponse.text(), 'private-result');
   assert.equal((await request(`/api/results/${first.id}/0?download=1`, { headers: { Cookie: bob.cookie } })).status, 400);
   assert.equal((await request(`/api/results/${first.id}/0?account=${alice.id}`, { headers: { Cookie: owner.cookie } })).status, 200);
+  // Hold the dispatcher while testing cancellation and ambiguous submissions.
+  // A newly accepted task is otherwise allowed to start before the next HTTP call.
+  clearTimeout(own.queue.timer); own.queue.timer = null; own.queue.timerDueAt = null;
+  own.queue.schedule = () => {};
   const queued = await result(rpc(alice, 'createTask', [{ ...payload, requestId: randomUUID() }]));
   await result(rpc(alice, 'cancelQueued', [queued.id]));
   assert.equal((await result(rpc(alice, 'getBalance'))).heldUnits, 0);

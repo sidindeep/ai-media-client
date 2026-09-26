@@ -18,9 +18,10 @@ const { resolvePriceSources } = require('../billing/price-sources');
 const { download } = require('../downloads');
 const { mediaDurationSeconds } = require('../media-duration');
 const Ajv = require('ajv');
+let videoDurationRead = Promise.resolve();
 
-async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, conversion, tariffFetcher, accountQuote, storage = null, storagePrefix = '', content = null, accountId = null }) {
-  if (!stores) trace.configure(path.join(directory, 'logs'));
+async function createMediaService({ directory, provider, rubPerCredit = 0.51, downloadImpl = download, interval = 2000, stores, pricing, conversion, tariffFetcher, accountQuote, storage = null, storagePrefix = '', content = null, accountId = null, background = true }) {
+  if (!stores && background) trace.configure(path.join(directory, 'logs'));
   const history = stores?.history || new History(path.join(directory, 'history.json'));
   const preferences = stores?.preferences || new History(path.join(directory, 'preferences.json'));
   const drafts = stores?.drafts || new History(path.join(directory, 'drafts.json'));
@@ -58,7 +59,8 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     return model;
   };
   const presets = new GenerationPresets(stores?.presets || new History(path.join(directory, 'presets.json')), findModel);
-  const preference = async (id, fallback) => (await preferences.list()).find(item => item.id === id) || fallback;
+  const preference = async (id, fallback) => (typeof preferences.get === 'function'
+    ? await preferences.get(id) : (await preferences.list()).find(item => item.id === id)) || fallback;
   const costSettings = () => preference('cost-settings', { rubPerCredit });
   const storageSettings = async () => ({ directory: content ? 'Единое хранилище контента' : storage ? 'Общее S3-хранилище' : 'Хранилище сервиса', autoSave: content ? true : (await preference('storage', {})).autoSave === true });
   function validate(model, input) {
@@ -78,7 +80,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   async function saveResults(id) {
     if (pendingSaves.has(id)) return pendingSaves.get(id);
     const operation = (async () => {
-      const record = (await history.list()).find(item => item.id === id);
+      const record = typeof history.get === 'function' ? await history.get(id) : (await history.list()).find(item => item.id === id);
       if (record?.state !== 'success') throw new Error('Результат ещё не готов');
       const links = urls(record);
       if (!links.length) throw new Error('Нет ссылок на результат');
@@ -121,7 +123,11 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     pendingSaves.set(id, operation);
     try { return await operation; } finally { pendingSaves.delete(id); events.emit('changed'); }
   }
-  const settings = await preference('queue', { concurrency: 5 });
+  const recoveryStates = ['unknown', 'preparing', 'queued', 'submitting', 'waiting', 'queuing', 'generating'];
+  const [settings, recoveryRecords] = await Promise.all([
+    preference('queue', { concurrency: 5 }),
+    background ? (typeof history.listByStates === 'function' ? history.listByStates(recoveryStates) : history.list()) : null,
+  ]);
   const queue = new TaskQueue({
     store: history, concurrency: settings.concurrency, interval, notify: change => events.emit(change?.full ? 'reset' : 'changed'),
     prepare: async record => {
@@ -132,22 +138,27 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     },
     create: (record, input) => accountProvider(record.kieAccountId).create(findModel(record.modelId), input),
     beforeCreate: record => accountProvider(record.kieAccountId).waitForCreate?.(),
-    onRateLimit: record => accountProvider(record.kieAccountId).rateLimited?.(),
+    onRateLimit: (record, error) => accountProvider(record.kieAccountId).rateLimited?.(error.retryAfterMs),
     poll: record => accountProvider(record.kieAccountId).poll(findModel(record.modelId), record.taskId),
     complete: async record => {
       if (content || (await storageSettings()).autoSave) await saveResults(record.id).catch(() => {});
       events.emit('complete', record);
     }
   });
-  await queue.recover();
+  if (background) await queue.recover(recoveryRecords);
+  if (background && settings.paused === true) queue.pause();
   async function presentHistory(records) {
+    const assetIds = records.flatMap(record => (record.localFiles || []).map(file => file.assetId).filter(Boolean));
+    const assetsById = content?.getMany ? await content.getMany(accountId, assetIds) : null;
     return Promise.all(records.map(async record => {
       const localFiles = await Promise.all((record.localFiles || []).map(async (file, index) => {
-        const asset = file.assetId ? await content?.get(accountId,file.assetId) : null;
+        const asset = file.assetId ? (assetsById ? assetsById.get(file.assetId) : await content?.get(accountId,file.assetId)) : null;
         return {
           assetId:file.assetId,size:asset?.size??file.size,savedAt:file.savedAt,url:file.url,name:asset?.name||file.name||path.basename(file.path||file.storageKey),
           previewUrl:file.assetId?`/api/content/${file.assetId}`:`/api/results/${encodeURIComponent(record.id)}/${index}`,
-          exists:file.assetId?asset?.status==='ready':file.storageKey?await storage?.head(file.storageKey).then(()=>true).catch(()=>false):await fs.stat(file.path).then(s=>s.isFile()).catch(()=>false)
+          // A page must not issue one S3 HEAD or filesystem stat per old file.
+          // The authenticated download endpoint verifies availability on access.
+          exists:file.assetId?asset?.status==='ready':Boolean(file.storageKey || file.path)
         };
       }));
       return { ...record, resultJson: JSON.stringify({ resultUrls: urls(record) }), localFiles };
@@ -155,6 +166,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   }
   async function trustedSourceFiles(files = []) {
     if (!Array.isArray(files) || files.length > 100) throw new Error('Некорректный список исходников');
+    if (!files.length) return [];
     const metadata = await sourceMetadata.list();
     return Promise.all(files.map(async item => {
       const id = assets.referenceId(item?.ref);
@@ -178,7 +190,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     return typeof history.listSince === 'function' ? presentHistory(await history.listSince(since, before, activeIds)) : listHistory();
   }
   const service = {
-    events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, listHistory, listHistorySince, resultUrls: urls,
+    events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, presentHistory, listHistory, listHistorySince, resultUrls: urls,
     catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id), kieAccounts: provider.listAccounts?.() || [{ id: 'primary', name: 'Kie.ai · 1', configured: provider.isConfigured() }] }),
     configured: () => provider.isConfigured(),
     async nativeQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
@@ -268,7 +280,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     async saveSource(file) {
       const saved = await assets.save(file);
       if (String(saved.type).startsWith('video/')) {
-        const durationSeconds = mediaDurationSeconds(file.bytes, saved.type);
+        const operation = videoDurationRead.then(async () => mediaDurationSeconds(file.bytes || await assets.readRef(saved.ref), saved.type));
+        videoDurationRead = operation.catch(() => {});
+        const durationSeconds = await operation;
         if (durationSeconds) saved.durationSeconds = durationSeconds;
       }
       await sourceMetadata.update(assets.referenceId(saved.ref), { ...saved, chatId: file.chatId || null, projectId: file.projectId || null });
@@ -277,13 +291,13 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     async sourceFile(id) {
       if (/^[a-f0-9-]{36}$/.test(id) && content) return content.file(accountId,id);
       if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Исходник не найден');
-      const metadata = (await sourceMetadata.list()).find(item => item.id === id);
+      const metadata = typeof sourceMetadata.get === 'function' ? await sourceMetadata.get(id) : (await sourceMetadata.list()).find(item => item.id === id);
       if (!metadata) throw new Error('Исходник не найден');
       if (storage && await storage.head(assets.key(id)).then(() => true).catch(() => false)) return { storageKey: assets.key(id), name: metadata.name, type: metadata.type };
       return { path: path.join(assets.directory, id), type: metadata.type };
     },
     async resultFile(id, index) {
-      const record = (await history.list()).find(item => item.id === id);
+      const record = typeof history.get === 'function' ? await history.get(id) : (await history.list()).find(item => item.id === id);
       if (!Number.isInteger(index) || index < 0 || !record?.localFiles?.[index]) throw new Error('Файл не найден');
       const file = record.localFiles[index];
       if (file.assetId) {
@@ -306,6 +320,12 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const chainKey = request?.requestId || 'legacy-without-request-id';
       const previous = enqueueChains.get(chainKey) || Promise.resolve();
       const operation = previous.then(()=>trace.request(()=>trace.step('generation.request',{request},async () => {
+        const measured = async (stage, action) => {
+          const started = Date.now();
+          try { return await action(); }
+          finally { trace.timing('generation.stage', { stage, elapsedMs: Date.now() - started,
+            poolWaiting: history.pool?.waitingCount ?? null }); }
+        };
         const kieAccountId = request?.kieAccountId ?? 'primary';
         const selectedProvider = accountProvider(kieAccountId);
         const model = findModel(request?.modelId);
@@ -316,7 +336,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         const binding = { projectId: request.projectId || null, chatId: request.chatId || null };
         const digest = createHash('sha256').update(JSON.stringify({ modelId: model.id, input: request.input, sourceFiles: request.sourceFiles || [], ...binding })).digest('hex');
         if (request.requestId) {
-          const existing = (await history.list()).find(row => row.requestId === request.requestId);
+          const existing = await measured('request_lookup', async () => typeof history.findByRequestId === 'function'
+            ? await history.findByRequestId(request.requestId)
+            : (await history.list()).find(row => row.requestId === request.requestId));
           if (existing) {
             if ((existing.kieAccountId || 'primary') !== kieAccountId) throw new Error('Этот запрос уже сохранён для другого аккаунта Kie');
             if (existing.requestDigest !== digest) throw new Error('Этот запрос уже сохранён с другими параметрами');
@@ -324,9 +346,15 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           }
         }
         if (!selectedProvider.isConfigured()) throw new Error('Для выбранного аккаунта Kie не настроен ключ');
-        const price = await costSettings();
-        const cachedTariffs=(await preference('kie-tariffs',{})).data;
-        const record = await queue.enqueue({
+        const [settings, nativeQuote] = await Promise.all([
+          measured('settings_lookup', () => preferences.getMany
+            ? preferences.getMany(['cost-settings', 'kie-tariffs'])
+            : Promise.all([costSettings(), preference('kie-tariffs', {})]).then(([price, tariffs]) => new Map([['cost-settings', price], ['kie-tariffs', tariffs]]))),
+          nativeBilling ? measured('native_quote', () => service.nativeQuote(model.id, request.input, request.sourceFiles, true)) : null,
+        ]);
+        const price = settings.get('cost-settings') || { rubPerCredit };
+        const cachedTariffs = settings.get('kie-tariffs')?.data;
+        const record = await measured('enqueue', () => queue.enqueue({
           kieAccountId,
           modelId: model.id, providerId: model.providerId, providerName: providers.find(item => item.id === model.providerId)?.name || model.providerId, model: model.apiModel,
           modelName: model.name, kind: model.kind, input: request.input,
@@ -335,16 +363,20 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           requestId: request.requestId || null, requestDigest: digest,
           // Refresh the official Kie list at the paid-submit boundary. The UI
           // quote may be cached to avoid a provider request on every field edit.
-          ...(nativeBilling ? { nativeQuote: await service.nativeQuote(model.id, request.input, request.sourceFiles, true) } : {}),
+          ...(nativeBilling ? { nativeQuote } : {}),
           rubPerCredit: price.rubPerCredit, estimate: costs.quote(model, request.input, cachedTariffs)
-        });
+        }));
         // A generation click always resumed the queue through a second RPC. Wake it
         // here so the accepted record can start without waiting for another round trip.
         if(content) {
           const ids=(request.sourceFiles||[]).map(item=>assets.contentId(item.ref)).filter(Boolean);
           await Promise.all(ids.map((assetId,index)=>content.link(accountId,'history',record.id,assetId,'source',index)));
         }
-        queue.start();
+        if (background) {
+          const wasPaused = queue.paused;
+          queue.start();
+          if (wasPaused) await preferences.update('queue', { paused: false });
+        }
         return record;
       })));
       const settled = operation.catch(() => {});
@@ -359,13 +391,17 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         case 'diagnoseProvider': return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles, args[0]?.kieAccountId);
         case 'keyStatus': return service.configured();
         case 'getHistory': return listHistory();
-        case 'queueStatus': return { paused: queue.paused, error: queue.error, concurrency: queue.concurrency };
-        case 'startQueue': queue.start(); return true;
-        case 'pauseQueue': queue.pause(); return true;
+        case 'queueStatus': {
+          if (background) return { paused: queue.paused, error: queue.error, concurrency: queue.concurrency };
+          const shared = await preference('queue', {});
+          return { paused: shared.paused === true, error: null, concurrency: shared.concurrency || queue.concurrency };
+        }
+        case 'startQueue': if (background) queue.start(); await preferences.update('queue', { paused: false }); return true;
+        case 'pauseQueue': queue.pause(); await preferences.update('queue', { paused: true }); return true;
         case 'setConcurrency': queue.setConcurrency(args[0]); await preferences.update('queue', { concurrency: args[0] }); return args[0];
         case 'cancelQueued': return queue.cancel(args[0]);
         case 'removeQueued': return queue.remove(args[0]);
-        case 'clearQueue': return queue.clear();
+        case 'clearQueue': { const result = await queue.clear(); await preferences.update('queue', { paused: true }); return result; }
         case 'acknowledgeTask': return queue.acknowledge(args[0]);
         case 'createTask': return service.createTask(args[0]);
         case 'getTask': {
@@ -411,13 +447,14 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     },
     async close() {
       queue.close();
-      while (queue.running || queue.polling) await new Promise(resolve => setTimeout(resolve, 20));
+      while (queue.running || queue.polling || queue.completions.size) await new Promise(resolve => setTimeout(resolve, 20));
       await Promise.allSettled([...pendingSaves.values(), history.queue, preferences.queue, drafts.queue, sourceMetadata.queue]);
+      await trace.flush();
     }
   };
-  if (content) {
+  if (content && background) {
     Promise.resolve().then(async () => {
-      const records = await history.list();
+      const records = history.listNeedingSave ? await history.listNeedingSave() : await history.list();
       await Promise.allSettled(records.filter(record => record.state === 'success' && urls(record).length).map(record => saveResults(record.id)));
     }).catch(() => {});
   }

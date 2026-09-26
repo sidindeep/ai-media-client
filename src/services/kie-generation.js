@@ -3,6 +3,7 @@ const { providers } = require('../catalog');
 const { buildRequest, normalizeTask } = require('../adapters');
 const { request } = require('../network');
 const provider = providers.find(item => item.id === 'kie');
+const { parseRetryAfter } = require('../retry-after');
 
 // Application adapter: native Kie transport stays separate from application records.
 async function createKieGeneration({ apiKey, fetchImpl = fetch }) {
@@ -12,7 +13,10 @@ async function createKieGeneration({ apiKey, fetchImpl = fetch }) {
     let failure;
     const client=createKieClient({apiKey,fetchImpl:async(url,options)=>{
       const response=await trace.tracedFetch(url,options,fetchImpl);
-      try {const body=await response.clone().json();if(!response.ok||body.success===false||(body.code!==undefined&&body.code!==200))failure=require('../api-errors').responseError(response.status,body);}catch{}
+      try {const body=await response.clone().json();if(!response.ok||body.success===false||(body.code!==undefined&&body.code!==200)){
+        failure=require('../api-errors').responseError(response.status,body);
+        failure.retryAfterMs=parseRetryAfter(response.headers?.get?.('retry-after'));
+      }}catch{}
       return response;
     }});
     try{return await client[method](argument);}catch(error){if(failure){failure.outcome=error.outcome;throw failure;}throw error;}
@@ -29,6 +33,7 @@ async function createKieGeneration({ apiKey, fetchImpl = fetch }) {
     try { body = await response.json(); } catch { throw new Error('Kie вернул некорректный ответ'); }
     if (!response.ok || (body.code && body.code !== 200)) {
       const error = require('../api-errors').responseError(response.status,body);
+      error.retryAfterMs = parseRetryAfter(response.headers?.get?.('retry-after'));
       if (response.status === 402 || body.code === 402) { error.code = 'INSUFFICIENT_CREDITS'; error.message = 'Недостаточно кредитов Kie'; }
       throw error;
     }

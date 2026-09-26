@@ -201,3 +201,74 @@ test('RouterAI reserves once, captures success, refunds rejection and holds unce
   assert.equal((await wallet.get(account)).heldUnits, quotedAmountUnits);
   assert.equal((await wallet.get(account)).balanceUnits, 16000 - quotedAmountUnits);
 });
+
+test('RouterAI keeps a confirmed 429 queued across restart and sends it once more', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), requestId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Retry')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  const accounts = { pool, conversion: { quote: () => ({ status: 'exact', amountUnits: 4000, credits: 4, version: 'test' }) } };
+  let sends = 0;
+  const options = { accounts, apiKey: 'test-key', content: {}, retryDelayMs: 150,
+    accountQuote: () => ({ status: 'exact', amount: 4, version: 'test' }),
+    fetchImpl: async () => {
+      sends++;
+      if (sends === 1) return { ok: false, status: 429 };
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'Готово' } }] }) };
+    } };
+  const first = createRouterAiBilling(options);
+  t.after(() => first.close());
+  const input = { requestId, model: 'openai/gpt-oss-20b', prompt: 'Тест' };
+  await first.submit(account, input);
+  let queued;
+  for (let i = 0; i < 100; i++) {
+    queued = await first.get(account, requestId);
+    if (queued.state === 'queued') break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.equal(queued.state, 'queued');
+  assert.equal(sends, 1);
+  assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, 4000);
+  first.close();
+  const second = createRouterAiBilling(options);
+  t.after(() => second.close());
+  await second.recover();
+  let result;
+  for (let i = 0; i < 100; i++) {
+    result = await second.get(account, requestId);
+    if (result.state === 'success') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(result.state, 'success');
+  assert.equal(sends, 2);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0],
+    { balance: 6000, held: 0 });
+});
+
+test('RouterAI does not resend an accepted video after a status 429', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), requestId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Video status')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  let posts = 0;
+  const billing = createRouterAiBilling({ accounts: { pool, conversion: { quote: () => ({ status: 'exact', amountUnits: 4000, credits: 4, version: 'test' }) } },
+    apiKey: 'test-key', content: {}, accountQuote: () => ({ status: 'exact', amount: 4, version: 'test' }),
+    fetchImpl: async (_url, options) => {
+      if (options.method === 'POST') { posts++; return { ok: true, headers: new Map([['content-type', 'application/json']]), json: async () => ({ id: 'video-accepted' }) }; }
+      return { ok: false, status: 429 };
+    } });
+  t.after(() => billing.close());
+  await billing.submitAdmin(account, { requestId, model: 'maker/video-1', payload: { prompt: 'Тест' } },
+    [{ id: 'maker/video-1', name: 'Video', kind: 'video', endpoint: 'videos' }]);
+  let job;
+  for (let i = 0; i < 100; i++) {
+    job = await billing.get(account, requestId);
+    if (job.state !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(job.state, 'unknown');
+  assert.equal(job.providerVideoId, 'video-accepted');
+  assert.equal(posts, 1);
+});

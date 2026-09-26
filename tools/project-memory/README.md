@@ -30,6 +30,7 @@
 - [Исследование ценовой политики](specs/business-rules/pricing-policy-research.md) — рыночные цены Kie, налоговая модель и сценарий патента.
 - [Юридические документы](specs/business-rules/legal-documents.md) — публичные страницы, изученный пример ERA2, факты продукта и блокеры перед публикацией.
 - [Нагрузочное тестирование Codex](specs/features/codex-load-testing.md) — контракт измерений и ссылка на план; сквозные и длительные прогоны ещё не выполнены.
+- [Узкие места и план исправлений](specs/features/performance-investigation.md) — результаты нагрузки, проверенные механизмы в коде и порядок дальнейших экспериментов.
 - [Транспорты Codex](specs/features/codex-transports.md) — exec и app-server, пилот A/B на 12 реальных генерациях; сквозная мощность ещё не измерена.
 - [Модель данных](specs/data-model/local-records.md) — сущности и сохранение.
 - [Интеграции](specs/integration-contracts/connected-projects.md) — Kie, GI и границы секретов.

@@ -24,6 +24,9 @@
 !scripts/resolve-git-commit.cjs
 !test/
 !test/**
+!tools/
+!tools/load-test/
+!tools/load-test/codex-memory.cjs
 !.git
 .git/**
 !.git/HEAD

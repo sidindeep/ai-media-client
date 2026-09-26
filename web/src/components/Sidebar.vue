@@ -173,7 +173,7 @@ async function deleteArchivedChat(chat: Chat) {
   if (deletingChatId.value || !window.confirm(t('sidebar.deleteChatConfirm', { name: chat.name }))) return;
   deletingChatId.value = chat.id;
   archiveError.value = '';
-  try { await deleteChatRequest(chat.id); await studio.refreshFull(); await loadArchive(); }
+  try { await deleteChatRequest(chat.id); await studio.refreshFull(false); await loadArchive(); }
   catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
   finally { deletingChatId.value = null; }
 }

@@ -1,4 +1,4 @@
-const fs = require('node:fs');
+const fs = require('node:fs/promises');
 const path = require('node:path');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { randomUUID } = require('node:crypto');
@@ -6,6 +6,8 @@ const context = new AsyncLocalStorage();
 const secrets = new Set();
 let directory, sessionId, sequence = 0, warned = false;
 const maxBytes = 5 * 1024 * 1024;
+const maxPendingBytes = 4 * 1024 * 1024;
+let pending = [], pendingBytes = 0, draining = null, dropped = 0;
 function secret(value) { if (typeof value === 'string' && value.length > 5) secrets.add(value); }
 function clean(value, key = '', depth = 0) {
   if (/authorization|cookie|token|password|api.?key|secret/i.test(key)) return '[REDACTED]';
@@ -26,20 +28,55 @@ function clean(value, key = '', depth = 0) {
   return value;
 }
 function configure(folder) { directory = folder; sessionId = randomUUID(); write('session.start', { pid: process.pid, node: process.version }); }
+async function append(folder, row) {
+  await fs.mkdir(folder, { recursive: true });
+  const file = path.join(folder, 'generation.jsonl');
+  const size = await fs.stat(file).then(stat => stat.size, error => { if (error.code === 'ENOENT') return 0; throw error; });
+  if (size + Buffer.byteLength(row) > maxBytes) {
+    await fs.rm(file + '.4', { force: true });
+    for (let n = 3; n >= 1; n--) {
+      await fs.rename(file + '.' + n, file + '.' + (n + 1)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    }
+    await fs.rename(file, file + '.1').catch(error => { if (error.code !== 'ENOENT') throw error; });
+  }
+  await fs.appendFile(file, row, { mode: 0o600 });
+}
+function drain() {
+  if (draining) return draining;
+  draining = (async () => {
+    while (pending.length) {
+      const item = pending.shift();
+      try { await append(item.folder, item.row); }
+      catch { if (!warned) { warned = true; console.error('Не удалось записать журнал генерации. Проверьте доступ к каталогу логов.'); } }
+      finally { pendingBytes -= item.bytes; }
+    }
+  })().finally(() => { draining = null; if (pending.length) drain(); });
+  return draining;
+}
 function write(event, details = {}) {
   if (!directory) return;
   try {
-    fs.mkdirSync(directory, { recursive: true });
-    const file = path.join(directory, 'generation.jsonl');
     const row = JSON.stringify({ time: new Date().toISOString(), sessionId, sequence: ++sequence, ...context.getStore(), event, details: clean(details) }) + '\n';
-    if (fs.existsSync(file) && fs.statSync(file).size + Buffer.byteLength(row) > maxBytes) {
-      const oldest = file + '.4'; if (fs.existsSync(oldest)) fs.unlinkSync(oldest);
-      for (let n = 3; n >= 1; n--) if (fs.existsSync(file + '.' + n)) fs.renameSync(file + '.' + n, file + '.' + (n + 1));
-      fs.renameSync(file, file + '.1');
+    const bytes = Buffer.byteLength(row);
+    if (pendingBytes + bytes > maxPendingBytes) {
+      dropped++;
+      if (!warned) { warned = true; console.error('Очередь журнала генерации переполнена; диагностические события пропускаются.'); }
+      return;
     }
-    fs.appendFileSync(file, row, { mode: 0o600 });
+    if (dropped) {
+      const marker = JSON.stringify({ time: new Date().toISOString(), sessionId, sequence: ++sequence, event: 'journal.dropped', details: { count: dropped } }) + '\n';
+      const markerBytes = Buffer.byteLength(marker);
+      if (pendingBytes + bytes + markerBytes <= maxPendingBytes) { pending.push({ folder: directory, row: marker, bytes: markerBytes }); pendingBytes += markerBytes; dropped = 0; }
+    }
+    pending.push({ folder: directory, row, bytes }); pendingBytes += bytes;
+    void drain();
   } catch { if (!warned) { warned = true; console.error('Не удалось записать журнал генерации. Проверьте доступ к каталогу логов.'); } }
 }
+function timing(event, details) {
+  write(event, details);
+  if (process.env.MEDIA_LOAD_TRACE === '1') console.log(JSON.stringify({ metric: event, ...details }));
+}
+async function flush() { while (draining || pending.length) await (draining || drain()); }
 function run(record, fn) { return context.run({ ...context.getStore(), requestId: record.traceRequestId || context.getStore()?.requestId, jobId: record.id, taskId: record.taskId || undefined, model: record.model || record.modelId }, fn); }
 async function step(event, details, fn) {
   const started = Date.now(); write(event + '.start', details);
@@ -72,4 +109,4 @@ async function tracedFetch(url, options = {}, fetcher = fetch) {
   } catch (error) { write('http.error', { requestId, elapsedMs: Date.now() - started, error }); throw error; }
 }
 function request(fn) { return context.run({requestId:randomUUID()},fn); }
-module.exports = { request, current:()=>context.getStore(), configure, write, run, step, tracedFetch, secret, clean };
+module.exports = { request, current:()=>context.getStore(), configure, write, timing, flush, run, step, tracedFetch, secret, clean };

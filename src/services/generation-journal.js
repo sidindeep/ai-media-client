@@ -57,4 +57,4 @@ async function generationJournal(pool, accountId, input = {}, admin = false) {
     sendAttempts: totals.rows[0]?.send_attempts || 0 }, nextOffset: result.rows.length > 50 ? offset + 50 : null };
 }
 
-module.exports = { appendGenerationEvent, generationJournal };
+module.exports = { appendGenerationEvent, generationJournal, generationEventEntry: entry };

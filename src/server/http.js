@@ -1,7 +1,9 @@
 const http = require('node:http');
+const https = require('node:https');
 const fs = require('node:fs/promises');
 const { createReadStream } = require('node:fs');
 const path = require('node:path');
+const { performance } = require('node:perf_hooks');
 const { validateCodexRequest } = require('../services/codex-request');
 const { createCodexBilling } = require('../services/codex-billing');
 const { createRouterAiBilling, validateRouterAiRequest } = require('../services/routerai-billing');
@@ -119,6 +121,33 @@ async function sendFile(req, res, filename, type, attachment = false) {
   const stream = createReadStream(filename, { start, end });
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
+function forwardToExecutor(req, res, executorUrl, executorPublicOrigin, publicOrigin) {
+  const target = new URL(req.url, executorUrl);
+  const headers = { ...req.headers, host: new URL(executorPublicOrigin).host };
+  if (headers.origin === `http://${req.headers.host}`) headers.origin = executorPublicOrigin;
+  return new Promise(resolve => {
+    const upstream = (target.protocol === 'https:' ? https : http).request(target, { method: req.method, headers }, response => {
+      const responseHeaders = { ...response.headers };
+      if (publicOrigin && responseHeaders.location) {
+        try {
+          const location = new URL(responseHeaders.location);
+          if (location.origin === executorPublicOrigin) responseHeaders.location = publicOrigin + location.pathname + location.search + location.hash;
+        } catch {}
+      }
+      res.writeHead(response.statusCode, responseHeaders);
+      response.pipe(res);
+      response.once('end', resolve);
+      response.once('error', () => { res.destroy(); resolve(); });
+    });
+    upstream.once('error', () => {
+      if (!res.headersSent) json(res, 503, { error: 'Исполнитель задач недоступен' });
+      else res.destroy();
+      resolve();
+    });
+    res.once('close', () => upstream.destroy());
+    req.pipe(upstream);
+  });
+}
 async function sendStored(req, res, storage, file, attachment = false) {
   if (!storage || !file?.storageKey) throw new Error('S3-хранилище не подключено');
   const stat = await storage.head(file.storageKey);
@@ -141,6 +170,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
   result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
 }
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null }) {
+  let uploadBytesInFlight = 0;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
   let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
@@ -149,6 +179,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
   const routerAiStatus = config.routerAi?.apiKey ? createRouterAiClient({ apiKey: config.routerAi.apiKey }) : null;
   const connections = new Set();
+  const eventLoopBaseline = performance.eventLoopUtilization();
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
     try {
@@ -182,6 +213,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         && req.headers['sec-fetch-dest'] === 'document';
       const allowedTopLevelNavigation = pageNavigation || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
       if (!allowedTopLevelNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+      if (config.replicaRole === 'web' && (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+        || /^\/api\/(?:codex|routerai|admin)\//.test(url.pathname)
+        || url.pathname === '/api/startup' || url.pathname === '/api/account/telegram')) {
+        return forwardToExecutor(req, res, config.executorUrl, config.executorPublicOrigin, config.publicOrigin);
+      }
       const redirect = (location, cookies) => { res.writeHead(302, { ...headers, Location: location, 'Cache-Control': 'no-store', ...(cookies ? { 'Set-Cookie': cookies } : {}) }); res.end(); };
       const shared = /^\/shared\/([^/]+)$/.exec(url.pathname);
       const landingModelIcon = /^\/landing-model-icons\/([a-z0-9-]+\.svg)$/.exec(url.pathname)?.[1];
@@ -233,7 +269,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'GET' && url.pathname === '/api/health') {
         const database = accounts ? await checkDatabase(accounts.pool) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         const status = ['connected', 'disabled'].includes(database.state) ? 200 : 503;
-        return json(res, status, { ok: status === 200, version: release.version, build: release.build, database, generationConfigured: Boolean(legacyService.configured?.()),
+        const memory = process.memoryUsage();
+        return json(res, status, { ok: status === 200, version: release.version, build: release.build, database,
+          generationConfigured: config.replicaRole === 'web' ? null : Boolean(legacyService.configured?.()),
+          runtime: { replicaRole: config.replicaRole || 'single', rssBytes: memory.rss, heapUsedBytes: memory.heapUsed, externalBytes: memory.external,
+            sseConnections: connections.size, eventLoopUtilization: Number(performance.eventLoopUtilization(eventLoopBaseline).utilization.toFixed(4)) },
           payments: { enabled: Boolean(payments), salesEnabled: Boolean(commerce && config.commerce?.salesEnabled), environment: config.payments?.environment || 'test', provider: config.payments?.provider || null }, telegram: telegramStatus() });
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
@@ -303,7 +343,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
           return json(res, 200, await codex.submit(user.id, { ...body, ...binding }));
         }
-        return json(res, 200, await codex.status(user.id, url.pathname.split('/').pop()));
+        return json(res, 200, await codex.read(user.id, url.pathname.split('/').pop()));
       }
       if (req.method === 'POST' && url.pathname === '/auth/logout') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Доступ запрещён' });
@@ -403,6 +443,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         await accounts.pool.query('UPDATE media_accounts SET display_name=$2 WHERE id=$1', [user.id, body.name.trim()]);
         return json(res, 200, { result: { name: body.name.trim() } });
       }
+      if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/history') {
+        const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
+        const scoped = await accounts.scope(user, selected);
+        return json(res, 200, { result: await scoped.dispatch('getHistoryPage', [{ cursor: url.searchParams.get('cursor') || null }]) });
+      }
       if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/sync') {
         const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
         const workspaceAccount = selectedWorkspaceAccount || user.id;
@@ -410,18 +455,23 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         const rawSince = url.searchParams.get('since');
         const since = rawSince ? new Date(rawSince) : null;
         if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
-        if (!since) await accounts.workspaces.ensureDefaultChat(workspaceAccount);
+        if (!since) await accounts.workspaces.ensureDefaultChatId(workspaceAccount);
         const activeIds = url.searchParams.getAll('active');
         if (activeIds.length > 20 || activeIds.some(id => !/^[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
         const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
         const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
-        const [records, projects, chats, queue] = await Promise.all([
-          scopedService.dispatch(since ? 'getHistoryDelta' : 'getHistory', since ? [{ since: since.toISOString(), before: cursor, activeIds }] : []),
+        const [historyResult, activeRecords, projects, chats, queue, unassignedCount] = await Promise.all([
+          scopedService.dispatch(since ? 'getHistoryDelta' : 'getHistoryPage', since ? [{ since: since.toISOString(), before: cursor, activeIds }] : [{ cursor: null }]),
+          since ? [] : scopedService.dispatch('getHistoryActive'),
           since ? accounts.workspaces.listProjectChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listProjects(workspaceAccount),
           since ? accounts.workspaces.listChatChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listChats(workspaceAccount),
           scopedService.dispatch('queueStatus'),
+          since ? null : accounts.pool.query(`SELECT count(*)::int AS count FROM media_records WHERE account_id=$1
+            AND namespace IN ('history','codex','routerai') AND data->>'chatId' IS NULL`, [workspaceAccount]).then(result => result.rows[0]?.count || 0),
         ]);
-        return json(res, 200, { result: { cursor, full: !since, records, projects, chats, queue } });
+        const records = since ? historyResult : [...activeRecords, ...historyResult.records];
+        return json(res, 200, { result: { cursor, full: !since, records, historyNext: since ? undefined : historyResult.next,
+          unassignedCount: since ? undefined : unassignedCount, projects, chats, queue } });
       }
       if (accounts && /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|restore|move))?)?$/.test(url.pathname)) {
         const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
@@ -534,10 +584,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (url.pathname === '/api/source') {
           const type = (req.headers['content-type'] || '').split(';')[0];
           if (!/^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/.test(type)) throw new Error('Этот тип исходника не поддерживается');
-          const bytes = await readBody(req, config.uploadLimit);
-          const binding = accounts ? await accounts.workspaces.assertBinding(selected || user.id, url.searchParams.get('projectId') || undefined, url.searchParams.get('chatId') || undefined) : {};
-          const saved = await service.saveSource({ name: url.searchParams.get('name') || 'source', type, bytes, ...binding });
-          return json(res, 200, { result: saved });
+          const declared = Number(req.headers['content-length']);
+          const reservation = Number.isSafeInteger(declared) && declared > 0 ? declared : config.uploadLimit;
+          if (reservation > config.uploadLimit) return json(res, 413, { error: 'Файл слишком большой' });
+          if (uploadBytesInFlight + reservation > (config.uploadInFlightLimit ?? 256 * 1024 * 1024))
+            return json(res, 429, { error: 'Слишком много одновременных загрузок' });
+          uploadBytesInFlight += reservation;
+          try {
+            const binding = accounts ? await accounts.workspaces.assertBinding(selected || user.id, url.searchParams.get('projectId') || undefined, url.searchParams.get('chatId') || undefined) : {};
+            const upload = { stream: req, limit: config.uploadLimit };
+            const saved = await service.saveSource({ name: url.searchParams.get('name') || 'source', type, ...upload, ...binding });
+            return json(res, 200, { result: saved });
+          } finally { uploadBytesInFlight -= reservation; }
         }
         const match = rpcMatch;
         if (!match) return json(res, 404, { error: 'Метод не найден' });
@@ -550,15 +608,20 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (!['GET', 'HEAD'].includes(req.method)) return json(res, 405, { error: 'Метод не поддерживается' });
       if (url.pathname === '/codex-models.json') return await sendFile(req, res, path.join(config.root, 'config/codex-models.json'), 'application/json; charset=utf-8');
       if (url.pathname === '/api/events') {
-        if (connections.size >= 20) return json(res, 429, { error: 'Слишком много открытых вкладок' });
+        const maxConnections = config.sse?.maxConnections ?? 100;
+        const maxPerAccount = config.sse?.maxPerAccount ?? 8;
+        if (connections.size >= maxConnections || [...connections].filter(connection => connection.accountId === user.id).length >= maxPerAccount)
+          return json(res, 429, { error: 'Слишком много открытых вкладок' });
         res.writeHead(200, { ...headers, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
         res.write('data: ready\n\n'); res.accountId = user.id; connections.add(res);
-        const notify = () => { if (!res.destroyed && res.writableLength < 65536) res.write('data: changed\n\n'); };
-        const reset = () => { if (!res.destroyed && res.writableLength < 65536) res.write('data: reset\n\n'); };
+        const writeEvent = value => { if (res.destroyed) return; if (res.writableLength >= 65536) { res.end(); return; } res.write(value); };
+        let changedTimer = null;
+        const notify = () => { if (!changedTimer) changedTimer = setTimeout(() => { changedTimer = null; writeEvent('data: changed\n\n'); }, 50); };
+        const reset = () => { if (changedTimer) { clearTimeout(changedTimer); changedTimer = null; } writeEvent('data: reset\n\n'); };
         service.events.on('changed', notify);
         service.events.on('reset', reset);
-        const heartbeat = setInterval(async () => { try { if (auth && (await auth.user(req))?.id !== user.id) { res.end(); return; } if (!res.destroyed) res.write(': keepalive\n\n'); } catch { res.end(); } }, 15000);
-        res.on('close', () => { clearInterval(heartbeat); connections.delete(res); service.events.off('changed', notify); service.events.off('reset', reset); });
+        const heartbeat = setInterval(async () => { try { if (auth && (await auth.user(req))?.id !== user.id) { res.end(); return; } writeEvent(': keepalive\n\n'); } catch { res.end(); } }, 15000);
+        res.on('close', () => { clearInterval(heartbeat); if (changedTimer) clearTimeout(changedTimer); connections.delete(res); service.events.off('changed', notify); service.events.off('reset', reset); });
         return;
       }
       const source = /^\/api\/sources\/([a-f0-9]{64})$/.exec(url.pathname);
@@ -634,18 +697,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   server.recoverCodex = () => codex?.recover();
   server.recoverRouterAi = () => routerAi?.recover();
   server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null) => {
-    codex?.close();
-    auth = nextAuth;
-    accounts = nextAccounts;
-    payments = nextPayments;
-    commerce = nextCommerce;
-    codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
-    routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
-      content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
-    await codex?.recover();
-    await routerAi?.recover();
+    const nextCodex = nextAccounts && config.codex?.url ? createCodexBilling({ accounts: nextAccounts, url: config.codex.url,
+      dataDirectory: config.dataDirectory, storage, content: nextAccounts.content }) : null;
+    const nextRouterAi = nextAccounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts: nextAccounts, apiKey: config.routerAi.apiKey,
+      content: nextAccounts.content, tariffFetcher: routerAiModels.tariff }) : null;
+    try {
+      if (config.replicaRole !== 'web') { await nextCodex?.recover(); await nextRouterAi?.recover(); }
+    } catch (error) { nextCodex?.close(); nextRouterAi?.close(); throw error; }
+    codex?.close(); routerAi?.close();
+    auth = nextAuth; accounts = nextAccounts; payments = nextPayments; commerce = nextCommerce;
+    codex = nextCodex; routerAi = nextRouterAi;
   };
-  server.closeEvents = () => { codex?.close(); for (const connection of connections) connection.end(); };
+  server.closeEvents = () => { codex?.close(); routerAi?.close(); for (const connection of connections) connection.end(); };
   return server;
 }
 module.exports = { createHttpServer, readBody };

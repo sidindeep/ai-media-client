@@ -21,7 +21,7 @@ function createKieCreateLimiter({ limit = 20, windowMs = 10_000, now = Date.now 
   }
   return {
     wait() { return new Promise(resolve => { waiting.push(resolve); if (!timer) pump(); }); },
-    rateLimited() { blockedUntil = Math.max(blockedUntil, now() + windowMs); if (timer) clearTimeout(timer); pump(); return blockedUntil; }
+    rateLimited(retryAfterMs = 0) { blockedUntil = Math.max(blockedUntil, now() + windowMs, now() + Math.max(0, Number(retryAfterMs) || 0)); if (timer) clearTimeout(timer); pump(); return blockedUntil; }
   };
 }
 module.exports = { createKieCreateLimiter };

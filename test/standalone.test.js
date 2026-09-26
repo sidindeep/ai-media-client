@@ -14,7 +14,7 @@ test('runtime resolves local modules and dependencies entirely inside the portab
       if (entry.isDirectory()) { visit(file); continue; }
       if (!/\.(js|mjs)$/.test(file)) continue;
       const resolve = createRequire(file);
-      for (const match of fs.readFileSync(file, 'utf8').matchAll(/(?:require\(|import\(|from\s*)\s*['"]([^'"]+)['"]/g)) {
+      for (const match of fs.readFileSync(file, 'utf8').matchAll(/(?:require\(|import\(|\bfrom[ \t]+)[ \t]*['"]([^'"\r\n]+)['"]/g)) {
         const name = match[1];
         if (name.startsWith('node:')) continue;
         assert.notEqual(name, 'electron');

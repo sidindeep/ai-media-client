@@ -12,10 +12,22 @@ function transientConnection(error) {
 }
 function retryConnections(pool) {
   const connect = pool.connect.bind(pool);
+  const waits = [];
+  pool.mediaPoolWait = () => {
+    const recent = waits.filter(item => item.at > Date.now() - 60000).map(item => item.ms).sort((a, b) => a - b);
+    return { samples: recent.length, p95Ms: recent.length ? recent[Math.ceil(recent.length * 0.95) - 1] : null,
+      maxMs: recent.length ? recent[recent.length - 1] : null };
+  };
   pool.connect = function (callback) {
     const acquire = async () => {
       for (let attempt = 0; ; attempt++) {
-        try { return await connect(); }
+        const started = Date.now();
+        try {
+          const client = await connect();
+          waits.push({ at: Date.now(), ms: Date.now() - started });
+          if (waits.length > 5000) waits.splice(0, waits.length - 5000);
+          return client;
+        }
         catch (error) { if (attempt >= 2 || !transientConnection(error)) throw error; }
       }
     };
@@ -33,7 +45,7 @@ async function transaction(pool, action) {
 }
 async function openDatabase(config, suppliedPool) {
   const pool = suppliedPool || retryConnections(new Pool({ connectionString: config.url, ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
-    max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 0, keepAlive: true,
+    max: config.poolMax ?? 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 0, keepAlive: true,
     // Hosted PostgreSQL proxies may reject extra startup parameters.
     // Initialize the session after authentication, before handing it to callers.
     onConnect: client => client.query('SET statement_timeout = 15000') }));
@@ -55,7 +67,8 @@ async function openDatabase(config, suppliedPool) {
 }
 async function checkDatabase(pool, { diagnostics = true } = {}) {
   if (!pool) return { state: 'disabled' };
-  const poolInfo = () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount });
+  const poolInfo = () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount,
+    ...(pool.mediaPoolWait ? { acquire60s: pool.mediaPoolWait() } : {}) });
   const started = Date.now();
   try {
     const result = await pool.query({ text: diagnostics

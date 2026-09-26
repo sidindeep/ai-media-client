@@ -8,10 +8,11 @@ const { createCreditConversion } = require('../billing/conversion');
 const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
-const { generationHistory, generationHistorySince } = require('./generation-history');
+const { generationHistory, generationHistorySince, generationHistoryPage, generationActive } = require('./generation-history');
 const { spendingHistory } = require('./spending-history');
 const { generationJournal } = require('./generation-journal');
 const { createWorkspaces } = require('./workspaces');
+const trace = require('../generation-log');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
   const fields = ['id', 'requestId', 'revision', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote',
@@ -30,8 +31,11 @@ function publicRecord(record) {
       : 'Генерация не выполнена. Резерв возвращён.';
   return result;
 }
-function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack, storage, content = null }) {
-  const services = new Map();
+function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack, storage, content = null,
+  idleServiceMs = 30 * 60 * 1000 }) {
+  if (!Number.isInteger(idleServiceMs) || idleServiceMs < 1) throw new Error('Некорректный срок простоя сервиса аккаунта');
+  const services = new Map(), lastUsed = new Map(), closing = new Map();
+  let closed = false, sweeping = null;
   const wallet = createWallet(pool, { onPurchase: async accountId => {
     const operation = services.get(accountId);
     if (operation) (await operation).events.emit('changed');
@@ -48,17 +52,48 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     return draft ?? (suppliedChatId ? null : service.dispatch(method, []));
   }
   async function get(accountId) {
-    if (!services.has(accountId)) {
+    const started = Date.now();
+    if (closed) throw new Error('Сервис аккаунтов закрыт');
+    if (closing.has(accountId)) await closing.get(accountId);
+    lastUsed.set(accountId, Date.now());
+    const cold = !services.has(accountId);
+    if (cold) {
       const stores = Object.fromEntries(['history', 'preferences', 'drafts', 'sources', 'templates', 'presets'].map(name => [name, new AccountRecords(pool, accountId, name)]));
       const operation = createMediaService({ directory: path.join(config.dataDirectory, 'accounts', accountId), provider: routedProvider,
-        rubPerCredit: config.rubPerCredit, stores, pricing, conversion, tariffFetcher, storage, storagePrefix: `accounts/${accountId}`, content, accountId });
+        rubPerCredit: config.rubPerCredit, stores, pricing, conversion, tariffFetcher, storage, storagePrefix: `accounts/${accountId}`, content, accountId,
+        background: config.replicaRole !== 'web' });
       services.set(accountId, operation);
       operation.catch(() => services.delete(accountId));
     }
-    return services.get(accountId);
+    const service = await services.get(accountId);
+    trace.timing('generation.account_service', { cold, elapsedMs: Date.now() - started, poolWaiting: pool.waitingCount ?? null });
+    return service;
   }
+  async function sweepIdle(now = Date.now()) {
+    if (closed) return;
+    if (sweeping) return sweeping;
+    sweeping = (async () => {
+      for (const [accountId, operation] of services) {
+        if (now - (lastUsed.get(accountId) || now) < idleServiceMs) continue;
+        const service = await operation.catch(() => null);
+        if (!service || services.get(accountId) !== operation || now - (lastUsed.get(accountId) || now) < idleServiceMs) continue;
+        const queue = service.queue;
+        if (queue.running || queue.polling || queue.timer || queue.pollTimer
+          || service.events.listenerCount('changed') || service.events.listenerCount('reset')) continue;
+        services.delete(accountId);
+        lastUsed.delete(accountId);
+        const shutdown = service.close().finally(() => closing.delete(accountId));
+        closing.set(accountId, shutdown);
+        await shutdown;
+      }
+    })();
+    try { await sweeping; } finally { sweeping = null; }
+  }
+  const sweepTimer = setInterval(() => { void sweepIdle().catch(error => console.error('Account service cleanup:', error.code || error.message)); },
+    Math.min(5 * 60 * 1000, Math.max(1000, Math.floor(idleServiceMs / 2))));
+  sweepTimer.unref?.();
   return {
-    pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get,
+    pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get, sweepIdle,
     async createTelegramTask(telegramUserId, request, confirmationToken) {
       const identity = (await pool.query('SELECT a.id,a.role FROM media_telegram_links l JOIN media_accounts a ON a.id=l.account_id WHERE l.telegram_user_id=$1', [String(telegramUserId)])).rows[0];
       if (!identity) throw Object.assign(new Error('Сначала привяжите Telegram к аккаунту сайта'), { status: 403 });
@@ -70,6 +105,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     },
     async notifyContent(accountId) { const operation = services.get(accountId); if (operation) (await operation).events.emit('changed'); },
     async recover() {
+      if (config.replicaRole === 'web') return;
       const rows = (await pool.query("SELECT DISTINCT account_id FROM media_records WHERE namespace='history' AND data->>'state' IN ('queued','preparing','submitting','waiting','queuing','generating','unknown')")).rows;
       for (const row of rows) await get(row.account_id);
     },
@@ -83,7 +119,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         }
       };
       const accountId = selected || user.id;
-      const account = /^[a-f0-9-]{36}$/.test(accountId) ? (await pool.query('SELECT id,role FROM media_accounts WHERE id=$1', [accountId])).rows[0] : null;
+      const account = accountId === user.id ? { id: user.id, role: user.role }
+        : /^[a-f0-9-]{36}$/.test(accountId) ? (await pool.query('SELECT id,role FROM media_accounts WHERE id=$1', [accountId])).rows[0] : null;
       if (!account) throw new Error('Аккаунт не найден');
       const service = await get(accountId);
       if (user.role === 'admin') return {
@@ -94,11 +131,16 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
           if (method === 'getGenerationJournal') return generationJournal(pool, accountId, args[0], true);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
           if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, undefined, args[0]?.activeIds);
+          if (method === 'getHistoryPage') return generationHistoryPage(pool, accountId, service, args[0]?.cursor);
+          if (method === 'getHistoryActive') return generationActive(pool, accountId, service);
           if (['loadDrafts', 'saveDrafts'].includes(method)) return dispatchDraft(accountId, service, method, args);
           if (method === 'saveGenerationPreset') return service.dispatch(method, [args[0], { routerAiRole: 'admin' }]);
           if (method === 'createTask') {
-            await starterPack?.assertProvider(accountId, account.role, 'media');
-            return service.createTask({ ...args[0], ...(await workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId)) });
+            const [, binding] = await Promise.all([
+              starterPack?.assertProvider(accountId, account.role, 'media'),
+              workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId),
+            ]);
+            return service.createTask({ ...args[0], ...binding });
           }
           if (['nativeQuote', 'diagnoseProvider'].includes(method)) await starterPack?.assertProvider(accountId, account.role, 'media');
           return service.dispatch(method, args);
@@ -119,12 +161,19 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             }
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
             case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord, args[0]?.activeIds);
+            case 'getHistoryPage': return generationHistoryPage(pool, accountId, service, args[0]?.cursor, publicRecord);
+            case 'getHistoryActive': return generationActive(pool, accountId, service, publicRecord);
             case 'loadDrafts': case 'saveDrafts': return dispatchDraft(accountId, service, method, args);
             case 'createTask': {
-              await starterPack?.assertProvider(accountId, account.role, 'media');
               if (args[0]?.kieAccountId != null && args[0].kieAccountId !== 'primary') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
-              const request = { ...args[0], kieAccountId: 'primary', ...(await workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId)) };
+              const started = Date.now();
+              const [, binding] = await Promise.all([
+                starterPack?.assertProvider(accountId, account.role, 'media'),
+                workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId),
+              ]);
+              trace.timing('generation.preflight', { elapsedMs: Date.now() - started, poolWaiting: pool.waitingCount ?? null });
+              const request = { ...args[0], kieAccountId: 'primary', ...binding };
               return publicRecord(await service.createTask(request));
             }
             case 'getTask': {
@@ -214,7 +263,13 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         return true;
       });
     },
-    async close() { for (const operation of services.values()) await (await operation).close(); await workspaces.close(); }
+    async close() {
+      closed = true; clearInterval(sweepTimer);
+      if (sweeping) await sweeping;
+      await Promise.allSettled([...closing.values()]);
+      for (const operation of services.values()) await (await operation).close();
+      await workspaces.close();
+    }
   };
 }
 module.exports = { createAccounts, publicRecord };

@@ -29,7 +29,7 @@ async function setup(t, options = {}) {
   const pool = await openDatabase({}, testPool()), storage = options.storage || memoryStorage();
   const accountId = randomUUID();
   await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Test')", [accountId]);
-  const content = await createContentService({ pool, storage, dataDirectory: directory, fetchImpl: options.fetchImpl, interval: 5 });
+  const content = await createContentService({ pool, storage, dataDirectory: directory, fetchImpl: options.fetchImpl, interval: 5, concurrency: options.concurrency });
   t.after(async () => { await content.close(); await pool.end(); await fs.rm(directory, { recursive: true, force: true }); });
   return { directory, pool, storage, accountId, content };
 }
@@ -48,6 +48,18 @@ test('content assets use UUID keys, verify S3 bytes and enforce tenant reads', a
   assert.deepEqual(finished.source, { type: 'stored' });
   const other = randomUUID(); await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Other')", [other]);
   await assert.rejects(content.file(other, asset.id), error => error.status === 404);
+});
+test('streamed source upload enforces its byte limit and removes an incomplete stage', async t => {
+  const { directory, accountId, content } = await setup(t);
+  const asset = await content.createFromStream(accountId, { stream: Readable.from([Buffer.alloc(7), Buffer.alloc(7)]),
+    name: 'stream.png', type: 'image/png', limit: 14 });
+  assert.equal((await content.wait(accountId, asset.id, 5000)).size, 14);
+  await assert.rejects(content.createFromStream(accountId, { stream: Readable.from([Buffer.alloc(7), Buffer.alloc(8)]),
+    name: 'too-large.png', type: 'image/png', limit: 14 }), /слишком большой/);
+  const aborted = Readable.from((async function* () { yield Buffer.alloc(5); throw new Error('client aborted'); })());
+  await assert.rejects(content.createFromStream(accountId, { stream: aborted,
+    name: 'aborted.png', type: 'image/png', limit: 14 }), /client aborted/);
+  assert.deepEqual(await fs.readdir(path.join(directory, 'content-staging')), []);
 });
 
 test('content URL jobs survive as database work and link ready results to a generation', async t => {
@@ -71,4 +83,49 @@ test('a failed content write keeps one asset id and can be retried without regen
   const asset = await content.createFromBuffer(accountId, { bytes: Buffer.from('retry'), name: 'retry.png', type: 'image/png' });
   const ready = await content.wait(accountId, asset.id, 5000);
   assert.equal(ready.id, asset.id); assert.equal(ready.status, 'ready');
+});
+
+test('content staged during an S3 outage resumes after worker restart', async t => {
+  const storage = memoryStorage();
+  const put = storage.put.bind(storage);
+  let unavailable = true;
+  storage.put = async (...args) => { if (unavailable) throw new Error('S3 unavailable'); return put(...args); };
+  const { directory, pool, accountId, content } = await setup(t, { storage });
+  const asset = await content.createFromBuffer(accountId, { bytes: Buffer.from('survives-restart'), name: 'retry.png', type: 'image/png' });
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const state = (await pool.query('SELECT state FROM content_jobs WHERE asset_id=$1', [asset.id])).rows[0]?.state;
+    if (state === 'retry') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal((await pool.query('SELECT state FROM content_jobs WHERE asset_id=$1', [asset.id])).rows[0].state, 'retry');
+  await content.close();
+  unavailable = false;
+  const restarted = await createContentService({ pool, storage, dataDirectory: directory, interval: 5 });
+  try {
+    assert.equal((await restarted.wait(accountId, asset.id, 6000)).status, 'ready');
+    assert.equal((await restarted.read(accountId, asset.id)).toString(), 'survives-restart');
+    assert.equal((await pool.query('SELECT count(*) AS count FROM content_jobs WHERE asset_id=$1', [asset.id])).rows[0].count, 1);
+  } finally { await restarted.close(); }
+});
+
+test('a slow content write does not block the next ready asset', async t => {
+  const storage = memoryStorage();
+  const put = storage.put.bind(storage);
+  let releaseSlow, slowStarted;
+  const started = new Promise(resolve => { slowStarted = resolve; });
+  const gate = new Promise(resolve => { releaseSlow = resolve; });
+  let first = true;
+  storage.put = async (...args) => {
+    if (first) { first = false; slowStarted(); await gate; }
+    return put(...args);
+  };
+  const { accountId, content } = await setup(t, { storage, concurrency: 2 });
+  const slow = await content.createFromBuffer(accountId, { bytes: Buffer.from('slow'), name: 'slow.png', type: 'image/png' });
+  await started;
+  const fast = await content.createFromBuffer(accountId, { bytes: Buffer.from('fast'), name: 'fast.png', type: 'image/png' });
+  const ready = await content.wait(accountId, fast.id, 5000);
+  assert.equal(ready.status, 'ready');
+  assert.equal((await content.file(accountId, slow.id)).path !== undefined, true);
+  releaseSlow();
+  assert.equal((await content.wait(accountId, slow.id, 5000)).status, 'ready');
 });

@@ -9,9 +9,12 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { parseContentRef } = require('./content-service');
 const { appendGenerationEvent } = require('./generation-journal');
+const { submissionDecision, createStoredRetry } = require('./submission-control');
+const { parseRetryAfter } = require('../retry-after');
 const priceKey = request => `codex:${request.model}:${request.effort}:${request.speed}`;
-function createCodexBilling({ accounts, url, dataDirectory, storage = null, content = accounts?.content || null, fetchImpl = fetch }) {
-  const timers = new Map(); let closed = false;
+function createCodexBilling({ accounts, url, dataDirectory, storage = null, content = accounts?.content || null, fetchImpl = fetch,
+  retryDelayMs = 10_000 }) {
+  const timers = new Map(), statusInFlight = new Map(); let closed = false;
   const id = (account, requestId) => `codex:${account}:${requestId}`;
   const get = async (account, requestId) => (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
   const conversion = accounts.conversion || createCreditConversion();
@@ -54,8 +57,21 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       try { value = await response.json(); }
       catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
     }
-    if (!response.ok) throw Object.assign(new Error(value.error || 'Codex недоступен'), { remoteStatus: response.status });
+    if (!response.ok) throw Object.assign(new Error(value.error || 'Codex недоступен'), {
+      remoteStatus: response.status,
+      confirmedRejected: response.status === 429 && value?.accepted === false,
+      retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')),
+    });
     return value;
+  }
+  async function remoteImage(account, requestId) {
+    const response = await fetchImpl(url + '/jobs/' + requestId + '/image', {
+      headers: { 'X-Account-Id': account }, signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw Object.assign(new Error('Изображение Codex недоступно'), { remoteStatus: response.status });
+    const length = Number(response.headers?.get?.('content-length'));
+    if (Number.isFinite(length) && length > MAX_IMAGE_BYTES) throw new Error('Изображение Codex слишком большое');
+    return validatePng(Buffer.from(await response.arrayBuffer()));
   }
   function watch(account, requestId) {
     const key = id(account, requestId);
@@ -68,9 +84,16 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     timer.unref(); timers.set(key, timer);
   }
   async function status(account, requestId) {
-    const job = await get(account, requestId);
-    if (!job) throw Object.assign(new Error('Запрос не найден'), { status: 404 });
-    if (['success', 'fail'].includes(job.state)) return job;
+    const key = id(account, requestId);
+    if (statusInFlight.has(key)) return statusInFlight.get(key);
+    const pending = readStatus(account, requestId);
+    statusInFlight.set(key, pending);
+    try { return await pending; }
+    finally { if (statusInFlight.get(key) === pending) statusInFlight.delete(key); }
+  }
+  async function readStatus(account, requestId) {
+    const job = await read(account, requestId);
+    if (['success', 'fail', 'queued'].includes(job.state)) return job;
     try {
       const result = await remote(account, '/jobs/' + requestId);
       if (result.state === 'success') {
@@ -79,13 +102,17 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
         if (job.kind === 'image') {
           let image;
           try {
-            if (typeof result.imageBase64 !== 'string' || result.imageBase64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('missing image');
-            image = validatePng(Buffer.from(result.imageBase64, 'base64'));
+            if (result.hasImage === true) image = await remoteImage(account, requestId);
+            else {
+              if (typeof result.imageBase64 !== 'string' || result.imageBase64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('missing image');
+              image = validatePng(Buffer.from(result.imageBase64, 'base64'));
+            }
           } catch { return await update(account, requestId, { state: 'unknown', error: 'Изображение не получено. Результат требует проверки; резерв сохранён.' }); }
           try { if (content) {
             try {
               const asset = await content.createFromBuffer(account, { bytes: image, name: requestId + '.png', type: 'image/png', origin: { kind: 'result', provider: 'codex', recordId: id(account, requestId), position: 0 } });
               await content.link(account, 'codex', id(account, requestId), asset.id, 'result', 0);
+              await content.wait(account, asset.id);
               contentAssetId = asset.id;
             } catch (error) {
               // Storage catalog errors must not turn a confirmed provider result
@@ -101,7 +128,10 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
             finally { await fs.unlink(temporary).catch(() => {}); }
           } } catch { contentSaveError = 'Изображение создано, но постоянное сохранение требует повтора.'; }
         }
-        return await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', ...(typeof contentAssetId === 'string' ? { contentAssetId } : {}), ...(contentSaveError ? { contentSaveError } : {}), error: null });
+        const saved = await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', ...(typeof contentAssetId === 'string' ? { contentAssetId } : {}), ...(contentSaveError ? { contentSaveError } : {}), error: null });
+        if (job.kind === 'image' && !contentSaveError && result.hasImage === true)
+          await remote(account, '/jobs/' + requestId + '/ack', {}).catch(() => {});
+        return saved;
       }
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: result.error });
       if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: result.error });
@@ -114,8 +144,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       return await update(account, requestId, { state: 'unknown', error: 'Статус Codex уточняется. Резерв сохранён; проверьте позже или обратитесь в поддержку.' });
     }
   }
-  async function submit(account, raw) {
-    const request = validateCodexRequest(raw);
+  async function loadImages(account, request) {
     const images = [];
     for (const ref of request.sourceFiles || []) {
       const contentId = parseContentRef(ref);
@@ -133,6 +162,41 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       }
       images.push(`data:image/png;base64,${bytes.toString('base64')}`);
     }
+    return images;
+  }
+  async function read(account, requestId) {
+    const job = await get(account, requestId);
+    if (!job) throw Object.assign(new Error('Запрос не найден'), { status: 404 });
+    return job;
+  }
+  async function send(account, request, images) {
+    try {
+      await appendGenerationEvent(accounts.pool, account, 'codex', request, 'send_start');
+      const { prompt, model, effort, speed, requestId, kind, aspectRatio, sourceFiles, projectId, chatId } = request;
+      await remote(account, '/jobs', { prompt, model, effort, speed, requestId, kind, aspectRatio, sourceFiles,
+        projectId, chatId, images });
+      const running = await update(account, request.requestId, { state: 'running', stage: 'generating', error: null });
+      watch(account, request.requestId); return running;
+    } catch (error) {
+      const rejected = [400, 403, 413].includes(error.remoteStatus) || error.confirmedRejected === true;
+      const decision = submissionDecision({ status: error.remoteStatus, rejected });
+      if (decision === 'retry') return retries.defer(account, request.requestId, error);
+      return update(account, request.requestId, { state: decision === 'fail' ? 'fail' : 'unknown',
+        error: decision === 'fail' ? error.message : 'Статус отправки неизвестен. Резерв сохранён; автоматический повтор отключён.' });
+    }
+  }
+  async function dispatchRetry(account, request) {
+    let images;
+    try { images = await loadImages(account, request); }
+    catch (error) { await update(account, request.requestId, { state: 'fail', error: error.message }); return; }
+    await send(account, request, images);
+  }
+  const retries = createStoredRetry({ pool: accounts.pool, namespace: 'codex', jobId: id,
+    activeState: 'submitting', activePatch: { stage: 'submitting' }, queuedPatch: { stage: 'queued' },
+    retryDelayMs, dispatch: dispatchRetry });
+  async function submit(account, raw) {
+    const request = validateCodexRequest(raw);
+    const images = await loadImages(account, request);
     let fresh = false;
     const job = await transaction(accounts.pool, async client => {
       await lockWallet(client, account);
@@ -152,17 +216,9 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       fresh = true; return record;
     });
     if (!fresh) return job;
-    try {
-      await appendGenerationEvent(accounts.pool, account, 'codex', job, 'send_start');
-      await remote(account, '/jobs', { ...request, images });
-      const running = await update(account, request.requestId, { state: 'running', stage: 'generating' });
-      watch(account, request.requestId); return running;
-    } catch (error) {
-      const rejected = [400, 403, 413, 429].includes(error.remoteStatus);
-      return update(account, request.requestId, { state: rejected ? 'fail' : 'unknown', error: rejected ? error.message : 'Статус отправки неизвестен. Резерв сохранён; автоматический повтор отключён.' });
-    }
+    return send(account, request, images);
   }
-  return { quote, submit, status,
+  return { quote, submit, status, read,
     async image(account, requestId) {
       const job = await get(account, requestId);
       if (!job?.hasImage || job.state !== 'success') throw Object.assign(new Error('Изображение не найдено'), { status: 404 });
@@ -171,13 +227,14 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       return imagePath(account, requestId);
     },
     async recover() {
-      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='codex' AND data->>'state' IN ('running','submitting','unknown')")).rows;
+      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='codex' AND data->>'state' IN ('running','submitting','unknown','queued')")).rows;
       for (const row of rows) {
+        if (row.data.state === 'queued') { retries.recover(row.account_id, row.data); continue; }
         const current = await status(row.account_id, row.data.id);
         if (['running', 'submitting'].includes(current.state)) watch(row.account_id, row.data.id);
       }
     },
-    close() { closed = true; for (const timer of timers.values()) clearTimeout(timer); timers.clear(); }
+    close() { closed = true; retries.close(); for (const timer of timers.values()) clearTimeout(timer); timers.clear(); }
   };
 }
 module.exports = { createCodexBilling, priceKey };

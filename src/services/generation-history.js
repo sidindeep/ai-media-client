@@ -61,4 +61,42 @@ async function generationHistorySince(pool, accountId, service, since, before, p
   return [...media.map(present), ...codex.map(codexRecord), ...routerAi.map(routerAiRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
-module.exports = { generationHistory, generationHistorySince };
+const activeStates = ['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'running'];
+function decodeCursor(value) {
+  if (!value) return null;
+  try {
+    if (typeof value !== 'string' || value.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error();
+    const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (!Array.isArray(cursor) || cursor.length !== 3 || typeof cursor[0] !== 'string'
+      || !['history', 'codex', 'routerai'].includes(cursor[1]) || typeof cursor[2] !== 'string'
+      || cursor[0].length > 40 || cursor[2].length > 200) throw new Error();
+    return cursor;
+  } catch { throw Object.assign(new Error('Некорректный курсор истории'), { status: 400 }); }
+}
+function encodeCursor(row) { return Buffer.from(JSON.stringify([row.created, row.namespace, row.id])).toString('base64url'); }
+async function generationHistoryPage(pool, accountId, service, cursorValue, present = record => record, limit = 50) {
+  const cursor = decodeCursor(cursorValue);
+  const rows = (await pool.query(`SELECT namespace,id,data,COALESCE(data->>'createdAt','') AS created FROM media_records
+    WHERE account_id=$1 AND namespace IN ('history','codex','routerai')
+      AND COALESCE(data->>'state','')<>ALL($2::text[])
+      AND ($3::text IS NULL OR (COALESCE(data->>'createdAt',''),namespace,id)<($3::text,$4::text,$5::text))
+    ORDER BY COALESCE(data->>'createdAt','') DESC,namespace DESC,id DESC LIMIT $6`,
+  [accountId, activeStates, cursor?.[0] ?? null, cursor?.[1] ?? null, cursor?.[2] ?? null, limit + 1])).rows;
+  const page = rows.slice(0, limit);
+  const media = page.filter(row => row.namespace === 'history').map(row => row.data);
+  const presentedMedia = service.presentHistory ? await service.presentHistory(media) : media;
+  const mediaById = new Map(presentedMedia.map(row => [row.id, present(row)]));
+  const records = page.map(row => row.namespace === 'history' ? mediaById.get(row.id)
+    : row.namespace === 'codex' ? codexRecord(row.data) : routerAiRecord(row.data));
+  return { records, next: rows.length > limit ? encodeCursor(page[page.length - 1]) : null };
+}
+async function generationActive(pool, accountId, service, present = record => record) {
+  const rows = (await pool.query(`SELECT namespace,data FROM media_records WHERE account_id=$1
+    AND namespace IN ('history','codex','routerai') AND data->>'state'=ANY($2::text[])`, [accountId, activeStates])).rows;
+  const media = rows.filter(row => row.namespace === 'history').map(row => row.data);
+  const presentedMedia = service.presentHistory ? await service.presentHistory(media) : media;
+  const mediaById = new Map(presentedMedia.map(row => [row.id, present(row)]));
+  return rows.map(row => row.namespace === 'history' ? mediaById.get(row.data.id)
+    : row.namespace === 'codex' ? codexRecord(row.data) : routerAiRecord(row.data));
+}
+module.exports = { generationHistory, generationHistorySince, generationHistoryPage, generationActive };

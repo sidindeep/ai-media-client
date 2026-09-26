@@ -1,7 +1,8 @@
 const { transaction } = require('./database');
 const { reserve, settle, lockWallet } = require('../billing/wallet');
+const { units } = require('../billing/pricing');
 const trace = require('../generation-log');
-const { appendGenerationEvent } = require('../services/generation-journal');
+const { appendGenerationEvent, generationEventEntry } = require('../services/generation-journal');
 async function journalKieSubmission(client, accountId, old, record) {
   if (record.state === 'submitting' && old?.state !== 'submitting') {
     await client.query(`INSERT INTO media_kie_submissions
@@ -20,8 +21,65 @@ async function journalKieSubmission(client, accountId, old, record) {
 }
 class AccountRecords {
   constructor(pool, accountId, namespace) { Object.assign(this, { pool, accountId, namespace }); }
+  async createQueued(id, changes) {
+    if (this.namespace !== 'history' || changes.state !== 'queued') throw new Error('Некорректное создание задачи');
+    const record = { id, ...changes, revision: 1, updatedAt: new Date().toISOString() };
+    const item = generationEventEntry('kie', record, 'created');
+    const amount = record.nativeQuote?.amountUnits ? units(record.nativeQuote.amountUnits) : 0;
+    if (amount) {
+      const result = await this.pool.query(`WITH wallet AS (
+        UPDATE media_wallets SET held=held+$3
+        WHERE account_id=$1 AND balance-held >= $3 RETURNING account_id
+      ), reservation AS (
+        INSERT INTO media_reservations(job_id,account_id,amount,price_version,state)
+        SELECT $2,account_id,$3,$4,'held' FROM wallet RETURNING account_id
+      ), reserve_ledger AS (
+        INSERT INTO media_ledger(id,account_id,kind,reference,amount)
+        SELECT $5,account_id,'reserve',$2,$3 FROM reservation RETURNING account_id
+      ), task AS (
+        INSERT INTO media_records(account_id,namespace,id,data)
+        SELECT account_id,'history',$2,$6::jsonb FROM reserve_ledger RETURNING account_id
+      ), journal AS (
+        INSERT INTO media_records(account_id,namespace,id,data)
+        SELECT account_id,'generation-journal',$7,$8::jsonb FROM task RETURNING id
+      ) SELECT id FROM journal`,
+      [this.accountId, id, amount, record.nativeQuote.version,
+        require('node:crypto').randomUUID(), JSON.stringify(record), item.id, JSON.stringify(item)]);
+      if (!result.rowCount) throw new Error('Недостаточно кредитов на счёте');
+    } else {
+      await this.pool.query(`WITH task AS (
+        INSERT INTO media_records(account_id,namespace,id,data)
+        VALUES($1,'history',$2,$3::jsonb) RETURNING account_id
+      ) INSERT INTO media_records(account_id,namespace,id,data)
+        SELECT account_id,'generation-journal',$4,$5::jsonb FROM task`,
+      [this.accountId, id, JSON.stringify(record), item.id, JSON.stringify(item)]);
+    }
+    return record;
+  }
   async list() {
     return (await this.pool.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 ORDER BY updated_at DESC,id', [this.accountId, this.namespace])).rows.map(row => row.data);
+  }
+  async get(id) {
+    return (await this.pool.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3',
+      [this.accountId, this.namespace, id])).rows[0]?.data || null;
+  }
+  async getMany(ids) {
+    const rows = (await this.pool.query('SELECT id,data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=ANY($3::text[])',
+      [this.accountId, this.namespace, ids])).rows;
+    return new Map(rows.map(row => [row.id, row.data]));
+  }
+  async listByStates(states) {
+    return (await this.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND data->>'state'=ANY($3::text[]) ORDER BY updated_at DESC,id",
+      [this.accountId, this.namespace, states])).rows.map(row => row.data);
+  }
+  async listNeedingSave() {
+    return (await this.pool.query(`SELECT data FROM media_records WHERE account_id=$1 AND namespace='history'
+      AND data->>'state'='success' AND data->>'resultSavedAt' IS NULL
+      AND (data->>'resultJson' LIKE '%https:%' OR data->>'resultJson' LIKE '%http:%')`, [this.accountId])).rows.map(row => row.data);
+  }
+  async findByRequestId(requestId) {
+    return (await this.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND data->>'requestId'=$3 LIMIT 1",
+      [this.accountId, this.namespace, requestId])).rows[0]?.data || null;
   }
   async listSince(since, before, activeIds = []) {
     return (await this.pool.query(`SELECT data FROM media_records
@@ -29,18 +87,29 @@ class AccountRecords {
       ORDER BY updated_at DESC,id`, [this.accountId, this.namespace, since, before, activeIds])).rows.map(row => row.data);
   }
   async update(id, changes, expectedStates) {
+    const accepting = this.namespace === 'history' && changes.state === 'queued';
+    const measured = async (stage, action) => {
+      if (!accepting) return action();
+      const started = Date.now();
+      try { return await action(); }
+      finally { trace.timing('generation.db_stage', { stage, elapsedMs: Date.now() - started,
+        poolWaiting: this.pool.waitingCount ?? null }); }
+    };
     return transaction(this.pool, async client => {
-      // Consistent wallet -> record lock ordering also serializes first inserts.
-      await lockWallet(client, this.accountId);
-      const old = (await client.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3 FOR UPDATE', [this.accountId, this.namespace, id])).rows[0]?.data;
+      // Only history updates can reserve or settle credits. Keep their lock order.
+      const needsWallet = this.namespace === 'history' && (
+        ['queued', 'success', 'fail', 'cancelled', 'blocked', 'provider_charged', 'provider_free'].includes(changes.state)
+        || Object.hasOwn(changes, 'creditsConsumed') || !Object.hasOwn(changes, 'state'));
+      const wallet = needsWallet ? await measured('wallet_lock', () => lockWallet(client, this.accountId)) : null;
+      const old = (await measured('record_lock', () => client.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3 FOR UPDATE', [this.accountId, this.namespace, id]))).rows[0]?.data;
       if (!old && this.namespace === 'history') {
-        const deleted = (await client.query('SELECT 1 FROM media_deleted_chat_records WHERE account_id=$1 AND namespace=$2 AND id=$3', [this.accountId, this.namespace, id])).rows[0];
+        const deleted = (await measured('deleted_record_check', () => client.query('SELECT 1 FROM media_deleted_chat_records WHERE account_id=$1 AND namespace=$2 AND id=$3', [this.accountId, this.namespace, id]))).rows[0];
         if (deleted) throw new Error('Удалённый чат недоступен для обновления задачи');
       }
       if (expectedStates && !expectedStates.includes(old?.state)) throw new Error('Состояние задачи уже изменилось');
       const record = { ...(old || { id }), ...changes, revision: Number(old?.revision || 0) + 1, updatedAt: new Date().toISOString() };
       if (this.namespace === 'history') {
-        if (!old && record.nativeQuote?.amountUnits) await reserve(client, this.accountId, id, record.nativeQuote);
+        if (!old && record.nativeQuote?.amountUnits) await measured('reserve', () => reserve(client, this.accountId, id, record.nativeQuote, wallet));
         const reportedCost = record.creditsConsumed;
         const consumed = Number(reportedCost);
         const costKnown = (typeof reportedCost === 'number' || (typeof reportedCost === 'string' && reportedCost.trim() !== ''))
@@ -54,17 +123,17 @@ class AccountRecords {
         await settle(client, this.accountId, id, settlementState, record);
         await journalKieSubmission(client, this.accountId, old, record);
         if (!old || old.state !== record.state) {
-          await appendGenerationEvent(client, this.accountId, 'kie', record, !old ? 'created' : record.state,
-            { providerTaskId: record.taskId, error: record.error });
+          await measured('journal', () => appendGenerationEvent(client, this.accountId, 'kie', record, !old ? 'created' : record.state,
+            { providerTaskId: record.taskId, error: record.error }));
         }
       }
-      await client.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4) ON CONFLICT(account_id,namespace,id) DO UPDATE SET data=EXCLUDED.data,updated_at=now()', [this.accountId, this.namespace, id, JSON.stringify(record)]);
+      await measured('record_write', () => client.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4) ON CONFLICT(account_id,namespace,id) DO UPDATE SET data=EXCLUDED.data,updated_at=now()', [this.accountId, this.namespace, id, JSON.stringify(record)]));
       return record;
     });
   }
   async remove(id, settlementState = 'cancelled', expectedStates) {
     return transaction(this.pool, async client => {
-      await lockWallet(client, this.accountId);
+      if (this.namespace === 'history') await lockWallet(client, this.accountId);
       const old = (await client.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3 FOR UPDATE', [this.accountId, this.namespace, id])).rows[0]?.data;
       if (!old) return null;
       if (expectedStates && !expectedStates.includes(old.state)) return null;

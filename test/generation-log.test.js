@@ -25,6 +25,7 @@ test('generation journal correlates lifecycle, raw provider timeout and retries 
   let attempts=0;
   await require('../src/network').request('https://api.example.test/read',{}, {safeToRetry:true,delay:async()=>{},fetcher:async()=>{if(++attempts===1)throw new Error('temporary');return new Response('{}',{headers:{'content-type':'application/json'}});}});
   assert.equal(attempts,2);
+  await trace.flush();
   const raw = await fs.readFile(path.join(directory,'logs/generation.jsonl'),'utf8');
   for(const value of ['key-secret-test','signed-secret','body-secret'])assert.ok(!raw.includes(value));
   const rows = raw.trim().split('\n').map(JSON.parse);
@@ -38,7 +39,8 @@ test('generation journal correlates lifecycle, raw provider timeout and retries 
   assert.equal(rows.filter(row=>row.event==='task.create.start').length,1);
   // A saturated journal rotates, and an unavailable log directory cannot fail a task.
   await fs.writeFile(path.join(directory,'logs/generation.jsonl'),'x'.repeat(5*1024*1024));
-  trace.write('rotation.check');assert.ok(await fs.stat(path.join(directory,'logs/generation.jsonl.1')));
+  trace.write('rotation.check');await trace.flush();assert.ok(await fs.stat(path.join(directory,'logs/generation.jsonl.1')));
   trace.configure(path.join(directory,'history.json','not-a-directory'));
   assert.equal(await trace.step('unwritable',{},async()=>42),42);
+  await trace.flush();
 });

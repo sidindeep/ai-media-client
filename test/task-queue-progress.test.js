@@ -1,6 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { TaskQueue } = require('../src/task-queue');
+const { parseRetryAfter } = require('../src/retry-after');
+const { retryAfterAt } = require('../src/services/submission-control');
+
+test('confirmed retry honours Retry-After without moving the deadline earlier', () => {
+  const now = Date.now();
+  assert.equal(parseRetryAfter('30', now), 30000);
+  assert.equal(parseRetryAfter(new Date(now + 45000).toUTCString(), now) >= 44000, true);
+  assert.equal(parseRetryAfter('not-a-date', now), null);
+  assert.equal(Date.parse(retryAfterAt(1, { now, baseMs: 10000, minimumMs: 30000 })) - now, 30000);
+});
 
 class Store {
   constructor() { this.rows = []; this.removals = []; }
@@ -22,6 +32,18 @@ class Store {
   }
 }
 
+test('recovery reuses its first read when no record needs repair', async () => {
+  const store = new Store();
+  let reads = 0;
+  const list = store.list.bind(store);
+  store.list = async () => { reads++; return list(); };
+  const queue = new TaskQueue({ store, prepare: async row => row.input,
+    create: async () => ({ taskId: 'provider-task' }), poll: async () => ({ state: 'waiting' }) });
+  await queue.recover();
+  assert.equal(reads, 1);
+  queue.close();
+});
+
 async function waitFor(check) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (check()) return;
@@ -29,6 +51,58 @@ async function waitFor(check) {
   }
   throw new Error('Condition was not reached');
 }
+
+test('empty queue sleeps and a new item wakes it without periodic history reads', async () => {
+  const store = new Store();
+  let reads = 0;
+  const list = store.list.bind(store);
+  store.list = async () => { reads++; return list(); };
+  const queue = new TaskQueue({ store, prepare: async row => row.input,
+    create: async () => ({ taskId: 'provider-task' }), poll: async () => ({ state: 'waiting' }) });
+  queue.paused = false;
+  await queue.tick();
+  const idleReads = reads;
+  assert.equal(queue.timer, null);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(reads, idleReads);
+  const job = await queue.enqueue({ input: {} });
+  await waitFor(() => store.rows.find(row => row.id === job.id)?.state === 'waiting');
+  queue.close();
+});
+
+test('new queued item preempts the timer for a delayed retry', async () => {
+  const store = new Store();
+  store.rows = [{ id: 'retry', state: 'queued', retryAfterAt: new Date(Date.now() + 60_000).toISOString() }];
+  const queue = new TaskQueue({ store, prepare: async row => row.input,
+    create: async () => ({ taskId: 'provider-task' }), poll: async () => ({ state: 'waiting' }) });
+  queue.paused = false;
+  await queue.tick();
+  const delayed = queue.timerDueAt;
+  assert.ok(delayed > Date.now() + 55_000);
+  const fresh = await queue.enqueue({ input: {} });
+  assert.ok(queue.timerDueAt < delayed);
+  await waitFor(() => store.rows.find(row => row.id === fresh.id)?.state === 'waiting');
+  assert.equal(store.rows.find(row => row.id === 'retry').state, 'queued');
+  queue.close();
+});
+
+test('full provider slots do not spin the submission dispatcher', async () => {
+  const store = new Store();
+  store.rows = [
+    { id: 'remote', state: 'waiting', taskId: 'provider-task' },
+    { id: 'next', state: 'queued' },
+  ];
+  const queue = new TaskQueue({ store, concurrency: 1,
+    prepare: async row => row.input, create: async () => ({ taskId: 'next-task' }),
+    poll: async () => ({ state: 'success' }) });
+  queue.paused = false;
+  await queue.tick();
+  assert.equal(queue.timer, null);
+  queue.schedulePoll = () => {};
+  await queue.pollTick();
+  await waitFor(() => store.rows.find(row => row.id === 'next')?.state === 'waiting');
+  queue.close();
+});
 
 test('queue records user-visible Kie stages and checks status every two seconds by default', async () => {
   const store = new Store();
@@ -209,6 +283,32 @@ test('recovery resumes safe queued work and isolates ambiguous submissions', asy
   assert.equal(safeScheduled, true);
   assert.equal((await ambiguousStore.list()).find(row => row.id === 'unknown').state, 'unknown');
   ambiguousQueue.close();
+});
+
+test('database loss after provider accepts a task never resubmits it on recovery', async () => {
+  const store = new Store();
+  store.rows = [{ id: 'accepted-before-outage', state: 'queued', taskId: null, input: {} }];
+  const update = store.update.bind(store);
+  let failed = false, sends = 0;
+  store.update = async (id, changes, expected) => {
+    if (!failed && changes.state === 'waiting') { failed = true; throw new Error('database unavailable'); }
+    return update(id, changes, expected);
+  };
+  const queue = new TaskQueue({ store, prepare: async row => row.input,
+    create: async () => { sends++; return { taskId: 'paid-provider-task' }; }, poll: async () => ({ state: 'success' }) });
+  queue.schedule = () => {}; queue.schedulePoll = () => {}; queue.paused = false;
+  await queue.tick();
+  assert.equal(sends, 1);
+  assert.equal((await store.list())[0].state, 'submitting');
+  queue.close();
+  const restarted = new TaskQueue({ store, prepare: async row => row.input,
+    create: async () => { sends++; return { taskId: 'duplicate' }; }, poll: async () => ({ state: 'success' }) });
+  restarted.schedule = () => {}; restarted.schedulePoll = () => {};
+  await restarted.recover();
+  await restarted.tick();
+  assert.equal((await store.list())[0].state, 'unknown');
+  assert.equal(sends, 1);
+  restarted.close();
 });
 
 test('one item provider failure does not pause or rewind other items', async () => {

@@ -46,6 +46,12 @@ async function ensureDefaultChatRow(client, accountId, projectId = null) {
 
 function createWorkspaces(pool, options) {
   const deletions = createWorkspaceDeletions(pool, options);
+  async function defaultChatId(accountId, projectId = null) {
+    const existing = (await pool.query(`SELECT id FROM media_chats
+      WHERE account_id=$1 AND project_id IS NOT DISTINCT FROM $2::uuid AND mode='system' AND archived_at IS NULL
+      ORDER BY created_at,id LIMIT 1`, [accountId, projectId])).rows[0];
+    return existing?.id || transaction(pool, client => ensureDefaultChatRow(client, accountId, projectId));
+  }
   async function projectRow(accountId, projectId, lock = false) {
     const result = await pool.query(`SELECT p.*, count(DISTINCT c.id)::int AS chat_count,
       (SELECT count(*) FROM media_records r WHERE r.account_id=p.account_id AND r.data->>'projectId'=p.id::text)::int AS material_count
@@ -74,15 +80,16 @@ function createWorkspaces(pool, options) {
       resolvedProjectId = resolvedProjectId || row.project_id;
       if (row.archived_at) throw bad('Архивный чат недоступен для новых генераций', 409);
     } else {
-      chatId = await transaction(pool, client => ensureDefaultChatRow(client, accountId, resolvedProjectId));
+      chatId = await defaultChatId(accountId, resolvedProjectId);
     }
     return { projectId: resolvedProjectId, chatId };
   }
   return {
     async ensureDefaultChat(accountId, projectId = null) {
-      const chatId = await transaction(pool, client => ensureDefaultChatRow(client, accountId, projectId));
+      const chatId = await defaultChatId(accountId, projectId);
       return chat(await chatRow(accountId, chatId));
     },
+    ensureDefaultChatId: defaultChatId,
     async listProjects(accountId, includeArchived = false) {
       const filter = includeArchived ? '' : ' AND p.archived_at IS NULL';
       const result = await pool.query(`SELECT p.*, count(DISTINCT c.id)::int AS chat_count,

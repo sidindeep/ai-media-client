@@ -15,7 +15,7 @@ async function createKieAccounts({ primaryKey = '', secondaryKey = '', createPro
     return { id, name, provider: {
       ...provider,
       waitForCreate: () => limiter.wait(),
-      rateLimited: () => limiter.rateLimited()
+      rateLimited: retryAfterMs => limiter.rateLimited(retryAfterMs)
     } };
   }));
   function selectAccount(id = 'primary') {

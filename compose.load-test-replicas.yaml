@@ -1,0 +1,80 @@
+services:
+  media:
+    environment:
+      MEDIA_REPLICA_ROLE: executor
+  media-web:
+    build: .
+    image: ai-media-web-tg:local
+    restart: 'no'
+    init: true
+    depends_on:
+      media:
+        condition: service_healthy
+    environment:
+      MEDIA_HOST: 0.0.0.0
+      MEDIA_PORT: 3000
+      MEDIA_REPLICA_ROLE: web
+      MEDIA_EXECUTOR_URL: http://media:3000
+      MEDIA_EXECUTOR_PUBLIC_ORIGIN: http://127.0.0.1:3001
+      MEDIA_PUBLIC_ORIGIN: http://127.0.0.1:3002
+      MEDIA_DATA_DIR: data/load-test-service
+      MEDIA_AUTH_ENABLED: 'true'
+      DATABASE_URL: ${LOAD_TEST_DATABASE_URL:?Pass --env-file .env.load-test}
+      DATABASE_SSL: '0'
+      MEDIA_DB_POOL_MAX: ${LOAD_TEST_WEB_DB_POOL_MAX:-15}
+      MEDIA_STORAGE_DRIVER: local
+      MEDIA_PAYMENTS_ENABLED: 'false'
+      MEDIA_SALES_ENABLED: 'false'
+      MEDIA_CODEX_EMBEDDED: 'false'
+      MEDIA_KIE_BROWSER_EMBEDDED: 'false'
+      TELEGRAM_ENABLED: 'false'
+      KIE_API_KEY: ''
+      KIE_API_KEY_2: ''
+      ROUTERAI_API_KEY: ''
+    ports:
+      - '127.0.0.1:3002:3000'
+    volumes:
+      - ./data/load-test-service:/app/data/load-test-service
+    stop_grace_period: 60s
+
+  media-web-scale:
+    profiles: [replicas]
+    image: ai-media-web-tg:local
+    restart: 'no'
+    init: true
+    depends_on:
+      media:
+        condition: service_healthy
+    environment:
+      MEDIA_HOST: 0.0.0.0
+      MEDIA_PORT: 3000
+      MEDIA_REPLICA_ROLE: web
+      MEDIA_EXECUTOR_URL: http://media:3000
+      MEDIA_EXECUTOR_PUBLIC_ORIGIN: http://127.0.0.1:3001
+      MEDIA_PUBLIC_ORIGIN: http://127.0.0.1:3001
+      MEDIA_DATA_DIR: data/load-test-service
+      MEDIA_AUTH_ENABLED: 'true'
+      DATABASE_URL: ${LOAD_TEST_DATABASE_URL:?Pass --env-file .env.load-test}
+      DATABASE_SSL: '0'
+      MEDIA_DB_POOL_MAX: '5'
+      MEDIA_STORAGE_DRIVER: local
+      MEDIA_PAYMENTS_ENABLED: 'false'
+      MEDIA_SALES_ENABLED: 'false'
+      MEDIA_CODEX_EMBEDDED: 'false'
+      MEDIA_KIE_BROWSER_EMBEDDED: 'false'
+      TELEGRAM_ENABLED: 'false'
+      KIE_API_KEY: ''
+      KIE_API_KEY_2: ''
+      ROUTERAI_API_KEY: ''
+    volumes:
+      - ./data/load-test-service:/app/data/load-test-service
+    stop_grace_period: 60s
+
+  replica-load:
+    profiles: [replicas]
+    image: node:24-bookworm-slim
+    working_dir: /app
+    entrypoint: [node]
+    volumes:
+      - ./tools/load-test:/scripts:ro
+      - ./artifacts/load-tests:/results

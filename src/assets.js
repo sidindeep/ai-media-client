@@ -1,7 +1,10 @@
 const trace = require('./generation-log');
 const fs = require('node:fs/promises');
+const { createReadStream, createWriteStream } = require('node:fs');
 const path = require('node:path');
 const {createHash,randomUUID} = require('node:crypto');
+const { Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const prefix = 'https://local-assets.invalid/';
 class Assets {
   constructor(directory, { storage = null, prefix: storagePrefix = '', content = null, accountId = null } = {}) { this.directory=directory; this.storage=storage; this.storagePrefix=storagePrefix; this.content=content; this.accountId=accountId; this.uploads=new Map(); }
@@ -30,7 +33,33 @@ class Assets {
     return this.read(id);
   }
   async save(file) {
-    const bytes=Buffer.from(file.bytes);
+    if (file.stream && this.content && this.accountId) {
+      const asset = await this.content.createFromStream(this.accountId, { stream: file.stream, name: file.name, type: file.type,
+        limit: file.limit, origin: { kind: 'source', projectId: file.projectId || null, chatId: file.chatId || null } });
+      const ready = await this.content.wait(this.accountId, asset.id);
+      return { ref: ready.ref, assetId: ready.id, name: ready.name, type: ready.type, size: ready.size };
+    }
+    if (file.stream) {
+      await fs.mkdir(this.directory, { recursive: true });
+      const temporary = path.join(this.directory, `${randomUUID()}.part`);
+      const hash = createHash('sha256'); let size = 0;
+      const meter = new Transform({ transform(chunk, _encoding, callback) {
+        size += chunk.length;
+        if (size > file.limit) return callback(new Error('Файл или запрос слишком большой'));
+        hash.update(chunk);
+        callback(null, chunk);
+      } });
+      try {
+        await pipeline(file.stream, meter, createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
+        if (!size) throw new Error('Исходный файл пуст');
+        const id = hash.digest('hex');
+        if (this.storage) await this.storage.put(this.key(id), createReadStream(temporary), file.type || 'application/octet-stream', size);
+        else try { await fs.link(temporary, path.join(this.directory, id)); }
+          catch (error) { if (error.code !== 'EEXIST') throw error; }
+        return { ref: prefix + id, name: path.basename(file.name || 'source'), type: file.type || 'application/octet-stream', size };
+      } finally { await fs.unlink(temporary).catch(() => {}); }
+    }
+    const bytes=Buffer.isBuffer(file.bytes) ? file.bytes : Buffer.from(file.bytes);
     if(!bytes.length) throw new Error('Исходный файл пуст');
     if(this.content&&this.accountId) {
       const asset=await this.content.createFromBuffer(this.accountId,{bytes,name:file.name,type:file.type,origin:{kind:'source',projectId:file.projectId||null,chatId:file.chatId||null}});

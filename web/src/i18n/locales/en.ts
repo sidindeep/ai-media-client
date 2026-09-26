@@ -264,6 +264,8 @@ export const en = {
   'history.back': 'Back to generation',
   'history.completed': 'Completed',
   'history.empty': 'Completed results will appear here.',
+  'history.loadMore': 'Load older records',
+  'history.loading': 'Loading…',
   'history.recordContent': 'RECORD CONTENT',
   'history.prompt': 'Prompt',
   'history.result': 'Result',

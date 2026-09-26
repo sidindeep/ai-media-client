@@ -20,6 +20,8 @@ const { createYooKassaProvider } = require('./src/payments/providers/yookassa');
 const { createYooKassaStubProvider } = require('./src/payments/providers/yookassa-stub');
 const { createProductCatalog } = require('./src/commerce/catalog');
 const { createCommerce } = require('./src/commerce/service');
+const trace = require('./src/generation-log');
+const { listenForAccountChanges } = require('./src/database/change-events');
 
 function startupDiagnosticRequest(service) {
   const catalog = service.catalog();
@@ -53,6 +55,9 @@ async function checkProviderReadiness(service, readiness) {
 }
 
 async function start({ config = loadConfig(), provider, paymentProvider, pool: suppliedPool, authProviders, startupChecks = !suppliedPool, databaseOpener = openDatabase, tariffFetcher } = {}) {
+  const webReplica = config.replicaRole === 'web';
+  if (config.replicaRole !== 'single' && (!config.auth.enabled || (!config.database.url && !suppliedPool)))
+    throw new Error('Нескольким репликам нужны авторизация и общая PostgreSQL');
   if (config.auth.enabled && !config.database.url && !suppliedPool) throw new Error('Для аккаунтов настройте DATABASE_URL. Локальный режим владельца: MEDIA_AUTH_ENABLED=false');
   await fs.mkdir(config.dataDirectory, { recursive: true });
   // Hosting mounts /app/data after image build, hiding directories created there.
@@ -61,19 +66,20 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
   }
   const lockPath = path.join(config.dataDirectory, 'service.lock');
   let lock;
-  if (process.env.MEDIA_LOCK_HELD_BY_FLOCK !== '1') {
+  if (!webReplica && process.env.MEDIA_LOCK_HELD_BY_FLOCK !== '1') {
     try { lock = await fs.open(lockPath, 'wx'); await lock.writeFile(String(process.pid)); }
     catch (error) {
       if (error.code === 'EEXIST') throw new Error('Хранилище занято другим сервисом. После аварийной остановки удалите service.lock, убедившись, что процесс завершён.');
       throw error;
     }
   }
-  let service, telegram, telegramLinks, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer, kieBrowser, kieDisplay;
+  let service, telegram, telegramLinks, server, pool, accounts, auth, content, codexWorker, databaseTask, payments, commerce, paymentTimer, changeListener, kieBrowser, kieDisplay;
+  let ownerClient = null, ownerTimer = null;
   const storage = createObjectStorage(config.storage);
-  let closing = false, retryTimer, wakeRetry;
+  let closing = false, retryTimer, wakeRetry, telegramStarted = false;
   const databaseAvailability = createDatabaseAvailability({ state: config.auth.enabled ? 'connecting' : 'disabled' });
   const readiness = {
-    provider: { state: startupChecks ? 'checking' : 'idle' },
+    provider: { state: startupChecks && !webReplica ? 'checking' : 'idle' },
   };
   Object.defineProperty(readiness, 'database', { enumerable: true, get: () => databaseAvailability.snapshot() });
   const createBusinessServices = async activePool => {
@@ -91,13 +97,40 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     nextCommerce = createCommerce({ pool: activePool, catalog: createProductCatalog(config.commerce.offersFile), paymentClient: nextPayments,
       paymentContext: { clientId: config.payments.clientId, environment: config.payments.environment },
       onPurchase: accountId => accounts?.notifyContent(accountId) });
-    await nextPayments.deliver();
+    if (!webReplica) await nextPayments.deliver();
     return { payments: nextPayments, commerce: nextCommerce };
   };
   const waitForRetry = delay => new Promise(resolve => {
     wakeRetry = resolve;
     retryTimer = setTimeout(() => { retryTimer = undefined; wakeRetry = undefined; resolve(); }, delay);
   });
+  const releaseOwnership = async () => {
+    if (ownerTimer) clearInterval(ownerTimer);
+    ownerTimer = null;
+    if (!ownerClient) return;
+    const current = ownerClient;
+    ownerClient = null;
+    await current.query('SELECT pg_advisory_unlock(18274693)').catch(() => {});
+    try { current.release(); } catch {}
+  };
+  const acquireOwnership = async activePool => {
+    if (config.replicaRole !== 'executor') return;
+    const candidate = await activePool.connect();
+    try {
+      const acquired = (await candidate.query('SELECT pg_try_advisory_lock(18274693) AS acquired')).rows[0]?.acquired;
+      if (!acquired) throw Object.assign(new Error('Другой исполнитель задач уже владеет БД'), { code: 'EXECUTOR_BUSY' });
+      ownerClient = candidate;
+      const lost = error => {
+        if (ownerClient !== candidate || closing) return;
+        console.error('Executor ownership lost:', error?.code || error?.message || 'CONNECTION_LOST');
+        void cleanup().then(() => { if (require.main === module) process.exit(73); });
+      };
+      candidate.once?.('error', lost);
+      candidate.once?.('end', lost);
+      ownerTimer = setInterval(() => { void candidate.query('SELECT 1').catch(lost); }, 2000);
+      ownerTimer.unref?.();
+    } catch (error) { candidate.release(); throw error; }
+  };
   const cleanup = async () => {
     closing = true;
     databaseAvailability.close();
@@ -119,11 +152,14 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await service?.close();
     await accounts?.close();
     await content?.close();
+    await changeListener?.close();
+    await trace.flush();
+    await releaseOwnership();
     await pool?.end();
     if (lock) { await lock.close(); await fs.unlink(lockPath).catch(() => {}); }
   };
   try {
-    if (config.kieBrowser?.embedded) {
+    if (!webReplica && config.kieBrowser?.embedded) {
       const profile = path.resolve(config.dataDirectory, '..', 'kie-browser');
       await fs.mkdir(profile, { recursive: true, mode: 0o700 });
       kieDisplay = spawn('/usr/bin/Xvfb', [':99', '-screen', '0', '1280x900x24', '-nolisten', 'tcp'], { stdio: 'ignore' });
@@ -140,20 +176,23 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     }
     provider = provider || await createKieAccounts({ primaryKey: config.kieKey, secondaryKey: config.kieSecondaryKey });
     if (storage) await storage.check();
-    service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy' });
+    service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' });
     if (config.auth.enabled && suppliedPool) {
       pool = await databaseOpener(config.database, suppliedPool);
-      content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId) });
+      await acquireOwnership(pool);
+      content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
       const starterPack = createStarterPack({ pool, config: config.starterPack });
       auth = createAuth({ pool, config: config.auth, providers: authProviders, starterPack });
       accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content });
+      changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
       telegramLinks = createTelegramLinkService(pool);
       await accounts.recover();
       ({ payments, commerce } = await createBusinessServices(pool));
-      if (payments) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
+      if (config.replicaRole === 'executor') await service.queue.recover();
+      if (payments && !webReplica) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
       databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
     }
-    if (config.codex?.embedded) {
+    if (!webReplica && config.codex?.embedded) {
       codexWorker = createCodexWorker();
       await new Promise((resolve, reject) => {
         codexWorker.once('error', reject);
@@ -161,15 +200,14 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       });
       console.log('Codex worker ready on loopback');
     }
-    telegram = createTelegramGateway({ service, config: config.telegram, directory: config.dataDirectory,
+    telegram = createTelegramGateway({ service, config: webReplica ? { ...config.telegram, enabled: false } : config.telegram, directory: config.dataDirectory,
       accountMode: config.auth.enabled, accounts, telegramLinks });
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled && !telegramLinks ? { disabledReason: 'account-database-unavailable' } : {}) });
     server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce });
-    await server.recoverCodex();
-    await server.recoverRouterAi();
+    if (!webReplica) { await server.recoverCodex(); await server.recoverRouterAi(); }
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
-    telegram.start();
-    if (startupChecks) void checkProviderReadiness(service, readiness);
+    if (!webReplica && (config.replicaRole !== 'executor' || ownerClient)) { telegram.start(); telegramStarted = true; }
+    if (startupChecks && !webReplica) void checkProviderReadiness(service, readiness);
     if (config.auth.enabled && !accounts) {
       databaseTask = (async () => {
         let attempt = 0;
@@ -179,24 +217,29 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
           let nextPool, nextAccounts, nextContent;
           try {
             nextPool = await databaseOpener(config.database);
-            nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId) });
+            await acquireOwnership(nextPool);
+            nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
             const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack });
             nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content: nextContent });
             const nextTelegramLinks = createTelegramLinkService(nextPool);
             await nextAccounts.recover();
-            if (closing) { await nextAccounts.close(); await nextContent?.close(); await nextPool.end(); return; }
+            if (closing) { await nextAccounts.close(); await nextContent?.close(); await releaseOwnership(); await nextPool.end(); return; }
             const nextBusiness = await createBusinessServices(nextPool);
             await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce);
+            if (config.replicaRole === 'executor') await service.queue.recover();
             pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
+            changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
             payments = nextBusiness.payments; commerce = nextBusiness.commerce;
             telegram.setAccountServices(accounts, telegramLinks);
+            if (!webReplica && !telegramStarted) { telegram.start(); telegramStarted = true; }
             if (paymentTimer) clearInterval(paymentTimer);
-            if (payments) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
+            if (payments && !webReplica) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
             databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
           } catch (error) {
             if (nextAccounts) await nextAccounts.close().catch(() => {});
             if (nextContent) await nextContent.close().catch(() => {});
+            if (ownerClient && nextPool) await releaseOwnership().catch(() => {});
             if (nextPool) await nextPool.end().catch(() => {});
             const retryInMs = Math.min(10000, 1000 * (2 ** Math.min(attempt - 1, 4)));
             databaseAvailability.update({ state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', attempt, retryInMs });

@@ -47,6 +47,30 @@ test('order checkout fulfills credits once after durable payment event', async t
   assert.equal(Number((await f.pool.query("SELECT count(*) AS count FROM media_ledger WHERE account_id=$1 AND kind='purchase'", [f.accountId])).rows[0].count), 1);
 });
 
+test('two outbox dispatchers claim one event once', async t => {
+  const f = await fixture(); t.after(() => f.pool.end());
+  const order = await f.commerce.createOrder(f.accountId, { offerId: 'credits-10', offerVersion: 'v1', idempotencyKey: 'concurrent-delivery' });
+  await f.commerce.checkout(f.accountId, order.id, 'https://example.test/app');
+  await f.pool.query('UPDATE payment_outbox SET delivered_at=NULL,attempts=0');
+  let entered, release;
+  const started = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  let handled = 0;
+  const onEvent = async () => { handled++; entered(); await gate; };
+  const first = createPayments({ pool: f.pool, provider: createFakePaymentProvider(), onEvent });
+  const second = createPayments({ pool: f.pool, provider: createFakePaymentProvider(), onEvent });
+  const pending = first.deliver();
+  await started;
+  await second.deliver();
+  assert.equal(handled, 1);
+  release();
+  await pending;
+  const row = (await f.pool.query('SELECT delivered_at,attempts,lease_token FROM payment_outbox')).rows[0];
+  assert.ok(row.delivered_at);
+  assert.equal(row.attempts, 1);
+  assert.equal(row.lease_token, null);
+});
+
 test('payment idempotency is scoped and conflicting payload is rejected', async t => {
   const f = await fixture(); t.after(() => f.pool.end());
   const ctx = { clientId: 'second-product', environment: 'test' };

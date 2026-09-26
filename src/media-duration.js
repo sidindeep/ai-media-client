@@ -85,7 +85,7 @@ function webmDuration(buffer) {
 }
 
 function mediaDurationSeconds(bytes, type = '') {
-  const buffer = Buffer.from(bytes);
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
   if (/^video\/(?:mp4|quicktime)$/i.test(type) || buffer.toString('ascii', 4, 8) === 'ftyp') return mp4Duration(buffer);
   if (/^video\/(?:webm|x-matroska)$/i.test(type) || buffer.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return webmDuration(buffer);
   return null;

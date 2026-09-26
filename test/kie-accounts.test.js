@@ -71,6 +71,7 @@ test('two Kie accounts retain upload/create/poll identity, replay and restart ro
   const source = await service.saveSource({ name: 'source.txt', type: 'text/plain', bytes: Buffer.from('source') });
   await service.queue.prepare({ ...second, input: { ...input, prompt: source.ref }, sourceFiles: [source] });
   assert.ok(calls.some(row => row[0] === 'upload' && row[1] === 'test-second'));
+  await service.close();
 });
 
 test('unconfigured second account rejects before enqueue without falling back', async t => {
@@ -81,6 +82,7 @@ test('unconfigured second account rejects before enqueue without falling back', 
   await assert.rejects(service.createTask({ modelId, input, kieAccountId: 'secondary' }), /не настроен ключ/);
   assert.deepEqual(await service.history.list(), []);
   assert.deepEqual(provider.listAccounts().map(row => row.configured), [true, false]);
+  await service.close();
 });
 
 test('concurrent uploads are deduplicated within a Kie account only', async t => {

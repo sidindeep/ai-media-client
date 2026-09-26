@@ -1,4 +1,5 @@
 const BASE_URL = 'https://routerai.ru/api/v1';
+const { parseRetryAfter } = require('../../retry-after');
 
 function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } = {}) {
   if (!apiKey) throw new Error('ROUTERAI_API_KEY не настроен');
@@ -19,6 +20,7 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
     if (!response.ok) {
       const error = new Error(`RouterAI отклонил запрос (HTTP ${response.status})`);
       error.status = response.status;
+      error.retryAfterMs = parseRetryAfter(response.headers?.get?.('retry-after'));
       throw error;
     }
     try { return await response.json(); }
@@ -54,7 +56,8 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
           body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (error) { throw new Error(error?.name === 'TimeoutError' ? 'RouterAI не ответил вовремя' : 'RouterAI недоступен'); }
-      if (!response.ok) throw Object.assign(new Error(`RouterAI отклонил запрос (HTTP ${response.status})`), { status: response.status });
+      if (!response.ok) throw Object.assign(new Error(`RouterAI отклонил запрос (HTTP ${response.status})`), { status: response.status,
+        retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')) });
       const type = response.headers.get('content-type') || '';
       if (type.includes('json')) return { type: 'json', data: await response.json() };
       if (type.includes('text/event-stream')) return { type: 'text', data: await response.text() };

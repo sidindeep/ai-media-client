@@ -79,6 +79,8 @@ export const getWorkspaceSync = (since?: string | null, activeIds: string[] = []
   for (const id of activeIds.slice(0, 20)) query.append('active', id);
   return workspaceRequest<WorkspaceSync>(`/api/workspace/sync${query.size ? `?${query}` : ''}`);
 };
+export const getHistoryPage = (cursor: string) => workspaceRequest<{ records: GenerationRecord[]; next: string | null }>(
+  `/api/workspace/history?cursor=${encodeURIComponent(cursor)}`);
 export const loadDraft = (chatId?: string | null) => rpc<Record<string, unknown> | null>('loadDrafts', chatId ? [{ chatId }] : []);
 export const saveDraft = (draft: Record<string, unknown>, chatId?: string | null) => rpc<boolean>('saveDrafts', [draft, chatId ? { chatId } : {}]);
 export const listGenerationPresets = () => rpc<GenerationPreset[]>('listGenerationPresets');

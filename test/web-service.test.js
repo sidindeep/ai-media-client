@@ -15,6 +15,24 @@ const { testPool } = require('./helpers/pg-pool');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
+
+test('concurrent source uploads respect the in-flight memory budget', async t => {
+  let started, release;
+  const entered = new Promise(resolve => { started = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const service = { saveSource: async () => { started(); await gate; return { ref: 'mock' }; } };
+  const config = loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false', MEDIA_UPLOAD_LIMIT_MB: '1', MEDIA_UPLOAD_INFLIGHT_MB: '1' });
+  const server = require('../src/server/http').createHttpServer({ config, service });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
+  const url = `http://127.0.0.1:${server.address().port}/api/source`;
+  const options = { method: 'POST', headers: { 'X-Media-Client': 'web', 'Content-Type': 'image/png' }, body: Buffer.alloc(700000) };
+  const first = fetch(url, options);
+  await entered;
+  assert.equal((await fetch(url, options)).status, 429);
+  release();
+  assert.equal((await first).status, 200);
+});
 function mp4Bytes(seconds, timescale = 8000) {
   const mvhdPayload = Buffer.alloc(20); mvhdPayload.writeUInt32BE(timescale, 12); mvhdPayload.writeUInt32BE(Math.round(seconds * timescale), 16);
   const box = (type, payload) => { const value = Buffer.alloc(8 + payload.length); value.writeUInt32BE(value.length, 0); value.write(type, 4, 4, 'ascii'); payload.copy(value, 8); return value; };
@@ -146,7 +164,8 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
     events: new EventEmitter(),
     dispatch: async (method, args = []) => {
       calls.push({ method, args });
-      if (method === 'getHistory') return [{ id: 'first', state: 'success' }];
+      if (method === 'getHistoryPage') return { records: [{ id: 'first', state: 'success' }], next: 'older-cursor' };
+      if (method === 'getHistoryActive') return [{ id: 'running', state: 'generating' }];
       if (method === 'getHistoryDelta') return [{ id: 'second', state: 'success' }];
       if (method === 'queueStatus') return { paused: false, error: null, concurrency: 3 };
       throw new Error(`Unexpected ${method}`);
@@ -154,12 +173,13 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   };
   const accounts = {
     pool: { query: async text => {
-      assert.match(text, /clock_timestamp/);
-      return { rows: [{ cursor: new Date(cursorValues.shift()) }] };
+      if (/clock_timestamp/.test(text)) return { rows: [{ cursor: new Date(cursorValues.shift()) }] };
+      assert.match(text, /count\(\*\)/);
+      return { rows: [{ count: 3 }] };
     } },
     scope: async () => service,
     workspaces: {
-      ensureDefaultChat: async accountId => { assert.equal(accountId, user.id); return { id: 'chat-full' }; },
+      ensureDefaultChatId: async accountId => { assert.equal(accountId, user.id); return 'chat-full'; },
       listProjects: async () => [{ id: 'project-full' }],
       listChats: async () => [{ id: 'chat-full' }],
       listProjectChanges: async (_account, since, before) => [{ id: `project:${since}:${before}` }],
@@ -175,7 +195,9 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   const full = await fetch(base + '/api/workspace/sync').then(response => response.json()).then(body => body.result);
   assert.equal(full.full, true);
   assert.equal(full.cursor, '2026-09-21T10:00:00.000Z');
-  assert.deepEqual(full.records.map(item => item.id), ['first']);
+  assert.deepEqual(full.records.map(item => item.id), ['running', 'first']);
+  assert.equal(full.historyNext, 'older-cursor');
+  assert.equal(full.unassignedCount, 3);
   assert.deepEqual(full.projects.map(item => item.id), ['project-full']);
   assert.deepEqual(full.chats.map(item => item.id), ['chat-full']);
 
@@ -186,9 +208,12 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   assert.match(delta.projects[0].id, /^project:2026-09-21T10:00:00.000Z:2026-09-21T10:00:05.000Z$/);
   assert.match(delta.chats[0].id, /^chat:2026-09-21T10:00:00.000Z:2026-09-21T10:00:05.000Z$/);
   assert.deepEqual(calls.filter(call => call.method.startsWith('getHistory')), [
-    { method: 'getHistory', args: [] },
+    { method: 'getHistoryPage', args: [{ cursor: null }] },
+    { method: 'getHistoryActive', args: [] },
     { method: 'getHistoryDelta', args: [{ since: '2026-09-21T10:00:00.000Z', before: '2026-09-21T10:00:05.000Z', activeIds: [] }] },
   ]);
+  const older = await fetch(base + '/api/workspace/history?cursor=older-cursor').then(response => response.json()).then(body => body.result);
+  assert.deepEqual(older.records.map(item => item.id), ['first']);
 });
 async function directory() {
   const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });

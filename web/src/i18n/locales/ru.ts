@@ -262,6 +262,8 @@ export const ru = {
   'history.back': 'К генерации',
   'history.completed': 'Завершённые',
   'history.empty': 'Завершённые результаты появятся здесь.',
+  'history.loadMore': 'Загрузить старые записи',
+  'history.loading': 'Загрузка…',
   'history.recordContent': 'СОДЕРЖИМОЕ ЗАПИСИ',
   'history.prompt': 'Промпт',
   'history.result': 'Результат',

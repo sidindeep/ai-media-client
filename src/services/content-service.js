@@ -41,8 +41,9 @@ async function streamHash(stream) {
   return { size, sha256: hash.digest('hex') };
 }
 
-async function createContentService({ pool, storage, dataDirectory, fetchImpl = fetch, onChange = () => {}, interval = 1000 }) {
+async function createContentService({ pool, storage, dataDirectory, fetchImpl = fetch, onChange = () => {}, interval = 1000, concurrency = 3, background = true }) {
   if (!pool || !storage) return null;
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) throw new Error('Некорректная параллельность сохранения');
   const stagingDirectory = path.join(dataDirectory, 'content-staging');
   await fs.mkdir(stagingDirectory, { recursive: true });
   const workerFile = path.join(dataDirectory, 'content-worker-id');
@@ -55,14 +56,16 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     catch (writeError) { if (writeError.code !== 'EEXIST') throw writeError; workerId = (await fs.readFile(workerFile, 'utf8')).trim(); }
   }
   if (!UUID.test(workerId)) throw new Error('Некорректный идентификатор исполнителя контента');
-  await pool.query("UPDATE content_jobs SET state='retry',locked_at=NULL,locked_by=NULL,next_attempt_at=now(),updated_at=now() WHERE state='processing' AND locked_by=$1", [workerId]);
-  await pool.query("UPDATE content_jobs SET source='{\"type\":\"stored\"}'::jsonb,updated_at=now() WHERE state='done' AND source<>(jsonb_build_object('type','stored'))");
+  if (background) {
+    await pool.query("UPDATE content_jobs SET state='retry',locked_at=NULL,locked_by=NULL,next_attempt_at=now(),updated_at=now() WHERE state='processing' AND locked_by=$1", [workerId]);
+    await pool.query("UPDATE content_jobs SET source='{\"type\":\"stored\"}'::jsonb,updated_at=now() WHERE state='done' AND source<>(jsonb_build_object('type','stored'))");
+  }
 
-  let timer = null, running = false, closed = false;
+  let timer = null, claiming = false, activeJobs = 0, wakePending = false, closed = false;
   const stagePath = assetId => path.join(stagingDirectory, `${assetId}.stage`);
   const key = (accountId, assetId) => `accounts/${accountId}/content/${assetId}`;
   const schedule = (delay = 0) => {
-    if (closed || timer) return;
+    if (!background || closed || timer) return;
     timer = setTimeout(() => { timer = null; void tick(); }, delay);
     timer.unref?.();
   };
@@ -81,7 +84,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     return publicAsset(await row(accountId, assetId));
   }
   async function createFromBuffer(accountId, { bytes, name, type, origin = {} }) {
-    const body = Buffer.from(bytes || []);
+    const body = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
     if (!body.length) throw new Error('Исходный файл пуст');
     if (!TYPES.test(type || '')) throw new Error('Этот тип контента не поддерживается');
     const assetId = randomUUID(), filename = stagePath(assetId);
@@ -89,6 +92,24 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     const sha256 = createHash('sha256').update(body).digest('hex');
     try {
       return await insertAsset(accountId, assetId, { name, type, size: body.length, sha256, origin }, {
+        type: 'stage', path: path.relative(dataDirectory, filename).replace(/\\/g, '/'), workerId,
+      });
+    } catch (error) { await fs.unlink(filename).catch(() => {}); throw error; }
+  }
+  async function createFromStream(accountId, { stream, name, type, origin = {}, limit }) {
+    if (!TYPES.test(type || '')) throw new Error('Этот тип контента не поддерживается');
+    const assetId = randomUUID(), filename = stagePath(assetId);
+    const hash = createHash('sha256'); let size = 0;
+    const meter = new Transform({ transform(chunk, _encoding, callback) {
+      size += chunk.length;
+      if (size > limit) return callback(new Error('Файл или запрос слишком большой'));
+      hash.update(chunk);
+      callback(null, chunk);
+    } });
+    try {
+      await pipeline(stream, meter, createWriteStream(filename, { flags: 'wx', mode: 0o600 }));
+      if (!size) throw new Error('Исходный файл пуст');
+      return await insertAsset(accountId, assetId, { name, type, size, sha256: hash.digest('hex'), origin }, {
         type: 'stage', path: path.relative(dataDirectory, filename).replace(/\\/g, '/'), workerId,
       });
     } catch (error) { await fs.unlink(filename).catch(() => {}); throw error; }
@@ -170,14 +191,26 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     }
   }
   async function tick() {
-    if (running || closed) return;
-    running = true;
-    try { for (let job; (job = await claim());) await processJob(job); }
+    if (closed) return;
+    if (claiming) { wakePending = true; return; }
+    claiming = true;
+    try {
+      while (!closed && activeJobs < concurrency) {
+        const job = await claim();
+        if (!job) break;
+        activeJobs++;
+        void processJob(job).catch(() => {}).finally(() => { activeJobs--; schedule(); });
+      }
+    }
     finally {
-      running = false;
-      if (!closed) {
-        const pending = Number((await pool.query("SELECT count(*) AS count FROM content_jobs WHERE state IN ('pending','retry')")).rows[0]?.count || 0);
-        if (pending) schedule(interval);
+      try {
+        if (!closed) {
+          const pending = Number((await pool.query("SELECT count(*) AS count FROM content_jobs WHERE state IN ('pending','retry')")).rows[0]?.count || 0);
+          if (pending) schedule(interval);
+        }
+      } finally {
+        claiming = false;
+        if (wakePending) { wakePending = false; schedule(); }
       }
     }
   }
@@ -189,7 +222,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
       if (!asset) throw Object.assign(new Error('Файл не найден'), { status: 404 });
       if (asset.status === 'ready') return publicAsset(asset);
       if (['failed', 'missing'].includes(asset.status)) throw new Error(asset.error || 'Файл не сохранён');
-      await new Promise(resolve => setTimeout(resolve, 25));
+      await new Promise(resolve => setTimeout(resolve, 250));
     }
     throw new Error('Сохранение файла ещё не завершено');
   }
@@ -226,14 +259,21 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
   }
   schedule();
   return {
-    workerId, createFromBuffer, createFromUrl, register, link, wait, file, read, retry,
+    workerId, createFromBuffer, createFromStream, createFromUrl, register, link, wait, file, read, retry,
     get: async (accountId, assetId) => publicAsset(await row(accountId, assetId)),
+    getMany: async (accountId, assetIds) => {
+      if (!assetIds.length) return new Map();
+      const ids = [...new Set(assetIds.filter(id => UUID.test(String(id || ''))))];
+      if (!ids.length) return new Map();
+      const rows = (await pool.query('SELECT * FROM content_assets WHERE account_id=$1 AND id=ANY($2::uuid[])', [accountId, ids])).rows;
+      return new Map(rows.map(item => [item.id, publicAsset(item)]));
+    },
     links: async (accountId, namespace, recordId, role) => (await pool.query(`SELECT l.role,l.position,a.* FROM content_links l
       JOIN content_assets a ON a.account_id=l.account_id AND a.id=l.asset_id
       WHERE l.account_id=$1 AND l.namespace=$2 AND l.record_id=$3 AND ($4::text IS NULL OR l.role=$4)
       ORDER BY l.position`, [accountId, namespace, recordId, role || null])).rows.map(item => ({ ...publicAsset(item), role: item.role, position: item.position })),
     list: async accountId => (await pool.query('SELECT * FROM content_assets WHERE account_id=$1 ORDER BY created_at DESC', [accountId])).rows.map(publicAsset),
-    close: async () => { closed = true; if (timer) clearTimeout(timer); while (running) await new Promise(resolve => setTimeout(resolve, 10)); },
+    close: async () => { closed = true; if (timer) clearTimeout(timer); while (claiming || activeJobs) await new Promise(resolve => setTimeout(resolve, 10)); },
   };
 }
 

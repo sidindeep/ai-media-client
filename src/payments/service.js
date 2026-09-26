@@ -39,11 +39,19 @@ function createPayments({ pool, provider, onEvent }) {
   }
 
   async function deliver(limit = 20) {
-    const rows = (await pool.query(`SELECT * FROM payment_outbox WHERE delivered_at IS NULL AND next_attempt_at<=now()
-      ORDER BY created_at LIMIT $1`, [limit])).rows;
+    const token = randomUUID();
+    const rows = (await pool.query(`WITH ready AS (
+      SELECT event_id FROM payment_outbox WHERE delivered_at IS NULL AND next_attempt_at<=now()
+        AND (leased_until IS NULL OR leased_until<=now())
+      ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $1
+    ) UPDATE payment_outbox o SET lease_token=$2,leased_until=now()+interval '30 seconds'
+      FROM ready WHERE o.event_id=ready.event_id RETURNING o.*`, [limit, token])).rows;
     for (const row of rows) {
-      try { await onEvent?.(row.payload); await pool.query('UPDATE payment_outbox SET delivered_at=now(),attempts=attempts+1 WHERE event_id=$1 AND delivered_at IS NULL', [row.event_id]); }
-      catch (error) { await pool.query(`UPDATE payment_outbox SET attempts=attempts+1,last_error=$2,next_attempt_at=now()+interval '5 seconds' WHERE event_id=$1`, [row.event_id, String(error?.code || error?.message || 'DELIVERY_FAILED').slice(0, 200)]); }
+      try { await onEvent?.(row.payload); await pool.query(`UPDATE payment_outbox SET delivered_at=now(),attempts=attempts+1,
+        lease_token=NULL,leased_until=NULL WHERE event_id=$1 AND lease_token=$2 AND leased_until>now() AND delivered_at IS NULL`, [row.event_id, token]); }
+      catch (error) { await pool.query(`UPDATE payment_outbox SET attempts=attempts+1,last_error=$3,
+        next_attempt_at=now()+interval '5 seconds',lease_token=NULL,leased_until=NULL WHERE event_id=$1 AND lease_token=$2`,
+      [row.event_id, token, String(error?.code || error?.message || 'DELIVERY_FAILED').slice(0, 200)]); }
     }
   }
 

@@ -31,14 +31,21 @@ async function entry(client, accountId, kind, reference, amount, actor = null, n
   await client.query('INSERT INTO media_ledger(id,account_id,kind,reference,amount,actor_id,note,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
     [randomUUID(), accountId, kind, reference, amount, actor, note, JSON.stringify(details)]);
 }
-async function reserve(client, accountId, jobId, quote) {
+async function reserve(client, accountId, jobId, quote, lockedWallet = null) {
   const amount = units(quote.amountUnits);
   if (!amount) throw new Error('Цена не опубликована');
-  const wallet = await lockWallet(client, accountId);
+  const wallet = lockedWallet || await lockWallet(client, accountId);
   if (wallet.balance - wallet.held < amount) throw new Error('Недостаточно кредитов на счёте');
-  await client.query('UPDATE media_wallets SET held=held+$2 WHERE account_id=$1', [accountId, amount]);
-  await client.query("INSERT INTO media_reservations(job_id,account_id,amount,price_version,state) VALUES($1,$2,$3,$4,'held')", [jobId, accountId, amount, quote.version]);
-  await entry(client, accountId, 'reserve', jobId, amount);
+  const stored = await client.query(`WITH wallet AS (
+      UPDATE media_wallets SET held=held+$2 WHERE account_id=$1 AND balance-held >= $2 RETURNING account_id
+    ), reservation AS (
+      INSERT INTO media_reservations(job_id,account_id,amount,price_version,state)
+      SELECT $3,account_id,$2,$4,'held' FROM wallet RETURNING account_id
+    )
+    INSERT INTO media_ledger(id,account_id,kind,reference,amount)
+    SELECT $5,account_id,'reserve',$3,$2 FROM reservation RETURNING id`,
+  [accountId, amount, jobId, quote.version, randomUUID()]);
+  if (!stored.rowCount) throw new Error('Недостаточно кредитов на счёте');
 }
 // Called in the SAME transaction that persists the terminal job state.
 async function settle(client, accountId, jobId, state, record, actualAmountUnits) {

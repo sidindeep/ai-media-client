@@ -9,7 +9,7 @@ type GenerationMode = 'text' | 'image' | 'video' | 'audio';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
 const ACTIVE_STATES = ['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'running'] as const;
 const COMPLETED_STATES = ['success', 'fail', 'blocked', 'cancelled', 'unknown', 'unconfirmed'] as const;
-const CODEX_POLL_STATES = new Set(['submitting', 'generating', 'running']);
+const CODEX_POLL_STATES = new Set(['queued', 'submitting', 'generating', 'running']);
 const CODEX_POLL_INTERVAL_MS = 1500;
 const MEDIA_POLL_STATES = new Set(['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating']);
 const MEDIA_POLL_INTERVAL_MS = 2500;
@@ -23,6 +23,9 @@ export const useStudioStore = defineStore('studio', () => {
   const routerAiCatalog = ref<RouterAiCatalog | null>(null);
   const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
+  const historyNext = ref<string | null>(null);
+  const historyLoading = ref(false);
+  const unassignedCount = ref(0);
   const pendingSubmissions = ref<GenerationRecord[]>([]);
   const presets = ref<GenerationPreset[]>([]);
   const selectedPresetId = ref<string | null>(null);
@@ -66,6 +69,7 @@ export const useStudioStore = defineStore('studio', () => {
   let syncCursor: string | null = null;
   let syncInFlight: Promise<void> | null = null;
   let syncAgain = false;
+  let preserveNextFullHistory = false;
   let workspaceSelectionRestored = false;
 
   function resetStartupTimings() {
@@ -87,7 +91,7 @@ export const useStudioStore = defineStore('studio', () => {
   let startupPollTimer: ReturnType<typeof setTimeout> | undefined;
   let startupPollInFlight = false;
 
-  const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: t('navigation.unassigned'), mode: 'system', projectId: null, context: {}, materialCount: history.value.filter(item => !item.chatId).length }));
+  const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: t('navigation.unassigned'), mode: 'system', projectId: null, context: {}, materialCount: unassignedCount.value }));
   function recordIsVisible(item: GenerationRecord) {
     if (activeChatId.value !== 'system:recent') return item.chatId === activeChatId.value;
     return !item.chatId && (!activeProjectId.value || item.projectId === activeProjectId.value);
@@ -147,17 +151,10 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function recomputeWorkspaceCounts() {
-    const chatMaterials = new Map<string, number>();
-    const projectMaterials = new Map<string, number>();
-    for (const record of history.value) {
-      if (record.chatId) chatMaterials.set(record.chatId, (chatMaterials.get(record.chatId) || 0) + 1);
-      if (record.projectId) projectMaterials.set(record.projectId, (projectMaterials.get(record.projectId) || 0) + 1);
-    }
-    chats.value = chats.value.map(chat => ({ ...chat, materialCount: chatMaterials.get(chat.id) || 0 }));
+    // The server counts all stored records; a paged browser snapshot does not.
     projects.value = projects.value.map(project => ({
       ...project,
       chatCount: chats.value.filter(chat => chat.projectId === project.id).length,
-      materialCount: projectMaterials.get(project.id) || 0,
     }));
   }
 
@@ -221,8 +218,13 @@ export const useStudioStore = defineStore('studio', () => {
   function applyWorkspaceSync(snapshot: Awaited<ReturnType<typeof api.getWorkspaceSync>>) {
     syncCursor = snapshot.cursor;
     queue.value = snapshot.queue;
-    history.value = mergeGenerationRecords(history.value, snapshot.records, snapshot.full)
+    if (snapshot.full) {
+      if (!preserveNextFullHistory) historyNext.value = snapshot.historyNext ?? null;
+      unassignedCount.value = snapshot.unassignedCount ?? 0;
+    }
+    history.value = mergeGenerationRecords(history.value, snapshot.records, snapshot.full && !preserveNextFullHistory)
       .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')) || left.id.localeCompare(right.id));
+    if (snapshot.full) preserveNextFullHistory = false;
     reconcilePending();
     const nextProjects = snapshot.full ? snapshot.projects : mergeById(projects.value, snapshot.projects);
     const nextChats = snapshot.full ? snapshot.chats : mergeById(chats.value, snapshot.chats);
@@ -262,10 +264,22 @@ export const useStudioStore = defineStore('studio', () => {
     try { await syncInFlight; } finally { syncInFlight = null; }
   }
 
-  async function refreshFull() {
+  async function refreshFull(preserveOlder = true) {
     if (syncInFlight) await syncInFlight.catch(() => {});
+    preserveNextFullHistory = preserveOlder && history.value.length > 0;
     syncCursor = null;
     await refresh();
+  }
+  async function loadOlderHistory() {
+    const cursor = historyNext.value;
+    if (!cursor || historyLoading.value) return;
+    historyLoading.value = true;
+    try {
+      const page = await api.getHistoryPage(cursor);
+      history.value = mergeGenerationRecords(history.value, page.records)
+        .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')) || left.id.localeCompare(right.id));
+      historyNext.value = page.next;
+    } finally { historyLoading.value = false; }
   }
 
   async function refreshAccess() {
@@ -523,6 +537,7 @@ export const useStudioStore = defineStore('studio', () => {
   async function loadAccountState() {
     loading.value = true;
     error.value = '';
+    history.value = []; historyNext.value = null; preserveNextFullHistory = false;
     if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
       [catalog.value, codexCatalog.value, routerAiCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
@@ -726,13 +741,13 @@ export const useStudioStore = defineStore('studio', () => {
   async function remove(id: string) {
     await api.removeQueued(id);
     if (selectedId.value === id) selectedId.value = null;
-    await refreshFull();
+    await refreshFull(false);
   }
 
   async function clearWaiting() {
     await api.clearQueue();
     if (selectedId.value && accountActive.value.some(item => item.id === selectedId.value && !['codex', 'routerai'].includes(item.providerId))) selectedId.value = null;
-    await refreshFull();
+    await refreshFull(false);
   }
 
   function prepareFrom(record: GenerationRecord) {
@@ -766,7 +781,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, routerAiCatalog, release, history, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, routerAiCatalog, release, history, historyNext, historyLoading, loadOlderHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
     codexModel, routerAiModel, routerAiModels, currentRouterAiModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,

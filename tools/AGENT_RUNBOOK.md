@@ -20,6 +20,7 @@
 | Docker сборка и запуск | docker compose up -d --build |
 | Подготовить новую заливку | pnpm release:bump |
 | Docker состояние | docker compose ps |
+| Нагрузка на один отдельный Compose без генераций | [tools/load-test/README.md](load-test/README.md) |
 | Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
 | Зарегистрировать и перенести legacy-контент в каталог/S3 | pnpm migrate:content |
 | Сверить каталог контента с S3 без удаления | pnpm audit:content |

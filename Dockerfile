@@ -20,7 +20,7 @@ USER node
 ENV MEDIA_HOST=0.0.0.0 MEDIA_CODEX_EMBEDDED=true CODEX_HOME=/app/data/codex-auth MEDIA_KIE_BROWSER_EMBEDDED=true
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD node -e "fetch('http://127.0.0.1:'+(process.env.MEDIA_PORT||process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["sh", "-c", "mkdir -p \"${MEDIA_DATA_DIR:-data/service}\" && exec flock -F -n -E 73 \"${MEDIA_DATA_DIR:-data/service}/service.lock\" env MEDIA_LOCK_HELD_BY_FLOCK=1 node server.js"]
+CMD ["sh", "-c", "mkdir -p \"${MEDIA_DATA_DIR:-data/service}\" && if [ \"${MEDIA_REPLICA_ROLE:-single}\" = web ]; then exec node server.js; else exec flock -F -n -E 73 \"${MEDIA_DATA_DIR:-data/service}/service.lock\" env MEDIA_LOCK_HELD_BY_FLOCK=1 node server.js; fi"]
 
 FROM node:24-bookworm-slim AS test
 WORKDIR /app
@@ -36,6 +36,7 @@ COPY scripts/resolve-git-commit.cjs ./scripts/
 COPY .git /tmp/media-git
 RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 COPY test ./test
+COPY tools/load-test/codex-memory.cjs ./tools/load-test/
 CMD ["node", "--test", "test/*.test.js"]
 
 FROM runtime AS production

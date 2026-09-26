@@ -1,0 +1,11 @@
+services:
+  media:
+    environment:
+      MEDIA_LOCK_HELD_BY_FLOCK: '1'
+      FAKE_KIE_REJECT_FIRST_EVERY: ${FAKE_KIE_REJECT_FIRST_EVERY:-0}
+    command:
+      - sh
+      - -c
+      - exec flock -F -n -E 73 data/load-test-service/service.lock node /app/load-test-server.cjs
+    volumes:
+      - ./tools/load-test/server.cjs:/app/load-test-server.cjs:ro

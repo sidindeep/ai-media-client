@@ -7,6 +7,7 @@ const { resolvePriceSources } = require('../billing/price-sources');
 const { appendGenerationEvent } = require('./generation-journal');
 const { createCreditConversion } = require('../billing/conversion');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
+const { submissionDecision, createStoredRetry } = require('./submission-control');
 const catalog = require('../../config/routerai-models.json');
 
 function invalid(message) { return Object.assign(new Error(message), { status: 400 }); }
@@ -46,7 +47,8 @@ function validateRouterAiRequest(raw, models = catalog.models) {
     ...(raw.projectId ? { projectId: raw.projectId } : {}), ...(raw.chatId ? { chatId: raw.chatId } : {}) };
 }
 
-function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFetcher, accountQuote, documentedQuote }) {
+function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFetcher, accountQuote, documentedQuote,
+  retryDelayMs = 10_000 }) {
   const client = createRouterAiClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
   const id = (account, requestId) => `routerai:${account}:${requestId}`;
   const conversion = accounts.conversion || createCreditConversion();
@@ -85,7 +87,10 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       return next;
     });
   }
+  const retries = createStoredRetry({ pool: accounts.pool, namespace: 'routerai', jobId: id,
+    activeState: 'running', retryDelayMs, dispatch: process });
   async function process(account, request) {
+    let submissionAccepted = false;
     try {
       await appendGenerationEvent(accounts.pool, account, 'routerai', request, 'send_start');
       if (request.kind === 'api') {
@@ -96,6 +101,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
           payload.input_audio = { ...payload.input_audio, data: bytes.toString('base64') };
         }
         const result = await client.raw(request.endpoint, { ...payload, model: request.model });
+        submissionAccepted = true;
         if (request.endpoint === 'videos') {
           const providerVideoId = result.type === 'json' && typeof result.data?.id === 'string' ? result.data.id : null;
           if (!providerVideoId) throw new Error('RouterAI не вернул ID видеозадачи');
@@ -146,6 +152,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       }
       if (request.kind === 'text') {
         const result = await client.chatCompletion({ model: request.model, messages: [{ role: 'user', content: request.prompt }] });
+        submissionAccepted = true;
         const output = result?.choices?.[0]?.message?.content;
         if (typeof output !== 'string' || !output.trim()) throw new Error('Пустой ответ RouterAI');
         return finish(account, request.requestId, { state: 'success', output, usage: result.usage || null,
@@ -155,6 +162,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
         ? await client.chatCompletion({ model: request.model, messages: [{ role: 'user', content: request.prompt }], modalities: ['image', 'text'] })
         : await client.generateImage({ model: request.model, prompt: request.prompt, n: 1,
           ...(request.outputFormat === 'svg' ? { output_format: 'svg' } : {}) });
+      submissionAccepted = true;
       const source = request.endpoint === 'chat/completions' ? result?.choices?.[0]?.message?.images?.[0]?.image_url?.url : result?.data?.[0]?.b64_json;
       const encoded = typeof source === 'string' ? source.replace(/^data:image\/[a-z+.-]+;base64,/, '') : null;
       if (typeof encoded !== 'string' || encoded.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('Изображение RouterAI не получено');
@@ -173,8 +181,10 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
         usage: result.usage || null, providerCostRub: typeof result.usage?.cost === 'number' ? result.usage.cost : null });
     } catch (error) {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(error.status);
-      return finish(account, request.requestId, { state: rejected ? 'fail' : 'unknown',
-        error: rejected ? error.message : request.nativeQuote?.amountUnits == null
+      const decision = submissionDecision({ status: error.status, rejected, accepted: submissionAccepted });
+      if (decision === 'retry') return retries.defer(account, request.requestId, error);
+      return finish(account, request.requestId, { state: decision === 'fail' ? 'fail' : 'unknown',
+        error: decision === 'fail' ? error.message : request.nativeQuote?.amountUnits == null
           ? 'Результат RouterAI требует проверки.' : 'Результат RouterAI требует проверки. Резерв кредитов сохранён.' });
     }
   }
@@ -238,11 +248,15 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
   }
   return { quote, submit, submitAdmin, adminVideo, get,
     async recover() {
-      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='routerai' AND data->>'state'='running'")).rows;
-      for (const row of rows) await finish(row.account_id, row.data.id, { state: 'unknown', error: row.data.nativeQuote?.amountUnits == null
+      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='routerai' AND data->>'state' IN ('running','queued')")).rows;
+      for (const row of rows) {
+        if (row.data.state === 'queued') { retries.recover(row.account_id, row.data); continue; }
+        await finish(row.account_id, row.data.id, { state: 'unknown', error: row.data.nativeQuote?.amountUnits == null
         ? 'Сервис перезапущен во время запроса RouterAI. Результат требует проверки.'
         : 'Сервис перезапущен во время запроса RouterAI. Резерв сохранён до проверки.' });
+      }
     },
+    close: () => retries.close(),
     async image(account, requestId) {
       const job = await get(account, requestId);
       if (job?.state !== 'success' || !job.contentAssetId) throw Object.assign(new Error('Изображение не найдено'), { status: 404 });

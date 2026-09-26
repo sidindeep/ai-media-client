@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 const { Assets } = require('../src/assets');
 
 test('concurrent generations share one provider upload for the same source', async t => {
@@ -40,4 +41,16 @@ test('assets use a tenant-scoped object key when shared storage is enabled', asy
   assert.equal(assets.key(id), `accounts/account-1/sources/${id}`);
   assert.equal(objects.get(assets.key(id)).type, 'image/png');
   assert.deepEqual(await assets.resolve({ image: saved.ref }, [saved], async file => file.bytes.toString()), { image: 'shared-image' });
+});
+test('local source stream uses a bounded temporary file and cleans up aborted input', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-media-stream-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const assets = new Assets(directory);
+  const saved = await assets.save({ stream: Readable.from([Buffer.from('first'), Buffer.from('second')]),
+    limit: 11, name: '../source.png', type: 'image/png' });
+  assert.equal(saved.size, 11);
+  assert.equal((await assets.readRef(saved.ref)).toString(), 'firstsecond');
+  await assert.rejects(assets.save({ stream: Readable.from([Buffer.alloc(12)]), limit: 11,
+    name: 'large.png', type: 'image/png' }), /слишком большой/);
+  assert.equal((await fs.readdir(directory)).filter(name => name.endsWith('.part')).length, 0);
 });

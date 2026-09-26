@@ -13,6 +13,7 @@ services:
     environment:
       MEDIA_HOST: 0.0.0.0
       MEDIA_PORT: 3000
+      MEDIA_REPLICA_ROLE: executor
       MEDIA_DATA_DIR: data/service
       MEDIA_CODEX_URL: http://codex:3210
       MEDIA_CODEX_EMBEDDED: 'false'
@@ -25,6 +26,34 @@ services:
       - ./data/service:/app/data/service
     stop_grace_period: 60s
     networks: [default, codex-link]
+  media-web:
+    profiles: [replicas]
+    build: .
+    image: ai-media-web-tg:local
+    restart: unless-stopped
+    init: true
+    depends_on:
+      media:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MEDIA_HOST: 0.0.0.0
+      MEDIA_PORT: 3000
+      MEDIA_REPLICA_ROLE: web
+      MEDIA_EXECUTOR_URL: http://media:3000
+      MEDIA_PUBLIC_ORIGIN: ${MEDIA_WEB_PUBLIC_ORIGIN:-http://127.0.0.1:3002}
+      MEDIA_EXECUTOR_PUBLIC_ORIGIN: ${MEDIA_PUBLIC_ORIGIN:-http://127.0.0.1:3000}
+      MEDIA_DATA_DIR: data/service
+      MEDIA_DB_POOL_MAX: ${MEDIA_WEB_DB_POOL_MAX:-2}
+      MEDIA_CODEX_EMBEDDED: 'false'
+      MEDIA_KIE_BROWSER_EMBEDDED: 'false'
+    ports:
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - ./data/service:/app/data/service
+    stop_grace_period: 60s
+    networks: [default]
   kie-browser:
     image: jlesage/chromium@sha256:e42de7469bce122b8a69d4f62101850ece45c41ed7ed952f2b506f99947093ae
     restart: unless-stopped
@@ -50,6 +79,8 @@ services:
       MEDIA_CODEX_POOL_SIZE: ${MEDIA_CODEX_POOL_SIZE:-2}
       MEDIA_CODEX_PROCESS_CONCURRENCY: ${MEDIA_CODEX_PROCESS_CONCURRENCY:-128}
       MEDIA_CODEX_RPC_TIMEOUT_MS: ${MEDIA_CODEX_RPC_TIMEOUT_MS:-60000}
+      MEDIA_CODEX_RESULT_DIR: /worker/results
+      MEDIA_CODEX_MAX_PENDING_JOBS: ${MEDIA_CODEX_MAX_PENDING_JOBS:-256}
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -57,6 +88,7 @@ services:
       - /tmp:rw,nosuid,nodev,size=256m,mode=1777
     volumes:
       - codex-auth:/home/node/.codex
+      - ./data/codex-results:/worker/results
     networks: [codex-link]
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3210/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

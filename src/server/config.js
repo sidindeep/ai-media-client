@@ -9,6 +9,18 @@ function integer(value, fallback, min, max) {
 function loadConfig(env = process.env) {
   const host = env.MEDIA_HOST || '127.0.0.1';
   const port = integer(env.MEDIA_PORT || env.PORT, 3000, 0, 65535);
+  const replicaRole = env.MEDIA_REPLICA_ROLE || 'single';
+  if (!['single', 'executor', 'web'].includes(replicaRole)) throw new Error('Неизвестная роль реплики');
+  let executorUrl = null;
+  if (replicaRole === 'web') {
+    if (!env.MEDIA_EXECUTOR_URL) throw new Error('Для web-реплики нужен MEDIA_EXECUTOR_URL');
+    executorUrl = new URL(env.MEDIA_EXECUTOR_URL);
+    if (!['http:', 'https:'].includes(executorUrl.protocol) || executorUrl.username || executorUrl.password
+      || executorUrl.pathname !== '/' || executorUrl.search || executorUrl.hash) throw new Error('MEDIA_EXECUTOR_URL должен быть origin владельца исполнения');
+  }
+  const executorPublicOrigin = env.MEDIA_EXECUTOR_PUBLIC_ORIGIN || env.MEDIA_PUBLIC_ORIGIN || executorUrl?.origin || '';
+  if (replicaRole === 'web' && (!['http:', 'https:'].includes(new URL(executorPublicOrigin).protocol)
+    || new URL(executorPublicOrigin).origin !== executorPublicOrigin)) throw new Error('MEDIA_EXECUTOR_PUBLIC_ORIGIN должен быть origin владельца');
   const dataDirectory = path.resolve(root, env.MEDIA_DATA_DIR || 'data/service');
   const relative = path.relative(root, dataDirectory);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('MEDIA_DATA_DIR должен быть внутри проекта');
@@ -58,8 +70,10 @@ function loadConfig(env = process.env) {
   if (paymentProvider === 'yookassa-stub' && paymentEnvironment !== 'test') throw new Error('Заглушка ЮKassa доступна только в test');
   if (env.MEDIA_SALES_ENABLED === 'true' && env.MEDIA_PAYMENTS_ENABLED !== 'true') throw new Error('Продажи нельзя включить без платёжного модуля');
   return {
-    root, host, port, dataDirectory, kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
+    root, host, port, dataDirectory, replicaRole, executorUrl: executorUrl?.origin || '', executorPublicOrigin,
+    kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
     uploadLimit: integer(env.MEDIA_UPLOAD_LIMIT_MB, 64, 1, 512) * 1024 * 1024,
+    uploadInFlightLimit: integer(env.MEDIA_UPLOAD_INFLIGHT_MB, 256, 1, 4096) * 1024 * 1024,
     telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',
     rubPerCredit, pricing, starterPack,
@@ -77,7 +91,10 @@ function loadConfig(env = process.env) {
     },
     codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
       embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },
-    database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1' },
+    database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1',
+      poolMax: integer(env.MEDIA_DB_POOL_MAX, 5, 1, 30) },
+    sse: { maxConnections: integer(env.MEDIA_SSE_MAX_CONNECTIONS, 100, 1, 1000),
+      maxPerAccount: integer(env.MEDIA_SSE_MAX_PER_ACCOUNT, 8, 1, 100) },
     storage: {
       enabled: storageDriver === 's3', driver: storageDriver,
       endpoint: env.MEDIA_S3_ENDPOINT || '', bucket: env.MEDIA_S3_BUCKET || '', region: env.MEDIA_S3_REGION || 'ru-1',

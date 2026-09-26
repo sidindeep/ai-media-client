@@ -1166,5 +1166,11 @@ window.aiMediaEnglish = {
   "НОВАЯ ГЕНЕРАЦИЯ": "NEW GENERATION",
   "Ошибка": "Error",
   "Политика обработки персональных данных": "Personal Data Processing Policy",
-  "Пользовательское соглашение": "User Agreement"
+  "Пользовательское соглашение": "User Agreement",
+  "Риски расчётов": "Billing risks",
+  "Сопоставление резерва клиента, отправки задачи и известных данных о расходе поставщика. Это сигналы для проверки: фактическое списание подтвердите в детализации поставщика.": "Compare the customer reserve, task submission, and known provider charges. These are signals for review; confirm actual charges in the provider statement.",
+  "Поставщик": "Provider",
+  "Клиент или ID задачи": "Customer or task ID",
+  "Задачи для проверки": "Tasks to review",
+  "Поиск": "Search"
 };

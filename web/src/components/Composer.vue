@@ -621,7 +621,7 @@ async function submit(event?: Event) {
               :class="{ active: activeDropFieldKey === field.key }"
               @dragenter.prevent="activeDropFieldKey = field.key"
               @dragleave="activeDropFieldKey = ''"
-              @dragover.prevent
+              @dragover.prevent="activeDropFieldKey = field.key"
               @drop="dropIntoField($event, field)"
             >
               <strong>{{ field.label || field.key }}</strong>

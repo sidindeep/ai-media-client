@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { transaction } = require('../database/database');
+const { createWorkspaceDeletions } = require('./workspace-deletions');
 
 function bad(message, status = 400) { return Object.assign(new Error(message), { status }); }
 function cleanName(value) {
@@ -43,7 +44,8 @@ async function ensureDefaultChatRow(client, accountId, projectId = null) {
   return chatId;
 }
 
-function createWorkspaces(pool) {
+function createWorkspaces(pool, options) {
+  const deletions = createWorkspaceDeletions(pool, options);
   async function projectRow(accountId, projectId, lock = false) {
     const result = await pool.query(`SELECT p.*, count(DISTINCT c.id)::int AS chat_count,
       (SELECT count(*) FROM media_records r WHERE r.account_id=p.account_id AND r.data->>'projectId'=p.id::text)::int AS material_count
@@ -170,13 +172,14 @@ function createWorkspaces(pool) {
       await pool.query('UPDATE media_chats SET archived_at=NULL,updated_at=now() WHERE account_id=$1 AND id=$2', [accountId, cid]);
       return chat(await chatRow(accountId, cid));
     },
+    deleteChat: deletions.deleteChat,
     async getChat(accountId, chatId) {
       const row = await chatRow(accountId, id(chatId, 'Чат'));
       const records = (await pool.query(`SELECT namespace,data FROM media_records WHERE account_id=$1 AND data->>'chatId'=$2 ORDER BY updated_at DESC,id LIMIT 200`, [accountId, chatId])).rows;
       return { ...chat(row), records: records.map(item => publicMaterial(item.data, item.namespace)) };
     },
     assertBinding,
-    async close() {}
+    close: deletions.close
   };
 }
 module.exports = { createWorkspaces, ensureDefaultChatRow };

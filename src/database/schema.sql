@@ -300,3 +300,25 @@ ALTER TABLE media_ledger ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT
 CREATE INDEX IF NOT EXISTS media_records_account_record ON media_records(account_id,id);
 INSERT INTO media_schema_versions(version) VALUES (7) ON CONFLICT DO NOTHING;
 INSERT INTO media_schema_versions(version) VALUES (8) ON CONFLICT DO NOTHING;
+
+-- Files are removed after the chat deletion commits; failed cleanup is retried.
+CREATE TABLE IF NOT EXISTS media_file_deletions (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES media_accounts(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('object','local')),
+  locator text NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,kind,locator)
+);
+CREATE INDEX IF NOT EXISTS media_file_deletions_due ON media_file_deletions(next_attempt_at,created_at);
+CREATE TABLE IF NOT EXISTS media_deleted_chat_records (
+  account_id uuid NOT NULL REFERENCES media_accounts(id) ON DELETE CASCADE,
+  namespace text NOT NULL,
+  id text NOT NULL,
+  chat_id uuid NOT NULL,
+  deleted_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,namespace,id)
+);
+INSERT INTO media_schema_versions(version) VALUES (9) ON CONFLICT DO NOTHING;

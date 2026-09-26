@@ -36,7 +36,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     const operation = services.get(accountId);
     if (operation) (await operation).events.emit('changed');
   } });
-  const pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool);
+  const pricing = createPricing(config.pricing), workspaces = createWorkspaces(pool, { storage, dataDirectory: config.dataDirectory });
   const conversion = createCreditConversion({ offersFile: config.commerce?.offersFile,
     kieRubPerCredit: config.rubPerCredit });
   const routedProvider = createProviderRouter([provider]);

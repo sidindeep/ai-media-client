@@ -33,6 +33,10 @@ class AccountRecords {
       // Consistent wallet -> record lock ordering also serializes first inserts.
       await lockWallet(client, this.accountId);
       const old = (await client.query('SELECT data FROM media_records WHERE account_id=$1 AND namespace=$2 AND id=$3 FOR UPDATE', [this.accountId, this.namespace, id])).rows[0]?.data;
+      if (!old && this.namespace === 'history') {
+        const deleted = (await client.query('SELECT 1 FROM media_deleted_chat_records WHERE account_id=$1 AND namespace=$2 AND id=$3', [this.accountId, this.namespace, id])).rows[0];
+        if (deleted) throw new Error('Удалённый чат недоступен для обновления задачи');
+      }
       if (expectedStates && !expectedStates.includes(old?.state)) throw new Error('Состояние задачи уже изменилось');
       const record = { ...(old || { id }), ...changes, revision: Number(old?.revision || 0) + 1, updatedAt: new Date().toISOString() };
       if (this.namespace === 'history') {

@@ -15,12 +15,13 @@ test('S3 storage scopes commands to the configured private bucket', async () => 
   const storage = createObjectStorage({ enabled: true, bucket: 'private-media' }, client);
   await storage.check();
   await storage.put('accounts/a/source.png', Buffer.from('x'), 'image/png');
+  await storage.remove('accounts/a/source.png');
   assert.deepEqual(await storage.head('accounts/a/source.png'), { size: 3, type: 'image/png' });
   assert.deepEqual(await storage.read('accounts/a/source.png'), Buffer.from([1, 2, 3]));
   assert.equal((await storage.stream('accounts/a/source.png', 'bytes=1-2')).contentRange, 'bytes 1-2/3');
   assert.deepEqual(await storage.list('accounts/a/'), [{ key: 'accounts/a/source.png', size: 3 }]);
   assert.ok(calls.every(call => call.input.Bucket === 'private-media'));
-  assert.deepEqual(calls.map(call => call.name), ['ListObjectsV2Command', 'PutObjectCommand', 'HeadObjectCommand', 'GetObjectCommand', 'GetObjectCommand', 'ListObjectsV2Command']);
+  assert.deepEqual(calls.map(call => call.name), ['ListObjectsV2Command', 'PutObjectCommand', 'DeleteObjectCommand', 'HeadObjectCommand', 'GetObjectCommand', 'GetObjectCommand', 'ListObjectsV2Command']);
 });
 
 test('object storage stays disabled without S3 configuration', () => {

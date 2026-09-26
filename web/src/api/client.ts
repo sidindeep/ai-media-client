@@ -71,6 +71,7 @@ export const renameChat = (id: string, name: string) => workspaceRequest<Chat>(`
 export const moveChat = (id: string, projectId: string | null) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/move`, { method: 'POST', body: JSON.stringify({ projectId }) });
 export const archiveChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/archive`, { method: 'POST', body: '{}' });
 export const restoreChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/restore`, { method: 'POST', body: '{}' });
+export const deleteChat = (id: string) => workspaceRequest<{ id: string; deletedRecords: number }>(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const getChat = (id: string) => workspaceRequest<Chat & { records: GenerationRecord[] }>(`/api/chats/${encodeURIComponent(id)}`);
 export const getWorkspaceSync = (since?: string | null, activeIds: string[] = []) => {
   const query = new URLSearchParams();

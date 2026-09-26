@@ -130,6 +130,8 @@ export const ru = {
   'sidebar.archiveLoading': 'Загрузка архива…',
   'sidebar.archiveEmpty': 'В архиве ничего нет',
   'sidebar.restore': 'Восстановить',
+  'sidebar.deleteForever': 'Удалить навсегда',
+  'sidebar.deleteChatConfirm': 'Удалить чат «{name}» навсегда?\n\nЧат, черновик, история генераций и его собственные файлы будут удалены без возможности восстановления. Общие файлы других чатов и служебные записи о расходах и платежах сохранятся.',
   'sidebar.restoreProjectFirst': 'Восстановите проект перед его чатами',
   'sidebar.noStandaloneChats': 'Отдельных чатов пока нет',
   'sidebar.workspaces': 'Рабочие пространства',

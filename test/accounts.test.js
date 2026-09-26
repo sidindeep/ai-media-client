@@ -134,6 +134,37 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/projects/${project.id}/restore`, 'POST', {}))).archivedAt, null);
   assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${chat.id}/restore`, 'POST', {}))).archivedAt, null);
   assert.ok((await workspaceResult(workspaceRequest(alice, '/api/chats'))).some(item => item.id === chat.id));
+  const doomedChat = await workspaceResult(workspaceRequest(alice, '/api/chats', 'POST', { name: 'На удаление' }));
+  const doomedJob = randomUUID(), doomedAsset = randomUUID(), sharedAsset = randomUUID(), sharedSource = randomUUID();
+  const resultPath = path.join(directory, 'accounts', alice.id, 'results', doomedJob, 'result.png');
+  await fs.mkdir(path.dirname(resultPath), { recursive: true });
+  await fs.writeFile(resultPath, 'test result');
+  await result(rpc(alice, 'saveDrafts', [{ version: 1, tabs: [{ prompt: 'Удаляемый черновик' }] }, { chatId: doomedChat.id }]));
+  await pool.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4)',
+    [alice.id, 'history', doomedJob, JSON.stringify({ id: doomedJob, chatId: doomedChat.id, state: 'queued', localFiles: [{ path: resultPath }] })]);
+  await pool.query("INSERT INTO content_assets(account_id,id,storage_key,original_name,mime_type,status) VALUES($1,$2,$3,'result.png','image/png','ready')",
+    [alice.id, doomedAsset, `accounts/${alice.id}/content/${doomedAsset}`]);
+  await pool.query("INSERT INTO content_links(account_id,namespace,record_id,asset_id,role,position) VALUES($1,'history',$2,$3,'result',0)", [alice.id, doomedJob, doomedAsset]);
+  await pool.query("INSERT INTO content_assets(account_id,id,storage_key,original_name,mime_type,status) VALUES($1,$2,$3,'shared.png','image/png','ready')",
+    [alice.id, sharedAsset, `accounts/${alice.id}/content/${sharedAsset}`]);
+  await pool.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4)', [alice.id, 'sources', sharedSource, '{}']);
+  await pool.query("INSERT INTO content_links(account_id,namespace,record_id,asset_id,role,position) VALUES($1,'history',$2,$3,'source',0)", [alice.id, doomedJob, sharedAsset]);
+  await pool.query("INSERT INTO content_links(account_id,namespace,record_id,asset_id,role,position) VALUES($1,'sources',$2,$3,'source',0)", [alice.id, sharedSource, sharedAsset]);
+  assert.equal((await workspaceRequest(alice, `/api/chats/${doomedChat.id}`, 'DELETE')).status, 409, 'active chats cannot be deleted');
+  await workspaceResult(workspaceRequest(alice, `/api/chats/${doomedChat.id}/archive`, 'POST', {}));
+  assert.equal((await workspaceRequest(alice, `/api/chats/${doomedChat.id}`, 'DELETE')).status, 409, 'unfinished tasks block deletion');
+  await pool.query("UPDATE media_records SET data=jsonb_set(data,'{state}',to_jsonb('success'::text)) WHERE account_id=$1 AND namespace='history' AND id=$2", [alice.id, doomedJob]);
+  assert.equal((await workspaceRequest(bob, `/api/chats/${doomedChat.id}`, 'DELETE')).status, 404);
+  assert.equal((await workspaceResult(workspaceRequest(alice, `/api/chats/${doomedChat.id}`, 'DELETE'))).deletedRecords, 1);
+  assert.equal((await workspaceRequest(alice, `/api/chats/${doomedChat.id}`)).status, 404);
+  assert.equal((await pool.query('SELECT 1 FROM media_records WHERE account_id=$1 AND id=ANY($2::text[])', [alice.id, [doomedJob, `chat:${doomedChat.id}`]])).rows.length, 0);
+  assert.equal((await pool.query('SELECT 1 FROM content_assets WHERE account_id=$1 AND id=$2', [alice.id, doomedAsset])).rows.length, 0);
+  assert.equal((await pool.query('SELECT 1 FROM content_assets WHERE account_id=$1 AND id=$2', [alice.id, sharedAsset])).rows.length, 1, 'shared sources remain available');
+  assert.equal((await pool.query('SELECT 1 FROM media_deleted_chat_records WHERE account_id=$1 AND namespace=$2 AND id=$3', [alice.id, 'history', doomedJob])).rows.length, 1);
+  await assert.rejects(new (require('../src/database/records').AccountRecords)(pool, alice.id, 'history').update(doomedJob, { localFiles: [] }), /Удалённый чат/);
+  assert.equal((await pool.query('SELECT 1 FROM media_file_deletions WHERE account_id=$1 AND kind=$2 AND locator=$3', [alice.id, 'object', `accounts/${alice.id}/content/${doomedAsset}`])).rows.length, 1);
+  for (let attempt = 0; attempt < 30 && await fs.stat(resultPath).then(() => true).catch(() => false); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(await fs.stat(resultPath).then(() => true).catch(() => false), false, 'local result files are removed');
   assert.equal((await request('/api/admin/accounts', { headers: { Cookie: alice.cookie } })).status, 403);
   assert.equal((await request('/api/admin/credit-conversion')).status, 401);
   assert.equal((await request('/api/admin/credit-conversion', { headers: { Cookie: alice.cookie } })).status, 403);

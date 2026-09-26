@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 function createObjectStorage(config, client) {
   if (!config?.enabled) return null;
@@ -16,6 +16,7 @@ function createObjectStorage(config, client) {
       await request(new PutObjectCommand({ Bucket: config.bucket, Key: key, Body: body, ContentType: contentType, ...(Number.isInteger(size) ? { ContentLength: size } : {}) }));
       return key;
     },
+    async remove(key) { await request(new DeleteObjectCommand({ Bucket: config.bucket, Key: key })); },
     async read(key) {
       const result = await request(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
       return Buffer.from(await result.Body.transformToByteArray());

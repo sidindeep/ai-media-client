@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
-import { getChats, getProjects, getProviderStatus, restoreChat as restoreChatRequest, restoreProject as restoreProjectRequest } from '../api/client';
+import { deleteChat as deleteChatRequest, getChats, getProjects, getProviderStatus, restoreChat as restoreChatRequest, restoreProject as restoreProjectRequest } from '../api/client';
 import type { ProviderStatus } from '../api/client';
 import { useI18n } from '../i18n';
 import type { Chat, Project } from '../types';
@@ -16,6 +16,7 @@ const archivedChats = ref<Chat[]>([]);
 const archivedProjects = ref<Project[]>([]);
 const archiveLoading = ref(false);
 const archiveError = ref('');
+const deletingChatId = ref<string | null>(null);
 const collapsed = ref(false);
 const menuId = ref<string | null>(null);
 const menuPosition = ref({ top: '0px', left: '0px' });
@@ -168,6 +169,14 @@ async function restoreArchivedChat(chat: Chat) {
   try { await restoreChatRequest(chat.id); await studio.refreshWorkspaces(); await loadArchive(); }
   catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
 }
+async function deleteArchivedChat(chat: Chat) {
+  if (deletingChatId.value || !window.confirm(t('sidebar.deleteChatConfirm', { name: chat.name }))) return;
+  deletingChatId.value = chat.id;
+  archiveError.value = '';
+  try { await deleteChatRequest(chat.id); await studio.refreshFull(); await loadArchive(); }
+  catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
+  finally { deletingChatId.value = null; }
+}
 async function restoreArchivedProject(project: Project) {
   archiveError.value = '';
   try { await restoreProjectRequest(project.id); await studio.refreshWorkspaces(); await loadArchive(); }
@@ -254,7 +263,7 @@ function checkProvider() {
           <div v-for="project in visibleArchivedProjects" :key="project.id" class="archive-entry"><span class="project-icon">◈</span><span class="archive-entry-copy"><strong>{{ project.name }}</strong><small>{{ t('sidebar.restoreProjectFirst') }}</small></span><button type="button" @click="restoreArchivedProject(project)">{{ t('sidebar.restore') }}</button></div>
         </template>
         <template v-if="visibleArchivedChats.length"><div class="group-label">{{ t('sidebar.archivedChats') }}</div>
-          <div v-for="chat in visibleArchivedChats" :key="chat.id" class="archive-entry"><span class="list-icon">◌</span><span class="archive-entry-copy"><strong>{{ chat.name }}</strong><small>{{ archivedProjectName(chat) || tp('sidebar.materials', chat.materialCount) }}</small></span><button type="button" @click="restoreArchivedChat(chat)">{{ t('sidebar.restore') }}</button></div>
+          <div v-for="chat in visibleArchivedChats" :key="chat.id" class="archive-entry"><span class="list-icon">◌</span><span class="archive-entry-copy"><strong>{{ chat.name }}</strong><small>{{ archivedProjectName(chat) || tp('sidebar.materials', chat.materialCount) }}</small></span><div class="archive-entry-actions"><button type="button" :disabled="Boolean(deletingChatId)" @click="restoreArchivedChat(chat)">{{ t('sidebar.restore') }}</button><button type="button" class="archive-delete" :disabled="Boolean(deletingChatId)" @click="deleteArchivedChat(chat)">{{ t('sidebar.deleteForever') }}</button></div></div>
         </template>
         <p v-if="!archiveLoading && !archiveError && !visibleArchivedProjects.length && !visibleArchivedChats.length" class="empty-copy">{{ t('sidebar.archiveEmpty') }}</p>
       </div>

@@ -448,6 +448,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameChat(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
           if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveChat(workspaceAccount, resourceId));
           if (req.method === 'POST' && resourceId && action === 'restore' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.restoreChat(workspaceAccount, resourceId));
+          if (req.method === 'DELETE' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.deleteChat(workspaceAccount, resourceId));
           if (req.method === 'POST' && resourceId && action === 'move' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.moveChat(workspaceAccount, resourceId, (await workspaceBody(4096)).projectId ?? null));
         }
         return json(res, 404, { error: 'Метод не найден' });

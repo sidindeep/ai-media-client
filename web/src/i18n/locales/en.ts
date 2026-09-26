@@ -132,6 +132,8 @@ export const en = {
   'sidebar.archiveLoading': 'Loading archive…',
   'sidebar.archiveEmpty': 'Archive is empty',
   'sidebar.restore': 'Restore',
+  'sidebar.deleteForever': 'Delete forever',
+  'sidebar.deleteChatConfirm': 'Delete chat “{name}” forever?\n\nThe chat, its draft, generation history, and its own files will be deleted without recovery. Files shared with other chats and accounting and payment records will remain.',
   'sidebar.restoreProjectFirst': 'Restore the project before its chats',
   'sidebar.noStandaloneChats': 'No standalone chats yet',
   'sidebar.workspaces': 'Workspaces',

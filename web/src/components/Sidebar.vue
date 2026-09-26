@@ -14,6 +14,7 @@ const activeTab = ref<'chats' | 'projects'>('chats');
 const search = ref('');
 const collapsed = ref(false);
 const menuId = ref<string | null>(null);
+const menuPosition = ref({ top: '0px', left: '0px' });
 const selectedProjectId = ref<string | null>(null);
 type ProviderId = 'codex' | 'media' | 'routerai';
 type ProviderItem = { id: ProviderId; accountId?: 'primary' | 'secondary'; label: string; detail: string; icon: string; configured?: boolean };
@@ -122,6 +123,21 @@ async function moveChat(chat: Chat) {
   await studio.moveChat(chat.id, project?.id || null); menuId.value = null;
 }
 function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = null; emit('workspace'); }
+function toggleEntryMenu(id: string, event: MouseEvent) {
+  if (menuId.value === id) { menuId.value = null; return; }
+  const anchor = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const menuHeight = 110;
+  const menuWidth = 155;
+  const gap = 4;
+  const top = anchor.bottom + gap + menuHeight <= window.innerHeight
+    ? anchor.bottom + gap
+    : Math.max(gap, anchor.top - gap - menuHeight);
+  menuPosition.value = {
+    top: `${top}px`,
+    left: `${Math.max(gap, Math.min(anchor.right - menuWidth, window.innerWidth - menuWidth - gap))}px`,
+  };
+  menuId.value = id;
+}
 function selectTab(tab: 'chats' | 'projects') {
   activeTab.value = tab; search.value = ''; menuId.value = null;
   if (tab === 'chats') selectedProjectId.value = null;
@@ -180,21 +196,21 @@ function checkProvider() {
     <template v-if="!collapsed">
       <div class="sidebar-toolbar"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>
       <div class="sidebar-tabs" role="tablist"><button type="button" :class="{ active: activeTab === 'chats' }" @click="selectTab('chats')">{{ t('navigation.chats') }}</button><button type="button" :class="{ active: activeTab === 'projects' }" @click="selectTab('projects')">{{ t('navigation.projects') }}</button></div>
-      <div v-if="activeTab === 'chats'" class="sidebar-list">
+      <div v-if="activeTab === 'chats'" class="sidebar-list" @scroll="menuId = null">
         <div class="list-heading"><span>{{ t('sidebar.standaloneChats') }}</span><button type="button" class="subtle-button" :aria-label="t('navigation.newChat')" @click="() => addChat()">＋</button></div>
         <button v-if="studio.systemChat.materialCount" type="button" class="list-item" :class="{ selected: studio.activeChatId === 'system:recent' }" @click="selectChat(studio.systemChat)"><span class="list-icon">✦</span><span><strong>{{ t('navigation.unassigned') }}</strong><small>{{ tp('sidebar.generations', studio.systemChat.materialCount) }}</small></span></button>
         <div v-if="groupedChats.today.length" class="group-label">{{ t('sidebar.today') }}</div>
-        <div v-for="chat in groupedChats.today" :key="chat.id" class="sidebar-entry"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span class="list-icon">◌</span><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="menuId = menuId === chat.id ? null : chat.id">•••</button><div v-if="menuId === chat.id" class="entry-actions"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
+        <div v-for="chat in groupedChats.today" :key="chat.id" class="sidebar-entry"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span class="list-icon">◌</span><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="toggleEntryMenu(chat.id, $event)">•••</button><div v-if="menuId === chat.id" class="entry-actions" :style="menuPosition"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
         <div v-if="groupedChats.earlier.length" class="group-label">{{ t('navigation.earlier') }}</div>
-        <div v-for="chat in groupedChats.earlier" :key="chat.id" class="sidebar-entry"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span class="list-icon">◌</span><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="menuId = menuId === chat.id ? null : chat.id">•••</button><div v-if="menuId === chat.id" class="entry-actions"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
+        <div v-for="chat in groupedChats.earlier" :key="chat.id" class="sidebar-entry"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span class="list-icon">◌</span><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="toggleEntryMenu(chat.id, $event)">•••</button><div v-if="menuId === chat.id" class="entry-actions" :style="menuPosition"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
         <p v-if="!filteredChats.length" class="empty-copy">{{ t('sidebar.noStandaloneChats') }}</p>
       </div>
-      <div v-else class="sidebar-list project-list-view">
+      <div v-else class="sidebar-list project-list-view" @scroll="menuId = null">
         <div class="list-heading"><span>{{ t('sidebar.workspaces') }}</span><button type="button" class="subtle-button" :aria-label="t('sidebar.newProject')" @click="addProject">＋</button></div>
         <div v-for="project in filteredProjects" :key="project.id" class="project-tree">
-          <div class="sidebar-entry"><button type="button" class="list-item project-toggle" :class="{ expanded: selectedProjectId === project.id }" :aria-expanded="selectedProjectId === project.id" @click="openProject(project)"><span class="project-icon">◈</span><span><strong>{{ project.name }}</strong><small>{{ tp('sidebar.chats', project.chatCount) }} · {{ tp('sidebar.materials', project.materialCount) }}</small></span><span class="project-chevron" aria-hidden="true">›</span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.projectActions')" @click.stop="menuId = menuId === project.id ? null : project.id">•••</button><div v-if="menuId === project.id" class="entry-actions"><button type="button" @click="renameProject(project)">{{ t('sidebar.rename') }}</button><button type="button" @click="addChat(project.id); menuId = null">{{ t('navigation.newChat') }}</button><button type="button" @click="archiveProject(project)">{{ t('sidebar.archive') }}</button></div></div>
+          <div class="sidebar-entry"><button type="button" class="list-item project-toggle" :class="{ expanded: selectedProjectId === project.id }" :aria-expanded="selectedProjectId === project.id" @click="openProject(project)"><span class="project-icon">◈</span><span><strong>{{ project.name }}</strong><small>{{ tp('sidebar.chats', project.chatCount) }} · {{ tp('sidebar.materials', project.materialCount) }}</small></span><span class="project-chevron" aria-hidden="true">›</span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.projectActions')" @click.stop="toggleEntryMenu(project.id, $event)">•••</button><div v-if="menuId === project.id" class="entry-actions" :style="menuPosition"><button type="button" @click="renameProject(project)">{{ t('sidebar.rename') }}</button><button type="button" @click="addChat(project.id); menuId = null">{{ t('navigation.newChat') }}</button><button type="button" @click="archiveProject(project)">{{ t('sidebar.archive') }}</button></div></div>
           <div v-if="selectedProjectId === project.id" class="project-children">
-            <div v-for="chat in projectChats(project)" :key="chat.id" class="sidebar-entry project-child"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="menuId = menuId === chat.id ? null : chat.id">•••</button><div v-if="menuId === chat.id" class="entry-actions"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
+            <div v-for="chat in projectChats(project)" :key="chat.id" class="sidebar-entry project-child"><button type="button" class="list-item" :class="{ selected: studio.activeChatId === chat.id }" @click="selectChat(chat)"><span><strong>{{ chat.name }}</strong><small>{{ tp('sidebar.materials', chat.materialCount) }}</small></span></button><button type="button" class="entry-menu" :aria-label="t('sidebar.chatActions')" @click.stop="toggleEntryMenu(chat.id, $event)">•••</button><div v-if="menuId === chat.id" class="entry-actions" :style="menuPosition"><button type="button" @click="renameChat(chat)">{{ t('sidebar.rename') }}</button><button type="button" @click="moveChat(chat)">{{ t('sidebar.move') }}</button><button type="button" @click="archiveChat(chat)">{{ t('sidebar.archive') }}</button></div></div>
             <p v-if="!projectChats(project).length" class="empty-copy project-empty">{{ t('sidebar.noProjectChats') }}</p>
           </div>
         </div>

@@ -8,6 +8,12 @@
 !src/**
 !public/
 !public/**
+!web/
+!web/src/
+!web/src/i18n/
+!web/src/i18n/locales/
+!web/src/i18n/locales/ru.ts
+!web/src/i18n/locales/en.ts
 !config/
 !config/native-prices.json
 !config/codex-models.json

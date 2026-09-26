@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { diagnoseProvider, getCodexQuote, getMediaQuote, getRouterAiQuote, uploadSource } from '../api/client';
 import type { ProviderDiagnostics } from '../api/client';
@@ -7,14 +7,18 @@ import type { MediaField } from '../types';
 import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import AspectRatioPicker from './AspectRatioPicker.vue';
 import PresetBar from './PresetBar.vue';
+import AdvancedParameters from './AdvancedParameters.vue';
+import { mediaAdvancedParameters, routerAiAdvancedParameters } from '../domain/advanced-parameters';
 import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, mediaFileValue, mediaSourceDurationRange, parseMediaFieldValue } from '../domain/media-fields';
 import { mediaModelBrandId, routerAiModelBrandId } from '../domain/model-catalog';
 import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
+import { frameFieldPair, orderedFileFields } from '../domain/frame-fields';
 import { formatCreditCost, roundedCreditCost } from '../domain/credits';
 import { useI18n } from '../i18n';
 
 const studio = useStudioStore();
+const FrameSourcePicker = defineAsyncComponent(() => import('./FrameSourcePicker.vue'));
 const { formatDate, formatNumber, t } = useI18n();
 const modeItems = computed(() => [
   { id: 'text', label: t('composer.mode.text'), icon: '▢' },
@@ -46,7 +50,10 @@ let quoteTimer: ReturnType<typeof setTimeout> | null = null;
 const QUOTE_DEBOUNCE_MS = 1500;
 const effortOptions = computed(() => studio.currentCodexModel?.efforts || ['low', 'medium', 'high']);
 const currentFields = computed(() => studio.currentMediaModel?.fields || []);
-const fileFields = computed(() => currentFields.value.filter(field => field.type === 'files'));
+const fileFields = computed(() => orderedFileFields(currentFields.value.filter(field => field.type === 'files')));
+const frameFields = computed(() => frameFieldPair(fileFields.value));
+const otherFileFields = computed(() => frameFields.value
+  ? fileFields.value.filter(field => !frameFields.value!.includes(field)) : fileFields.value);
 const codexAcceptsImages = computed(() => studio.currentCodexModel?.inputModalities?.includes('image') === true);
 const hasSourcePicker = computed(() => studio.provider === 'codex' ? codexAcceptsImages.value : studio.provider === 'media' && fileFields.value.length > 0);
 const dropFields = computed(() => studio.provider === 'media' ? fileFields.value : []);
@@ -67,6 +74,15 @@ const dropDescription = computed(() => {
 });
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
+const mediaAdvancedFields = computed(() => mediaAdvancedParameters(extraFields.value, fieldOptionLabel));
+const mediaAdvancedValues = computed(() => Object.fromEntries(extraFields.value.map(field => [field.key, fieldValue(field)])));
+const routerAiAdvancedFields = computed(() => routerAiSpecial.value ? routerAiAdvancedParameters(studio.currentRouterAiModel, {
+  audioFile: t('routerai.admin.audioFile'), duration: t('routerai.admin.duration'), seconds: t('routerai.admin.seconds'),
+  resolution: t('routerai.admin.resolution'), aspectRatio: t('routerai.admin.aspectRatio'),
+  body: t('routerai.admin.body'), parametersHint: t('routerai.admin.parametersHint'),
+}) : []);
+const routerAiAdvancedValues = computed(() => ({ duration: routerAiVideoDuration.value, resolution: routerAiVideoResolution.value,
+  aspect_ratio: routerAiVideoAspectRatio.value, body: routerAiExtra.value, audioFile: routerAiAudioFile.value }));
 const total = computed(() => quote.value?.credits != null ? roundedCreditCost(quote.value.credits) : null);
 const quoteWarning = computed(() => quote.value?.status === 'unavailable'
   ? t(studio.mediaModelId === 'kie:kling-2.6/motion-control' ? 'composer.motionControlPriceWarning' : 'composer.priceUnknownWarning')
@@ -128,6 +144,11 @@ function fieldOptionLabel(field: MediaField, option: unknown) {
   return name ? `${option} — ${name}` : String(option);
 }
 function sourceButtonLabel(field: MediaField) { return fileFields.value.length === 1 ? t('composer.sources') : (field.label || t('composer.sources')); }
+function dropFieldLabel(field: MediaField) {
+  if (field === frameFields.value?.[0]) return t('composer.frame.first');
+  if (field === frameFields.value?.[1]) return t('composer.frame.last');
+  return field.label || field.key;
+}
 function sourcePreviewUrl(ref: string) {
   const assetId = /^content:([a-f0-9-]{36})$/.exec(ref)?.[1];
   if (assetId) return `/api/content/${assetId}`;
@@ -141,7 +162,6 @@ function updateField(key: string, value: unknown) {
   studio.mediaInput = input;
 }
 function fieldValue(field: MediaField) { return formatMediaFieldValue(field, studio.mediaInput[field.key] ?? field.default); }
-function fieldError(field: MediaField) { return allFieldErrors.value[field.key] || ''; }
 function updateTypedField(field: MediaField, raw: unknown) {
   try {
     updateField(field.key, parseMediaFieldValue(field, raw));
@@ -156,6 +176,19 @@ function updateSelect(field: MediaField, event: Event) {
 function updateSelectValue(field: MediaField, raw: string) {
   const option = fieldOptions(field).find(value => String(value) === raw);
   updateTypedField(field, option === undefined ? raw : option);
+}
+function updateMediaAdvanced(key: string, raw: unknown) {
+  const field = extraFields.value.find(item => item.key === key);
+  if (!field) return;
+  if (fieldOptions(field).length) updateSelectValue(field, String(raw));
+  else updateTypedField(field, raw);
+}
+function updateRouterAiAdvanced(key: string, raw: unknown) {
+  if (key === 'duration') routerAiVideoDuration.value = Number(raw);
+  else if (key === 'resolution') routerAiVideoResolution.value = String(raw);
+  else if (key === 'aspect_ratio') routerAiVideoAspectRatio.value = String(raw);
+  else if (key === 'body') routerAiExtra.value = String(raw);
+  else if (key === 'audioFile') routerAiAudioFile.value = raw instanceof File ? raw : null;
 }
 
 function changeMode(value: 'text' | 'image' | 'video' | 'audio') {
@@ -568,7 +601,10 @@ async function submit(event?: Event) {
       <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" :aria-label="t('composer.promptAria')" @keydown.ctrl.enter="submit"></textarea>
       <div v-if="hasSourcePicker || studio.sourceFiles.length || uploading" class="source-strip">
         <label v-if="studio.provider === 'codex' && codexAcceptsImages" class="attach-button">＋ {{ t('composer.sources') }}<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
-        <label v-for="field in fileFields" v-else :key="field.key" class="attach-button">＋ {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
+        <template v-else>
+          <FrameSourcePicker v-if="frameFields" :fields="frameFields" @selected="uploadFiles" />
+          <label v-for="field in otherFileFields" :key="field.key" class="attach-button">＋ {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
+        </template>
         <span v-if="uploading" class="uploading">{{ t('composer.uploading') }}</span>
         <article v-for="(file, index) in studio.sourceFiles" :key="file.ref + index" class="source-preview">
           <img v-if="isImageSource(file.type)" :src="sourcePreviewUrl(file.ref)" :alt="t('composer.thumbnail', { name: file.name })" loading="lazy">
@@ -592,17 +628,8 @@ async function submit(event?: Event) {
         <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button v-if="studio.isAdmin" type="button" class="details-button" @click="openDiagnostics">{{ t('composer.details') }}</button></span>
         <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
       </div>
-      <details v-if="studio.provider === 'media' && extraFields.length" class="advanced-settings"><summary>{{ t('composer.advanced') }}</summary><div class="advanced-grid"><label v-for="field in extraFields" :key="field.key" :class="{ invalid: fieldError(field) }"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select v-if="fieldOptions(field).length" :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select><input v-else-if="field.type === 'number'" type="number" :min="field.min" :max="field.max" :step="field.step" :value="fieldValue(field)" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><input v-else-if="field.type === 'boolean'" type="checkbox" :checked="Boolean(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLInputElement).checked)" /><textarea v-else-if="field.type === 'textarea' || field.type === 'json'" :maxlength="field.maxLength" :value="String(fieldValue(field))" @change="updateTypedField(field, ($event.target as HTMLTextAreaElement).value)"></textarea><input v-else type="text" :maxlength="field.maxLength" :value="String(fieldValue(field))" @input="updateTypedField(field, ($event.target as HTMLInputElement).value)" /><small v-if="fieldError(field)" class="field-error">{{ fieldError(field) }}</small><small v-else-if="field.hint">{{ field.hint }}</small></label></div></details>
-      <details v-if="routerAiSpecial" class="advanced-settings"><summary>{{ t('composer.advanced') }}</summary><div class="advanced-grid">
-        <p>{{ studio.currentRouterAiModel?.id }} · POST /{{ studio.currentRouterAiModel?.endpoint }}</p>
-        <label v-if="studio.currentRouterAiModel?.kind === 'transcription'"><span>{{ t('routerai.admin.audioFile') }}</span><input type="file" accept="audio/*" @change="routerAiAudioFile = ($event.target as HTMLInputElement).files?.[0] || null"></label>
-        <template v-if="studio.currentRouterAiModel?.kind === 'video'">
-          <label v-if="studio.currentRouterAiModel.supportedDurations?.length"><span>{{ t('routerai.admin.duration') }}</span><select v-model.number="routerAiVideoDuration"><option v-for="duration in studio.currentRouterAiModel.supportedDurations" :key="duration" :value="duration">{{ duration }} {{ t('routerai.admin.seconds') }}</option></select></label>
-          <label v-if="studio.currentRouterAiModel.supportedResolutions?.length"><span>{{ t('routerai.admin.resolution') }}</span><select v-model="routerAiVideoResolution"><option v-for="resolution in studio.currentRouterAiModel.supportedResolutions" :key="resolution" :value="resolution">{{ resolution }}</option></select></label>
-          <label v-if="studio.currentRouterAiModel.supportedAspectRatios?.length"><span>{{ t('routerai.admin.aspectRatio') }}</span><select v-model="routerAiVideoAspectRatio"><option v-for="ratio in studio.currentRouterAiModel.supportedAspectRatios" :key="ratio" :value="ratio">{{ ratio }}</option></select></label>
-        </template>
-        <template v-else><label><span>{{ t('routerai.admin.body') }}</span><textarea v-model="routerAiExtra" rows="6" spellcheck="false"></textarea></label><small>{{ t('routerai.admin.parametersHint') }}</small></template>
-      </div></details>
+      <AdvancedParameters v-if="studio.provider === 'media'" :key="`media:${studio.mediaModelId}`" :fields="mediaAdvancedFields" :values="mediaAdvancedValues" :errors="allFieldErrors" @change="updateMediaAdvanced" />
+      <AdvancedParameters v-if="routerAiSpecial" :key="`routerai:${studio.currentRouterAiModel?.id}`" :fields="routerAiAdvancedFields" :values="routerAiAdvancedValues" :context="`${studio.currentRouterAiModel?.id} · POST /${studio.currentRouterAiModel?.endpoint}`" @change="updateRouterAiAdvanced" />
       <p v-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>
       <p class="composer-hint">{{ t('composer.hint') }}</p>
@@ -624,7 +651,7 @@ async function submit(event?: Event) {
               @dragover.prevent="activeDropFieldKey = field.key"
               @drop="dropIntoField($event, field)"
             >
-              <strong>{{ field.label || field.key }}</strong>
+              <strong>{{ dropFieldLabel(field) }}</strong>
               <small>{{ field.scalar || field.maxFiles === 1 ? t('composer.oneFile') : field.maxFiles ? t('composer.upToFiles', { count: field.maxFiles }) : t('composer.multipleFiles') }}</small>
             </article>
           </div>

@@ -1,4 +1,4 @@
-const formatNative = value => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value);
+const formatNative = value => new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 3 }).format(value);
 let quoteSequence = 0, quoteTimer;
 function recordCostText(record) {
   if (!record.nativeQuote) return 'Стоимость не указана';
@@ -43,7 +43,7 @@ async function initCosts() {
   try {
     const [rows, wallet] = await Promise.all([window.desktop.nativeLedger(), window.desktop.getBalance()]);
     const labels = { grant: 'Начисление', purchase: 'Покупка', reserve: 'Резерв', capture: 'Списание', release: 'Возврат резерва' };
-    container.replaceChildren(...rows.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString('ru-RU')} · ${labels[row.kind]} · ${formatNative(Number(row.amount) / wallet.scale)} кредитов`; return p; }));
+    container.replaceChildren(...rows.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString(document.documentElement.lang)} · ${labels[row.kind]} · ${formatNative(Number(row.amount) / wallet.scale)} кредитов`; return p; }));
   } catch { container.textContent = 'Не удалось загрузить операции'; }
 }
 document.getElementById('spendPeriod').onchange = renderSpending;

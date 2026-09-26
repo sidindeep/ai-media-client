@@ -117,6 +117,10 @@
 .account-card-topbar .account-back { margin-bottom: 0; }
 .legal-header .theme-toggle { margin-left: auto; }
 header > .theme-toggle { flex-shrink: 0; }
+.legacy-locale-switcher { align-self: center; min-height: 36px; padding: 5px 9px; border: 1px solid currentColor; border-radius: 8px; background: var(--panel, #151518); color: var(--text, #f1eee8); font: inherit; font-size: 13px; cursor: pointer; }
+.account-card-topbar .legacy-locale-switcher { margin-left: auto; }
+.legal-header .legacy-locale-switcher { flex-shrink: 0; }
+.legal-translation-note { max-width: 900px; margin: 16px auto; padding: 10px 16px; border: 1px solid currentColor; border-radius: 8px; font-size: 13px; }
 
 @media (max-width: 720px) {
   .theme-toggle { width: 36px; height: 36px; flex-basis: 36px; }

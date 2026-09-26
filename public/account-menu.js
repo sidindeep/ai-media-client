@@ -28,7 +28,7 @@
     el('accountEmail').hidden = !email;
     el('accountAvatar').textContent = account.name.slice(0, 1).toUpperCase();
     el('menuRole').textContent = account.role === 'admin' ? 'Администратор' : 'Пользователь';
-    el('menuBalance').textContent = account.wallet ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(account.wallet.balance) : '—';
+    el('menuBalance').textContent = account.wallet ? new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 3 }).format(account.wallet.balance) : '—';
     el('menuAdmin').hidden = account.role !== 'admin' || account.id === 'local';
     if (el('adminLink')) el('adminLink').hidden = el('menuAdmin').hidden;
     el('logout').hidden = account.id === 'local';

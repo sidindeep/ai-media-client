@@ -640,7 +640,7 @@ export const useStudioStore = defineStore('studio', () => {
     if (activeChatId.value === 'system:recent') {
       let target = chats.value.find(chat => chat.mode === 'system' && chat.projectId === activeProjectId.value);
       if (!target) {
-        target = await api.createChat('Основной чат', activeProjectId.value);
+        target = await api.createChat(t('navigation.mainChat'), activeProjectId.value);
         chats.value = mergeById(chats.value, [target]);
         recomputeWorkspaceCounts();
       }

@@ -1,4 +1,5 @@
 import type { Account, Catalog, Chat, CodexCatalog, GenerationJournalPage, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
+import { t } from '../i18n';
 
 type RpcResult<T> = { result: T };
 
@@ -14,10 +15,10 @@ async function parse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { error?: string } | T | null;
   if (response.status === 401) {
     window.location.assign('/login');
-    throw new Error('Сессия завершена');
+    throw new Error(t('error.sessionExpired'));
   }
   if (!response.ok || body === null) {
-    const message = body && typeof body === 'object' && 'error' in body ? body.error : 'Некорректный ответ сервиса';
+    const message = body && typeof body === 'object' && 'error' in body ? body.error : t('error.invalidResponse');
     throw new Error(String(message));
   }
   return body as T;

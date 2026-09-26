@@ -289,7 +289,7 @@ $('historyPreview').addEventListener('close',()=>{
 
 function progressDetails(record) {
   const checked=record.lastCheckedAt && new Date(record.lastCheckedAt);
-  const last=checked&&Number.isFinite(checked.getTime())?`Последний ответ Kie: ${checked.toLocaleTimeString('ru-RU')}.`:'Ожидаем обновление статуса от провайдера.';
+  const last=checked&&Number.isFinite(checked.getTime())?`Последний ответ Kie: ${checked.toLocaleTimeString(document.documentElement.lang)}.`:'Ожидаем обновление статуса от провайдера.';
   return `${record.error?'Не удалось обновить статус. ':''}${typeof record.progress==='number'&&Number.isFinite(record.progress)?'':'Процент готовности не передан. '}${last}`;
 }
 
@@ -434,7 +434,7 @@ function providerGenerationTimeText(record){
   const parts=[];
   if(hours)parts.push(`${hours} ч`);
   if(minutes)parts.push(`${minutes} мин`);
-  if(seconds||!parts.length)parts.push(`${seconds.toLocaleString('ru-RU',{minimumFractionDigits:Number.isInteger(seconds)?0:1,maximumFractionDigits:1})} с`);
+  if(seconds||!parts.length)parts.push(`${seconds.toLocaleString(document.documentElement.lang,{minimumFractionDigits:Number.isInteger(seconds)?0:1,maximumFractionDigits:1})} с`);
   return `Генерация Kie: ${parts.join(' ')}`;
 }
 
@@ -459,7 +459,7 @@ function renderHistory() {
     const card = document.createElement('article'); card.className = 'card compact-history';
     const title = document.createElement('strong'); title.textContent = `${record.providerName} · ${record.modelName}`;
     const meta = document.createElement('p'); meta.className = 'hint';
-    meta.textContent = [new Date(record.createdAt).toLocaleString('ru-RU'),states[record.state] || record.state,providerGenerationTimeText(record),generationTimeText(record),recordCostText(record)].filter(Boolean).join(' · ');
+    meta.textContent = [new Date(record.createdAt).toLocaleString(document.documentElement.lang),states[record.state] || record.state,providerGenerationTimeText(record),generationTimeText(record),recordCostText(record)].filter(Boolean).join(' · ');
     const prompt = document.createElement('p'); prompt.textContent = record.input?.prompt || 'Без промпта'; prompt.className = 'history-prompt';
     const actions = document.createElement('div'); actions.className = 'inline';
     const repeat = document.createElement('button'); repeat.textContent = 'Изменить и повторить';repeat.dataset.repeatId=record.id; repeat.disabled = Boolean(activeTask);

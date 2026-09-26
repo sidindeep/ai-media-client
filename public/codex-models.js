@@ -19,9 +19,9 @@
     const card = document.createElement('article'); card.className = 'card compact-history';
     const title = document.createElement('strong'); title.textContent = `Codex CLI · ${record.modelName}`;
     const meta = document.createElement('p'); meta.className = 'hint';
-    meta.textContent = [new Date(record.createdAt).toLocaleString('ru-RU'), states[record.state] || record.state,
+    meta.textContent = [new Date(record.createdAt).toLocaleString(document.documentElement.lang), states[record.state] || record.state,
       record.generationDurationMs != null ? `Время генерации: ${formatDuration(record.generationDurationMs)}` : '',
-      recordCostText(record), record.usage ? `Токены: ${record.usage.total_tokens.toLocaleString('ru-RU')}` : '',
+      recordCostText(record), record.usage ? `Токены: ${record.usage.total_tokens.toLocaleString(document.documentElement.lang)}` : '',
       names[record.input.effort] || record.input.effort, record.input.speed === 'fast' ? 'Fast' : 'Обычная скорость'].filter(Boolean).join(' · ');
     const detail = document.createElement('details');
     const heading = document.createElement('summary'); heading.textContent = record.input.prompt || 'Без промпта';
@@ -77,7 +77,7 @@
       const value = await api('/api/codex/quote?' + new URLSearchParams({ model: model().id, effort: effort(), speed: $('codexSpeed').value }));
       if (revision !== quoteRevision) return;
       priced = Boolean(value.quote);
-      $('codexPrice').textContent = value.quote ? `Цена: ${value.quote.credits.toLocaleString('ru-RU')} кредитов` : value.error;
+      $('codexPrice').textContent = value.quote ? `Цена: ${value.quote.credits.toLocaleString(document.documentElement.lang)} кредитов` : value.error;
     } catch { if (revision === quoteRevision) $('codexPrice').textContent = 'Цена недоступна. Запуск закрыт.'; }
     if (revision === quoteRevision) busy(Boolean(pending));
   }
@@ -136,7 +136,7 @@
     return body;
   }
   function receipt(job) {
-    const format = n => n.toLocaleString('ru-RU');
+    const format = n => n.toLocaleString(document.documentElement.lang);
     let text = 'Ответ получен от Codex CLI.' + (job.nativeQuote ? ` Списано: ${format(job.nativeQuote.credits)} кредитов.` : '');
     if (job.durationMs != null) text += ` Время генерации: ${formatDuration(job.durationMs)}.`;
     if (!job.usage) return text + ' Расход токенов не предоставлен.';
@@ -269,7 +269,7 @@
       $('codexKind').value = settings.kind === 'text' ? 'text' : 'image'; $('codexAspectRatio').value = ['auto','1:1','16:9','9:16','3:2','2:3'].includes(settings.aspectRatio) ? settings.aspectRatio : 'auto';
       if (typeof attachPromptTemplates === 'function') attachPromptTemplates($('codexTemplateActions'), $('codexPrompt'));
       selectModel(settings.effort);
-      $('codexModelsDate').textContent = `Каталог проверен ${new Date(catalog.checkedAt).toLocaleDateString('ru-RU')}.`;
+      $('codexModelsDate').textContent = `Каталог проверен ${new Date(catalog.checkedAt).toLocaleDateString(document.documentElement.lang)}.`;
       ready = permissions.enabled && permissions.allowed;
       if (!ready) $('codexStatus').textContent = 'Для Codex нужны подключённый сервис и кредитный счёт.';
       if (settings.result) { $('codexPreviewEmpty').hidden = true; $('codexTaskState').textContent = 'Последняя завершённая генерация'; $('codexPreviewSettings').textContent = route(settings.result); $('codexOutput').textContent = settings.result.output; $('codexOutput').hidden = false; $('codexResultRoute').textContent = route(settings.result); $('codexStatus').textContent = receipt(settings.result); showImage(settings.result); }

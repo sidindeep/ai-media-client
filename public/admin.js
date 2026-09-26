@@ -3,7 +3,7 @@ let accountRows = [];
 let creditScale = 1000;
 let roleTargetId;
 let ledgerSequence = 0;
-const formatCredits = value => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value);
+const formatCredits = value => new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 3 }).format(value);
 function showBalance() {
   const row = accountRows.find(item => item.id === document.getElementById('grantAccount').value);
   document.getElementById('grantBalance').textContent = row
@@ -18,14 +18,14 @@ function selectPanel() {
 }
 window.addEventListener('hashchange', selectPanel);
 selectPanel();
-const kieStatsDate = value => new Date(value).toLocaleString('ru-RU');
+const kieStatsDate = value => new Date(value).toLocaleString(document.documentElement.lang);
 function kieStatsNode(tag, text, className) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
   if (className) node.className = className;
   return node;
 }
-const conversionNumber = value => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 }).format(value);
+const conversionNumber = value => new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 4 }).format(value);
 function renderConversion(data) {
   const summary = [
     ['Версия политики', data.version],
@@ -72,7 +72,7 @@ function renderKieStats(stats) {
   summary.replaceChildren(...[
     ['Отправлено генераций', stats.submitted],
     ['Неопределённых ответов', stats.unknown],
-    ['Доля', `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(stats.ratePercent)}%`],
+    ['Доля', `${new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 2 }).format(stats.ratePercent)}%`],
     ['Попыток POST', stats.attempts],
   ].map(([label, value]) => { const card = kieStatsNode('div', undefined, 'kie-stats-card'); card.append(kieStatsNode('span', label), kieStatsNode('strong', String(value))); return card; }));
   const days = stats.daily;
@@ -169,7 +169,7 @@ async function loadAccounts() {
   ].map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
   document.getElementById('reconcileAccount').replaceChildren(...rows.map(row => new Option(`${row.name} (${row.id})`, row.id)));
   const audit = await adminRequest('/api/admin/roles');
-  document.getElementById('roleAudit').replaceChildren(...audit.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString('ru-RU')} · ${row.name}: ${row.old_role} → ${row.new_role} · ${row.reason} · администратор: ${row.actor_id || 'назначение владельца'}`; return p; }));
+  document.getElementById('roleAudit').replaceChildren(...audit.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString(document.documentElement.lang)} · ${row.name}: ${row.old_role} → ${row.new_role} · ${row.reason} · администратор: ${row.actor_id || 'назначение владельца'}`; return p; }));
 }
 async function loadLedger() {
   const sequence = ++ledgerSequence;
@@ -179,7 +179,7 @@ async function loadLedger() {
     const rows = await adminRequest('/api/admin/ledger?account=' + encodeURIComponent(accountId));
     if (sequence !== ledgerSequence) return;
     const names = { grant: 'Начисление', purchase: 'Покупка', reserve: 'Резерв', capture: 'Списание', release: 'Возврат' };
-    document.getElementById('creditLedger').replaceChildren(...rows.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString('ru-RU')} · ${names[row.kind] || row.kind} · ${formatCredits(Number(row.amount) / creditScale)} · ${row.note}`; return p; }));
+    document.getElementById('creditLedger').replaceChildren(...rows.map(row => { const p = document.createElement('p'); p.textContent = `${new Date(row.created_at).toLocaleString(document.documentElement.lang)} · ${names[row.kind] || row.kind} · ${formatCredits(Number(row.amount) / creditScale)} · ${row.note}`; return p; }));
   } catch (error) { if (sequence === ledgerSequence) document.getElementById('creditLedger').textContent = error.message; }
 }
 document.getElementById('closeRoleDialog').onclick = () => document.getElementById('roleDialog').close();

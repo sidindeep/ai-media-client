@@ -27,7 +27,7 @@ if(document.getElementById('clearKieSession'))document.getElementById('clearKieS
   if(!confirm('Удалить сохранённый вход Kie на этом компьютере? Окна кабинета закроются. API-ключ, история и черновики останутся.'))return;
   try{await window.desktop.clearKieSession();await refreshKieAuth();document.getElementById('kieSessionStatus').textContent='Сохранённый вход удалён. API-ключ, история и черновики не изменены.';}catch{document.getElementById('kieSessionStatus').textContent='Не удалось удалить сессию Kie. Попробуйте ещё раз.';}
 };
-const formatCost=value=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(value);
+const formatCost=value=>new Intl.NumberFormat(document.documentElement.lang,{maximumFractionDigits:2}).format(value);
 function recordCostText(record){
   const value=costs.breakdown(record,creditRate);
   const estimate=value.estimate.credits===null?'Оценка: неизвестна':`Оценка: ${formatCost(value.estimate.credits)} кредитов · ${formatCost(value.estimate.rubles)} ₽${value.estimate.stale?' (тариф требует обновления)':''}`;
@@ -47,7 +47,7 @@ function refreshCostPreview(){
   const estimate=costs.quote(model,input,tariffData);
   const description=tariffDescriptions.entries?.[model?.id];
   $('tariffDescription').textContent=description?.text||'Для этой модели тарифное описание пока не найдено. Это не означает бесплатную генерацию.';
-  $('tariffDescriptionSource').textContent=description?`Оригинал Kie (английский). Источник: ${description.source}. Проверено: ${new Date(tariffDescriptions.checkedAt).toLocaleDateString('ru-RU')}. Это справочный тариф, не подтверждение суммы списания. Описания включены в сборку и обновляются отдельно от таблицы тарифов.`:'';
+  $('tariffDescriptionSource').textContent=description?`Оригинал Kie (английский). Источник: ${description.source}. Проверено: ${new Date(tariffDescriptions.checkedAt).toLocaleDateString(document.documentElement.lang)}. Это справочный тариф, не подтверждение суммы списания. Описания включены в сборку и обновляются отдельно от таблицы тарифов.`:'';
   kieAccountEstimate=null;
   const shown=estimate;
   $('estimatedCost').textContent=shown?`${kieAccountEstimate?'Расчёт кабинета Kie':'По тарифу Kie'}: ${formatCost(shown.credits)} кредитов · ${formatCost(costs.round(shown.credits*creditRate))} ₽${!kieAccountEstimate&&tariffData.stale?' · тарифы не обновлены':''}. Фактическое списание учитывается отдельно.`:'Стоимость до запуска не определена для этих параметров. Проверяю кабинет Kie…';
@@ -68,7 +68,7 @@ function renderSpending(){
     const difference=Math.abs(audit.difference)<0.01?0:audit.difference;
     const verdict=difference===0?'расход совпадает':difference>0?`по балансу списано на ${formatCost(difference)} кредита больше`:`по балансу списано на ${formatCost(Math.abs(difference))} кредита меньше`;
     const unknown=Math.max(0,(current.unknown||0)-(baseline.unknown||0));
-    $('balanceAudit').textContent=`Сверка с ${new Date(baseline.at).toLocaleString('ru-RU')}: по балансу ${formatCost(audit.balanceSpent)} кредита · по данным задач ${formatCost(audit.apiSpent)} кредита — ${verdict}.${unknown?` Новых задач без указанного расхода: ${unknown}.`:''}`;
+    $('balanceAudit').textContent=`Сверка с ${new Date(baseline.at).toLocaleString(document.documentElement.lang)}: по балансу ${formatCost(audit.balanceSpent)} кредита · по данным задач ${formatCost(audit.apiSpent)} кредита — ${verdict}.${unknown?` Новых задач без указанного расхода: ${unknown}.`:''}`;
   }
   $('spendModels').replaceChildren(...total.models.map(row=>{const p=document.createElement('p');p.textContent=`${row.name}: ${formatCost(row.credits)} кредитов · ${formatCost(row.rubles)} ₽`;return p;}));
 }
@@ -77,7 +77,7 @@ function renderPriceAudit(data=priceAuditData){
   const counts={match:0,mismatch:0,confirmed:0,'tariff-only':0,unavailable:0};
   for(const row of data.results)counts[row.status]=(counts[row.status]||0)+1;
   const accountModels=new Set(data.results.filter(row=>['match','mismatch','confirmed'].includes(row.status)).map(row=>row.modelId));
-  $('priceAuditSummary').textContent=`Последняя проверка: ${new Date(data.checkedAt).toLocaleString('ru-RU')}. Проверено вариантов: ${data.results.length}. Кабинет Kie вернул цену для ${counts.match+counts.mismatch+counts.confirmed} вариантов, моделей: ${accountModels.size}/${catalog.models.filter(model=>model.providerId==='kie').length}. Совпало с локальным тарифом: ${counts.match}; расхождений: ${counts.mismatch}; только локальный тариф: ${counts['tariff-only']}; цена не получена: ${counts.unavailable}.`;
+  $('priceAuditSummary').textContent=`Последняя проверка: ${new Date(data.checkedAt).toLocaleString(document.documentElement.lang)}. Проверено вариантов: ${data.results.length}. Кабинет Kie вернул цену для ${counts.match+counts.mismatch+counts.confirmed} вариантов, моделей: ${accountModels.size}/${catalog.models.filter(model=>model.providerId==='kie').length}. Совпало с локальным тарифом: ${counts.match}; расхождений: ${counts.mismatch}; только локальный тариф: ${counts['tariff-only']}; цена не получена: ${counts.unavailable}.`;
   const labels={mismatch:'Расхождение',unavailable:'Цена не получена','tariff-only':'Только локальный тариф'};
   const rows=data.results.filter(row=>labels[row.status]).slice(0,500).map(row=>{
     const element=document.createElement('div');element.className='price-audit-row';
@@ -119,7 +119,7 @@ async function runPriceAudit(){
 }
 async function loadTariffs(force=false){
   $('refreshTariffs').disabled=true;
-  try{tariffData=await window.desktop.getTariffs(force);$('tariffStatus').textContent=`${tariffData.fetchedAt?'Тарифы от '+new Date(tariffData.fetchedAt).toLocaleString('ru-RU'):'Тарифы не загружены'}${tariffData.stale?' · обновление недоступно':''}. Источник: kie.ai/pricing. Расчёт: проверенные сочетания Nano Banana Pro/2/2 Lite, Grok 1.5, Kling 2.6/3.0, Veo 3.1, Hailuo 02/2.3, Seedance 1.5 Pro, Imagen 4, Seedream 4.5/5.0 Lite. Остальные параметры могут не поддерживаться.`;refreshCostPreview();}
+  try{tariffData=await window.desktop.getTariffs(force);$('tariffStatus').textContent=`${tariffData.fetchedAt?'Тарифы от '+new Date(tariffData.fetchedAt).toLocaleString(document.documentElement.lang):'Тарифы не загружены'}${tariffData.stale?' · обновление недоступно':''}. Источник: kie.ai/pricing. Расчёт: проверенные сочетания Nano Banana Pro/2/2 Lite, Grok 1.5, Kling 2.6/3.0, Veo 3.1, Hailuo 02/2.3, Seedance 1.5 Pro, Imagen 4, Seedream 4.5/5.0 Lite. Остальные параметры могут не поддерживаться.`;refreshCostPreview();}
   catch(error){$('tariffStatus').textContent=error.message;}
   finally{$('refreshTariffs').disabled=false;}
 }

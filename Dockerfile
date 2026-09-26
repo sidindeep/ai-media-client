@@ -1,9 +1,3 @@
-FROM node:24-bookworm-slim AS revision
-WORKDIR /revision
-COPY .git .git
-COPY scripts/resolve-git-commit.cjs ./resolve-git-commit.cjs
-RUN node resolve-git-commit.cjs .git > /commit
-
 FROM node:24-bookworm-slim AS runtime
 ARG CODEX_VERSION=0.155.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates chromium xvfb fonts-liberation util-linux \
@@ -18,7 +12,8 @@ COPY src ./src
 COPY public ./public
 COPY config ./config
 COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/resolve-git-commit.cjs ./scripts/
-COPY --from=revision /commit /opt/media-commit
+COPY .git /tmp/media-git
+RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 RUN node src/server/build-info.js /opt/media-build.json /opt/media-commit
 RUN mkdir -p data/service data/codex-auth && chown -R node:node data
 USER node
@@ -35,9 +30,11 @@ RUN pnpm install --frozen-lockfile --ignore-workspace
 COPY server.js ./
 COPY src ./src
 COPY public ./public
+COPY web ./web
 COPY config ./config
 COPY scripts/resolve-git-commit.cjs ./scripts/
-COPY --from=revision /commit /opt/media-commit
+COPY .git /tmp/media-git
+RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 COPY test ./test
 CMD ["node", "--test", "test/*.test.js"]
 

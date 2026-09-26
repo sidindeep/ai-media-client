@@ -11,7 +11,7 @@ function showBalance() {
   void loadLedger();
 }
 function selectPanel() {
-  const panels = ['accountsPanel', 'starterPanel', 'credits', 'conversionPanel', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'kieSessionPanel', 'codexPanel'];
+  const panels = ['accountsPanel', 'starterPanel', 'credits', 'conversionPanel', 'billingRisksPanel', 'auditPanel', 'reconcilePanel', 'kieSubmissionsPanel', 'kieSessionPanel', 'codexPanel'];
   const selected = panels.includes(location.hash.slice(1)) ? location.hash.slice(1) : panels[0];
   for (const id of panels) document.getElementById(id).hidden = id !== selected;
   document.querySelectorAll('.admin-tabs a').forEach(link => link.setAttribute('aria-current', link.hash === '#' + selected ? 'page' : 'false'));
@@ -126,6 +126,56 @@ document.getElementById('kieStatsDays').onchange = () => void loadKieStats();
 document.getElementById('kieStatsRefresh').onclick = () => void loadKieStats();
 window.addEventListener('hashchange', () => { if (location.hash === '#kieSubmissionsPanel') void loadKieStats(); });
 if (location.hash === '#kieSubmissionsPanel') queueMicrotask(() => void loadKieStats());
+let billingRisksData = null;
+function renderBillingRisks(data) {
+  const summary = data.summary;
+  document.getElementById('billingRisksSummary').replaceChildren(...[
+    ['Расход при возврате', summary.confirmedMismatch],
+    ['Возврат после отправки', summary.releasedAfterSend],
+    ['Резерв до сверки', summary.heldUnknown],
+    ['Возвращено в спорных задачах', `${formatCredits(summary.reviewReleasedUnits / creditScale)} кредита`],
+  ].map(([label, value]) => {
+    const card = kieStatsNode('div', undefined, 'kie-stats-card');
+    card.append(kieStatsNode('span', label), kieStatsNode('strong', String(value)));
+    return card;
+  }));
+  const provider = document.getElementById('billingRisksProvider').value;
+  const search = document.getElementById('billingRisksSearch').value.trim().toLowerCase();
+  const rows = data.incidents.filter(row => (provider === 'all' || row.provider === provider)
+    && (!search || [row.accountName, row.accountId, row.jobId, row.providerTaskId].join(' ').toLowerCase().includes(search)));
+  document.getElementById('billingRisksIncidents').replaceChildren(...(rows.length ? rows.map(row => {
+    const labels = { confirmed_mismatch: 'КРИТИЧНО · известен расход при возврате', released_after_send: 'Проверить расход после отправки', held_unknown: 'Неизвестный результат · резерв удержан' };
+    const card = kieStatsNode('article', undefined, `kie-stats-incident billing-risk-${row.risk}`);
+    card.append(kieStatsNode('strong', `${labels[row.risk]} · ${row.provider.toUpperCase()} · ${kieStatsDate(row.createdAt)}`),
+      kieStatsNode('p', `${row.accountName} · ${row.accountId} · ${row.model || 'модель не указана'}`),
+      kieStatsNode('p', `Наша задача: ${row.jobId} · задача поставщика: ${row.providerTaskId || 'нет ID'} · статус: ${row.state || 'неизвестен'}`),
+      kieStatsNode('p', `Резерв ${formatCredits(row.reservedUnits / creditScale)} · списано ${formatCredits(row.capturedUnits / creditScale)} · возвращено ${formatCredits(row.releasedUnits / creditScale)} · удержано ${formatCredits(row.heldUnits / creditScale)} наших кредитов`),
+      kieStatsNode('p', row.providerCost == null ? 'Фактический расход поставщика не получен' : `Известный расход поставщика: ${row.providerCost} ${row.providerCostUnit}`));
+    if (row.providerUsageTokens) card.append(kieStatsNode('p', `Использование Codex: ${row.providerUsageTokens} токенов`));
+    if (row.risk === 'held_unknown') {
+      const button = kieStatsNode('button', 'Открыть ручную сверку'); button.type = 'button';
+      button.onclick = () => { document.getElementById('reconcileAccount').value = row.accountId; document.getElementById('reconcileJob').value = row.jobId; location.hash = 'reconcilePanel'; };
+      card.append(button);
+    }
+    return card;
+  }) : [kieStatsNode('p', 'По выбранному фильтру задач нет.') ]));
+  if (data.totalIncidents > data.incidents.length) document.getElementById('billingRisksIncidents').append(kieStatsNode('p', `Показаны первые ${data.incidents.length} из ${data.totalIncidents} задач.`));
+}
+async function loadBillingRisks() {
+  const status = document.getElementById('billingRisksStatus');
+  status.textContent = 'Загружаем данные…';
+  try {
+    billingRisksData = await adminRequest('/api/admin/billing-reconciliation?days=' + document.getElementById('billingRisksDays').value);
+    renderBillingRisks(billingRisksData);
+    status.textContent = `Обновлено ${kieStatsDate(new Date())}`;
+  } catch (error) { status.textContent = error.message; }
+}
+document.getElementById('billingRisksDays').onchange = () => void loadBillingRisks();
+document.getElementById('billingRisksProvider').onchange = () => { if (billingRisksData) renderBillingRisks(billingRisksData); };
+document.getElementById('billingRisksSearch').oninput = () => { if (billingRisksData) renderBillingRisks(billingRisksData); };
+document.getElementById('billingRisksRefresh').onclick = () => void loadBillingRisks();
+window.addEventListener('hashchange', () => { if (location.hash === '#billingRisksPanel') void loadBillingRisks(); });
+if (location.hash === '#billingRisksPanel') queueMicrotask(() => void loadBillingRisks());
 function renderAccounts() {
   const search = document.getElementById('accountSearch').value.trim().toLowerCase();
   const rows = accountRows.filter(row => [row.name, row.email, row.id].join(' ').toLowerCase().includes(search));

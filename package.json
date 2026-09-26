@@ -1,6 +1,6 @@
 {
   "name": "ai-media-web-tg",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "releaseChannel": "debug",
   "private": true,
   "type": "commonjs",

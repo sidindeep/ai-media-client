@@ -138,6 +138,7 @@ button,input,select { min-height:40px; }
 .admin-tabs a[aria-current=page] { background:#6955c5; color:#fff; }
 .kie-stats-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:18px 0; }
 .kie-stats-card,.kie-stats-incident { border:1px solid #344056; border-radius:12px; padding:14px; margin:8px 0; }
+.billing-risk-confirmed_mismatch { border-color:#d75d71; }.billing-risk-released_after_send { border-color:#d7a45d; }
 .kie-stats-card span,.kie-stats-card strong { display:block; }
 .kie-stats-card strong { font-size:1.7rem; margin-top:6px; }
 .kie-stats-chart { display:flex; align-items:flex-end; gap:3px; height:170px; overflow-x:auto; padding:8px 0 14px; border-bottom:1px solid #344056; }

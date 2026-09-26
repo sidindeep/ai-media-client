@@ -488,6 +488,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           const { kieSubmissionStatistics } = require('../services/kie-submission-statistics');
           return json(res, 200, { result: await kieSubmissionStatistics(accounts.pool, url.searchParams.get('days') || 30) });
         }
+        if (url.pathname === '/api/admin/billing-reconciliation' && req.method === 'GET') {
+          const { billingReconciliation } = require('../services/billing-reconciliation');
+          return json(res, 200, { result: await billingReconciliation(accounts.pool, url.searchParams.get('days') || 30) });
+        }
         if (url.pathname.startsWith('/api/admin/codex/')) {
           const action = url.pathname.slice('/api/admin/codex/'.length);
           if (!((action === 'status' && req.method === 'GET') || (['start', 'cancel'].includes(action) && req.method === 'POST' && req.headers['x-media-client'] === 'web'))) return json(res, 404, { error: 'Не найдено' });

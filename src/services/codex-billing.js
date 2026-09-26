@@ -81,7 +81,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
           try {
             if (typeof result.imageBase64 !== 'string' || result.imageBase64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('missing image');
             image = validatePng(Buffer.from(result.imageBase64, 'base64'));
-          } catch { return await update(account, requestId, { state: 'fail', error: 'Изображение не получено. Резерв кредитов возвращён.' }); }
+          } catch { return await update(account, requestId, { state: 'unknown', error: 'Изображение не получено. Результат требует проверки; резерв сохранён.' }); }
           try { if (content) {
             try {
               const asset = await content.createFromBuffer(account, { bytes: image, name: requestId + '.png', type: 'image/png', origin: { kind: 'result', provider: 'codex', recordId: id(account, requestId), position: 0 } });
@@ -108,12 +108,9 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       return job;
     } catch (error) {
       // Unknown completion must never release or charge automatically.
-      if (error.remoteStatus === 404) {
-        return await update(account, requestId, {
-          state: 'cancelled', stage: 'cancelled',
-          error: 'Генерация отменена: worker больше не хранит это задание. Резерв возвращён.'
-        });
-      }
+      if (error.remoteStatus === 404) return await update(account, requestId, {
+        state: 'unknown', error: 'Worker больше не хранит задание. Результат требует проверки; резерв сохранён.'
+      });
       return await update(account, requestId, { state: 'unknown', error: 'Статус Codex уточняется. Резерв сохранён; проверьте позже или обратитесь в поддержку.' });
     }
   }
@@ -176,18 +173,8 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     async recover() {
       const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='codex' AND data->>'state' IN ('running','submitting','unknown')")).rows;
       for (const row of rows) {
-        await transaction(accounts.pool, async client => {
-          await lockWallet(client, row.account_id);
-          const current = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2 FOR UPDATE", [row.account_id, row.id])).rows[0];
-          if (!current || !['running', 'submitting', 'unknown'].includes(current.data.state)) return;
-          const now = new Date();
-          const started = Date.parse(current.data.startedAt || current.data.createdAt);
-          const next = { ...current.data, state: 'cancelled', stage: 'cancelled', error: 'Генерация отменена при обновлении сервиса. Резерв возвращён.', completedAt: now.toISOString(), revision: Number(current.data.revision || 0) + 1, updatedAt: now.toISOString() };
-          if (Number.isFinite(started)) next.durationMs = Math.max(0, now.getTime() - started);
-          await settle(client, row.account_id, row.id, 'cancelled', next);
-          await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [row.account_id, row.id, JSON.stringify(next)]);
-          await appendGenerationEvent(client, row.account_id, 'codex', next, 'cancelled', { error: next.error });
-        });
+        const current = await status(row.account_id, row.data.id);
+        if (['running', 'submitting'].includes(current.state)) watch(row.account_id, row.data.id);
       }
     },
     close() { closed = true; for (const timer of timers.values()) clearTimeout(timer); timers.clear(); }

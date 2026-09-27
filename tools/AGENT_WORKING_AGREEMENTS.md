@@ -52,6 +52,16 @@
   work, update the relevant project-memory specification in the same scoped
   change. Write it so another agent could rebuild the behavior on a different
   language, framework, or platform. A handoff summary is not a substitute.
+- During such work, compare changed behavior with the relevant spec, source,
+  tests, and affected docs. Capture branches, failure handling, invariants, and
+  architecture decisions in focused specs, or confirm the existing spec covers
+  them, before the implementation task is complete. Git finish does not repeat
+  this product-contract audit.
+- Label implemented, planned, and historical behavior where they could be
+  confused. Support current claims with a last-check date and source or test
+  paths. When adding, renaming, moving, or retiring a specification, update its
+  project-memory index entry and verify the relative link in the same scope.
+  These are implementation checks, not an additional Git-finish workflow.
 - Keep project documentation separate from project memory. Put overview,
   user-visible functionality, stack, commands, operations, and troubleshooting
   in `README.md`, `docs/`, or the runbook. Put algorithms, business rules,

@@ -208,6 +208,25 @@ function seedreamProInputSurcharge(model, input, rows) {
   return [...rates][0] * extraImages;
 }
 
+function qwen3ImageQuote(model, input, candidates) {
+  if (!['qwen3/pro-image-to-image', 'qwen3/image-to-image'].includes(model.apiModel)) return null;
+  const resolution = String(input?.resolution || '').trim().toUpperCase();
+  const inputCount = Array.isArray(input?.image_urls) ? input.image_urls.length : 0;
+  if (!resolution || !inputCount) throw new Error('Для расчёта цены нужны разрешение и исходные изображения');
+  const tier = model.apiModel === 'qwen3/pro-image-to-image' ? 'pro' : '';
+  const component = kind => {
+    const prices = new Set(candidates.filter(row => {
+      const match = /^Qwen image 3\.0(?:\s+(Pro))?,\s*(input|output),\s*(1K|2K)$/i.exec(String(row.modelDescription || ''));
+      return match && String(match[1] || '').toLowerCase() === tier
+        && match[2].toLowerCase() === kind && match[3].toUpperCase() === resolution
+        && String(row.creditUnit || '').trim().toLowerCase() === 'per image';
+    }).map(row => decimalUnits(row.creditPrice)));
+    if (prices.size !== 1) throw new Error('Цена выбранных параметров Kie ещё не определена');
+    return [...prices][0];
+  };
+  return component('output') + component('input') * inputCount;
+}
+
 function quoteKiePublic(model, input, tariffData, context = {}) {
   input = checkedInput(model, input);
   const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
@@ -216,9 +235,10 @@ function quoteKiePublic(model, input, tariffData, context = {}) {
     if (!rows.length) throw new Error('Цена Kie временно недоступна');
     throw new Error('Цена этой модели Kie ещё не опубликована');
   }
-  const row = selectTariff(model, input || {}, rows);
-  const amountUnits = units(Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model))
-    + seedreamProInputSurcharge(model, input, rows));
+  const qwenAmountUnits = qwen3ImageQuote(model, input, candidates);
+  const row = qwenAmountUnits === null ? selectTariff(model, input || {}, rows) : null;
+  const amountUnits = units(qwenAmountUnits ?? (Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model))
+    + seedreamProInputSurcharge(model, input, rows)));
   return {
     amountUnits,
     credits: amountUnits / SCALE,

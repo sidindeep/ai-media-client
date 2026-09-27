@@ -114,12 +114,13 @@ class AccountRecords {
         const consumed = Number(reportedCost);
         const costKnown = (typeof reportedCost === 'number' || (typeof reportedCost === 'string' && reportedCost.trim() !== ''))
           && Number.isFinite(consumed) && consumed >= 0;
-        const providerCharged = Boolean(record.taskId && costKnown && consumed > 0);
+        const terminal = ['success', 'fail'].includes(record.state);
+        const providerCharged = Boolean(terminal && record.taskId && costKnown && consumed > 0);
         if (providerCharged && record.nativeQuote?.amountUnits && !record.providerChargeConfirmedAt) record.providerChargeConfirmedAt = new Date().toISOString();
-        if (record.state === 'success' && record.taskId && costKnown && consumed === 0 && !record.providerChargeConfirmedAt)
+        if (terminal && record.taskId && costKnown && consumed === 0 && !record.providerChargeConfirmedAt)
           record.providerFreeConfirmedAt = record.providerFreeConfirmedAt || new Date().toISOString();
         const settlementState = providerCharged ? 'provider_charged'
-          : record.state === 'success' && record.taskId && costKnown && consumed === 0 ? 'provider_free' : record.state;
+          : terminal && record.taskId && costKnown && consumed === 0 ? 'provider_free' : record.state;
         await settle(client, this.accountId, id, settlementState, record);
         await journalKieSubmission(client, this.accountId, old, record);
         if (!old || old.state !== record.state) {

@@ -15,7 +15,7 @@ test('billing reconciliation separates confirmed mismatch, possible cost and hel
   const account = randomUUID();
   await pool.query('INSERT INTO media_accounts(id,display_name) VALUES($1,$2)', [account, 'Test account']);
   await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,100000)', [account]);
-  for (const jobId of ['charged', 'sent', 'unsent', 'free', 'partial', 'held']) {
+  for (const jobId of ['charged', 'sent', 'unsent', 'free', 'free-failure', 'partial', 'held']) {
     await transaction(pool, async client => {
       await reserve(client, account, jobId, { amountUnits: 1000, version: 'v1' });
       if (jobId === 'partial') await settle(client, account, jobId, 'success', { state: 'success' }, 500);
@@ -27,6 +27,7 @@ test('billing reconciliation separates confirmed mismatch, possible cost and hel
     sent: { state: 'fail', taskId: 'provider-sent' },
     unsent: { state: 'cancelled' },
     free: { state: 'success', taskId: 'provider-free', creditsConsumed: 0 },
+    'free-failure': { state: 'fail', taskId: 'provider-free-failure', creditsConsumed: 0 },
     partial: { state: 'success', taskId: 'provider-partial', creditsConsumed: 2 },
     held: { state: 'unknown' },
   })) await pool.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'history',$2,$3)", [account, jobId, JSON.stringify(record)]);

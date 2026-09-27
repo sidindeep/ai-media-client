@@ -10,6 +10,11 @@ and project commit-message language preferences.
   last mutation and after commit/push. Local and upstream HEAD equality does not
   prove that the worktree is clean. Never report a complete clean finish while
   a new task-scoped diff remains.
+- Git finish does not start a project-memory audit, specification writeback,
+  feature implementation, or product test cycle. Those belong to the
+  implementation task. Perform only the requested Git operation and the
+  compact Git safety checks below, unless a more specific project-local rule
+  expressly requires another finish-time check.
 - Treat Git finish as finalization of an already established scope, not as a new
   implementation or repair task. Resolve scope only from the active conversation
   task or explicit user-selected changes; never classify the whole dirty

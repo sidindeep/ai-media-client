@@ -16,6 +16,26 @@ test('Kie dynamic pricing resolves exact anchor model and selected resolution', 
   assert.equal(quoteKie(flux, { resolution: '2K' }, tariffData).credits, 7);
 });
 
+test('Qwen3 image editing adds each input image to the selected output tariff', () => {
+  const model = { id: 'kie:qwen3/pro-image-to-image', apiModel: 'qwen3/pro-image-to-image', providerId: 'kie' };
+  const standard = { id: 'kie:qwen3/image-to-image', apiModel: 'qwen3/image-to-image', providerId: 'kie' };
+  const tariffRows = [
+    ...['1K', '2K'].flatMap((resolution, index) => [
+      { modelDescription: `Qwen image 3.0 Pro, output, ${resolution}`, creditPrice: String([6.4, 12][index]), creditUnit: 'per image', anchor: 'https://kie.ai/qwen-image-3?model=qwen3%2Fpro-image-to-image' },
+      { modelDescription: `Qwen image 3.0 Pro, input, ${resolution}`, creditPrice: '0.5', creditUnit: 'per image', anchor: 'https://kie.ai/qwen-image-3?model=qwen3%2Fpro-image-to-image' },
+      { modelDescription: `Qwen image 3.0, output, ${resolution}`, creditPrice: '4.8', creditUnit: 'per image', anchor: 'https://kie.ai/qwen-image-3?model=qwen3%2Fimage-to-image' },
+      { modelDescription: `Qwen image 3.0, input, ${resolution}`, creditPrice: '0.5', creditUnit: 'per image', anchor: 'https://kie.ai/qwen-image-3?model=qwen3%2Fimage-to-image' },
+    ]),
+  ];
+  const tariffData = { fetchedAt: '2026-09-27T00:00:00Z', rows: tariffRows };
+  const input = { resolution: '1K', image_urls: ['source-1', 'source-2'] };
+  assert.equal(quoteKie(model, input, tariffData).credits, 7.4);
+  assert.equal(quoteKie(model, { ...input, resolution: '2K' }, tariffData).credits, 13);
+  assert.equal(quoteKie(standard, input, tariffData).credits, 5.8);
+  assert.throws(() => quoteKie(model, input, { ...tariffData, rows: tariffRows.filter(row => !row.modelDescription.includes('Pro, input, 1K')) }), /параметров/);
+  assert.throws(() => quoteKie(model, { resolution: '1K', image_urls: [] }, tariffData), /исходные изображения/);
+});
+
 test('Kie dynamic pricing resolves an exact model id from an anchor path', () => {
   const model = { id: 'kie:nano-banana-2-lite', apiModel: 'nano-banana-2-lite', providerId: 'kie' };
   const row = { modelDescription: 'nano-banana-2-lite, 1k', creditPrice: '4', creditUnit: 'per image', anchor: 'https://kie.ai/nano-banana-2-lite' };

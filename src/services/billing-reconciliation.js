@@ -15,7 +15,7 @@ function classify(row) {
     : provider === 'routerai' ? finitePositive(record.providerCostRub) : 0;
   const usage = provider === 'codex' ? finitePositive(record.usage?.total_tokens) : 0;
   const providerFree = Boolean(record.providerFreeConfirmedAt)
-    || (provider === 'kie' && record.state === 'success' && Number(record.creditsConsumed) === 0 && record.creditsConsumed != null)
+    || (provider === 'kie' && ['success', 'fail'].includes(record.state) && Number(record.creditsConsumed) === 0 && record.creditsConsumed != null)
     || (provider === 'routerai' && record.state === 'success' && Number(record.providerCostRub) === 0 && record.providerCostRub != null);
   const accepted = Boolean(row.kie_accepted || row.kie_unknown || record.taskId || record.providerAcceptedAt || record.providerVideoId
     || record.state === 'success' || providerCost > 0 || usage > 0);

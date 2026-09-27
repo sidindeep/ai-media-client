@@ -8,6 +8,8 @@ let directory, sessionId, sequence = 0, warned = false;
 const maxBytes = 5 * 1024 * 1024;
 const maxPendingBytes = 4 * 1024 * 1024;
 let pending = [], pendingBytes = 0, draining = null, dropped = 0;
+let errorSink = null;
+function setErrorSink(sink) { errorSink = sink; }
 function secret(value) { if (typeof value === 'string' && value.length > 5) secrets.add(value); }
 function clean(value, key = '', depth = 0) {
   if (/authorization|cookie|token|password|api.?key|secret/i.test(key)) return '[REDACTED]';
@@ -54,6 +56,9 @@ function drain() {
   return draining;
 }
 function write(event, details = {}) {
+  if (errorSink && /(?:^|\.)error$/.test(event)) {
+    try { errorSink(event, details); } catch {}
+  }
   if (!directory) return;
   try {
     const row = JSON.stringify({ time: new Date().toISOString(), sessionId, sequence: ++sequence, ...context.getStore(), event, details: clean(details) }) + '\n';
@@ -109,4 +114,4 @@ async function tracedFetch(url, options = {}, fetcher = fetch) {
   } catch (error) { write('http.error', { requestId, elapsedMs: Date.now() - started, error }); throw error; }
 }
 function request(fn) { return context.run({requestId:randomUUID()},fn); }
-module.exports = { request, current:()=>context.getStore(), configure, write, timing, flush, run, step, tracedFetch, secret, clean };
+module.exports = { request, current:()=>context.getStore(), configure, write, timing, flush, run, step, tracedFetch, secret, clean, setErrorSink };

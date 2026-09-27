@@ -63,7 +63,7 @@ GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настр
 Аккаунты: [PostgreSQL/OAuth/кредиты](../docs/accounts-and-credits.md). По умолчанию
 MEDIA_AUTH_ENABLED=true; DATABASE_URL обязателен. `.env.example` содержит только
 пустые секреты. Для полноценного входа нужны Google/VK приложения и HTTPS origin.
-Базовая схема v10 и новые миграции до v13 применяются транзакционно только при необходимости; checksum проверяется при каждом старте. Для отдельного запуска миграций: `docker compose run --rm media node scripts/migrate-schema.cjs`; затем runtime может работать с `MEDIA_DB_MIGRATE=false`. Старая JSON-история не мигрирует.
+Базовая схема v10 и новые миграции до v14 применяются транзакционно только при необходимости; checksum проверяется при каждом старте. Для отдельного запуска миграций: `docker compose run --rm media node scripts/migrate-schema.cjs`; затем runtime может работать с `MEDIA_DB_MIGRATE=false`. Старая JSON-история не мигрирует.
 Тарифы config/native-prices.json: Nano Banana 2 Lite и все режимы Codex —
 4 внутренних кредита за запрос по решению владельца от 2026-09-18;
 остальные цены публикуются отдельно.

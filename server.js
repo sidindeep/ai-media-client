@@ -21,6 +21,7 @@ const { createYooKassaStubProvider } = require('./src/payments/providers/yookass
 const { createProductCatalog } = require('./src/commerce/catalog');
 const { createCommerce } = require('./src/commerce/service');
 const trace = require('./src/generation-log');
+const systemErrors = require('./src/system-errors');
 const { listenForAccountChanges } = require('./src/database/change-events');
 
 function startupDiagnosticRequest(service) {
@@ -51,10 +52,13 @@ async function checkProviderReadiness(service, readiness) {
     };
   } catch (error) {
     readiness.provider = { state: 'error', checkedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'Проверка Kie не выполнена' };
+    systemErrors.record('provider', 'startup-check.error', error);
   }
 }
 
 async function start({ config = loadConfig(), provider, paymentProvider, pool: suppliedPool, authProviders, startupChecks = !suppliedPool, databaseOpener = openDatabase, tariffFetcher } = {}) {
+  trace.setErrorSink((event, details) => systemErrors.record('diagnostic', event, details.error || details.errorCode || event,
+    { ...trace.current(), ...details, error: undefined }));
   const webReplica = config.replicaRole === 'web';
   if (config.replicaRole !== 'single' && (!config.auth.enabled || (!config.database.url && !suppliedPool)))
     throw new Error('Нескольким репликам нужны авторизация и общая PostgreSQL');
@@ -154,6 +158,8 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await content?.close();
     await changeListener?.close();
     await trace.flush();
+    await systemErrors.flush();
+    systemErrors.setPool(null);
     await releaseOwnership();
     await pool?.end();
     if (lock) { await lock.close(); await fs.unlink(lockPath).catch(() => {}); }
@@ -179,6 +185,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' });
     if (config.auth.enabled && suppliedPool) {
       pool = await databaseOpener(config.database, suppliedPool);
+      systemErrors.setPool(pool);
       await acquireOwnership(pool);
       content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
       const starterPack = createStarterPack({ pool, config: config.starterPack });
@@ -229,6 +236,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce);
             if (config.replicaRole === 'executor') await service.queue.recover();
             pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
+            systemErrors.setPool(pool);
             changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
             payments = nextBusiness.payments; commerce = nextBusiness.commerce;
             telegram.setAccountServices(accounts, telegramLinks);
@@ -253,6 +261,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
   } catch (error) { await cleanup(); throw error; }
 }
 if (require.main === module) {
+  systemErrors.captureConsole();
   start().then(runtime => {
     const address = runtime.server.address();
     console.log(`AI Media web: http://${address.address}:${address.port}`);

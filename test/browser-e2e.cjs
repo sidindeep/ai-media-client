@@ -99,6 +99,17 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
+    await client.evaluate("document.querySelector('.sidebar-profile-link').click();void 0");
+    await client.until("location.pathname==='/app/profile' && document.querySelector('.commerce-identity-card')?.textContent.includes('Browser E2E')");
+    assert.equal(await client.evaluate("document.querySelector('.account-modal-backdrop') === null"), true);
+    await client.evaluate("const input=document.querySelector('#commerce-profile-name');input.value='Browser updated';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.commerce-name-field button').click();void 0");
+    await client.until("document.querySelector('.commerce-identity-card')?.textContent.includes('Browser updated')");
+    assert.equal((await pool.query('SELECT display_name FROM media_accounts WHERE id=$1', [accountId])).rows[0].display_name, 'Browser updated');
+    await client.evaluate("document.querySelectorAll('.commerce-rail nav button')[1].click();void 0");
+    await client.until("location.pathname==='/app/plans' && Boolean(document.querySelector('.commerce-shell'))");
+    assert.equal(await client.evaluate("document.querySelector('.subscription-dialog') === null"), true);
+    await client.command('Page.navigate', { url: origin + '/app' });
+    await client.until("Boolean(document.querySelector('.composer-body textarea'))");
     await client.evaluate("const field=document.querySelector('.composer-body textarea');field.value='Browser draft persists';field.dispatchEvent(new Event('input',{bubbles:true}));void 0");
     await sleep(1000);
     await client.command('Page.reload');
@@ -128,8 +139,8 @@ async function main() {
       VALUES($1,$2,'fulfilled',$3,$4,$5,$6,$7,$8,$9,$10)`, [orderId, accountId, offer.id, offer.version, offer, offer.amountMinor, offer.currency,
       offer.creditUnits, `browser-return-${orderId}`, payloadHash({ offerId: offer.id, offerVersion: offer.version })]);
     await client.command('Page.navigate', { url: `${origin}/app?order=${orderId}` });
-    await client.until("Boolean(document.querySelector('.subscription-dialog')) && !new URL(location.href).searchParams.has('order')");
-    assert.equal(await client.evaluate("document.querySelector('.subscription-dialog .subscription-note')?.textContent?.length > 0"), true);
+    await client.until("location.pathname==='/app/plans' && !new URL(location.href).searchParams.has('order') && document.querySelector('.commerce-feedback[role=status]')?.textContent.length > 0");
+    assert.equal(await client.evaluate("document.querySelector('.subscription-dialog') === null"), true);
     console.log('Browser E2E passed: authenticated studio, draft reload, older history page, rejected submit and retry, checkout return');
   } finally {
     client?.close();

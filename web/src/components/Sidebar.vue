@@ -6,8 +6,8 @@ import type { ProviderStatus } from '../api/client';
 import { useI18n } from '../i18n';
 import type { Chat, Project } from '../types';
 
-const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'history' | 'spending' }>();
-const emit = defineEmits<{ landing: []; home: []; workspace: []; history: []; spending: [] }>();
+const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'history' | 'spending' | 'profile' | 'plans' }>();
+const emit = defineEmits<{ landing: []; home: []; workspace: []; history: []; spending: []; profile: []; plans: [] }>();
 const studio = useStudioStore();
 const { formatDate, formatNumber, t, tp } = useI18n();
 const activeTab = ref<'chats' | 'projects' | 'archive'>('chats');
@@ -232,6 +232,8 @@ function checkProvider() {
         <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17M7 14h4" /></svg></span>
         <span>{{ t('spending.title') }}</span>
       </button>
+      <button type="button" class="sidebar-home-link sidebar-profile-link" :class="{ active: props.activeSection === 'profile' }" :aria-label="t('account.profile')" :title="t('account.profile')" @click="emit('profile')"><span class="sidebar-home-icon" aria-hidden="true">●</span><span>{{ t('account.profile') }}</span></button>
+      <button type="button" class="sidebar-home-link sidebar-plans-link" :class="{ active: props.activeSection === 'plans' }" :aria-label="t('commerce.plans')" :title="t('commerce.plans')" @click="emit('plans')"><span class="sidebar-home-icon" aria-hidden="true">◈</span><span>{{ t('commerce.plans') }}</span></button>
     </nav>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar" :class="{ 'archive-mode': activeTab === 'archive' }"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button v-if="activeTab !== 'archive'" class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>

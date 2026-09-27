@@ -697,6 +697,11 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .locale-switcher select { min-width: 58px; border: 1px solid #37354d; border-radius: 999px; padding: 7px 22px 7px 10px; color: #d9d3ef; background: #191827; font: inherit; cursor: pointer; }
 :root[data-theme='light'] .locale-switcher select { border-color: #d7d2e2; color: #332f3e; background: #f5f2f8; }
 .studio-grid.spending-mode { display: block; overflow-y: auto; }
+.studio-grid.commerce-mode { display: block; overflow-y: auto; border-radius: 17px; padding: clamp(18px, 2.3vw, 34px); background: #f0e9dd; scrollbar-width: thin; }
+.account-layout .studio-main, :root[data-theme='light'] .account-layout .studio-main { background: #f0e9dd; }
+.account-layout .studio-header h1, :root[data-theme='light'] .account-layout .studio-header h1 { color: #261f20; }
+.account-layout .studio-header .eyebrow { color: #b25231; }
+@media (max-width: 720px) { .studio-grid.commerce-mode { padding: 12px; } }
 .spending-page { min-height: 100%; padding: 22px; border: 1px solid #303144; border-radius: 17px; background: linear-gradient(145deg, rgba(23, 23, 37, .95), rgba(14, 15, 23, .95)); }
 .spending-header h2 { margin: 5px 0 0; font-size: 22px; }.spending-header p { margin: 7px 0 0; color: #89849a; font-size: 11px; }
 .spending-filters { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 14px; margin: 24px 0 18px; }
@@ -724,19 +729,6 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 :root[data-theme='light'] .notification-list > button { color: #393442; }
 :root[data-theme='light'] .notification-list > button:hover { background: #f6f3fb; }
 :root[data-theme='light'] .notification-list > button.unread { background: #f6f2ff; }
-:root[data-theme='light'] .subscription-backdrop { background: rgba(47, 42, 55, .38); }
-:root[data-theme='light'] .subscription-dialog { border-color: #d7d1df; color: #292432; background: linear-gradient(145deg, #fff, #f7f5fa); box-shadow: 0 34px 100px rgba(52, 44, 65, .24); }
-:root[data-theme='light'] .subscription-offer { border-color: #edc6b5; background: linear-gradient(135deg, #fff1e9, #fff9f5); }
-:root[data-theme='light'] .subscription-offer strong { color: #a53f1e; }
-:root[data-theme='light'] .subscription-offer p { color: #725e55; }
-:root[data-theme='light'] .subscription-plans article { border-color: #ded9e5; background: #fff; }
-:root[data-theme='light'] .subscription-plans button { border-color: #d6d0dc; color: #716b79; background: #f1eef3; }
-:root[data-theme='light'] .subscription-plans button:not(:disabled) { border-color: #795dbb; color: #fff; background: #765bb3; }
-:root[data-theme='light'] .subscription-plans :is(article > p, ul, .subscription-note) { color: #655d6e; }
-:root[data-theme='light'] .subscription-back { color: #61458e; }
-:root[data-theme='light'] .subscription-selected-offer { border-color: #ded5e9; background: #faf8fd; }
-:root[data-theme='light'] :is(.subscription-selected-offer small, .subscription-payment-note) { color: #62596c; }
-:root[data-theme='light'] .subscription-payment-methods button { border-color: #ded9e4; color: #817889; background: #f4f2f6; }
 :root[data-theme='light'] .sidebar-provider-check { border-color: #c8bde0; color: #574292; background: #f0ebfa; }
 :root[data-theme='light'] .sidebar-provider-check:hover { border-color: #8b74c5; color: #443276; background: #e8e0f7; }
 :root[data-theme='light'] .spending-operation > span { color: #a74657; background: #fff0f2; }

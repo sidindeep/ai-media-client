@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
 import type { Catalog, Chat, CodexCatalog, RouterAiCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
-import { normalizeMediaInput } from '../domain/media-fields';
+import { mediaFileValue, normalizeMediaInput } from '../domain/media-fields';
 import { t } from '../i18n';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
@@ -175,6 +175,22 @@ export const useStudioStore = defineStore('studio', () => {
     sourceFiles.value = saved ? [...saved.sourceFiles] : [];
     mediaInput.value = saved ? { ...saved.mediaInput } : {};
     if (provider.value === 'media') normalizeCurrentMediaInput();
+  }
+
+  function carryCompatibleMediaSources(previousModel: typeof currentMediaModel.value | undefined, previousFiles: SourceAttachment[]) {
+    if (!previousModel || !currentMediaModel.value || !previousFiles.length) return;
+    for (const target of currentMediaModel.value.fields || []) {
+      if (target.type !== 'files') continue;
+      const source = previousModel.fields?.find(field => field.type === 'files' && field.key === target.key);
+      if (!source || target.maxSizeMb && (!source.maxSizeMb || target.maxSizeMb < source.maxSizeMb)) continue;
+      const files = previousFiles.filter(file => file.fieldKey === target.key);
+      if (!files.length || target.maxFiles && files.length > target.maxFiles || target.scalar && files.length > 1) continue;
+      const accepted = (target.accept || '').split(',').map(type => type.trim()).filter(Boolean);
+      if (accepted.length && files.some(file => !accepted.some(type => type === file.type
+        || type.endsWith('/*') && file.type.startsWith(type.slice(0, -1))))) continue;
+      sourceFiles.value = [...sourceFiles.value.filter(file => file.fieldKey !== target.key), ...files];
+      mediaInput.value = { ...mediaInput.value, [target.key]: mediaFileValue(target, files.map(file => file.ref)) };
+    }
   }
 
   function normalizeCodexControls() {
@@ -525,11 +541,14 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function setSelectedModel(value: string) {
+    const previousModel = provider.value === 'media' ? currentMediaModel.value : undefined;
+    const previousFiles = [...sourceFiles.value];
     rememberSelection();
     if (provider.value === 'codex') codexModel.value = value;
     else if (provider.value === 'routerai') routerAiModel.value = value;
     else mediaModelId.value = value;
     restoreSelection();
+    if (provider.value === 'media') carryCompatibleMediaSources(previousModel, previousFiles);
   }
 
   function setModelAccess(value: 'gpt-only' | 'all') {

@@ -148,10 +148,12 @@ async function main() {
     const mediaSelections = await client.evaluate(`(async()=>{
       const response=await fetch('/api/rpc/getCatalog',{method:'POST',headers:{'Content-Type':'application/json','X-Media-Client':'web','X-Media-User':document.querySelector('meta[name="account-id"]').content},body:'[]'});
       const models=(await response.json()).result.models.filter(model=>(model.kind||'image')==='image');
-      const withFiles=models.find(model=>model.fields?.some(field=>field.type==='files'));
-      return {first:withFiles?.id,field:withFiles?.fields.find(field=>field.type==='files')?.key,second:models.find(model=>model.id!==withFiles?.id)?.id};
+      const first=models.find(model=>model.id==='kie:seedream/5-pro-image-to-image');
+      const second=models.find(model=>model.id==='kie:seedream/5-lite-image-to-image');
+      return {first:first?.id,field:first?.fields.find(field=>field.type==='files')?.key,second:second?.id,
+        incompatible:models.find(model=>model.id!==first?.id && model.id!==second?.id && !model.fields?.some(field=>field.type==='files' && field.key==='image_urls'))?.id};
     })()`);
-    assert.ok(mediaSelections.first && mediaSelections.field && mediaSelections.second, 'the catalog contains image models for source caching');
+    assert.ok(mediaSelections.first && mediaSelections.field && mediaSelections.second && mediaSelections.incompatible, 'the catalog contains compatible and incompatible image models');
     await client.evaluate(`(async()=>{
       const chatId=JSON.parse(localStorage.getItem('media-studio-workspace')||'null')?.chatId;
       const ref=${JSON.stringify(cachedSource)};
@@ -162,12 +164,24 @@ async function main() {
     await client.command('Page.reload');
     await client.until(`document.querySelectorAll('.source-preview').length===1 && document.querySelector('.model-native-select')?.value===${JSON.stringify(mediaSelections.first)}`);
     await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(mediaSelections.second)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until(`document.querySelectorAll('.source-preview').length===1 && document.querySelector('.model-native-select')?.value===${JSON.stringify(mediaSelections.second)}`);
+    await sleep(1000);
+    await client.command('Page.reload');
+    await client.until(`document.querySelectorAll('.source-preview').length===1 && document.querySelector('.model-native-select')?.value===${JSON.stringify(mediaSelections.second)}`);
+    const liteDraft = await client.evaluate(`(async()=>{
+      const chatId=JSON.parse(localStorage.getItem('media-studio-workspace')||'null')?.chatId;
+      const response=await fetch('/api/rpc/loadDrafts',{method:'POST',headers:{'Content-Type':'application/json','X-Media-Client':'web','X-Media-User':document.querySelector('meta[name="account-id"]').content},body:JSON.stringify(chatId&&chatId!=='system:recent'?[{chatId}]:[])});
+      return (await response.json()).result?.tabs?.[0];
+    })()`);
+    assert.deepEqual(liteDraft?.mediaInput?.[mediaSelections.field], [cachedSource]);
+    await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(mediaSelections.incompatible)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
     await client.until("document.querySelectorAll('.source-preview').length===0");
     await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(mediaSelections.first)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
     await client.until("document.querySelectorAll('.source-preview').length===1 && document.querySelector('.composer-body textarea')?.value==='Browser draft persists'");
     await sleep(1000);
     await client.command('Page.reload');
     await client.until("document.querySelectorAll('.source-preview').length===1");
+    if (process.env.BROWSER_E2E_SELECTION_ONLY === '1') return;
     await client.evaluate("document.querySelector('.sidebar-history-link').click();void 0");
     await client.until("document.querySelectorAll('.history-page .history-item').length===50");
     await client.evaluate("document.querySelector('.history-page-list > .action-button').click();void 0");

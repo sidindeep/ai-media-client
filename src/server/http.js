@@ -15,6 +15,7 @@ const { handleCommerceRequest } = require('./routes/commerce');
 const { buildInfo } = require('./build-info');
 const { checkDatabase, transientConnection } = require('../database/database');
 const trace = require('../generation-log');
+const systemErrors = require('../system-errors');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
@@ -184,7 +185,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
   if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
   result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, kieBrowserControl = null }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record }) {
   let uploadBytesInFlight = 0;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
@@ -246,13 +247,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const isAsset = ['GET', 'HEAD'].includes(req.method)
         && (isLanding || Boolean(legalPage) || publicPageAssets.has(url.pathname.slice(1)) || landingModelIcons.has(landingModelIcon) || sharedFiles.has(shared?.[1]) || publicAssets.has(url.pathname.slice(1)) || url.pathname === '/codex-models.json' || /^\/api\/content\/[a-f0-9-]{36}$/.test(url.pathname) || isVueApp || isLegacyApp);
       const sendVueApplication = async user => {
-        const root = path.join(config.root, 'public', 'vue');
+        const root = vueRoot;
         const relative = isLanding || url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/` ? 'index.html' : url.pathname.slice(`${vueAppPrefix}/`.length);
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
         const sendVueIndex = async () => {
           let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
           const starterStatus = user && accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null;
           html = html.replace('<head>', `<head><meta name="account-id" content="${user?.id || 'pending'}"><meta name="account-role" content="${user?.role || 'pending'}"><meta name="account-model-access" content="${starterStatus?.modelAccess || 'pending'}">`);
+          if (user && req.method === 'GET' && (url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/`)) {
+            recordSystemEvent('studio', 'chat.page.served', 'Chat page served', {
+              accountId: user.id, asset: html.match(/\/app\/assets\/[^"']+\.js/)?.[0] || null, build: release.build,
+            });
+          }
           res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
           res.end(req.method === 'HEAD' ? '' : html);
         };
@@ -309,7 +315,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       }
       if (['GET', 'HEAD'].includes(req.method) && landingModelIcons.has(landingModelIcon)) {
-        return await sendFile(req, res, path.join(config.root, 'public', 'vue', 'model-icons', landingModelIcon));
+        return await sendFile(req, res, path.join(vueRoot, 'model-icons', landingModelIcon));
       }
       if (['GET', 'HEAD'].includes(req.method) && isVuePublicAsset) return await sendVueApplication(null);
       if (config.auth.enabled && !auth && (isLanding || isVueApp) && ['GET', 'HEAD'].includes(req.method)) return await sendVueApplication(null);
@@ -448,13 +454,28 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 200, { result: { name: body.name.trim() } });
       }
       if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/history') {
+        const startedAt = performance.now();
         const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
-        const scoped = await accounts.scope(user, selected);
         const historyRequest = { cursor: url.searchParams.get('cursor') || null };
         if (url.searchParams.has('chatId')) historyRequest.chatId = url.searchParams.get('chatId');
-        return json(res, 200, { result: await scoped.dispatch('getHistoryPage', [historyRequest]) });
+        try {
+          const scoped = await accounts.scope(user, selected);
+          const result = await scoped.dispatch('getHistoryPage', [historyRequest]);
+          if (historyRequest.chatId) recordSystemEvent('studio', 'chat.history.loaded', 'Chat history loaded', {
+            accountId: selected || user.id, chatId: historyRequest.chatId.slice(0, 80), cursorPresent: Boolean(historyRequest.cursor),
+            records: result.records.length, hasNext: Boolean(result.next), durationMs: Math.round(performance.now() - startedAt),
+          });
+          return json(res, 200, { result });
+        } catch (error) {
+          if (historyRequest.chatId) recordSystemEvent('studio', 'chat.history.failed', error, {
+            accountId: selected || user.id, chatId: historyRequest.chatId.slice(0, 80), cursorPresent: Boolean(historyRequest.cursor),
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+          throw error;
+        }
       }
       if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/sync') {
+        const startedAt = performance.now();
         const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
         const workspaceAccount = selectedWorkspaceAccount || user.id;
         const scopedService = await accounts.scope(user, selectedWorkspaceAccount);
@@ -476,6 +497,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
             AND namespace IN ('history','codex','routerai') AND data->>'chatId' IS NULL`, [workspaceAccount]).then(result => result.rows[0]?.count || 0),
         ]);
         const records = since ? historyResult : [...activeRecords, ...historyResult.records];
+        if (!since) recordSystemEvent('studio', 'chat.sync.loaded', 'Workspace snapshot loaded', {
+          accountId: workspaceAccount, chatId: url.searchParams.get('chatId')?.slice(0, 80) || null, records: records.length,
+          unassignedCount, hasNext: Boolean(historyResult.next), durationMs: Math.round(performance.now() - startedAt),
+        });
         return json(res, 200, { result: { cursor, full: !since, records, historyNext: since ? undefined : historyResult.next,
           unassignedCount: since ? undefined : unassignedCount, projects, chats, queue } });
       }
@@ -693,7 +718,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
         const requestPath = req.url?.split('?')[0] || '';
         if (req.method === 'GET' && (requestPath === '/' || requestPath === '/index.html' || requestPath === '/app' || requestPath === '/app/' || (requestPath.startsWith('/app/') && !path.extname(requestPath)))) {
-          let html = await fs.readFile(path.join(config.root, 'public', 'vue', 'index.html'), 'utf8');
+          let html = await fs.readFile(path.join(vueRoot, 'index.html'), 'utf8');
           html = html.replace('<head>', '<head><meta name="account-id" content="pending"><meta name="account-role" content="pending">');
           res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
           return res.end(html);

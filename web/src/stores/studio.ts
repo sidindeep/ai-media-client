@@ -263,7 +263,7 @@ export const useStudioStore = defineStore('studio', () => {
       do {
         syncAgain = false;
         const activeIds = history.value.filter(item => MEDIA_POLL_STATES.has(item.state) || CODEX_POLL_STATES.has(item.state)).map(item => item.id);
-        applyWorkspaceSync(await api.getWorkspaceSync(syncCursor, activeIds));
+        applyWorkspaceSync(await api.getWorkspaceSync(syncCursor, activeIds, activeChatId.value));
       } while (syncAgain);
     })();
     try { await syncInFlight; } finally { syncInFlight = null; }

@@ -159,6 +159,7 @@ test('read-only provider diagnostics waits for the database services to recover'
 test('workspace sync returns one full snapshot and then only cursor-bounded deltas', async t => {
   const user = { id: '11111111-1111-1111-1111-111111111111', role: 'user' };
   const calls = [];
+  const diagnostics = [];
   const cursorValues = ['2026-09-21T10:00:00.000Z', '2026-09-21T10:00:05.000Z'];
   const service = {
     events: new EventEmitter(),
@@ -187,17 +188,23 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
     },
   };
   const auth = { providers: () => [], user: async () => user };
-  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service, auth, accounts });
+  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service, auth, accounts,
+    recordSystemEvent: (source, event, message, details) => diagnostics.push({ source, event, message, details }) });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  const full = await fetch(base + '/api/workspace/sync').then(response => response.json()).then(body => body.result);
+  const full = await fetch(base + '/api/workspace/sync?chatId=system%3Arecent').then(response => response.json()).then(body => body.result);
   assert.equal(full.full, true);
   assert.equal(full.cursor, '2026-09-21T10:00:00.000Z');
   assert.deepEqual(full.records.map(item => item.id), ['running', 'first']);
   assert.equal(full.historyNext, 'older-cursor');
   assert.equal(full.unassignedCount, 3);
+  assert.deepEqual(diagnostics.map(item => item.event), ['chat.sync.loaded']);
+  assert.deepEqual({ accountId: diagnostics[0].details.accountId, chatId: diagnostics[0].details.chatId,
+    records: diagnostics[0].details.records, unassignedCount: diagnostics[0].details.unassignedCount,
+    hasNext: diagnostics[0].details.hasNext },
+  { accountId: user.id, chatId: 'system:recent', records: 2, unassignedCount: 3, hasNext: true });
   assert.deepEqual(full.projects.map(item => item.id), ['project-full']);
   assert.deepEqual(full.chats.map(item => item.id), ['chat-full']);
 
@@ -217,6 +224,29 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   assert.deepEqual(older.records.map(item => item.id), ['first']);
   await fetch(base + '/api/workspace/history?chatId=system%3Arecent').then(response => response.json());
   assert.deepEqual(calls.at(-1), { method: 'getHistoryPage', args: [{ cursor: null, chatId: 'system:recent' }] });
+  assert.equal(diagnostics.at(-1).event, 'chat.history.loaded');
+  assert.deepEqual({ chatId: diagnostics.at(-1).details.chatId, records: diagnostics.at(-1).details.records,
+    hasNext: diagnostics.at(-1).details.hasNext }, { chatId: 'system:recent', records: 1, hasNext: true });
+});
+test('Vue shell and assets use the selected image build directory', async t => {
+  const dir = await directory();
+  await fs.mkdir(path.join(dir, 'assets'));
+  await fs.writeFile(path.join(dir, 'index.html'), '<html><head></head><body><script src="/app/assets/current.js"></script></body></html>');
+  await fs.writeFile(path.join(dir, 'assets', 'current.js'), 'window.currentBuild=true;');
+  const diagnostics = [];
+  const server = require('../src/server/http').createHttpServer({
+    config: loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false' }), service: {}, vueRoot: dir,
+    recordSystemEvent: (_source, event, _message, details) => diagnostics.push({ event, details }),
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeIdleConnections(); await cleanup(dir, server); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const page = await fetch(base + '/app');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /\/app\/assets\/current\.js/);
+  assert.equal(await fetch(base + '/app/assets/current.js').then(response => response.text()), 'window.currentBuild=true;');
+  assert.deepEqual(diagnostics.map(item => ({ event: item.event, asset: item.details.asset })),
+    [{ event: 'chat.page.served', asset: '/app/assets/current.js' }]);
 });
 async function directory() {
   const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });

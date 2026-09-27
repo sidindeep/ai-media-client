@@ -73,9 +73,10 @@ export const archiveChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${
 export const restoreChat = (id: string) => workspaceRequest<Chat>(`/api/chats/${encodeURIComponent(id)}/restore`, { method: 'POST', body: '{}' });
 export const deleteChat = (id: string) => workspaceRequest<{ id: string; deletedRecords: number }>(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const getChat = (id: string) => workspaceRequest<Chat & { records: GenerationRecord[] }>(`/api/chats/${encodeURIComponent(id)}`);
-export const getWorkspaceSync = (since?: string | null, activeIds: string[] = []) => {
+export const getWorkspaceSync = (since?: string | null, activeIds: string[] = [], chatId?: string) => {
   const query = new URLSearchParams();
   if (since) query.set('since', since);
+  if (chatId) query.set('chatId', chatId);
   for (const id of activeIds.slice(0, 20)) query.append('active', id);
   return workspaceRequest<WorkspaceSync>(`/api/workspace/sync${query.size ? `?${query}` : ''}`);
 };

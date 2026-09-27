@@ -286,6 +286,8 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .welcome-compact .welcome-suggestions button { flex: 0 0 auto; padding: 6px 9px; font-size: 9px; }
 .chat-feed { position: relative; width: min(1020px, 100%); min-height: 0; flex: 1 1 auto; margin: 0 auto; }
 .chat-results { width: 100%; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overflow-anchor: none; padding: 8px 8px 22px; scrollbar-color: #49435f transparent; scrollbar-width: thin; }
+.chat-older-records { display: grid; justify-items: center; gap: 8px; padding: 12px 8px; }
+.chat-older-records p { margin: 0; color: #dc9aa6; font-size: 12px; }
 .chat-latest-button { position: absolute; z-index: 6; bottom: 12px; left: 50%; display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid #5f50a5; border-radius: 50%; padding: 0; color: #eeeaff; background: rgba(28, 25, 47, .94); box-shadow: 0 12px 34px rgba(0, 0, 0, .42), 0 0 0 4px rgba(14, 14, 23, .5); backdrop-filter: blur(12px); transform: translateX(-50%); }
 .chat-latest-button:hover, .chat-latest-button:focus-visible { border-color: #9c85ff; outline: 0; color: #fff; background: #4e3b91; box-shadow: 0 12px 34px rgba(0, 0, 0, .46), 0 0 0 4px rgba(143, 117, 255, .15); transform: translateX(-50%) translateY(-2px); }
 .chat-latest-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }

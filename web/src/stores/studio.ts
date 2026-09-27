@@ -279,6 +279,7 @@ export const useStudioStore = defineStore('studio', () => {
       history.value = mergeGenerationRecords(history.value, page.records)
         .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')) || left.id.localeCompare(right.id));
       historyNext.value = page.next;
+      if (!selectedId.value && visibleRecords.value[0]) selectedId.value = visibleRecords.value[0].id;
     } finally { historyLoading.value = false; }
   }
 

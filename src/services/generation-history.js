@@ -55,8 +55,14 @@ async function generationHistory(pool, accountId, service, present = record => r
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
 async function generationHistorySince(pool, accountId, service, since, before, present = record => record, activeIds = []) {
+  // A transaction can commit after the cursor with an older updated_at.
+  // Re-read jobs still active in the browser, even outside the delta window.
+  const providerIds = provider => activeIds.filter(id => id.startsWith(`${provider}:`))
+    .map(id => `${provider}:${accountId}:${id.slice(provider.length + 1)}`);
   const [media, codex, routerAi] = await Promise.all([
-    service.listHistorySince(since, before, activeIds), new AccountRecords(pool, accountId, 'codex').listSince(since, before), new AccountRecords(pool, accountId, 'routerai').listSince(since, before)
+    service.listHistorySince(since, before, activeIds.filter(id => !id.includes(':'))),
+    new AccountRecords(pool, accountId, 'codex').listSince(since, before, providerIds('codex')),
+    new AccountRecords(pool, accountId, 'routerai').listSince(since, before, providerIds('routerai'))
   ]);
   return [...media.map(present), ...codex.map(codexRecord), ...routerAi.map(routerAiRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));

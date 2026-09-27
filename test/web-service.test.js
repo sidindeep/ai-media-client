@@ -201,7 +201,8 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   assert.deepEqual(full.projects.map(item => item.id), ['project-full']);
   assert.deepEqual(full.chats.map(item => item.id), ['chat-full']);
 
-  const delta = await fetch(base + `/api/workspace/sync?since=${encodeURIComponent(full.cursor)}`).then(response => response.json()).then(body => body.result);
+  const activeIds = ['codex:11111111-1111-4111-8111-111111111111', 'routerai:22222222-2222-4222-8222-222222222222'];
+  const delta = await fetch(base + `/api/workspace/sync?since=${encodeURIComponent(full.cursor)}&${activeIds.map(id => `active=${encodeURIComponent(id)}`).join('&')}`).then(response => response.json()).then(body => body.result);
   assert.equal(delta.full, false);
   assert.equal(delta.cursor, '2026-09-21T10:00:05.000Z');
   assert.deepEqual(delta.records.map(item => item.id), ['second']);
@@ -210,7 +211,7 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   assert.deepEqual(calls.filter(call => call.method.startsWith('getHistory')), [
     { method: 'getHistoryPage', args: [{ cursor: null }] },
     { method: 'getHistoryActive', args: [] },
-    { method: 'getHistoryDelta', args: [{ since: '2026-09-21T10:00:00.000Z', before: '2026-09-21T10:00:05.000Z', activeIds: [] }] },
+    { method: 'getHistoryDelta', args: [{ since: '2026-09-21T10:00:00.000Z', before: '2026-09-21T10:00:05.000Z', activeIds }] },
   ]);
   const older = await fetch(base + '/api/workspace/history?cursor=older-cursor').then(response => response.json()).then(body => body.result);
   assert.deepEqual(older.records.map(item => item.id), ['first']);

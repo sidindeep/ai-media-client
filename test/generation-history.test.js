@@ -3,7 +3,30 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { openDatabase } = require('../src/database/database');
 const { testPool } = require('./helpers/pg-pool');
-const { generationHistory } = require('../src/services/generation-history');
+const { generationHistory, generationHistorySince } = require('../src/services/generation-history');
+
+test('active Codex and RouterAI cards recover transitions older than the delta cursor', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const owner = randomUUID(), other = randomUUID(), jobId = randomUUID(), kieId = randomUUID();
+  for (const account of [owner, other]) {
+    await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Delta test')", [account]);
+    for (const provider of ['codex', 'routerai']) {
+      await pool.query("INSERT INTO media_records(account_id,namespace,id,data,updated_at) VALUES($1,$2,$3,$4,'2026-09-27T09:00:00Z')",
+        [account, provider, `${provider}:${account}:${jobId}`, JSON.stringify({ id: jobId, model: 'gpt-5.5', state: 'running', revision: 2, createdAt: '2026-09-27T09:00:00Z', prompt: account })]);
+    }
+  }
+  const since = '2026-09-27T09:00:01Z', before = '2026-09-27T09:00:02Z';
+  const service = { listHistorySince: async (_since, _before, ids) => { assert.deepEqual(ids, [kieId]); return []; } };
+  const active = [kieId, `codex:${jobId}`, `routerai:${jobId}`];
+  const rows = await generationHistorySince(pool, owner, service, since, before, undefined, active);
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every(row => row.state === 'generating' && row.revision === 2 && row.input.prompt === owner));
+  await pool.query("UPDATE media_records SET data=jsonb_set(data,'{state}','\"success\"') WHERE account_id=$1", [owner]);
+  const completed = await generationHistorySince(pool, owner, service, since, before, undefined, active);
+  assert.ok(completed.every(row => row.state === 'success'));
+  assert.deepEqual(await generationHistorySince(pool, owner, service, since, before, undefined, [kieId]), []);
+});
 
 test('history includes persisted Codex results and states, isolates accounts and preserves Kie presentation', async t => {
   const pool = await openDatabase({}, testPool());

@@ -257,7 +257,7 @@ export const useStudioStore = defineStore('studio', () => {
     syncInFlight = (async () => {
       do {
         syncAgain = false;
-        const activeIds = history.value.filter(item => !['codex', 'routerai'].includes(item.providerId) && MEDIA_POLL_STATES.has(item.state)).map(item => item.id);
+        const activeIds = history.value.filter(item => MEDIA_POLL_STATES.has(item.state) || CODEX_POLL_STATES.has(item.state)).map(item => item.id);
         applyWorkspaceSync(await api.getWorkspaceSync(syncCursor, activeIds));
       } while (syncAgain);
     })();

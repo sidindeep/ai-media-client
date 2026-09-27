@@ -2,6 +2,19 @@ const { Pool } = require('pg');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const normalizeSql = sql => sql.replace(/\r\n?/g, '\n');
+const sqlHash = sql => createHash('sha256').update(sql).digest('hex');
+const migrationChecksum = sql => sqlHash(normalizeSql(sql));
+const baselineV10CanonicalHash = '0c2ffc1f6a780051be243168cb3d145de02ff355c54ea6d2af82e9ab49069cb6';
+const baselineV10MixedWindowsHash = '579167d62b3350f35b14c05218ff57e3b68fbc038b016054cd9102fa41834553';
+function matchesMigrationChecksum(stored, sql, version) {
+  const normalized = normalizeSql(sql);
+  const canonical = sqlHash(normalized);
+  // v10 was first recorded from a mixed-LF/CRLF Windows checkout. Only that
+  // exact published baseline may use its historical checksum.
+  return stored === canonical || stored === sqlHash(normalized.replace(/\n/g, '\r\n'))
+    || (version === 10 && canonical === baselineV10CanonicalHash && stored === baselineV10MixedWindowsHash);
+}
 const transientConnectionCodes = new Set([
   'EAI_AGAIN', 'ECONNABORTED', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETDOWN', 'ENETUNREACH', 'ENOTFOUND', 'EPIPE', 'ETIMEDOUT',
   'PROTOCOL_CONNECTION_LOST', 'UND_ERR_CONNECT_TIMEOUT', '53300', '57P01', '57P02', '57P03',
@@ -52,7 +65,6 @@ async function openDatabase(config, suppliedPool) {
     onConnect: client => client.query('SET statement_timeout = 15000') }));
   pool.on?.('error', () => console.error('Соединение с БД потеряно'));
   const baseline = await fs.readFile(path.join(__dirname, 'schema.sql'), 'utf8');
-  const checksum = sql => createHash('sha256').update(sql).digest('hex');
   const migrationFiles = (await fs.readdir(path.join(__dirname, 'migrations'))).filter(name => /^\d{4}-[a-z0-9-]+\.sql$/.test(name)).sort();
   const migrations = await Promise.all(migrationFiles.map(async name => ({ version: Number(name.slice(0, 4)), sql: await fs.readFile(path.join(__dirname, 'migrations', name), 'utf8') })));
   const latestVersion = migrations.at(-1)?.version || 10;
@@ -74,16 +86,16 @@ async function openDatabase(config, suppliedPool) {
           version integer PRIMARY KEY, checksum text NOT NULL CHECK (checksum ~ '^[a-f0-9]{64}$'), applied_at timestamptz NOT NULL DEFAULT now())`);
         const applied = (await client.query('SELECT version,checksum FROM media_schema_migrations')).rows;
         const known = new Map(applied.map(row => [Number(row.version), row.checksum]));
-        const baselineHash = checksum(baseline);
-        if (known.has(10) && known.get(10) !== baselineHash) throw Object.assign(new Error('Контрольная сумма базовой схемы изменилась'), { code: 'DATABASE_MIGRATION_CHANGED' });
+        const baselineHash = migrationChecksum(baseline);
+        if (known.has(10) && !matchesMigrationChecksum(known.get(10), baseline, 10)) throw Object.assign(new Error('Контрольная сумма базовой схемы изменилась'), { code: 'DATABASE_MIGRATION_CHANGED' });
         if (!known.has(10)) {
           if (config.migrate === false) throw Object.assign(new Error('Базовая схема не зарегистрирована'), { code: 'DATABASE_MIGRATION_REQUIRED' });
           await client.query('INSERT INTO media_schema_migrations(version,checksum) VALUES(10,$1)', [baselineHash]);
         }
         for (const migration of migrations) {
-          const hash = checksum(migration.sql);
+          const hash = migrationChecksum(migration.sql);
           if (known.has(migration.version)) {
-            if (known.get(migration.version) !== hash) throw Object.assign(new Error(`Миграция ${migration.version} изменена`), { code: 'DATABASE_MIGRATION_CHANGED' });
+            if (!matchesMigrationChecksum(known.get(migration.version), migration.sql, migration.version)) throw Object.assign(new Error(`Миграция ${migration.version} изменена`), { code: 'DATABASE_MIGRATION_CHANGED' });
             continue;
           }
           if (config.migrate === false) throw Object.assign(new Error(`Требуется миграция БД до ${migration.version}`), { code: 'DATABASE_MIGRATION_REQUIRED' });

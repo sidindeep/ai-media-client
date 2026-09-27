@@ -215,6 +215,8 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   ]);
   const older = await fetch(base + '/api/workspace/history?cursor=older-cursor').then(response => response.json()).then(body => body.result);
   assert.deepEqual(older.records.map(item => item.id), ['first']);
+  await fetch(base + '/api/workspace/history?chatId=system%3Arecent').then(response => response.json());
+  assert.deepEqual(calls.at(-1), { method: 'getHistoryPage', args: [{ cursor: null, chatId: 'system:recent' }] });
 });
 async function directory() {
   const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });

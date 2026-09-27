@@ -450,7 +450,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/history') {
         const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
         const scoped = await accounts.scope(user, selected);
-        return json(res, 200, { result: await scoped.dispatch('getHistoryPage', [{ cursor: url.searchParams.get('cursor') || null }]) });
+        const historyRequest = { cursor: url.searchParams.get('cursor') || null };
+        if (url.searchParams.has('chatId')) historyRequest.chatId = url.searchParams.get('chatId');
+        return json(res, 200, { result: await scoped.dispatch('getHistoryPage', [historyRequest]) });
       }
       if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/sync') {
         const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;

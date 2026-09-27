@@ -16,8 +16,6 @@ const { formatDate, formatNumber, t } = useI18n();
 const now = ref(Date.now());
 const scrollBox = ref<HTMLElement | null>(null);
 const showLatestButton = ref(false);
-const olderLoadError = ref(false);
-const findingOlder = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 let resizeObserver: ResizeObserver | undefined;
 let saveFrame: number | undefined;
@@ -40,26 +38,9 @@ const records = computed(() => [...studio.visibleRecords].sort((left, right) => 
 const knownRecordCount = computed(() => studio.activeChatId === 'system:recent'
   ? studio.systemChat.materialCount
   : studio.chats.find(chat => chat.id === studio.activeChatId)?.materialCount || 0);
-const hasOlderRecords = computed(() => Boolean(studio.historyNext && knownRecordCount.value > studio.visibleHistory.length));
-
-async function findOlderForChat(maxPages = 5) {
-  if (findingOlder.value || studio.historyLoading || !hasOlderRecords.value) return;
-  findingOlder.value = true;
-  olderLoadError.value = false;
-  const chatId = studio.activeChatId;
-  const startingCount = studio.visibleHistory.length;
-  try {
-    for (let page = 0; page < maxPages && studio.activeChatId === chatId && hasOlderRecords.value; page++) {
-      await studio.loadOlderHistory();
-      if (studio.visibleHistory.length > startingCount) break;
-    }
-  } catch {
-    olderLoadError.value = true;
-  } finally {
-    findingOlder.value = false;
-    if (studio.activeChatId !== chatId) void findOlderForChat();
-  }
-}
+const hasOlderRecords = computed(() => Boolean(studio.chatHistoryNext[studio.activeChatId]));
+const needsFirstPage = computed(() => knownRecordCount.value > 0 && !studio.chatHistoryLoaded[studio.activeChatId]);
+function loadChatHistory(older = false) { void studio.loadChatHistory(older).catch(() => {}); }
 
 function prompt(record: GenerationRecord) {
   return typeof record.input?.prompt === 'string' && record.input.prompt.trim() ? record.input.prompt : t('common.noPrompt');
@@ -219,7 +200,7 @@ watch(() => studio.activeChatId, (chatId, previousChatId) => {
   displayedChatId = chatId;
   initialScrollRestored = false;
   void restoreScrollPosition(chatId);
-  void findOlderForChat();
+  loadChatHistory();
 }, { flush: 'sync' });
 watch(() => records.value.map(record => `${record.id}:${record.state}:${record.output?.length || 0}:${record.resultJson?.length || 0}`).join('|'), async () => {
   if (restoring || !initialScrollRestored) return;
@@ -240,7 +221,7 @@ onMounted(() => {
   if (scrollBox.value) resizeObserver.observe(scrollBox.value);
   window.addEventListener('pagehide', handlePageHide);
   void restoreScrollPosition(studio.activeChatId);
-  void findOlderForChat();
+  loadChatHistory();
 });
 function handlePageHide() { if (!restoring) saveScrollPosition(); }
 onBeforeUnmount(() => {
@@ -256,7 +237,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="chat-feed" :aria-label="t('generation.chatResults')">
     <div ref="scrollBox" class="chat-results" role="log" aria-live="polite" @scroll.passive="handleScroll">
-      <div v-if="hasOlderRecords" class="chat-older-records"><button type="button" class="action-button" :disabled="studio.historyLoading || findingOlder" @click="findOlderForChat(10)">{{ studio.historyLoading || findingOlder ? t('history.loading') : t('history.loadMore') }}</button><p v-if="olderLoadError" role="alert">{{ t('studio.loadError') }}</p></div>
+      <div v-if="needsFirstPage || hasOlderRecords || studio.chatHistoryError" class="chat-older-records"><button type="button" class="action-button" :disabled="studio.chatHistoryLoading" @click="loadChatHistory(Boolean(studio.chatHistoryLoaded[studio.activeChatId]))">{{ studio.chatHistoryLoading ? t('history.loading') : t('history.loadMore') }}</button><p v-if="studio.chatHistoryError" role="alert">{{ t('studio.loadError') }}</p></div>
       <article v-for="record in records" :key="record.id" class="chat-result-item" :class="{ selected: studio.selectedId === record.id }" :data-record-id="record.id">
         <p class="chat-prompt">{{ prompt(record) }}</p>
         <div class="chat-result-card" role="button" tabindex="0" :aria-label="t('generation.openDetails', { model: resultModelLabel(record, studio.isAdmin) })" @click="select(record)" @keydown.enter.prevent="select(record)" @keydown.space.prevent="select(record)">

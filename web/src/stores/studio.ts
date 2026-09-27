@@ -25,6 +25,10 @@ export const useStudioStore = defineStore('studio', () => {
   const history = ref<GenerationRecord[]>([]);
   const historyNext = ref<string | null>(null);
   const historyLoading = ref(false);
+  const chatHistoryNext = ref<Record<string, string | null>>({});
+  const chatHistoryLoaded = ref<Record<string, boolean>>({});
+  const chatHistoryLoading = ref(false);
+  const chatHistoryError = ref(false);
   const unassignedCount = ref(0);
   const pendingSubmissions = ref<GenerationRecord[]>([]);
   const presets = ref<GenerationPreset[]>([]);
@@ -68,6 +72,7 @@ export const useStudioStore = defineStore('studio', () => {
   let startupAttempt = 0;
   let syncCursor: string | null = null;
   let syncInFlight: Promise<void> | null = null;
+  let chatHistoryInFlight: Promise<void> | null = null;
   let syncAgain = false;
   let preserveNextFullHistory = false;
   let workspaceSelectionRestored = false;
@@ -94,7 +99,7 @@ export const useStudioStore = defineStore('studio', () => {
   const systemChat = computed<Chat>(() => ({ id: 'system:recent', name: t('navigation.unassigned'), mode: 'system', projectId: null, context: {}, materialCount: unassignedCount.value }));
   function recordIsVisible(item: GenerationRecord) {
     if (activeChatId.value !== 'system:recent') return item.chatId === activeChatId.value;
-    return !item.chatId && (!activeProjectId.value || item.projectId === activeProjectId.value);
+    return !item.chatId;
   }
   const visibleHistory = computed(() => history.value.filter(recordIsVisible));
   const visiblePending = computed(() => {
@@ -281,6 +286,29 @@ export const useStudioStore = defineStore('studio', () => {
       historyNext.value = page.next;
       if (!selectedId.value && visibleRecords.value[0]) selectedId.value = visibleRecords.value[0].id;
     } finally { historyLoading.value = false; }
+  }
+  async function loadChatHistory(older = false, chatId = activeChatId.value) {
+    if (chatHistoryInFlight) await chatHistoryInFlight.catch(() => {});
+    if (!older && chatHistoryLoaded.value[chatId]) return;
+    const cursor = older ? chatHistoryNext.value[chatId] : null;
+    if (older && !cursor) return;
+    const request = (async () => {
+      chatHistoryLoading.value = true;
+      chatHistoryError.value = false;
+      try {
+        const page = await api.getChatHistoryPage(chatId, cursor);
+        history.value = mergeGenerationRecords(history.value, page.records)
+          .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')) || left.id.localeCompare(right.id));
+        chatHistoryNext.value = { ...chatHistoryNext.value, [chatId]: page.next };
+        chatHistoryLoaded.value = { ...chatHistoryLoaded.value, [chatId]: true };
+        if (chatId === activeChatId.value && !selectedId.value && visibleRecords.value[0]) selectedId.value = visibleRecords.value[0].id;
+      } catch (cause) {
+        if (chatId === activeChatId.value) chatHistoryError.value = true;
+        throw cause;
+      } finally { chatHistoryLoading.value = false; }
+    })();
+    chatHistoryInFlight = request;
+    try { await request; } finally { if (chatHistoryInFlight === request) chatHistoryInFlight = null; }
   }
 
   async function refreshAccess() {
@@ -539,6 +567,7 @@ export const useStudioStore = defineStore('studio', () => {
     loading.value = true;
     error.value = '';
     history.value = []; historyNext.value = null; preserveNextFullHistory = false;
+    chatHistoryNext.value = {}; chatHistoryLoaded.value = {}; chatHistoryError.value = false;
     if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
       [catalog.value, codexCatalog.value, routerAiCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
@@ -782,7 +811,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, routerAiCatalog, release, history, historyNext, historyLoading, loadOlderHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, routerAiCatalog, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
     codexModel, routerAiModel, routerAiModels, currentRouterAiModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,

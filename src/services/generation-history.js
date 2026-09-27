@@ -80,14 +80,19 @@ function decodeCursor(value) {
   } catch { throw Object.assign(new Error('Некорректный курсор истории'), { status: 400 }); }
 }
 function encodeCursor(row) { return Buffer.from(JSON.stringify([row.created, row.namespace, row.id])).toString('base64url'); }
-async function generationHistoryPage(pool, accountId, service, cursorValue, present = record => record, limit = 50) {
+async function generationHistoryPage(pool, accountId, service, cursorValue, present = record => record, limit = 50, chatId) {
   const cursor = decodeCursor(cursorValue);
+  if (chatId !== undefined && chatId !== 'system:recent' && !/^[a-f0-9-]{36}$/.test(chatId)) {
+    throw Object.assign(new Error('Некорректный чат истории'), { status: 400 });
+  }
+  const selectedChatId = chatId === 'system:recent' ? null : chatId;
   const rows = (await pool.query(`SELECT namespace,id,data,COALESCE(data->>'createdAt','') AS created FROM media_records
     WHERE account_id=$1 AND namespace IN ('history','codex','routerai')
       AND COALESCE(data->>'state','')<>ALL($2::text[])
       AND ($3::text IS NULL OR (COALESCE(data->>'createdAt',''),namespace,id)<($3::text,$4::text,$5::text))
+      AND ($7::boolean=false OR data->>'chatId' IS NOT DISTINCT FROM $8::text)
     ORDER BY COALESCE(data->>'createdAt','') DESC,namespace DESC,id DESC LIMIT $6`,
-  [accountId, activeStates, cursor?.[0] ?? null, cursor?.[1] ?? null, cursor?.[2] ?? null, limit + 1])).rows;
+  [accountId, activeStates, cursor?.[0] ?? null, cursor?.[1] ?? null, cursor?.[2] ?? null, limit + 1, chatId !== undefined, selectedChatId ?? null])).rows;
   const page = rows.slice(0, limit);
   const media = page.filter(row => row.namespace === 'history').map(row => row.data);
   const presentedMedia = service.presentHistory ? await service.presentHistory(media) : media;

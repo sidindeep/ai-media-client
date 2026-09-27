@@ -136,7 +136,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
           if (method === 'getGenerationJournal') return generationJournal(pool, accountId, args[0], true);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
           if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, undefined, args[0]?.activeIds);
-          if (method === 'getHistoryPage') return generationHistoryPage(pool, accountId, service, args[0]?.cursor);
+          if (method === 'getHistoryPage') return generationHistoryPage(pool, accountId, service, args[0]?.cursor, undefined, 50, args[0]?.chatId);
           if (method === 'getHistoryActive') return generationActive(pool, accountId, service);
           if (['loadDrafts', 'saveDrafts'].includes(method)) return dispatchDraft(accountId, service, method, args);
           if (method === 'saveGenerationPreset') return service.dispatch(method, [args[0], { routerAiRole: 'admin' }]);
@@ -166,7 +166,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             }
             case 'getHistory': return generationHistory(pool, accountId, service, publicRecord);
             case 'getHistoryDelta': return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, publicRecord, args[0]?.activeIds);
-            case 'getHistoryPage': return generationHistoryPage(pool, accountId, service, args[0]?.cursor, publicRecord);
+            case 'getHistoryPage': return generationHistoryPage(pool, accountId, service, args[0]?.cursor, publicRecord, 50, args[0]?.chatId);
             case 'getHistoryActive': return generationActive(pool, accountId, service, publicRecord);
             case 'loadDrafts': case 'saveDrafts': return dispatchDraft(accountId, service, method, args);
             case 'createTask': {

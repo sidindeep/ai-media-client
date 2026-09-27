@@ -35,11 +35,11 @@ const showPromptSuggestions = computed(() => {
   return studio.activeChatId !== 'system:recent' && Boolean(activeChat)
     && (activeChat?.materialCount || 0) === 0 && studio.visibleRecords.length === 0;
 });
-const activeChatHasHistory = computed(() => studio.visibleRecords.length > 0 || Boolean(studio.historyNext && (
+const activeChatHasHistory = computed(() => studio.visibleRecords.length > 0 || (
   studio.activeChatId === 'system:recent'
     ? studio.systemChat.materialCount
     : studio.chats.find(chat => chat.id === studio.activeChatId)?.materialCount || 0
-) > studio.visibleHistory.length));
+) > 0);
 const modeLabels = { text: 'Text → Text', image: 'Text → Image', video: 'Text → Video', audio: 'Text → Audio' } as const;
 const promptSuggestions = computed(() => ({
   text: [

@@ -11,6 +11,7 @@ const { parseContentRef } = require('./content-service');
 const { appendGenerationEvent } = require('./generation-journal');
 const { submissionDecision, createStoredRetry } = require('./submission-control');
 const { parseRetryAfter } = require('../retry-after');
+const { providerError, safeErrorText } = require('./codex-errors');
 const priceKey = request => `codex:${request.model}:${request.effort}:${request.speed}`;
 function createCodexBilling({ accounts, url, dataDirectory, storage = null, content = accounts?.content || null, fetchImpl = fetch,
   retryDelayMs = 10_000 }) {
@@ -57,7 +58,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       try { value = await response.json(); }
       catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
     }
-    if (!response.ok) throw Object.assign(new Error(value.error || 'Codex недоступен'), {
+    if (!response.ok) throw Object.assign(providerError(value.error || value, `Codex HTTP ${response.status}`), {
       remoteStatus: response.status,
       confirmedRejected: response.status === 429 && value?.accepted === false,
       retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')),
@@ -133,15 +134,15 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
           await remote(account, '/jobs/' + requestId + '/ack', {}).catch(() => {});
         return saved;
       }
-      if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: result.error });
-      if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: result.error });
+      if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: safeErrorText(result.error) || 'Codex request failed.' });
+      if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: safeErrorText(result.error) || 'Codex result is unknown.' });
       return job;
     } catch (error) {
       // Unknown completion must never release or charge automatically.
       if (error.remoteStatus === 404) return await update(account, requestId, {
         state: 'unknown', error: 'Worker больше не хранит задание. Результат требует проверки; резерв сохранён.'
       });
-      return await update(account, requestId, { state: 'unknown', error: 'Статус Codex уточняется. Резерв сохранён; проверьте позже или обратитесь в поддержку.' });
+      return await update(account, requestId, { state: 'unknown', error: 'Статус Codex уточняется. Резерв сохранён. ' + safeErrorText(error.message) });
     }
   }
   async function loadImages(account, request) {
@@ -182,7 +183,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       const decision = submissionDecision({ status: error.remoteStatus, rejected });
       if (decision === 'retry') return retries.defer(account, request.requestId, error);
       return update(account, request.requestId, { state: decision === 'fail' ? 'fail' : 'unknown',
-        error: decision === 'fail' ? error.message : 'Статус отправки неизвестен. Резерв сохранён; автоматический повтор отключён.' });
+        error: decision === 'fail' ? safeErrorText(error.message) : 'Статус отправки неизвестен. Резерв сохранён; автоматический повтор отключён. ' + safeErrorText(error.message) });
     }
   }
   async function dispatchRetry(account, request) {

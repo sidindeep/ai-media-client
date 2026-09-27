@@ -1,3 +1,4 @@
+const { execError } = require('./codex-errors');
 function normalizeUsage(value) {
   const count = n => Number.isSafeInteger(n) && n >= 0;
   if (!value || !count(value.input_tokens) || !count(value.output_tokens)) return null;
@@ -12,7 +13,7 @@ function normalizeUsage(value) {
 function parseCodexOutput(output) {
   const events = output.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
   const completed = events.findLast(event => event?.type === 'turn.completed');
-  if (!completed || events.some(event => event?.type === 'turn.failed')) throw new Error('Codex не завершил запрос.');
+  if (!completed || events.some(event => event?.type === 'turn.failed')) throw execError(output) || new Error('Codex не завершил запрос.');
   return {
     threadId: events.find(event => event?.type === 'thread.started')?.thread_id,
     output: events.filter(event => event?.type === 'item.completed' && event.item?.type === 'agent_message').map(event => event.item.text || '').join('\n\n').trim(),

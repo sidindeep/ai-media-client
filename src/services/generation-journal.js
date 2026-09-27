@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const systemErrors = require('../system-errors');
+const { recordFailure } = require('../provider-diagnostics');
 
 const NAMESPACE = 'generation-journal';
 
@@ -28,7 +29,9 @@ async function appendGenerationEvent(client, accountId, provider, record, event,
   await client.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4)',
     [accountId, NAMESPACE, item.id, JSON.stringify(item)]);
   if (['fail', 'failed', 'error', 'unknown'].includes(event)) {
-    systemErrors.record('generation', `${provider}.${event}`, item.error || record.error || event,
+    const failure = recordFailure(record, provider);
+    systemErrors.record('generation', `${provider}.${event}`,
+      { code: failure.code, message: failure.message || item.error || event },
       { accountId, requestId: item.requestId, jobId: item.jobId, model: item.model, providerTaskId: item.providerTaskId });
   }
   return item;

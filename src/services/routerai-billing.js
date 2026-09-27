@@ -9,6 +9,7 @@ const { createCreditConversion } = require('../billing/conversion');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
 const { submissionDecision, createStoredRetry } = require('./submission-control');
 const catalog = require('../../config/routerai-models.json');
+const { providerFailure, safeMessage } = require('../provider-diagnostics');
 
 function invalid(message) { return Object.assign(new Error(message), { status: 400 }); }
 function streamedWav(events) {
@@ -118,7 +119,11 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
                 providerCostRub: typeof status?.usage?.cost === 'number' && Number.isFinite(status.usage.cost) ? status.usage.cost : null,
                 output: 'Видео RouterAI готово.' });
             }
-            if (['failed', 'error', 'cancelled', 'canceled'].includes(state)) return finish(account, request.requestId, { state: 'fail', error: 'RouterAI не создал видео.' });
+            if (['failed', 'error', 'cancelled', 'canceled'].includes(state)) {
+              const failure = providerFailure(status, { provider: 'RouterAI', fallback: 'RouterAI не создал видео.' });
+              return finish(account, request.requestId, { state: 'fail', error: failure.message,
+                errorInfo: { providerCode: failure.providerCode, providerMessage: failure.providerMessage } });
+            }
             await new Promise(resolve => setTimeout(resolve, 5000));
           }
           return finish(account, request.requestId, { state: 'unknown', error: request.nativeQuote?.amountUnits == null
@@ -180,12 +185,15 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       return finish(account, request.requestId, { state: 'success', contentAssetId: asset.id, hasImage: true, imageType: type,
         usage: result.usage || null, providerCostRub: typeof result.usage?.cost === 'number' ? result.usage.cost : null });
     } catch (error) {
-      const rejected = [400, 401, 402, 403, 404, 422, 429].includes(error.status);
+      const rejected = error.confirmedRejected === true || [400, 401, 402, 403, 404, 422, 429].includes(error.status);
       const decision = submissionDecision({ status: error.status, rejected, accepted: submissionAccepted });
       if (decision === 'retry') return retries.defer(account, request.requestId, error);
       return finish(account, request.requestId, { state: decision === 'fail' ? 'fail' : 'unknown',
-        error: decision === 'fail' ? error.message : request.nativeQuote?.amountUnits == null
-          ? 'Результат RouterAI требует проверки.' : 'Результат RouterAI требует проверки. Резерв кредитов сохранён.' });
+        error: decision === 'fail' ? safeMessage(error.message) : (request.nativeQuote?.amountUnits == null
+          ? 'Результат RouterAI требует проверки.' : 'Результат RouterAI требует проверки. Резерв кредитов сохранён.')
+          + ` Причина: ${safeMessage(error.message)}`,
+        errorInfo: { providerCode: error.providerCode ?? error.status ?? null,
+          providerMessage: safeMessage(error.providerMessage || error.message) } });
     }
   }
   async function save(account, request, role) {

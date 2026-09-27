@@ -162,6 +162,50 @@ test('App-server accepts inline imageGeneration PNG results', async t => {
   assert.deepEqual(Buffer.from(result.imageBase64, 'base64'), png);
 });
 
+test('Failed imageGeneration preserves provider text instead of validating an error as PNG', async t => {
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const turnId = randomUUID();
+    reply(m, { turn: { id: turnId } });
+    emit({ method: 'item/completed', params: { threadId: m.params.threadId, turnId,
+      item: { id: randomUUID(), type: 'imageGeneration', status: 'failed', result: JSON.stringify({ error: {
+        code: 'moderation_blocked', message: 'Rejected by safety system.', moderation_details: { moderation_stage: 'output', categories: ['sexual'] }
+      } }) } } });
+  });
+  await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), error => {
+    assert.match(error.message, /moderation_blocked/); assert.match(error.message, /sexual/);
+    assert.doesNotMatch(error.message, /PNG/); return true;
+  });
+});
+
+test('Image usage limit failure with empty result retains limit and reset details', async t => {
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
+    emit({ method: 'item/completed', params: { threadId: m.params.threadId, turnId,
+      item: { type: 'imageGeneration', status: 'failed', result: '', failure: { type: 'usageLimitExceeded', limitId: 'images', resetsAt: 12345 } } } });
+  });
+  await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), /usageLimitExceeded.*images.*12345/);
+});
+
+test('RPC and failed turns preserve details while a retry notification allows success', async t => {
+  const h = await harness(t, data => {
+    const { m, emit, reply } = data;
+    if (m.method !== 'turn/start') return;
+    if (m.params.input[0].text.endsWith('rpc')) return emit({ id: m.id, error: { code: -32602, message: 'Unsupported model' } });
+    const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
+    emit({ method: 'error', params: { threadId: m.params.threadId, turnId, willRetry: true, error: { message: 'Temporary 429' } } });
+    if (m.params.input[0].text.endsWith('success')) {
+      emit({ method: 'item/completed', params: { threadId: m.params.threadId, turnId, item: { id: 'text', type: 'agentMessage', text: 'OK' } } });
+      emit({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: turnId, status: 'completed' } } });
+    } else emit({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: turnId, status: 'failed',
+      error: { message: 'Too many requests', codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 429 } } } } } });
+  });
+  await assert.rejects(h.adapter.run(request('rpc')), /-32602.*Unsupported model/);
+  await assert.rejects(h.adapter.run(request('turn')), /Too many requests.*429/);
+  assert.equal((await h.adapter.run(request('success'))).output, 'OK');
+});
+
 test('App-server sends source images with the v2 UserInput url field', async t => {
   let turnInput;
   const source = 'data:image/png;base64,iVBORw0KGgo=';
@@ -222,4 +266,25 @@ test('Worker retains unknown outcome and deduplicates without running another ad
   assert.equal(second.state, 'unknown'); assert.equal(runs, 1);
   assert.equal((await fetch(base + '/health').then(r => r.json())).transport, 'app-server');
   assert.throws(() => createCodexWorker(undefined, { transport: 'invalid' }), /MEDIA_CODEX_TRANSPORT/);
+});
+
+test('Worker persists sanitized provider details and returns them through its status API', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'media-worker-errors-'));
+  const server = createCodexWorker(async () => { throw new Error('moderation_blocked: output sexual; Bearer private-token'); }, { resultDirectory: directory });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }); await fs.rm(directory, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${server.address().port}`, input = request(), account = randomUUID();
+  const headers = { 'x-account-id': account };
+  await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) });
+  let job;
+  for (let i = 0; i < 100; i++) {
+    job = await fetch(base + '/jobs/' + input.requestId, { headers }).then(r => r.json());
+    if (job.state === 'failed') break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.equal(job.state, 'failed'); assert.match(job.error, /moderation_blocked.*sexual/);
+  assert.doesNotMatch(job.error, /private-token/);
+  // A duplicate POST waits for initial admission and must preserve the same failure.
+  const replay = await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) }).then(r => r.json());
+  assert.equal(replay.error, job.error);
 });

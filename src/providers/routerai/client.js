@@ -1,5 +1,33 @@
 const BASE_URL = 'https://routerai.ru/api/v1';
 const { parseRetryAfter } = require('../../retry-after');
+const { providerFailure, safeMessage } = require('../../provider-diagnostics');
+
+async function rejected(response, fallback) {
+  let body;
+  try {
+    // Parse only structured error fields. Arbitrary HTML and plaintext may
+    // contain proxy headers, credentials or request payloads.
+    if (typeof response.text === 'function') body = await response.text();
+    else if (typeof response.json === 'function') body = await response.json();
+  } catch { /* HTTP status remains useful even if the body is unreadable. */ }
+  const failure = providerFailure(body, { provider: 'RouterAI', status: response.status, fallback });
+  return Object.assign(new Error(failure.message), { status: response.status, providerCode: failure.providerCode,
+    providerMessage: failure.providerMessage, retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')) });
+}
+
+function connectionError(error) {
+  return new Error(error?.name === 'TimeoutError' ? 'RouterAI не ответил вовремя'
+    : `RouterAI: ${safeMessage(error?.message) || 'Ошибка соединения'}`);
+}
+
+function providerPayload(payload) {
+  if (payload?.error) {
+    const failure = providerFailure(payload, { provider: 'RouterAI' });
+    throw Object.assign(new Error(failure.message), { confirmedRejected: true,
+      providerCode: failure.providerCode, providerMessage: failure.providerMessage });
+  }
+  return payload;
+}
 
 function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } = {}) {
   if (!apiKey) throw new Error('ROUTERAI_API_KEY не настроен');
@@ -15,16 +43,15 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      throw new Error(error?.name === 'TimeoutError' ? 'RouterAI не ответил вовремя' : 'RouterAI недоступен');
+      throw connectionError(error);
     }
     if (!response.ok) {
-      const error = new Error(`RouterAI отклонил запрос (HTTP ${response.status})`);
-      error.status = response.status;
-      error.retryAfterMs = parseRetryAfter(response.headers?.get?.('retry-after'));
-      throw error;
+      throw await rejected(response);
     }
-    try { return await response.json(); }
+    let payload;
+    try { payload = await response.json(); }
     catch { throw new Error('RouterAI вернул некорректный ответ'); }
+    return providerPayload(payload);
   }
 
   return {
@@ -34,10 +61,11 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
         response = await fetchImpl(`${BASE_URL}/credits`, {
           headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(Math.min(timeoutMs, 15000)),
         });
-      } catch { throw new Error('RouterAI недоступен'); }
-      if (!response.ok) throw Object.assign(new Error(`RouterAI отклонил проверку баланса (HTTP ${response.status})`), { status: response.status });
+      } catch (error) { throw connectionError(error); }
+      if (!response.ok) throw await rejected(response, `Не удалось проверить баланс RouterAI (HTTP ${response.status})`);
       let payload;
       try { payload = await response.json(); } catch { throw new Error('RouterAI вернул некорректный баланс'); }
+      payload = providerPayload(payload);
       const value = payload?.data?.credits ?? payload?.credits;
       if (typeof value !== 'number' && !(typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value))) throw new Error('RouterAI не вернул остаток баланса');
       const credits = Number(value);
@@ -55,11 +83,10 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
           method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
         });
-      } catch (error) { throw new Error(error?.name === 'TimeoutError' ? 'RouterAI не ответил вовремя' : 'RouterAI недоступен'); }
-      if (!response.ok) throw Object.assign(new Error(`RouterAI отклонил запрос (HTTP ${response.status})`), { status: response.status,
-        retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')) });
+      } catch (error) { throw connectionError(error); }
+      if (!response.ok) throw await rejected(response);
       const type = response.headers.get('content-type') || '';
-      if (type.includes('json')) return { type: 'json', data: await response.json() };
+      if (type.includes('json')) return { type: 'json', data: providerPayload(await response.json()) };
       if (type.includes('text/event-stream')) return { type: 'text', data: await response.text() };
       const bytes = Buffer.from(await response.arrayBuffer());
       if (bytes.length > 64 * 1024 * 1024) throw new Error('Ответ RouterAI слишком большой');
@@ -70,8 +97,8 @@ function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } 
       let response;
       try { response = await fetchImpl(`${BASE_URL}/videos/${encodeURIComponent(id)}${content ? '/content' : ''}`, {
         headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(timeoutMs),
-      }); } catch { throw new Error('RouterAI недоступен'); }
-      if (!response.ok) throw Object.assign(new Error(`RouterAI отклонил запрос (HTTP ${response.status})`), { status: response.status });
+      }); } catch (error) { throw connectionError(error); }
+      if (!response.ok) throw await rejected(response);
       if (!content) return response.json();
       const bytes = Buffer.from(await response.arrayBuffer());
       if (!bytes.length || bytes.length > 64 * 1024 * 1024) throw new Error('Видео RouterAI слишком большое');

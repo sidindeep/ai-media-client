@@ -236,7 +236,7 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
     if (mode === 'network') throw new Error('network');
     if (mode === 'reject') return { ok: false, status: 403, json: async () => ({ error: 'forbidden' }) };
     if (mode === 'missing') return { ok: false, status: 404, json: async () => ({ error: 'missing' }) };
-    return { ok: true, json: async () => ({ state: mode, output: 'Ответ', usage: sampleUsage, error: 'failed' }) };
+    return { ok: true, json: async () => ({ state: mode, output: 'Ответ', usage: sampleUsage, error: 'Codex: moderation_blocked: output sexual' }) };
   } });
   t.after(async () => { billing.close(); await pool.end(); });
   const input = request();
@@ -263,7 +263,10 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
   mode = 'reject'; await billing.submit(account, request());
   assert.equal((await accounts.wallet.get(account)).heldUnits, 1000);
   mode = 'running'; const failing = await billing.submit(account, request());
-  mode = 'failed'; assert.equal((await billing.status(account, failing.id)).state, 'fail');
+  mode = 'failed'; const failed = await billing.status(account, failing.id);
+  assert.equal(failed.state, 'fail');
+  assert.match(failed.error, /moderation_blocked.*sexual/);
+  assert.equal((await billing.read(account, failing.id)).error, failed.error);
   assert.equal((await accounts.wallet.get(account)).heldUnits, 1000);
   assert.equal((await accounts.wallet.get(account)).balanceUnits, 9000);
   mode = 'network'; const unknown = await billing.submit(account, request());

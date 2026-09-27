@@ -7,6 +7,8 @@ export function resultModelLabel(record: GenerationRecord, admin: boolean) {
 
 export function publicResultError(record: GenerationRecord) {
   const error = record.error || '';
+  // The authenticated history API returns a bounded error for the record owner.
+  if (error) return error;
   if (/недостаточно\s+кредит/i.test(error)) return publicServiceError(error);
   if (record.state === 'blocked') return t('error.resultBlocked');
   if (record.state === 'cancelled') return t('error.resultCancelled');

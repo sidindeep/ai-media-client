@@ -13,6 +13,7 @@ const { spendingHistory } = require('./spending-history');
 const { generationJournal } = require('./generation-journal');
 const { createWorkspaces } = require('./workspaces');
 const trace = require('../generation-log');
+const { recordFailure } = require('../provider-diagnostics');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
   const fields = ['id', 'requestId', 'revision', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote',
@@ -29,6 +30,10 @@ function publicRecord(record) {
     : record.nativeQuote?.status === 'unavailable'
       ? 'Генерация не выполнена. Кредиты не списаны.'
       : 'Генерация не выполнена. Резерв возвращён.';
+  if (['fail', 'blocked', 'unknown', 'unconfirmed'].includes(record.state) || record.statusError) {
+    const failure = recordFailure(record, 'Kie.ai').message;
+    if (failure) result.error = `${result.error ? result.error + ' ' : ''}${failure}`.slice(0, 4000);
+  }
   return result;
 }
 function createAccounts({ pool, config, provider, legacy, tariffFetcher, starterPack, storage, content = null,

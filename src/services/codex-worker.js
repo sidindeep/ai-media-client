@@ -12,6 +12,7 @@ const { codexEnvironment } = require('./codex-runtime');
 const { execute } = require('./codex-exec');
 const { createCodexAppServerPool } = require('./codex-app-server-pool');
 const { validatePng } = require('./codex-images');
+const { safeErrorText } = require('./codex-errors');
 
 function createCodexWorker(run, { login = createCodexLogin({ environment: codexEnvironment }),
   transport = process.env.MEDIA_CODEX_TRANSPORT || 'app-server',
@@ -126,9 +127,9 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
         job.state = 'success';
         await atomicWrite(paths(account, input.requestId).record, JSON.stringify(job));
       }, async error => {
-        job.error = error.message; job.state = error.outcomeUnknown ? 'unknown' : 'failed';
+        job.error = safeErrorText(error.message) || 'Codex request failed.'; job.state = error.outcomeUnknown ? 'unknown' : 'failed';
         await atomicWrite(paths(account, input.requestId).record, JSON.stringify(job));
-      }).catch(error => { job.error = error.message; job.state = 'unknown'; });
+      }).catch(error => { job.error = safeErrorText(error.message) || 'Codex result could not be saved.'; job.state = 'unknown'; });
       return send(res, 202, job);
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });

@@ -6,6 +6,7 @@ const { codexEnvironment } = require('./codex-runtime');
 const { codexPrompt, disabledFeatures, imageFeatures } = require('./codex-request');
 const { collectImage, validatePng } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
+const { providerError } = require('./codex-errors');
 
 const uncertain = () => Object.assign(new Error('Связь с Codex app-server потеряна. Результат неизвестен; автоматический повтор отключён.'), { outcomeUnknown: true });
 const failure = () => new Error('Codex app-server не выполнил запрос. Проверьте модель и вход на сервере.');
@@ -125,7 +126,7 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
               continue;
             }
             current.pending.delete(message.id); clearTimeout(pending.timer);
-            if (message.error) pending.reject(failure()); else pending.resolve(message.result);
+            if (message.error) pending.reject(providerError(message.error)); else pending.resolve(message.result);
             continue;
           }
           const params = message.params || {};
@@ -134,6 +135,8 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
           const turnId = params.turnId || params.turn?.id;
           if (job.turnId && turnId && job.turnId !== turnId) continue;
           if (turnId) job.turnId = turnId;
+          // Retriable notifications are diagnostic only: the CLI still owns its turn.
+          if (message.method === 'error' && params.willRetry === false) job.providerError = providerError(params.error);
           if (message.method === 'thread/tokenUsage/updated') {
             const value = params.tokenUsage?.total;
             job.usage = normalizeUsage(value && { input_tokens: value.inputTokens, output_tokens: value.outputTokens,
@@ -145,17 +148,21 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
               job.reject(uncertain());
             }
           }
-          if (message.method === 'item/completed' && params.item?.type === 'imageGeneration'
-            && typeof params.item.result === 'string') {
+          if (message.method === 'item/completed' && params.item?.type === 'imageGeneration') {
+            const item = params.item;
+            if (item.failure || ['failed', 'error', 'cancelled'].includes(item.status)) {
+              job.reject(providerError({ failure: item.failure, message: item.result }, `Codex image generation ${item.status || 'failed'}.`));
+              continue;
+            }
             try {
-              job.imageBuffer = validatePng(Buffer.from(params.item.result, 'base64'));
+              job.imageBuffer = validatePng(Buffer.from(item.result || '', 'base64'));
             } catch (error) {
               job.reject(error);
             }
           }
           if (message.method === 'turn/completed') {
             if (params.turn?.status === 'completed') job.resolve();
-            else job.reject(failure());
+            else job.reject(params.turn?.error ? providerError(params.turn.error) : job.providerError || failure());
           }
         }
       });
@@ -217,7 +224,11 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
         return { output: 'Изображение создано.', imageBase64: job.imageBuffer.toString('base64'), usage: job.usage };
       }
       // Older Codex releases write the result to a trusted thread directory.
-      const image = await collect(current.home, threadId);
+      let image;
+      try { image = await collect(current.home, threadId); }
+      catch (error) {
+        throw job.providerError || providerError({ message: error.message, additionalDetails: [...job.messages.values()].join('\n\n') });
+      }
       try { return { output: 'Изображение создано.', imageBase64: image.buffer.toString('base64'), usage: job.usage }; }
       finally { await fs.rm(image.directory, { recursive: true, force: true }); }
     })();

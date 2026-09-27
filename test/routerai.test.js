@@ -10,6 +10,7 @@ const { createWallet } = require('../src/billing/wallet');
 const { createPricing } = require('../src/billing/pricing');
 const { randomUUID } = require('node:crypto');
 const catalog = require('../config/routerai-models.json');
+const systemErrors = require('../src/system-errors');
 
 test('RouterAI parses a live ruble tariff before product conversion', () => {
   assert.equal(catalog.models.filter(model => model.kind === 'image').length, 4);
@@ -58,6 +59,55 @@ test('RouterAI errors never expose response body or key', async () => {
   const client = createRouterAiClient({ apiKey: 'test-key', fetchImpl: async () => ({ ok: false, status: 402, text: async () => 'secret response' }) });
   await assert.rejects(client.generateImage({ model: 'model', prompt: 'prompt' }), error =>
     error.status === 402 && !error.message.includes('secret response') && !error.message.includes('test-key'));
+});
+
+test('RouterAI retains structured HTTP error details without copying request data', async () => {
+  const client = createRouterAiClient({ apiKey: 'test-key', fetchImpl: async () => ({ ok: false, status: 400,
+    headers: new Map(), text: async () => JSON.stringify({ error: { code: 'moderation_blocked', message: 'Image rejected by safety system' },
+      prompt: 'private prompt', api_key: 'test-key' }) }) });
+  await assert.rejects(client.generateImage({ model: 'model', prompt: 'private prompt' }), error => {
+    assert.equal(error.status, 400);
+    assert.equal(error.providerCode, 'moderation_blocked');
+    assert.match(error.message, /HTTP 400.*moderation_blocked.*Image rejected/);
+    assert.doesNotMatch(error.message, /private prompt|test-key/);
+    return true;
+  });
+});
+
+test('RouterAI treats a successful HTTP response with an error envelope as a provider rejection', async () => {
+  const client = createRouterAiClient({ apiKey: 'test-key', fetchImpl: async () => ({ ok: true,
+    json: async () => ({ error: { code: 'CONTENT_BLOCKED', message: 'Image rejected' } }) }) });
+  await assert.rejects(client.generateImage({ model: 'model', prompt: 'prompt' }), error =>
+    error.confirmedRejected === true && error.providerCode === 'CONTENT_BLOCKED' && /Image rejected/.test(error.message));
+});
+
+test('RouterAI error details reach the job and the database error log', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(async () => { systemErrors.setPool(null); await pool.end(); });
+  systemErrors.setPool(pool);
+  const account = randomUUID(), requestId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Error details')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,8000)', [account]);
+  const billing = createRouterAiBilling({ accounts: { pool,
+    pricing: createPricing({ version: 'test', models: { 'routerai:openai/gpt-oss-20b': { baseUnits: 4000 } } }) },
+    apiKey: 'test-key', content: {}, tariffFetcher: async model => ({ id: model, pricing: { request: 4 },
+      pricing_units: { request: 'request' }, priceFetchedAt: 'test' }),
+    fetchImpl: async () => ({ ok: false, status: 422, headers: new Map(),
+      text: async () => JSON.stringify({ error: { code: 'INVALID_FILE', message: 'File type not supported' } }) }) });
+  await billing.submit(account, { requestId, model: 'openai/gpt-oss-20b', prompt: 'Test' });
+  let job;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    job = await billing.get(account, requestId);
+    if (job.state !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(job.state, 'fail');
+  assert.match(job.error, /422.*INVALID_FILE.*File type not supported/);
+  assert.equal(job.errorInfo.providerCode, 'INVALID_FILE');
+  await systemErrors.flush();
+  const logged = await pool.query("SELECT code,message FROM media_system_errors WHERE event='routerai.fail' ORDER BY id DESC LIMIT 1");
+  assert.equal(logged.rows[0].code, 'INVALID_FILE');
+  assert.match(logged.rows[0].message, /File type not supported/);
 });
 
 test('RouterAI quote warns when the live tariff is unavailable', async () => {
@@ -157,6 +207,32 @@ test('Admin video request polls RouterAI and saves the completed file', async t 
   assert.equal(job.providerVideoId, 'provider-video');
   assert.equal(job.providerCostRub, 4);
   assert.equal(calls.length, 3);
+});
+
+test('RouterAI video failure keeps its provider reason and releases reserved credits', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), requestId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Failed video')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,8000)', [account]);
+  const billing = createRouterAiBilling({ accounts: { pool,
+    pricing: createPricing({ version: 'test', models: { 'routerai:admin-catalog': { baseUnits: 4000 } } }) },
+    apiKey: 'test-key', content: {}, tariffFetcher: async model => ({ id: model, pricing: { seconds: 0.8 },
+      pricing_units: { seconds: 'second' }, supported_durations: [5], priceFetchedAt: 'test' }),
+    fetchImpl: async (_url, options) => options.method === 'POST'
+      ? { ok: true, headers: new Map([['content-type', 'application/json']]), json: async () => ({ id: 'provider-video' }) }
+      : { ok: true, json: async () => ({ status: 'failed', data: { code: 'VIDEO_REJECTED', error: 'Unsupported source image' } }) } });
+  await billing.submitAdmin(account, { requestId, model: 'maker/video-1', payload: { prompt: 'Test' } },
+    [{ id: 'maker/video-1', name: 'Video', kind: 'video', endpoint: 'videos' }]);
+  let job;
+  for (let i = 0; i < 100; i++) {
+    job = await billing.get(account, requestId);
+    if (job.state !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(job.state, 'fail');
+  assert.match(job.error, /VIDEO_REJECTED.*Unsupported source image/);
+  assert.equal((await createWallet(pool).get(account)).heldUnits, 0);
 });
 
 test('RouterAI reserves once, captures success, refunds rejection and holds uncertain outcomes', async t => {

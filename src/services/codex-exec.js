@@ -6,6 +6,7 @@ const { codexArguments, codexPrompt } = require('./codex-request');
 const { collectImage } = require('./codex-images');
 const { parseCodexOutput } = require('./codex-usage');
 const { codexEnvironment } = require('./codex-runtime');
+const { providerError, execError } = require('./codex-errors');
 
 async function execute(request, { signal } = {}) {
   if (signal?.aborted) throw new Error('Сервис Codex остановлен.');
@@ -36,7 +37,7 @@ async function execute(request, { signal } = {}) {
             : /log in|login|unauthorized|401/i.test(errorText) ? 'Требуется повторный вход Codex на сервере.'
               : /service.tier|fast mode|unsupported/i.test(errorText) ? 'Модель или выбранный режим недоступны этому аккаунту.'
                 : 'Codex не выполнил запрос. Проверьте доступность модели и вход на сервере.';
-          return reject(new Error(message));
+          return reject(execError(output) || new Error(message));
         }
         resolve(output.trim());
       });
@@ -50,7 +51,9 @@ async function execute(request, { signal } = {}) {
     // CLI JSONL omits binary image content. Only collect this run's generated file,
     // identified by the trusted thread.started event, never a model-provided path.
     const threadId = parsed.threadId;
-    const image = await collectImage(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), threadId);
+    let image;
+    try { image = await collectImage(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), threadId); }
+    catch (error) { throw execError(output) || providerError({ message: error.message, additionalDetails: parsed.output }); }
     try { return { output: 'Изображение создано.', imageBase64: image.buffer.toString('base64'), usage: parsed.usage }; }
     finally { await fs.rm(image.directory, { recursive: true, force: true }); }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }

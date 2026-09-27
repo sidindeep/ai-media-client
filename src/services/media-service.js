@@ -226,7 +226,12 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       } catch (error) {
         addProviderDiagnostic('quote', 'error', diagnosticMessage(error), Date.now() - started);
         trace.write('pricing.quote.error', { modelId, error });
-        return unpricedQuote(/ещё не опубликована/.test(diagnosticMessage(error)) ? 'tariff_not_found' : 'price_unavailable');
+        const message = diagnosticMessage(error);
+        const reason = /этой модели Kie ещё не опубликована/.test(message) ? 'tariff_not_found'
+          : /Единица тарифа Kie пока не поддерживается/.test(message) ? 'unsupported_tariff_unit'
+            : /Цена выбранных параметров Kie ещё не определена|Цена выбранной длительности Kie ещё не определена/.test(message)
+              ? 'tariff_variant_unknown' : 'price_unavailable';
+        return unpricedQuote(reason);
       }
     },
     async diagnoseProvider(modelId, input = {}, sourceFiles = [], kieAccountId = 'primary') {
@@ -329,6 +334,28 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         const kieAccountId = request?.kieAccountId ?? 'primary';
         const selectedProvider = accountProvider(kieAccountId);
         const model = findModel(request?.modelId);
+        const referenceKey = ['task_id', 'taskId'].find(key => model.fields?.some(field => field.key === key));
+        const referenceId = referenceKey && request?.input?.[referenceKey];
+        if (typeof referenceId === 'string' && /^[a-f0-9-]{36}$/i.test(referenceId)) {
+          const source = typeof history.get === 'function' ? await history.get(referenceId)
+            : (await history.list()).find(item => item.id === referenceId);
+          if (source) {
+            const compatible = model.id === 'kie:grok-imagine-image-2-0/segment-edit'
+              ? ['kie:grok-imagine-image-2-0/text-to-image', 'kie:grok-imagine-image-2-0/segment-map'].includes(source.modelId)
+              : model.id === 'kie:grok-imagine/image-to-video' ? source.modelId === 'kie:grok-imagine/text-to-image'
+                : ['kie:grok-imagine/extend', 'kie:grok-imagine/upscale'].includes(model.id)
+                  ? source.kind === 'video' && source.modelId?.startsWith('kie:grok-imagine/')
+                  : model.id === 'kie:ai-music-api/generate-midi-from-audio'
+                    ? source.modelId === 'kie:ai-music-api/separate-vocals'
+                    : model.id.startsWith('kie:ai-music-api/') && source.modelId?.startsWith('kie:ai-music-api/');
+            if (source.state !== 'success' || !source.taskId
+              || (source.kieAccountId || 'primary') !== kieAccountId
+              || !compatible) {
+              throw new Error('Выбранная исходная задача не подходит для этой модели или аккаунта Kie');
+            }
+            request = { ...request, input: { ...request.input, [referenceKey]: source.taskId } };
+          }
+        }
         request = { ...request, input: normalizePricingInput(model, request.input) };
         validate(model, request.input);
         if (!Array.isArray(request.sourceFiles || []) || (request.sourceFiles || []).length > 100) throw new Error('Некорректный список исходников');

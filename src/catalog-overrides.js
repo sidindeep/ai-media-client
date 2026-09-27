@@ -3,6 +3,45 @@
 function applyOverrides(models) {
   const result=structuredClone(models);
   const durationRules=require('./duration');
+  // A few imported property names contain trailing whitespace that is absent
+  // from the documented request body. Keep field and schema keys in
+  // sync so both the form and AJV use the provider's actual wire names.
+  for(const model of result.filter(item=>item.apiModel.startsWith('happyhorse/')||item.apiModel==='bytedance/seedance-2-fast')){
+    for(const field of model.fields){
+      const key=field.key.trim();
+      if(key===field.key)continue;
+      if(model.inputSchema?.properties?.[key])throw new Error(`Duplicate model field: ${key}`);
+      if(model.inputSchema?.properties?.[field.key]){
+        model.inputSchema.properties[key]=model.inputSchema.properties[field.key];
+        delete model.inputSchema.properties[field.key];
+      }
+      if(Array.isArray(model.inputSchema?.required))model.inputSchema.required=model.inputSchema.required.map(value=>value===field.key?key:value);
+      field.key=key;
+    }
+  }
+  const fileCorrections={
+    'recraft/crisp-upscale':{image:{label:'Исходное изображение',accept:'image/*'}},
+    'happyhorse/reference-to-video':{reference_image:{label:'Референсные изображения',accept:'image/jpeg,image/png,image/webp'}},
+    'happyhorse-1-1/reference-to-video':{reference_image:{label:'Референсные изображения',accept:'image/jpeg,image/png,image/webp'}}
+  };
+  for(const model of result){
+    for(const [key,config] of Object.entries(fileCorrections[model.apiModel]||{})){
+      const field=model.fields.find(item=>item.key===key);
+      if(!field)continue;
+      Object.assign(field,{type:'files',scalar:field.schema?.type==='string',maxFiles:field.schema?.type==='string'?1:field.schema?.maxItems, ...config});
+    }
+  }
+  for(const model of result){
+    const variants=model.inputSchema?.oneOf||model.inputSchema?.anyOf||[];
+    for(const variant of variants){
+      // Imported Apidog schemas sometimes attach string-only allOf fragments
+      // to an object variant, making every valid object fail AJV validation.
+      if(variant.type==='object'&&Array.isArray(variant.allOf)){
+        variant.allOf=variant.allOf.filter(part=>part?.type!=='string');
+        if(!variant.allOf.length)delete variant.allOf;
+      }
+    }
+  }
   const fileLabels={video_url:'Исходное видео',video_urls:'Исходные видео',reference_video_urls:'Референсные видео',audio_url:'Исходное аудио',audio_urls:'Исходное аудио',reference_audio_urls:'Референсное аудио',driving_audio_url:'Управляющее аудио',upload_url:'Исходное аудио',upload_url_list:'Исходные аудиофайлы',verify_url:'Запись для проверки',voice_url:'Запись голоса',mask_url:'Маска',reference_mask_urls:'Референсные маски'};
   for(const model of result)for(const field of model.fields){
     const schema=field.schema;
@@ -13,12 +52,22 @@ function applyOverrides(models) {
     const size=(schema.description||'').match(/(?:max(?:imum)?(?: file)? size:?|not exceed(?:ing)?|no larger than|less than)\s*`?([\d.]+)\s*MB/i)?.[1];
     Object.assign(field,{type:'files',scalar:schema.type==='string',maxFiles:schema.type==='string'?1:field.key==='upload_url_list'?2:schema.maxItems,maxSizeMb:size?Number(size):undefined,accept,label:fileLabels[field.key]||field.label});
   }
-  const audioLabels={prompt:'Описание или текст',text:'Текст для озвучивания',voice:'Голос',dialogue:'Реплики',language_code:'Язык',style:'Стиль',title:'Название',model:'Версия модели',instrumental:'Инструментальная музыка',custom_mode:'Расширенные настройки',negative_tags:'Исключить стили',lyrics:'Текст песни',duration:'Длительность, сек.',sound_loop:'Зациклить звук',sound_tempo:'Темп, BPM',sound_key:'Тональность',grab_lyrics:'Получить субтитры',task_id:'ID исходной задачи',audio_id:'ID аудио'};
+  const audioLabels={prompt:'Описание или текст',text:'Текст для озвучивания',voice:'Голос',dialogue:'Реплики',dialogue_turns:'Реплики',speakers:'Спикеры',content:'Содержание',language_code:'Язык',style:'Стиль',title:'Название',model:'Версия модели',instrumental:'Инструментальная музыка',custom_mode:'Расширенные настройки',negative_tags:'Исключить стили',tags:'Стили',lyrics:'Текст песни',full_lyrics:'Полный текст песни',duration:'Длительность, сек.',infill_start_s:'Начало замены, сек.',infill_end_s:'Конец замены, сек.',vocal_start_s:'Начало вокала, сек.',vocal_end_s:'Конец вокала, сек.',continue_at:'Продолжить с, сек.',sound_loop:'Зациклить звук',sound_tempo:'Темп, BPM',sound_key:'Тональность',grab_lyrics:'Получить субтитры',task_id:'ID исходной задачи',audio_id:'ID аудио'};
   const audioNames={'elevenlabs/text-to-dialogue-v3':'ElevenLabs · Диалог','elevenlabs/text-to-speech-multilingual-v2':'ElevenLabs · Многоязычная речь','elevenlabs/text-to-speech-turbo-2-5':'ElevenLabs · Быстрая речь','elevenlabs/audio-isolation':'ElevenLabs · Очистка аудио','ai-music-api/generate':'Suno · Создать музыку','ai-music-api/sounds':'Suno · Создать звук','google/gemini-2-5-pro-tts':'Gemini 2.5 Pro · Озвучивание','google/gemini-3-1-flash-tts':'Gemini 3.1 Flash · Озвучивание'};
   for(const model of result.filter(item=>item.kind==='audio')){
     if(audioNames[model.apiModel])model.name=audioNames[model.apiModel];
-    for(const field of model.fields)if(audioLabels[field.key])field.label=audioLabels[field.key];
+    for(const field of model.fields){
+      if(audioLabels[field.key])field.label=audioLabels[field.key];
+      if(field.key==='audio_id')field.hint='ID конкретной дорожки из результата генерации музыки Kie.ai; одна задача может создать несколько дорожек.';
+    }
   }
+  for(const model of result.filter(item=>item.apiModel==='grok-imagine/extend')){
+    const count=model.fields.find(field=>field.key==='extend_times');
+    if(count)count.label='Число продлений';
+  }
+  const references=result.find(item=>item.apiModel==='pixverse-v6/reference-to-video');
+  const imageReferences=references?.fields.find(field=>field.key==='image_references');
+  if(imageReferences)imageReferences.label='Референсные изображения';
   // Generated schemas sometimes describe duration ranges only in prose. Keep
   // the catalog form on the same explicit allow-list used by server validation
   // so a value cannot look accepted in the UI and then fail before enqueue.

@@ -116,7 +116,7 @@ export const createCommerceOrder = (offer: CommerceOffer, idempotencyKey: string
 export const checkoutCommerceOrder = (orderId: string) => workspaceRequest<CommerceOrder>(`/api/commerce/orders/${encodeURIComponent(orderId)}/checkout`, { method: 'POST', body: '{}' });
 export const getCommerceOrder = (orderId: string) => workspaceRequest<CommerceOrder>(`/api/commerce/orders/${encodeURIComponent(orderId)}`);
 
-export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number | null; amountUnits: number | null; status?: string; warning?: string }> {
+export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number | null; amountUnits: number | null; status?: string; reason?: string; warning?: string }> {
   return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }
 

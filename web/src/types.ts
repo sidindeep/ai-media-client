@@ -83,6 +83,7 @@ export type GenerationPreset = {
 };
 
 export type GenerationRecord = {
+  taskId?: string;
   contentAssetId?: string;
   providerVideoId?: string;
   kieAccountId?: 'primary' | 'secondary';

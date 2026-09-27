@@ -8,12 +8,14 @@ import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import AspectRatioPicker from './AspectRatioPicker.vue';
 import PresetBar from './PresetBar.vue';
 import AdvancedParameters from './AdvancedParameters.vue';
+import SchemaField from './SchemaField.vue';
 import { mediaAdvancedParameters, routerAiAdvancedParameters } from '../domain/advanced-parameters';
 import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, mediaFileValue, mediaSourceDurationRange, parseMediaFieldValue } from '../domain/media-fields';
 import { mediaModelBrandId, routerAiModelBrandId } from '../domain/model-catalog';
 import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
 import { frameFieldPair, orderedFileFields } from '../domain/frame-fields';
+import { unionFields, unionVariants } from '../domain/union-model-fields';
 import { formatCreditCost, roundedCreditCost } from '../domain/credits';
 import { useI18n } from '../i18n';
 
@@ -28,7 +30,7 @@ const modeItems = computed(() => [
 const uploading = ref(false);
 const submitting = ref(false);
 const submitError = ref('');
-const quote = ref<{ credits: number | null; amountUnits?: number | null; status?: string; warning?: string } | null>(null);
+const quote = ref<{ credits: number | null; amountUnits?: number | null; status?: string; reason?: string; warning?: string } | null>(null);
 const quoteError = ref('');
 const quoteLoading = ref(false);
 const diagnosticOpen = ref(false);
@@ -36,6 +38,7 @@ const diagnosticLoading = ref(false);
 const diagnosticError = ref('');
 const diagnostics = ref<ProviderDiagnostics | null>(null);
 const fieldErrors = ref<Record<string, string>>({});
+const unionMode = ref(0);
 const routerAiExtra = ref('{}');
 const routerAiVideoDuration = ref<number | null>(null);
 const routerAiVideoResolution = ref('');
@@ -49,7 +52,8 @@ let quoteRevision = 0;
 let quoteTimer: ReturnType<typeof setTimeout> | null = null;
 const QUOTE_DEBOUNCE_MS = 1500;
 const effortOptions = computed(() => studio.currentCodexModel?.efforts || ['low', 'medium', 'high']);
-const currentFields = computed(() => studio.currentMediaModel?.fields || []);
+const currentFields = computed(() => unionFields(studio.currentMediaModel, unionMode.value));
+const currentUnionVariants = computed(() => unionVariants(studio.currentMediaModel));
 const fileFields = computed(() => orderedFileFields(currentFields.value.filter(field => field.type === 'files')));
 const frameFields = computed(() => frameFieldPair(fileFields.value));
 const otherFileFields = computed(() => frameFields.value
@@ -73,8 +77,27 @@ const dropDescription = computed(() => {
   return field?.label ? t('composer.drop.releaseField', { field: field.label }) : t('composer.drop.releaseChat');
 });
 const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
-const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files' && !primaryFields.value.includes(field)));
-const mediaAdvancedFields = computed(() => mediaAdvancedParameters(extraFields.value, fieldOptionLabel));
+const taskReferenceField = computed(() => currentFields.value.find(field => field.key === 'task_id' || field.key === 'taskId'));
+function compatibleTaskReference(modelId: string, source: { modelId?: string; kind?: string }): boolean {
+  if (modelId === 'kie:grok-imagine-image-2-0/segment-edit')
+    return ['kie:grok-imagine-image-2-0/text-to-image', 'kie:grok-imagine-image-2-0/segment-map'].includes(source.modelId || '');
+  if (modelId === 'kie:grok-imagine/image-to-video') return source.modelId === 'kie:grok-imagine/text-to-image';
+  if (['kie:grok-imagine/extend', 'kie:grok-imagine/upscale'].includes(modelId))
+    return source.kind === 'video' && Boolean(source.modelId?.startsWith('kie:grok-imagine/'));
+  if (modelId === 'kie:ai-music-api/generate-midi-from-audio') return source.modelId === 'kie:ai-music-api/separate-vocals';
+  if (modelId.startsWith('kie:ai-music-api/')) return Boolean(source.modelId?.startsWith('kie:ai-music-api/'));
+  return false;
+}
+const taskReferences = computed(() => {
+  return studio.history.filter(record => ['media', 'kie'].includes(record.providerId) && record.state === 'success' && record.id
+    && (record.kieAccountId || 'primary') === studio.kieAccountId
+    && compatibleTaskReference(studio.currentMediaModel?.id || '', record));
+});
+const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files'
+  && field !== taskReferenceField.value && !primaryFields.value.includes(field)));
+const structuredFields = computed(() => extraFields.value.filter(field => field.type === 'json'
+  && (field.schema?.type === 'array' || field.schema?.type === 'object')));
+const mediaAdvancedFields = computed(() => mediaAdvancedParameters(extraFields.value.filter(field => !structuredFields.value.includes(field)), fieldOptionLabel));
 const mediaAdvancedValues = computed(() => Object.fromEntries(extraFields.value.map(field => [field.key, fieldValue(field)])));
 const routerAiAdvancedFields = computed(() => routerAiSpecial.value ? routerAiAdvancedParameters(studio.currentRouterAiModel, {
   audioFile: t('routerai.admin.audioFile'), duration: t('routerai.admin.duration'), seconds: t('routerai.admin.seconds'),
@@ -85,7 +108,10 @@ const routerAiAdvancedValues = computed(() => ({ duration: routerAiVideoDuration
   aspect_ratio: routerAiVideoAspectRatio.value, body: routerAiExtra.value, audioFile: routerAiAudioFile.value }));
 const total = computed(() => quote.value?.credits != null ? roundedCreditCost(quote.value.credits) : null);
 const quoteWarning = computed(() => quote.value?.status === 'unavailable'
-  ? t(studio.mediaModelId === 'kie:kling-2.6/motion-control' ? 'composer.motionControlPriceWarning' : 'composer.priceUnknownWarning')
+  ? t(studio.mediaModelId === 'kie:kling-2.6/motion-control' ? 'composer.motionControlPriceWarning'
+    : quote.value.reason === 'tariff_not_found' ? 'composer.priceTariffMissing'
+      : quote.value.reason === 'unsupported_tariff_unit' ? 'composer.priceUnitUnsupported'
+        : quote.value.reason === 'tariff_variant_unknown' ? 'composer.priceVariantUnknown' : 'composer.priceUnknownWarning')
   : '');
 const quoteErrorMessage = computed(() => {
   if (!quoteError.value) return '';
@@ -95,14 +121,8 @@ const quoteErrorMessage = computed(() => {
 const modelChoice = computed({
   get: () => studio.provider === 'codex' ? studio.codexModel : studio.provider === 'routerai' ? studio.routerAiModel : studio.mediaModelId,
   set: value => {
-    if (studio.provider === 'codex') studio.codexModel = value;
-    else if (studio.provider === 'routerai') studio.routerAiModel = value;
-    else {
-      studio.mediaInput = {};
-      studio.sourceFiles = [];
-      fieldErrors.value = {};
-      studio.mediaModelId = value;
-    }
+    studio.setSelectedModel(value);
+    fieldErrors.value = {};
   },
 });
 const modelOptions = computed(() => studio.provider === 'routerai'
@@ -113,8 +133,8 @@ const modelOptions = computed(() => studio.provider === 'routerai'
 const promptField = computed(() => studio.provider === 'media' ? currentFields.value.find(field => field.key === 'prompt' || field.key === 'text') : undefined);
 const showsPrompt = computed(() => studio.provider !== 'media' || Boolean(promptField.value));
 const promptValue = computed({
-  get: () => promptField.value?.key === 'text' ? String(studio.mediaInput.text || '') : studio.prompt,
-  set: value => { if (promptField.value?.key === 'text') updateField('text', value); else studio.prompt = value; },
+  get: () => studio.prompt,
+  set: value => { studio.prompt = value; },
 });
 const promptPlaceholder = computed(() => studio.mode === 'audio'
   ? promptField.value?.key === 'text' ? t('composer.promptVoice') : t('composer.promptAudio')
@@ -129,11 +149,11 @@ const allFieldErrors = computed(() => ({ ...valueErrors.value, ...fieldErrors.va
 const hasFieldErrors = computed(() => Object.keys(allFieldErrors.value).length > 0);
 const missingRequiredFields = computed(() => studio.provider === 'media' ? currentFields.value.filter(field => {
   if (!field.required) return false;
-  if (field.key === 'prompt') return !studio.prompt.trim();
+  if (field.key === 'prompt' || field.key === 'text') return !studio.prompt.trim();
   const value = studio.mediaInput[field.key];
   return value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length);
 }) : []);
-const mediaRequestInput = () => ({ ...studio.mediaInput, ...(promptField.value?.key === 'prompt' ? { prompt: studio.prompt } : {}) });
+const mediaRequestInput = () => ({ ...studio.mediaInput, ...(promptField.value ? { [promptField.value.key]: studio.prompt } : {}) });
 const retryableReadError = (error: unknown) => error instanceof Error
   && /^(?:Не удалось выполнить запрос|Некорректный ответ сервиса|Подключаемся к базе данных|Связь с базой данных временно недоступна)/i.test(error.message);
 
@@ -164,11 +184,25 @@ function updateField(key: string, value: unknown) {
 function fieldValue(field: MediaField) { return formatMediaFieldValue(field, studio.mediaInput[field.key] ?? field.default); }
 function updateTypedField(field: MediaField, raw: unknown) {
   try {
-    updateField(field.key, parseMediaFieldValue(field, raw));
+    const parsed = parseMediaFieldValue(field, raw);
+    updateField(field.key, parsed);
+    if (field.type === 'json') {
+      const refs = new Set<string>();
+      const visit = (value: unknown) => {
+        if (typeof value === 'string') refs.add(value);
+        else if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === 'object') Object.values(value).forEach(visit);
+      };
+      visit(parsed);
+      studio.sourceFiles = studio.sourceFiles.filter(file => file.fieldKey !== field.key || refs.has(file.ref));
+    }
     const errors = { ...fieldErrors.value }; delete errors[field.key]; fieldErrors.value = errors;
   } catch (error) {
     fieldErrors.value = { ...fieldErrors.value, [field.key]: error instanceof Error ? error.message : t('composer.invalidValue') };
   }
+}
+function registerStructuredUpload(file: { ref: string; name: string; type: string; fieldKey: string }) {
+  studio.sourceFiles.push(file);
 }
 function updateSelect(field: MediaField, event: Event) {
   updateSelectValue(field, (event.target as HTMLSelectElement).value);
@@ -242,7 +276,7 @@ async function openDiagnostics() {
   } finally { diagnosticLoading.value = false; }
 }
 
-watch(() => studio.currentMediaModel?.id, () => {
+function normalizeCurrentFields() {
   const allowed = new Set(currentFields.value.map(field => field.key));
   const defaults = Object.fromEntries(currentFields.value.flatMap(field => {
     if (field.default !== undefined) return [[field.key, field.default]];
@@ -253,7 +287,18 @@ watch(() => studio.currentMediaModel?.id, () => {
   const current = Object.fromEntries(Object.entries(studio.mediaInput).filter(([key]) => allowed.has(key)));
   studio.mediaInput = { ...defaults, ...current };
   fieldErrors.value = Object.fromEntries(Object.entries(fieldErrors.value).filter(([key]) => allowed.has(key)));
+}
+watch(() => studio.currentMediaModel?.id, () => {
+  unionMode.value = 0;
+  normalizeCurrentFields();
 }, { immediate: true });
+function selectUnionMode(event: Event) {
+  unionMode.value = Number((event.target as HTMLSelectElement).value);
+  studio.sourceFiles = [];
+  studio.mediaInput = {};
+  fieldErrors.value = {};
+  normalizeCurrentFields();
+}
 watch(() => [studio.mode, studio.provider], () => { submitError.value = ''; fieldErrors.value = {}; });
 watch(() => studio.currentRouterAiModel?.id, () => {
   routerAiExtra.value = '{}';
@@ -522,6 +567,15 @@ function removeFile(index: number) {
     const remaining = studio.sourceFiles.filter(file => file.fieldKey === item.fieldKey).map(file => file.ref);
     const field = fileFields.value.find(candidate => candidate.key === item.fieldKey);
     if (field) updateField(item.fieldKey, mediaFileValue(field, remaining));
+    else {
+      const removeRef = (value: unknown): unknown => {
+        if (value === item.ref) return undefined;
+        if (Array.isArray(value)) return value.map(removeRef).filter(part => part !== undefined);
+        if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, part]) => [key, removeRef(part)]).filter(([, part]) => part !== undefined));
+        return value;
+      };
+      updateField(item.fieldKey, removeRef(studio.mediaInput[item.fieldKey]));
+    }
   }
 }
 function animateToQueue(event?: Event) {
@@ -557,7 +611,7 @@ function animateToQueue(event?: Event) {
 }
 function submissionSelection() {
   return JSON.stringify([studio.provider, studio.kieAccountId, studio.mode, studio.mediaModelId,
-    studio.codexModel, studio.routerAiModel, studio.prompt, studio.sourceFiles.map(item => item.ref)]);
+    studio.codexModel, studio.routerAiModel, unionMode.value, studio.prompt, studio.sourceFiles.map(item => item.ref)]);
 }
 
 async function submit(event?: Event) {
@@ -571,7 +625,7 @@ async function submit(event?: Event) {
   if (missingRequiredFields.value.length) { submitError.value = t('composer.completeRequired'); return; }
   if (studio.provider === 'codex' && !quote.value) { submitError.value = studio.isAdmin ? (quoteError.value || t('composer.waitQuote')) : publicServiceError(quoteError.value, t('composer.waitQuote')); return; }
   if (studio.provider === 'routerai' && !quote.value) { submitError.value = quoteError.value || t('composer.waitQuote'); return; }
-  if (!studio.prompt.trim() && !(studio.provider === 'routerai' && studio.currentRouterAiModel?.kind === 'transcription' && routerAiAudioFile.value)) { submitError.value = t('composer.enterPrompt'); return; }
+  if ((studio.provider === 'codex' || studio.provider === 'routerai' && !(studio.currentRouterAiModel?.kind === 'transcription' && routerAiAudioFile.value)) && !studio.prompt.trim()) { submitError.value = t('composer.enterPrompt'); return; }
   const selectedAtClick = submissionSelection();
   submitError.value = '';
   submitting.value = true;
@@ -599,6 +653,7 @@ async function submit(event?: Event) {
     <div class="composer-body">
       <p v-if="studio.provider === 'media' && studio.mode === 'audio' && !modelOptions.length" class="notice" role="status">{{ t('composer.audioUnavailable') }}</p>
       <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" :aria-label="t('composer.promptAria')" @keydown.ctrl.enter="submit"></textarea>
+      <label v-if="studio.provider === 'media' && currentUnionVariants.length" class="select-pill"><span>{{ t('composer.unionMode') }}</span><select :value="unionMode" @change="selectUnionMode"><option v-for="(variant, index) in currentUnionVariants" :key="index" :value="index">{{ variant.title || t('composer.unionVariant', { number: index + 1 }) }}</option></select></label>
       <div v-if="hasSourcePicker || studio.sourceFiles.length || uploading" class="source-strip">
         <label v-if="studio.provider === 'codex' && codexAcceptsImages" class="attach-button">＋ {{ t('composer.sources') }}<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
         <template v-else>
@@ -611,6 +666,18 @@ async function submit(event?: Event) {
           <span v-else class="source-file-icon" aria-hidden="true">▧</span>
           <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(index)">×</button>
         </article>
+      </div>
+      <div v-if="studio.provider === 'media' && taskReferenceField" class="task-reference-field">
+        <label v-if="taskReferences.length">{{ t('composer.taskReference.choose') }}
+          <select :value="studio.mediaInput[taskReferenceField.key] ?? ''" @change="updateField(taskReferenceField.key, ($event.target as HTMLSelectElement).value || undefined)">
+            <option value="">{{ t('composer.taskReference.manual') }}</option>
+            <option v-for="record in taskReferences" :key="record.id" :value="record.id">{{ record.modelName || record.modelId }} · {{ formatDate(record.createdAt || '') }}</option>
+          </select>
+        </label>
+        <label>{{ taskReferenceField.label || taskReferenceField.key }}{{ taskReferenceField.required ? ' *' : '' }}
+          <input type="text" :value="studio.mediaInput[taskReferenceField.key] ?? ''" @input="updateField(taskReferenceField.key, ($event.target as HTMLInputElement).value || undefined)" />
+        </label>
+        <small>{{ t('composer.taskReference.hint') }}</small>
       </div>
       <div class="composer-controls">
         <PresetBar />
@@ -629,6 +696,11 @@ async function submit(event?: Event) {
         <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
       </div>
       <AdvancedParameters v-if="studio.provider === 'media'" :key="`media:${studio.mediaModelId}`" :fields="mediaAdvancedFields" :values="mediaAdvancedValues" :errors="allFieldErrors" @change="updateMediaAdvanced" />
+      <div v-if="studio.provider === 'media' && structuredFields.length" class="advanced-settings schema-fields">
+        <SchemaField v-for="field in structuredFields" :key="field.key" :schema="field.schema || {}" :model-value="studio.mediaInput[field.key]"
+          :name="field.key" :root-key="field.key" :label="field.label || field.key" :required="field.required" :error="allFieldErrors[field.key]"
+          @change="updateTypedField(field, $event)" @uploaded="registerStructuredUpload" />
+      </div>
       <AdvancedParameters v-if="routerAiSpecial" :key="`routerai:${studio.currentRouterAiModel?.id}`" :fields="routerAiAdvancedFields" :values="routerAiAdvancedValues" :context="`${studio.currentRouterAiModel?.id} · POST /${studio.currentRouterAiModel?.endpoint}`" @change="updateRouterAiAdvanced" />
       <p v-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>

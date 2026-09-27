@@ -13,6 +13,29 @@ function matchesOption(option: unknown, value: unknown) {
 
 export function mediaFieldValueError(field: MediaField, value: unknown): string {
   if (value === '' || value === null || value === undefined) return '';
+  if (field.type === 'json' && (field.schema?.type === 'array' || field.schema?.type === 'object')) {
+    const invalid = (schema: Record<string, unknown>, candidate: unknown): boolean => {
+      if (schema.type === 'array') {
+        if (!Array.isArray(candidate)) return true;
+        if (typeof schema.minItems === 'number' && candidate.length < schema.minItems) return true;
+        if (typeof schema.maxItems === 'number' && candidate.length > schema.maxItems) return true;
+        return candidate.some(item => invalid((schema.items || {}) as Record<string, unknown>, item));
+      }
+      if (schema.type === 'object') {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return true;
+        const object = candidate as Record<string, unknown>;
+        if (((schema.required || []) as string[]).some(key => object[key] === undefined || object[key] === null || object[key] === '')) return true;
+        return Object.entries((schema.properties || {}) as Record<string, Record<string, unknown>>)
+          .some(([key, child]) => object[key] !== undefined && invalid(child, object[key]));
+      }
+      if (schema.type === 'string') return typeof candidate !== 'string'
+        || typeof schema.minLength === 'number' && candidate.length < schema.minLength;
+      if (schema.type === 'integer' || schema.type === 'number') return typeof candidate !== 'number' || !Number.isFinite(candidate)
+        || schema.type === 'integer' && !Number.isInteger(candidate);
+      return false;
+    };
+    if (invalid(field.schema, value)) return t('validation.structured');
+  }
   const options = mediaFieldOptions(field);
   if (options.length && !options.some(option => matchesOption(option, value))) {
     return t('validation.allowedValues', { values: options.map(option => Number(option) <= 0 ? t('validation.auto') : String(option)).join(', ') });

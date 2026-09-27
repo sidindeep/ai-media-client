@@ -7,6 +7,7 @@ import { t } from '../i18n';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
+type SelectionSnapshot = { sourceFiles: SourceAttachment[]; mediaInput: Record<string, unknown> };
 const ACTIVE_STATES = ['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'running'] as const;
 const COMPLETED_STATES = ['success', 'fail', 'blocked', 'cancelled', 'unknown', 'unconfirmed'] as const;
 const CODEX_POLL_STATES = new Set(['queued', 'submitting', 'generating', 'running']);
@@ -59,6 +60,9 @@ export const useStudioStore = defineStore('studio', () => {
   const mediaModelId = ref('');
   const mediaInput = ref<Record<string, unknown>>({});
   const sourceFiles = ref<SourceAttachment[]>([]);
+  const selectionCache = ref<Record<string, SelectionSnapshot>>({});
+  const modelByContext = ref<Record<string, string>>({});
+  const providerByMode = ref<Partial<Record<GenerationMode, 'codex' | 'media' | 'routerai'>>>({});
   const codexModel = ref('');
   const routerAiModel = ref('');
   const codexEffort = ref('');
@@ -137,6 +141,40 @@ export const useStudioStore = defineStore('studio', () => {
   function normalizeCurrentMediaInput() {
     const model = currentMediaModel.value;
     if (model?.fields) mediaInput.value = normalizeMediaInput(model.fields, mediaInput.value);
+  }
+
+  function selectionKey() {
+    const modelId = provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value : routerAiModel.value;
+    return `${provider.value}:${mode.value}:${modelId}`;
+  }
+
+  function contextKey() { return `${provider.value}:${mode.value}`; }
+
+  function selectedModelId() {
+    return provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value : routerAiModel.value;
+  }
+
+  function useRememberedModel() {
+    const saved = modelByContext.value[contextKey()];
+    if (!saved) return;
+    if (provider.value === 'media') mediaModelId.value = saved;
+    else if (provider.value === 'codex') codexModel.value = saved;
+    else routerAiModel.value = saved;
+  }
+
+  function rememberSelection() {
+    selectionCache.value[selectionKey()] = { sourceFiles: [...sourceFiles.value], mediaInput: { ...mediaInput.value } };
+    modelByContext.value[contextKey()] = selectedModelId();
+    providerByMode.value[mode.value] = provider.value;
+  }
+
+  function restoreSelection() {
+    modelByContext.value[contextKey()] = selectedModelId();
+    providerByMode.value[mode.value] = provider.value;
+    const saved = selectionCache.value[selectionKey()];
+    sourceFiles.value = saved ? [...saved.sourceFiles] : [];
+    mediaInput.value = saved ? { ...saved.mediaInput } : {};
+    if (provider.value === 'media') normalizeCurrentMediaInput();
   }
 
   function normalizeCodexControls() {
@@ -363,12 +401,35 @@ export const useStudioStore = defineStore('studio', () => {
     const tab = Array.isArray(draft?.tabs) ? draft.tabs[Number(draft.active) || 0] : null;
     kieAccountId.value = isAdmin.value && tab?.kieAccountId === 'secondary' ? 'secondary' : 'primary';
     prompt.value = tab && typeof tab === 'object' && typeof tab.prompt === 'string' ? tab.prompt : '';
+    mediaInput.value = {};
+    sourceFiles.value = [];
+    selectionCache.value = {};
+    modelByContext.value = {};
+    providerByMode.value = {};
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
       if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai') provider.value = tab.provider;
       if (typeof tab.mediaModelId === 'string') mediaModelId.value = tab.mediaModelId;
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
+      if (tab.selectionCache && typeof tab.selectionCache === 'object' && !Array.isArray(tab.selectionCache)) {
+        for (const [key, snapshot] of Object.entries(tab.selectionCache as Record<string, unknown>)) {
+          if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) continue;
+          const entry = snapshot as Partial<SelectionSnapshot>;
+          selectionCache.value[key] = {
+            sourceFiles: Array.isArray(entry.sourceFiles) ? entry.sourceFiles.filter(item => item && typeof item.ref === 'string') : [],
+            mediaInput: entry.mediaInput && typeof entry.mediaInput === 'object' && !Array.isArray(entry.mediaInput) ? entry.mediaInput : {},
+          };
+        }
+      }
+      if (tab.modelByContext && typeof tab.modelByContext === 'object' && !Array.isArray(tab.modelByContext)) {
+        modelByContext.value = Object.fromEntries(Object.entries(tab.modelByContext as Record<string, unknown>)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+      }
+      if (tab.providerByMode && typeof tab.providerByMode === 'object' && !Array.isArray(tab.providerByMode)) {
+        providerByMode.value = Object.fromEntries(Object.entries(tab.providerByMode as Record<string, unknown>)
+          .filter(([key, value]) => ['text', 'image', 'video', 'audio'].includes(key) && ['codex', 'media', 'routerai'].includes(String(value)))) as typeof providerByMode.value;
+      }
       if (typeof tab.codexModel === 'string') codexModel.value = tab.codexModel;
       if (typeof tab.routerAiModel === 'string') routerAiModel.value = tab.routerAiModel;
       if (typeof tab.codexEffort === 'string') codexEffort.value = tab.codexEffort;
@@ -379,6 +440,9 @@ export const useStudioStore = defineStore('studio', () => {
     normalizeRouterAiControls();
     normalizeMediaControls();
     normalizeCurrentMediaInput();
+    if (!prompt.value && typeof mediaInput.value.text === 'string') prompt.value = mediaInput.value.text;
+    // The active fields in older drafts remain authoritative for the active selection.
+    rememberSelection();
     draftReady.value = true;
   }
 
@@ -406,8 +470,9 @@ export const useStudioStore = defineStore('studio', () => {
   }
   async function saveCurrentDraft() {
     if (!draftReady.value) return;
+    rememberSelection();
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, selectionCache: selectionCache.value, modelByContext: modelByContext.value, providerByMode: providerByMode.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
   async function createProject(name: string) { const project = await api.createProject(name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
@@ -423,38 +488,59 @@ export const useStudioStore = defineStore('studio', () => {
 
   function setMode(value: GenerationMode) {
     if (!fullModelAccess.value && ['video', 'audio'].includes(value)) throw new Error(t('studio.mediaLocked'));
-    const previousMediaModel = mediaModelId.value;
+    rememberSelection();
     mode.value = value;
+    const rememberedProvider = providerByMode.value[value];
+    if (rememberedProvider && (rememberedProvider === 'codex' || fullModelAccess.value)
+      && (rememberedProvider !== 'routerai' || isAdmin.value || ['text', 'image'].includes(value))) provider.value = rememberedProvider;
     if (value === 'text') { if (provider.value === 'media') provider.value = 'codex'; codexKind.value = 'text'; }
     else if (value === 'image') { codexKind.value = 'image'; }
     else if (provider.value !== 'routerai' || !isAdmin.value) { provider.value = 'media'; }
+    useRememberedModel();
     normalizeMediaControls();
     normalizeRouterAiControls();
-    if (previousMediaModel !== mediaModelId.value) { mediaInput.value = {}; sourceFiles.value = []; }
+    if (provider.value === 'codex') normalizeCodexControls();
+    restoreSelection();
   }
 
   function setProvider(value: 'codex' | 'media' | 'routerai') {
     if (value !== 'codex' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
+    rememberSelection();
     provider.value = value;
     if (value === 'codex') {
       if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
+      useRememberedModel();
       codexKind.value = mode.value === 'text' ? 'text' : 'image';
       normalizeCodexControls();
     } else if (value === 'routerai') {
       if (!isAdmin.value && !['text', 'image'].includes(mode.value)) mode.value = 'image';
-      sourceFiles.value = [];
+      useRememberedModel();
       normalizeRouterAiControls();
     } else {
       if (!['image', 'video', 'audio'].includes(mode.value)) mode.value = 'image';
+      useRememberedModel();
       normalizeMediaControls();
     }
+    restoreSelection();
+  }
+
+  function setSelectedModel(value: string) {
+    rememberSelection();
+    if (provider.value === 'codex') codexModel.value = value;
+    else if (provider.value === 'routerai') routerAiModel.value = value;
+    else mediaModelId.value = value;
+    restoreSelection();
   }
 
   function setModelAccess(value: 'gpt-only' | 'all') {
+    rememberSelection();
     modelAccess.value = value;
     if (!fullModelAccess.value) {
       provider.value = 'codex';
       if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
+      useRememberedModel();
+      normalizeCodexControls();
+      restoreSelection();
     }
   }
 
@@ -500,14 +586,14 @@ export const useStudioStore = defineStore('studio', () => {
       if (!fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
       const available = mediaModelsFor(preset.mode).find(model => model.id === preset.mediaModelId);
       if (!available) throw new Error(t('studio.presetMediaUnavailable'));
+      rememberSelection();
       mode.value = preset.mode;
       provider.value = 'media';
       mediaModelId.value = available.id;
-      mediaInput.value = JSON.parse(JSON.stringify(preset.mediaInput || {}));
-      normalizeCurrentMediaInput();
     } else if (preset.provider === 'routerai') {
       const available = routerAiCatalog.value?.models.find(model => model.id === preset.routerAiModel && model.kind === preset.mode);
       if (!available) throw new Error(t('studio.selectModel'));
+      rememberSelection();
       mode.value = available.kind === 'transcription' ? 'audio'
         : (available.kind === 'image' || available.kind === 'video' || available.kind === 'audio') ? available.kind : 'text';
       provider.value = 'routerai';
@@ -515,6 +601,7 @@ export const useStudioStore = defineStore('studio', () => {
     } else {
       const available = codexCatalog.value?.models.find(model => model.id === preset.codexModel);
       if (!available) throw new Error(t('studio.presetCodexUnavailable'));
+      rememberSelection();
       mode.value = preset.mode === 'text' ? 'text' : 'image';
       provider.value = 'codex';
       codexKind.value = mode.value === 'text' ? 'text' : 'image';
@@ -524,7 +611,11 @@ export const useStudioStore = defineStore('studio', () => {
       codexAspectRatio.value = preset.codexAspectRatio || 'auto';
       normalizeCodexControls();
     }
-    sourceFiles.value = [];
+    restoreSelection();
+    if (preset.provider === 'media') {
+      mediaInput.value = { ...mediaInput.value, ...JSON.parse(JSON.stringify(preset.mediaInput || {})) };
+      normalizeCurrentMediaInput();
+    }
     selectedPresetId.value = preset.id;
   }
 
@@ -681,7 +772,7 @@ export const useStudioStore = defineStore('studio', () => {
     const submittedSourceFiles = [...sourceFiles.value];
     const submittedPrompt = prompt.value.trim() || (submittedProvider === 'routerai' && submittedRouterAiModel?.kind === 'transcription'
       ? t('routerai.admin.transcriptionPrompt') : '');
-    if (!submittedPrompt) throw new Error(t('studio.enterPrompt'));
+    if (!submittedPrompt && submittedProvider !== 'media') throw new Error(t('studio.enterPrompt'));
     if (activeChatId.value === 'system:recent') {
       let target = chats.value.find(chat => chat.mode === 'system' && chat.projectId === activeProjectId.value);
       if (!target) {
@@ -743,7 +834,9 @@ export const useStudioStore = defineStore('studio', () => {
     const model = submittedMediaModel;
     if (!model) throw new Error(t('studio.catalogUnavailable'));
     const input = { ...submittedMediaInput };
-    if (model.fields?.some(field => field.key === 'prompt')) input.prompt = submittedPrompt;
+    const unionSchemas = (model.inputSchema?.oneOf || model.inputSchema?.anyOf || []) as Array<{ properties?: Record<string, unknown> }>;
+    if (model.fields?.some(field => field.key === 'prompt') || unionSchemas.some(schema => Boolean(schema.properties?.prompt))) input.prompt = submittedPrompt;
+    else if (model.fields?.some(field => field.key === 'text')) input.text = submittedPrompt;
     optimistic = { id: optimisticId, requestId, optimistic: true, kieAccountId: submittedKieAccount, providerId: model.providerId || 'media',
       providerName: catalog.value?.kieAccounts?.find(item => item.id === submittedKieAccount)?.name || 'Kie.ai', modelId: model.id,
       modelName: model.name, kind: model.kind || submittedMode, state: 'queued', createdAt, queuedAt: createdAt, input, ...context };
@@ -781,8 +874,9 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function prepareFrom(record: GenerationRecord) {
-    prompt.value = typeof record.input?.prompt === 'string' ? record.input.prompt : '';
+    prompt.value = typeof record.input?.prompt === 'string' ? record.input.prompt : typeof record.input?.text === 'string' ? record.input.text : '';
     setMode((record.kind === 'video' || record.kind === 'audio' || record.kind === 'text') ? record.kind : 'image');
+    rememberSelection();
     if (record.providerId === 'codex') {
       provider.value = 'codex';
       if (record.modelId) codexModel.value = record.modelId;
@@ -798,6 +892,9 @@ export const useStudioStore = defineStore('studio', () => {
       provider.value = 'media';
       kieAccountId.value = isAdmin.value && record.kieAccountId === 'secondary' ? 'secondary' : 'primary';
       if (record.modelId) mediaModelId.value = record.modelId;
+    }
+    restoreSelection();
+    if (record.providerId !== 'codex' && record.providerId !== 'routerai') {
       mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
       normalizeCurrentMediaInput();
     }
@@ -813,7 +910,7 @@ export const useStudioStore = defineStore('studio', () => {
   return {
     catalog, codexCatalog, routerAiCatalog, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
-    prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setModelAccess,
+    prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setSelectedModel, setModelAccess,
     codexModel, routerAiModel, routerAiModels, currentRouterAiModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,

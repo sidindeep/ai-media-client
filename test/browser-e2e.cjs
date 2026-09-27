@@ -81,11 +81,15 @@ async function main() {
     await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Browser E2E')", [accountId]);
     await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,5000)', [accountId]);
     await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(token), accountId]);
+    let grokRecordId;
     for (let index = 0; index < 55; index++) {
       const recordId = randomUUID();
+      if (index === 0) grokRecordId = recordId;
       await pool.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'history',$2,$3)", [accountId, recordId,
         JSON.stringify({ id: recordId, state: 'success', providerId: 'kie', providerName: 'Kie.ai',
-          modelId: 'kie:nano-banana-2-lite', modelName: 'Nano Banana 2 Lite', kind: 'image',
+          modelId: index === 0 ? 'kie:grok-imagine-image-2-0/text-to-image' : 'kie:nano-banana-2-lite',
+          modelName: index === 0 ? 'Grok Imagine' : 'Nano Banana 2 Lite', kind: 'image',
+          ...(index === 0 ? { taskId: 'task-grok-browser' } : {}),
           input: { prompt: `Browser history ${index}` }, createdAt: new Date(Date.now() - index * 1000).toISOString() })]);
     }
     const origin = `http://localhost:${runtime.server.address().port}`;
@@ -114,6 +118,56 @@ async function main() {
     await sleep(1000);
     await client.command('Page.reload');
     await client.until("document.querySelector('.composer-body textarea')?.value==='Browser draft persists'");
+    const selectedCodexModel = await client.evaluate("document.querySelector('.model-native-select')?.value");
+    const otherCodexModel = await client.evaluate("Array.from(document.querySelectorAll('.model-native-select option')).map(option=>option.value).find(value=>value!==document.querySelector('.model-native-select').value)");
+    assert.ok(otherCodexModel, 'the catalog contains another model for selection caching');
+    const cachedSource = `content:${randomUUID()}`;
+    await client.evaluate(`(async()=>{
+      const chatId=JSON.parse(localStorage.getItem('media-studio-workspace')||'null')?.chatId;
+      const draft={version:1,active:0,tabs:[{prompt:'Browser draft persists',mode:'image',provider:'codex',codexModel:${JSON.stringify(selectedCodexModel)},sourceFiles:[{ref:${JSON.stringify(cachedSource)},name:'cached.png',type:'image/png'}]}]};
+      const response=await fetch('/api/rpc/saveDrafts',{method:'POST',headers:{'Content-Type':'application/json','X-Media-Client':'web','X-Media-User':document.querySelector('meta[name="account-id"]').content},body:JSON.stringify([draft,chatId&&chatId!=='system:recent'?{chatId}:{}])});
+      if(!response.ok)throw new Error('Failed to seed source draft');
+    })()`);
+    await client.command('Page.reload');
+    await client.until("document.querySelectorAll('.source-preview').length===1");
+    await client.evaluate("document.querySelectorAll('.composer-tabs button')[0].click();void 0");
+    await client.until("document.querySelectorAll('.source-preview').length===0 && document.querySelector('.composer-body textarea')?.value==='Browser draft persists'");
+    await client.evaluate("document.querySelectorAll('.composer-tabs button')[1].click();void 0");
+    await client.until("document.querySelectorAll('.source-preview').length===1");
+    await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(otherCodexModel)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until("document.querySelectorAll('.source-preview').length===0");
+    await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(selectedCodexModel)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until("document.querySelectorAll('.source-preview').length===1");
+    await client.evaluate("document.querySelectorAll('.composer-tabs button')[2].click();void 0");
+    await client.until("document.querySelectorAll('.source-preview').length===0");
+    await client.evaluate("document.querySelectorAll('.composer-tabs button')[1].click();void 0");
+    await client.until(`document.querySelectorAll('.source-preview').length===1 && document.querySelector('.model-native-select')?.value===${JSON.stringify(selectedCodexModel)}`);
+    await sleep(1000);
+    await client.command('Page.reload');
+    await client.until("document.querySelectorAll('.source-preview').length===1 && document.querySelector('.composer-body textarea')?.value==='Browser draft persists'");
+    const mediaSelections = await client.evaluate(`(async()=>{
+      const response=await fetch('/api/rpc/getCatalog',{method:'POST',headers:{'Content-Type':'application/json','X-Media-Client':'web','X-Media-User':document.querySelector('meta[name="account-id"]').content},body:'[]'});
+      const models=(await response.json()).result.models.filter(model=>(model.kind||'image')==='image');
+      const withFiles=models.find(model=>model.fields?.some(field=>field.type==='files'));
+      return {first:withFiles?.id,field:withFiles?.fields.find(field=>field.type==='files')?.key,second:models.find(model=>model.id!==withFiles?.id)?.id};
+    })()`);
+    assert.ok(mediaSelections.first && mediaSelections.field && mediaSelections.second, 'the catalog contains image models for source caching');
+    await client.evaluate(`(async()=>{
+      const chatId=JSON.parse(localStorage.getItem('media-studio-workspace')||'null')?.chatId;
+      const ref=${JSON.stringify(cachedSource)};
+      const draft={version:1,active:0,tabs:[{prompt:'Browser draft persists',mode:'image',provider:'media',mediaModelId:${JSON.stringify(mediaSelections.first)},mediaInput:{[${JSON.stringify(mediaSelections.field)}]:[ref]},sourceFiles:[{ref,name:'cached.png',type:'image/png',fieldKey:${JSON.stringify(mediaSelections.field)}}]}]};
+      const response=await fetch('/api/rpc/saveDrafts',{method:'POST',headers:{'Content-Type':'application/json','X-Media-Client':'web','X-Media-User':document.querySelector('meta[name="account-id"]').content},body:JSON.stringify([draft,chatId&&chatId!=='system:recent'?{chatId}:{}])});
+      if(!response.ok)throw new Error('Failed to seed media draft');
+    })()`);
+    await client.command('Page.reload');
+    await client.until(`document.querySelectorAll('.source-preview').length===1 && document.querySelector('.model-native-select')?.value===${JSON.stringify(mediaSelections.first)}`);
+    await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(mediaSelections.second)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until("document.querySelectorAll('.source-preview').length===0");
+    await client.evaluate(`{const select=document.querySelector('.model-native-select');select.value=${JSON.stringify(mediaSelections.first)};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until("document.querySelectorAll('.source-preview').length===1 && document.querySelector('.composer-body textarea')?.value==='Browser draft persists'");
+    await sleep(1000);
+    await client.command('Page.reload');
+    await client.until("document.querySelectorAll('.source-preview').length===1");
     await client.evaluate("document.querySelector('.sidebar-history-link').click();void 0");
     await client.until("document.querySelectorAll('.history-page .history-item').length===50");
     await client.evaluate("document.querySelector('.history-page-list > .action-button').click();void 0");
@@ -133,6 +187,41 @@ async function main() {
     await client.until("Boolean(document.querySelector('.chat-result-item.selected .chat-result-state.state-fail'))");
     await client.evaluate("window.fetch=window.__acceptedFetch;delete window.__acceptedFetch;document.querySelector('.generate-button').click();void 0");
     await client.until("Boolean(document.querySelector('.result-card .panel-heading h2.is-success'))");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:recraft/crisp-upscale';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.source-strip input[type=file]') !== null && document.querySelector('.composer-body textarea') === null");
+    await client.evaluate(`{const input=document.querySelector('.source-strip input[type=file]');const bytes=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/sZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([bytes],'test.png',{type:'image/png'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until("document.querySelectorAll('.source-preview').length===1 && !document.querySelector('.form-error')?.textContent.includes('image')");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:grok-imagine-image-2-0/segment-edit';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until(`document.querySelector('.task-reference-field select option[value="${grokRecordId}"]') !== null`);
+    await client.evaluate(`{const select=document.querySelector('.task-reference-field select');select.value='${grokRecordId}';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until(`document.querySelector('.task-reference-field input')?.value==='${grokRecordId}'`);
+    await client.evaluate("{const prompt=document.querySelector('.composer-body textarea');prompt.value='Edit the picture';prompt.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+    await client.until("!document.querySelector('.generate-button').disabled");
+    await client.evaluate("document.querySelector('.generate-button').click();void 0");
+    let referenceSubmission;
+    for (let attempt = 0; attempt < 100 && !referenceSubmission; attempt++) {
+      referenceSubmission = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='history' AND data->>'modelId'='kie:grok-imagine-image-2-0/segment-edit' ORDER BY data->>'createdAt' DESC LIMIT 1", [accountId])).rows[0];
+      if (!referenceSubmission) await sleep(100);
+    }
+    assert.equal(referenceSubmission?.data?.input?.task_id, 'task-grok-browser', JSON.stringify({ referenceSubmission, form: await client.evaluate("({error:document.querySelector('.form-error')?.textContent,button:document.querySelector('.generate-button')?.disabled,task:document.querySelector('.task-reference-field input')?.value})") }));
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:grok-imagine-image-2-0/segment-map';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.select-pill select option[value=\"1\"]') !== null");
+    await client.evaluate("{const select=document.querySelector('.select-pill select');select.value='1';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.source-strip input[type=file]') !== null");
+    await client.evaluate("document.querySelectorAll('.composer-tabs button')[2].click();void 0");
+    await client.until("document.querySelector('.model-native-select option[value=\"kie:wan/2-6-image-to-video\"]') !== null");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:wan/2-6-image-to-video';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.source-strip input[type=file]') !== null");
+    await client.evaluate(`{const prompt=document.querySelector('.composer-body textarea');prompt.value='A moving scene';prompt.dispatchEvent(new Event('input',{bubbles:true}));const input=document.querySelector('.source-strip input[type=file]');const bytes=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/sZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([bytes],'video-source.png',{type:'image/png'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+    await client.until("document.querySelectorAll('.source-preview').length===1 && !document.querySelector('.form-error')?.textContent.includes('Референсные изображения')");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:pixverse-v6/reference-to-video';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.schema-fields .schema-field-items > button') !== null");
+    await client.evaluate("document.querySelector('.schema-fields .schema-field-items > button').click();void 0");
+    await client.until("document.querySelector('.schema-fields input[type=file]') !== null");
+    await client.evaluate("document.querySelectorAll('.composer-tabs button')[3].click();void 0");
+    await client.until("document.querySelector('.model-native-select option[value=\"kie:google/gemini-2-5-pro-tts\"]') !== null");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:google/gemini-2-5-pro-tts';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelectorAll('.schema-fields .schema-field-items > button').length===2 && document.querySelector('.composer-body textarea')===null");
     const orderId = randomUUID();
     const offer = { id: 'browser-credits', version: 'v1', name: 'Browser test credits', description: '', amountMinor: 100, currency: 'RUB', creditUnits: 1000 };
     await pool.query(`INSERT INTO media_orders(id,account_id,status,product_id,product_version,offer_snapshot,amount_minor,currency,credit_units,checkout_key,checkout_hash)
@@ -141,7 +230,7 @@ async function main() {
     await client.command('Page.navigate', { url: `${origin}/app?order=${orderId}` });
     await client.until("location.pathname==='/app/plans' && !new URL(location.href).searchParams.has('order') && document.querySelector('.commerce-feedback[role=status]')?.textContent.length > 0");
     assert.equal(await client.evaluate("document.querySelector('.subscription-dialog') === null"), true);
-    console.log('Browser E2E passed: authenticated studio, draft reload, older history page, rejected submit and retry, checkout return');
+    console.log('Browser E2E passed: authenticated studio, selection cache and draft reload, older history page, rejected submit and retry, checkout return');
   } finally {
     client?.close();
     if (browser && browser.exitCode === null && browser.signalCode === null) {

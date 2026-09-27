@@ -80,6 +80,45 @@ test('Codex validates model-specific effort, speed and executable boundary', () 
   assert.throws(() => validateCodexRequest({ ...input, kind: 'video' }));
 });
 
+test('Codex accepts content and legacy references and rejects unsupported sources', () => {
+  const sourceFiles = [`content:${randomUUID()}`, `https://local-assets.invalid/${'a'.repeat(64)}`];
+  assert.deepEqual(validateCodexRequest({ ...request(), sourceFiles }).sourceFiles, sourceFiles);
+  for (const ref of ['content:bad', 'content:../../secret', 'https://example.com/photo.png', '/tmp/photo.png', null, {}]) {
+    assert.throws(() => validateCodexRequest({ ...request(), sourceFiles: [ref] }), /Некорректные исходные изображения/);
+  }
+  assert.throws(() => validateCodexRequest({ ...request(), sourceFiles: Array(11).fill(sourceFiles[0]) }), /Некорректные исходные изображения/);
+});
+
+test('Codex billing forwards owned content bytes through worker validation', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), contentId = randomUUID();
+  const input = { ...request(), kind: 'image', sourceFiles: [`content:${contentId}`] };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Source test')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  const received = [];
+  const worker = createCodexWorker(async value => { received.push(value); return 'ok'; });
+  await new Promise(resolve => worker.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { worker.closeIdleConnections(); worker.close(resolve); }));
+  const accounts = { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) };
+  const billing = createCodexBilling({ accounts, url: `http://127.0.0.1:${worker.address().port}`,
+    content: { read: async (owner, id) => {
+      assert.equal(owner, account);
+      if (id !== contentId) throw Object.assign(new Error('Файл не найден'), { status: 404 });
+      return png;
+    } } });
+  t.after(() => billing.close());
+  assert.equal((await billing.submit(account, input)).state, 'running');
+  assert.equal(received.length, 1);
+  assert.deepEqual(received[0].sourceFiles, input.sourceFiles);
+  assert.deepEqual(received[0].images, [`data:image/png;base64,${png.toString('base64')}`]);
+  const held = (await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held;
+  await assert.rejects(billing.submit(account, { ...input, requestId: randomUUID(), sourceFiles: [`content:${randomUUID()}`] }), /Файл не найден/);
+  assert.equal(received.length, 1);
+  assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, held);
+});
+
 test('Codex worker accepts over 100 simultaneous jobs while isolating accounts and deduplicating requests', async t => {
   const finishes = []; let calls = 0;
   const server = createCodexWorker(() => { calls++; return new Promise(resolve => { finishes.push(resolve); }); });

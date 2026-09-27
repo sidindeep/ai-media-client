@@ -11,7 +11,7 @@ function validateCodexRequest(input) {
   if (typeof input.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId)) throw invalid('Некорректный ID запроса');
   if (input.aspectRatio !== undefined && !['auto', '1:1', '16:9', '9:16', '3:2', '2:3'].includes(input.aspectRatio)) throw invalid('Некорректное соотношение сторон');
   const sourceFiles = input.sourceFiles === undefined ? [] : input.sourceFiles;
-  if (!Array.isArray(sourceFiles) || sourceFiles.length > 10 || sourceFiles.some(ref => typeof ref !== 'string' || !/^https:\/\/local-assets\.invalid\/[a-f0-9]{64}$/.test(ref))) throw invalid('Некорректные исходные изображения');
+  if (!Array.isArray(sourceFiles) || sourceFiles.length > 10 || sourceFiles.some(ref => typeof ref !== 'string' || !/^(?:content:[a-f0-9-]{36}|https:\/\/local-assets\.invalid\/[a-f0-9]{64})$/.test(ref))) throw invalid('Некорректные исходные изображения');
   const images = input.images === undefined ? [] : input.images;
   if (!Array.isArray(images) || images.length > 10 || images.some(item => typeof item !== 'string' || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(item))) throw invalid('Некорректные исходные изображения');
   if (images.reduce((total, item) => total + Buffer.byteLength(item, 'base64'), 0) > 90 * 1024 * 1024) throw invalid('Общий размер исходных изображений слишком большой');

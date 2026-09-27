@@ -44,3 +44,20 @@ test('generation journal correlates lifecycle, raw provider timeout and retries 
   assert.equal(await trace.step('unwritable',{},async()=>42),42);
   await trace.flush();
 });
+
+test('diagnostic logs with prompts expire after 30 days', async t => {
+  const base = path.resolve(__dirname, '../artifacts'); await fs.mkdir(base, { recursive: true });
+  const directory = await fs.mkdtemp(path.join(base, 'trace-retention-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const logs = path.join(directory, 'logs');
+  trace.configure(logs);
+  await trace.flush();
+  const old = JSON.stringify({ time: new Date(Date.now() - 31 * 86400000).toISOString(), event: 'old', details: { prompt: 'expired prompt' } }) + '\n';
+  await fs.writeFile(path.join(logs, 'generation.jsonl'), old);
+  await fs.writeFile(path.join(logs, 'generation.jsonl.2'), old);
+  trace.write('retention.check');
+  await trace.flush();
+  assert.equal((await fs.readFile(path.join(logs, 'generation.jsonl'), 'utf8')).includes('expired prompt'), false);
+  await assert.rejects(fs.stat(path.join(logs, 'generation.jsonl.1')), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(path.join(logs, 'generation.jsonl.3')), { code: 'ENOENT' });
+});

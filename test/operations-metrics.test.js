@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { openDatabase } = require('../src/database/database');
 const { testPool } = require('./helpers/pg-pool');
-const { operationsMetrics } = require('../src/services/operations-metrics');
+const { operationsMetrics, operationsAlerts } = require('../src/services/operations-metrics');
 
 test('operations metrics expose held and unknown work without account data', async t => {
   const pool = await openDatabase({}, testPool());
@@ -27,5 +27,22 @@ test('operations metrics expose held and unknown work without account data', asy
   assert.equal(result.payments.outbox_backlog, 0);
   assert.equal(result.payments.expired_unknown_commands, 1);
   assert.ok(result.payments.oldest_unknown_seconds >= 23 * 3600);
+  assert.deepEqual(result.alerts.filter(item => item.severity === 'critical').map(item => item.code),
+    ['PAYMENT_UNKNOWN_OLD', 'PAYMENT_COMMAND_REVIEW']);
   assert.equal(JSON.stringify(result).includes(accountId), false);
+});
+
+test('operations alerts trigger only after the documented age thresholds', () => {
+  const metrics = {
+    reservations: { oldest_held_seconds: 3599 }, generation: { oldest_unknown_seconds: 1799 },
+    content: { failed: 0, oldest_backlog_seconds: 899 },
+    payments: { oldest_outbox_seconds: 299, oldest_webhook_seconds: 299, oldest_unknown_seconds: 899, expired_unknown_commands: 0 },
+  };
+  assert.deepEqual(operationsAlerts(metrics), []);
+  metrics.content.oldest_backlog_seconds = 900;
+  metrics.payments.oldest_outbox_seconds = 300;
+  assert.deepEqual(operationsAlerts(metrics), [
+    { code: 'CONTENT_BACKLOG_OLD', severity: 'warning' },
+    { code: 'PAYMENT_OUTBOX_OLD', severity: 'critical' },
+  ]);
 });

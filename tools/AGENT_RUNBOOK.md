@@ -7,8 +7,10 @@
 | Зависимости веба | pnpm install --frozen-lockfile |
 | Запуск веба и настроенного бота | pnpm start |
 | Проверка веба | pnpm check |
+| Проверка опасных async-паттернов backend | pnpm check:async-safety |
 | Тесты веба | pnpm test |
 | Полные контейнерные тесты с PostgreSQL и Vue | docker compose --profile test run --build --rm tests |
+| Браузерный smoke в изолированной PostgreSQL | docker compose --profile test run --build --rm browser-tests |
 | Зависимости Windows | pnpm --dir desktop install --frozen-lockfile |
 | Запуск Windows | pnpm start:desktop |
 | Проверка Windows | pnpm check:desktop |
@@ -27,6 +29,7 @@
 | Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
 | Зарегистрировать и перенести legacy-контент в каталог/S3 | pnpm migrate:content |
 | Сверить каталог контента с S3 без удаления | pnpm audit:content |
+| Проверить эксплуатационные алерты (код выхода 2 при срабатывании) | pnpm check:operations |
 | Пилот exec/app-server (реальный расход, только с бюджетом 6 текстов + 6 PNG) | node scripts/benchmark-codex-transports.cjs --docker --live |
 | Ступени генераций Codex (реальный расход, до 127 запросов при потолке 64) | node scripts/benchmark-codex-capacity.cjs --docker --live --kind=image --transport=app-server --max-concurrency=64 |
 | Docker остановка | docker compose down |

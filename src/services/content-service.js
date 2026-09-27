@@ -6,6 +6,7 @@ const { pipeline } = require('node:stream/promises');
 const { createHash, randomUUID } = require('node:crypto');
 const { isIP } = require('node:net');
 const { lookup } = require('node:dns/promises');
+const https = require('node:https');
 const { transaction } = require('../database/database');
 
 const UUID = /^[a-f0-9-]{36}$/;
@@ -32,6 +33,35 @@ function publicResultUrl(value) {
       throw new Error('Недопустимый адрес результата');
   }
   return url;
+}
+
+async function fetchPublicResult(target, signal, lookupImpl = lookup, requestImpl = https.request) {
+  const url = publicResultUrl(target);
+  let selected;
+  if (!isIP(url.hostname)) {
+    const addresses = await lookupImpl(url.hostname, { all: true });
+    if (!addresses.length || addresses.some(item => {
+      try { publicResultUrl(`https://${item.family === 6 ? `[${item.address}]` : item.address}/`); return false; }
+      catch { return true; }
+    })) throw new Error('DNS результата указывает на недопустимый адрес');
+    selected = addresses[0];
+  }
+  return new Promise((resolve, reject) => {
+    const request = requestImpl(url, {
+      signal,
+      ...(selected ? { lookup: (_host, _options, callback) => callback(null, selected.address, selected.family) } : {}),
+    }, incoming => {
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(incoming.headers)) {
+        if (Array.isArray(value)) value.forEach(item => headers.append(key, item));
+        else if (value != null) headers.set(key, value);
+      }
+      resolve(new Response([204, 304].includes(incoming.statusCode) ? null : Readable.toWeb(incoming),
+        { status: incoming.statusCode, headers }));
+    });
+    request.once('error', reject);
+    request.end();
+  });
 }
 
 function cleanName(value, fallback = 'content') {
@@ -63,12 +93,36 @@ async function streamHash(stream) {
 }
 
 async function createContentService({ pool, storage, dataDirectory, fetchImpl = fetch, onChange = () => {}, interval = 1000, concurrency = 3, background = true,
-  maxDownloadBytes = 256 * 1024 * 1024 }) {
+  maxDownloadBytes = 256 * 1024 * 1024, maxStagingBytes = 1024 * 1024 * 1024 }) {
   if (!pool || !storage) return null;
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) throw new Error('Некорректная параллельность сохранения');
   if (!Number.isSafeInteger(maxDownloadBytes) || maxDownloadBytes < 1) throw new Error('Некорректный лимит размера результата');
+  if (!Number.isSafeInteger(maxStagingBytes) || maxStagingBytes < 1) throw new Error('Некорректный лимит staging');
   const stagingDirectory = path.join(dataDirectory, 'content-staging');
   await fs.mkdir(stagingDirectory, { recursive: true });
+  const stagedFiles = new Map();
+  let stagedBytes = 0;
+  for (const item of await fs.readdir(stagingDirectory, { withFileTypes: true })) {
+    if (!item.isFile()) continue;
+    const filename = path.join(stagingDirectory, item.name);
+    const size = (await fs.stat(filename)).size;
+    stagedFiles.set(filename, size);
+    stagedBytes += size;
+  }
+  function reserve(filename, bytes) {
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || stagedBytes + bytes > maxStagingBytes)
+      throw new Error('Превышена общая квота временного хранения');
+    stagedFiles.set(filename, (stagedFiles.get(filename) || 0) + bytes);
+    stagedBytes += bytes;
+  }
+  function release(filename) {
+    stagedBytes -= stagedFiles.get(filename) || 0;
+    stagedFiles.delete(filename);
+  }
+  async function removeStaged(filename) {
+    try { await fs.unlink(filename); release(filename); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; release(filename); }
+  }
   const workerFile = path.join(dataDirectory, 'content-worker-id');
   let workerId;
   try { workerId = (await fs.readFile(workerFile, 'utf8')).trim(); }
@@ -111,13 +165,14 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     if (!body.length) throw new Error('Исходный файл пуст');
     if (!TYPES.test(type || '')) throw new Error('Этот тип контента не поддерживается');
     const assetId = randomUUID(), filename = stagePath(assetId);
-    await fs.writeFile(filename, body, { flag: 'wx' });
-    const sha256 = createHash('sha256').update(body).digest('hex');
+    reserve(filename, body.length);
     try {
+      await fs.writeFile(filename, body, { flag: 'wx' });
+      const sha256 = createHash('sha256').update(body).digest('hex');
       return await insertAsset(accountId, assetId, { name, type, size: body.length, sha256, origin }, {
         type: 'stage', path: path.relative(dataDirectory, filename).replace(/\\/g, '/'), workerId,
       });
-    } catch (error) { await fs.unlink(filename).catch(() => {}); throw error; }
+    } catch (error) { await removeStaged(filename).catch(() => {}); throw error; }
   }
   async function createFromStream(accountId, { stream, name, type, origin = {}, limit }) {
     if (!TYPES.test(type || '')) throw new Error('Этот тип контента не поддерживается');
@@ -126,6 +181,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     const meter = new Transform({ transform(chunk, _encoding, callback) {
       size += chunk.length;
       if (size > limit) return callback(new Error('Файл или запрос слишком большой'));
+      try { reserve(filename, chunk.length); } catch (error) { return callback(error); }
       hash.update(chunk);
       callback(null, chunk);
     } });
@@ -135,7 +191,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
       return await insertAsset(accountId, assetId, { name, type, size, sha256: hash.digest('hex'), origin }, {
         type: 'stage', path: path.relative(dataDirectory, filename).replace(/\\/g, '/'), workerId,
       });
-    } catch (error) { await fs.unlink(filename).catch(() => {}); throw error; }
+    } catch (error) { await removeStaged(filename).catch(() => {}); throw error; }
   }
   async function createFromUrl(accountId, { url, name = 'result', origin = {} }) {
     const parsed = publicResultUrl(url);
@@ -166,14 +222,8 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     const signal = AbortSignal.timeout(300000);
     let response;
     for (let redirects = 0; redirects <= 3; redirects++) {
-      if (fetchImpl === fetch && !isIP(target.hostname)) {
-        const addresses = await lookup(target.hostname, { all: true });
-        if (!addresses.length || addresses.some(item => {
-          try { publicResultUrl(`https://${item.family === 6 ? `[${item.address}]` : item.address}/`); return false; }
-          catch { return true; }
-        })) throw new Error('DNS результата указывает на недопустимый адрес');
-      }
-      response = await fetchImpl(target, { signal, redirect: 'manual' });
+      response = fetchImpl === fetch ? await fetchPublicResult(target, signal)
+        : await fetchImpl(target, { signal, redirect: 'manual' });
       if (![301, 302, 303, 307, 308].includes(response.status)) break;
       if (redirects === 3) throw new Error('Слишком много перенаправлений результата');
       const location = response.headers.get('location');
@@ -193,10 +243,16 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     const meter = new Transform({ transform(chunk, _encoding, callback) {
       size += chunk.length;
       if (size > maxDownloadBytes) return callback(new Error('Результат превышает лимит сохранения'));
+      try { reserve(temporary, chunk.length); } catch (error) { return callback(error); }
       hash.update(chunk); callback(null, chunk);
     } });
-    try { await pipeline(Readable.fromWeb(response.body), meter, createWriteStream(temporary, { flags: 'wx' })); await fs.rename(temporary, filename); }
-    finally { await fs.unlink(temporary).catch(() => {}); }
+    try {
+      await pipeline(Readable.fromWeb(response.body), meter, createWriteStream(temporary, { flags: 'wx' }));
+      await fs.rename(temporary, filename);
+      stagedBytes -= stagedFiles.get(filename) || 0;
+      stagedFiles.set(filename, stagedFiles.get(temporary) || 0);
+      stagedFiles.delete(temporary);
+    } finally { await removeStaged(temporary).catch(() => {}); }
     if (!size) throw new Error('Провайдер вернул пустой файл');
     const extension = EXTENSIONS.get(type) || path.extname(new URL(job.source.url).pathname).toLowerCase();
     return { filename, size, sha256: hash.digest('hex'), type, name: asset.original_name === 'result' && extension ? `result${extension}` : asset.original_name };
@@ -225,7 +281,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
           WHERE account_id=$1 AND id=$2`, [job.account_id, job.asset_id, cleanName(measured.name), measured.type, measured.size, measured.sha256]);
         await client.query("UPDATE content_jobs SET state='done',source='{\"type\":\"stored\"}'::jsonb,locked_at=NULL,locked_by=NULL,last_error=NULL,updated_at=now() WHERE id=$1", [job.id]);
       });
-      await fs.unlink(filename).catch(() => {});
+      await removeStaged(filename).catch(() => {});
       onChange(job.account_id, job.asset_id);
     } catch (error) {
       const retry = job.attempts < 5;
@@ -325,4 +381,4 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
   };
 }
 
-module.exports = { createContentService, parseContentRef, publicAsset };
+module.exports = { createContentService, parseContentRef, publicAsset, fetchPublicResult };

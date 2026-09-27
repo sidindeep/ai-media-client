@@ -5,6 +5,8 @@ let pool = null;
 let pending = [];
 let draining = null;
 let retryTimer = null;
+let retentionTimer = null;
+let retentionEnabled = false;
 
 function normalize(source, event, error, details = {}) {
   const safe = clean({ error, details });
@@ -25,11 +27,35 @@ function record(source, event, error, details) {
   } catch { /* Error recording must never interrupt the original operation. */ }
 }
 
-function setPool(nextPool) {
+async function pruneOld(pool, days = 90, limit = 500) {
+  const result = await pool.query(`DELETE FROM media_system_errors WHERE id IN (
+    SELECT id FROM media_system_errors WHERE occurred_at < now()-($1::int * interval '1 day')
+    ORDER BY occurred_at,id LIMIT $2)`, [days, limit]);
+  return result.rowCount || 0;
+}
+
+function scheduleRetention(delay) {
+  if (!pool || !retentionEnabled) return;
+  retentionTimer = setTimeout(async () => {
+    retentionTimer = null;
+    const currentPool = pool;
+    let nextDelay = 60 * 60 * 1000;
+    try { if (await pruneOld(currentPool) === 500) nextDelay = 1000; }
+    catch { nextDelay = 5 * 60 * 1000; }
+    if (pool === currentPool) scheduleRetention(nextDelay);
+  }, delay);
+  retentionTimer.unref?.();
+}
+
+function setPool(nextPool, { retention = false } = {}) {
   pool = nextPool;
+  retentionEnabled = retention;
   if (retryTimer) clearTimeout(retryTimer);
+  if (retentionTimer) clearTimeout(retentionTimer);
   retryTimer = null;
+  retentionTimer = null;
   if (pool) void flush();
+  if (pool && retentionEnabled) scheduleRetention(30000);
 }
 
 function flush() {
@@ -63,4 +89,4 @@ function captureConsole() {
   return () => { console.error = original; };
 }
 
-module.exports = { record, setPool, flush, captureConsole };
+module.exports = { record, setPool, flush, captureConsole, pruneOld };

@@ -169,9 +169,9 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' });
     if (config.auth.enabled && suppliedPool) {
       pool = await databaseOpener(config.database, suppliedPool);
-      systemErrors.setPool(pool);
+      systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });
       await acquireOwnership(pool);
-      content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
+      content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
       const starterPack = createStarterPack({ pool, config: config.starterPack });
       auth = createAuth({ pool, config: config.auth, providers: authProviders, starterPack });
       accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content });
@@ -209,7 +209,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
           try {
             nextPool = await databaseOpener(config.database);
             await acquireOwnership(nextPool);
-            nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
+            nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
             const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack });
             nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content: nextContent });
@@ -220,7 +220,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce);
             if (config.replicaRole === 'executor') await service.queue.recover();
             pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
-            systemErrors.setPool(pool);
+            systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });
             changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
             payments = nextBusiness.payments; commerce = nextBusiness.commerce;
             telegram.setAccountServices(accounts, telegramLinks);

@@ -4,9 +4,35 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const { randomUUID } = require('node:crypto');
+const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const { testPool } = require('./helpers/pg-pool');
 const { openDatabase } = require('../src/database/database');
-const { createContentService, parseContentRef } = require('../src/services/content-service');
+const { createContentService, parseContentRef, fetchPublicResult } = require('../src/services/content-service');
+
+test('result HTTPS fetch pins the validated address while keeping the original host', async () => {
+  let requestedHost, connectedAddress;
+  const requestImpl = (url, options, response) => {
+    requestedHost = url.hostname;
+    const request = new EventEmitter();
+    request.end = () => {
+      options.lookup(url.hostname, {}, (_error, address) => { connectedAddress = address; });
+      const incoming = new PassThrough();
+      incoming.statusCode = 200;
+      incoming.headers = { 'content-type': 'image/png' };
+      response(incoming);
+      incoming.end('image');
+    };
+    return request;
+  };
+  const lookupImpl = async () => [{ address: '203.0.113.8', family: 4 }];
+  const response = await fetchPublicResult('https://provider.example/result', AbortSignal.timeout(1000), lookupImpl, requestImpl);
+  assert.equal(await response.text(), 'image');
+  assert.equal(requestedHost, 'provider.example');
+  assert.equal(connectedAddress, '203.0.113.8');
+  await assert.rejects(fetchPublicResult('https://provider.example/result', AbortSignal.timeout(1000),
+    async () => [{ address: '127.0.0.1', family: 4 }], () => { throw new Error('Unsafe address was connected'); }), /DNS результата/);
+});
 
 function memoryStorage() {
   const objects = new Map();
@@ -30,7 +56,7 @@ async function setup(t, options = {}) {
   const accountId = randomUUID();
   await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Test')", [accountId]);
   const content = await createContentService({ pool, storage, dataDirectory: directory, fetchImpl: options.fetchImpl, interval: 5, concurrency: options.concurrency,
-    maxDownloadBytes: options.maxDownloadBytes });
+    maxDownloadBytes: options.maxDownloadBytes, maxStagingBytes: options.maxStagingBytes });
   t.after(async () => { await content.close(); await pool.end(); await fs.rm(directory, { recursive: true, force: true }); });
   return { directory, pool, storage, accountId, content };
 }
@@ -88,6 +114,23 @@ test('remote result stops at its byte limit and removes partial staging', async 
   }
   assert.equal(rejected, true);
   assert.deepEqual(await fs.readdir(path.join(directory, 'content-staging')), []);
+});
+
+test('staging quota covers uploads and remote downloads and releases failed partial files', async t => {
+  const fetchImpl = async () => new Response(Buffer.alloc(12), { status: 200, headers: { 'Content-Type': 'image/png' } });
+  const { directory, pool, accountId, content } = await setup(t, { fetchImpl, maxStagingBytes: 10 });
+  await assert.rejects(content.createFromBuffer(accountId, { bytes: Buffer.alloc(11), name: 'large.png', type: 'image/png' }), /квота/);
+  await assert.rejects(content.createFromStream(accountId, { stream: Readable.from([Buffer.alloc(6), Buffer.alloc(5)]),
+    name: 'stream.png', type: 'image/png', limit: 20 }), /квота/);
+  const asset = await content.createFromUrl(accountId, { url: 'https://provider.example/large' });
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const job = (await pool.query('SELECT state,last_error FROM content_jobs WHERE asset_id=$1', [asset.id])).rows[0];
+    if (job.state === 'retry') { assert.match(job.last_error, /квота/); break; }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.deepEqual(await fs.readdir(path.join(directory, 'content-staging')), []);
+  const small = await content.createFromBuffer(accountId, { bytes: Buffer.alloc(10), name: 'small.png', type: 'image/png' });
+  assert.equal((await content.wait(accountId, small.id, 5000)).size, 10);
 });
 
 test('remote result rejects local addresses and unsafe redirects', async t => {

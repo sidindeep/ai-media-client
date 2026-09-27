@@ -100,7 +100,18 @@ services:
       context: .
       target: test
     image: ai-media-web-tg-tests:local
-    command: [sh, -c, "pnpm check:server-syntax && pnpm check:web:vue && pnpm build:web && pnpm test"]
+    command: [sh, -c, "pnpm check:server-syntax && pnpm check:async-safety && pnpm check:web:vue && pnpm build:web && pnpm test"]
+    environment:
+      TEST_DATABASE_URL: postgres://test:test@postgres-test:5432/test
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+  browser-tests:
+    profiles: [test]
+    build:
+      context: .
+      target: browser-test
+    command: [node, test/browser-e2e.cjs]
     environment:
       TEST_DATABASE_URL: postgres://test:test@postgres-test:5432/test
     depends_on:

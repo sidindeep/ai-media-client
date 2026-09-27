@@ -6,8 +6,10 @@ const context = new AsyncLocalStorage();
 const secrets = new Set();
 let directory, sessionId, sequence = 0, warned = false;
 const maxBytes = 5 * 1024 * 1024;
+const retentionMs = 30 * 24 * 60 * 60 * 1000;
 const maxPendingBytes = 4 * 1024 * 1024;
 let pending = [], pendingBytes = 0, draining = null, dropped = 0;
+let lastPruneDay = '';
 let errorSink = null;
 function setErrorSink(sink) { errorSink = sink; }
 function secret(value) { if (typeof value === 'string' && value.length > 5) secrets.add(value); }
@@ -29,12 +31,31 @@ function clean(value, key = '', depth = 0) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).slice(0, 100).map(([k,v]) => [k, clean(v,k,depth+1)]));
   return value;
 }
-function configure(folder) { directory = folder; sessionId = randomUUID(); write('session.start', { pid: process.pid, node: process.version }); }
+function configure(folder) { directory = folder; lastPruneDay = ''; sessionId = randomUUID(); write('session.start', { pid: process.pid, node: process.version }); }
+async function logStart(file, stat) {
+  const handle = await fs.open(file, 'r');
+  try {
+    const bytes = Buffer.alloc(256);
+    const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+    const timestamp = /"time":"([^"]+)"/.exec(bytes.subarray(0, bytesRead).toString('utf8'))?.[1];
+    const parsed = Date.parse(timestamp || '');
+    return Number.isFinite(parsed) ? parsed : stat.birthtimeMs || stat.mtimeMs;
+  } finally { await handle.close(); }
+}
+async function pruneOldLogs(folder, now) {
+  for (let n = 1; n <= 4; n++) {
+    const file = path.join(folder, `generation.jsonl.${n}`);
+    const stat = await fs.stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    if (stat && now - await logStart(file, stat) >= retentionMs) await fs.rm(file);
+  }
+}
 async function append(folder, row) {
   await fs.mkdir(folder, { recursive: true });
   const file = path.join(folder, 'generation.jsonl');
-  const size = await fs.stat(file).then(stat => stat.size, error => { if (error.code === 'ENOENT') return 0; throw error; });
-  if (size + Buffer.byteLength(row) > maxBytes) {
+  const stat = await fs.stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  const now = Date.now();
+  const rotate = stat && (stat.size + Buffer.byteLength(row) > maxBytes || now - await logStart(file, stat) >= retentionMs);
+  if (rotate) {
     await fs.rm(file + '.4', { force: true });
     for (let n = 3; n >= 1; n--) {
       await fs.rename(file + '.' + n, file + '.' + (n + 1)).catch(error => { if (error.code !== 'ENOENT') throw error; });
@@ -42,6 +63,8 @@ async function append(folder, row) {
     await fs.rename(file, file + '.1').catch(error => { if (error.code !== 'ENOENT') throw error; });
   }
   await fs.appendFile(file, row, { mode: 0o600 });
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (rotate || lastPruneDay !== day) { await pruneOldLogs(folder, now); lastPruneDay = day; }
 }
 function drain() {
   if (draining) return draining;

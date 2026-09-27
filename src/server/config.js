@@ -74,6 +74,7 @@ function loadConfig(env = process.env) {
     kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
     uploadLimit: integer(env.MEDIA_UPLOAD_LIMIT_MB, 64, 1, 512) * 1024 * 1024,
     uploadInFlightLimit: integer(env.MEDIA_UPLOAD_INFLIGHT_MB, 256, 1, 4096) * 1024 * 1024,
+    contentStagingLimit: integer(env.MEDIA_CONTENT_STAGING_MB, 1024, 1, 16384) * 1024 * 1024,
     telegram: { enabled: telegramEnabled, token: env.TELEGRAM_BOT_TOKEN || '', users: telegramUsers, publicAccess: telegramPublicAccess },
     publicOrigin: env.MEDIA_PUBLIC_ORIGIN || '',
     rubPerCredit, pricing, starterPack,

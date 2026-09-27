@@ -69,7 +69,7 @@ function creditCost(record: GenerationRecord) { return record.nativeQuote?.credi
             <p v-else-if="!selectedUrls.length" class="history-detail-empty">{{ t('history.noPreview') }}</p>
           </div>
           <dl class="history-detail-facts"><div v-if="studio.isAdmin"><dt>{{ t('history.provider') }}</dt><dd>{{ generationProviderLabel(selectedRecord, studio.catalog) }}</dd></div><div><dt>{{ t('history.created') }}</dt><dd>{{ timestamp(selectedRecord.createdAt) || '—' }}</dd></div><div><dt>{{ t('history.time') }}</dt><dd>{{ formatDuration(selectedRecord.generationDurationMs) || '—' }}</dd></div><div><dt>{{ t('history.cost') }}</dt><dd>{{ creditCost(selectedRecord) }}</dd></div><div v-if="studio.isAdmin"><dt>{{ t('history.tokens') }}</dt><dd>{{ formatCount(totalTokens(selectedRecord)) || '—' }}</dd></div></dl>
-          <a v-if="selectedUrls[0]" class="action-button history-detail-download" :href="resultDownloadUrl(selectedRecord, 0, selectedUrls[0])" download>{{ t('history.download') }}</a>
+          <a v-if="selectedUrls[0]" class="action-button history-detail-download" :href="resultDownloadUrl(selectedRecord, 0, selectedUrls[0])" target="_blank" rel="noopener">{{ t('history.download') }}</a>
         </div>
         <div v-else class="history-detail-placeholder"><span aria-hidden="true">→</span><strong>{{ t('history.select') }}</strong><p>{{ t('history.selectHint') }}</p></div>
       </aside>

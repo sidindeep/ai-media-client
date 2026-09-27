@@ -646,11 +646,17 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       const result = /^\/api\/results\/([a-f0-9-]{36})\/(\d+)$/.exec(url.pathname);
       if (result) {
-        if (url.searchParams.has('download')) await service.saveResults(result[1]);
-        const file = await service.resultFile(result[1], Number(result[2]));
+        const attachment = url.searchParams.has('download');
+        let file;
+        try { file = await service.resultFile(result[1], Number(result[2])); }
+        catch (error) {
+          if (!attachment || (error.code !== 'RESULT_NOT_FOUND' && ![404, 409].includes(error.status))) throw error;
+          await service.saveResults(result[1]);
+          file = await service.resultFile(result[1], Number(result[2]));
+        }
         return await sendMedia(req, res, () => file.storageKey
-          ? sendStored(req, res, storage, file, url.searchParams.has('download'))
-          : sendFile(req, res, file.path, null, url.searchParams.has('download')));
+          ? sendStored(req, res, storage, file, attachment)
+          : sendFile(req, res, file.path, null, attachment));
       }
       const contentRequest = /^\/api\/content\/([a-f0-9-]{36})$/.exec(url.pathname);
       if (contentRequest) {

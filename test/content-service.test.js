@@ -16,7 +16,7 @@ test('result HTTPS fetch pins the validated address while keeping the original h
     requestedHost = url.hostname;
     const request = new EventEmitter();
     request.end = () => {
-      options.lookup(url.hostname, {}, (_error, address) => { connectedAddress = address; });
+      options.lookup(url.hostname, { all: true }, (_error, addresses) => { connectedAddress = addresses[0].address; });
       const incoming = new PassThrough();
       incoming.statusCode = 200;
       incoming.headers = { 'content-type': 'image/png' };
@@ -89,12 +89,12 @@ test('streamed source upload enforces its byte limit and removes an incomplete s
   assert.deepEqual(await fs.readdir(path.join(directory, 'content-staging')), []);
 });
 
-test('content URL jobs survive as database work and link ready results to a generation', async t => {
-  const fetchImpl = async () => new Response(Buffer.from('generated'), { status: 200, headers: { 'Content-Type': 'image/webp' } });
+test('content URL jobs retain media type for octet-stream results and link to a generation', async t => {
+  const fetchImpl = async () => new Response(Buffer.from('generated'), { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
   const { pool, accountId, content } = await setup(t, { fetchImpl });
   const recordId = randomUUID();
   await pool.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'history',$2,$3)", [accountId, recordId, JSON.stringify({ id: recordId, state: 'success' })]);
-  const asset = await content.createFromUrl(accountId, { url: 'https://provider.example/result', origin: { kind: 'result' } });
+  const asset = await content.createFromUrl(accountId, { url: 'https://provider.example/result.webp', origin: { kind: 'result' } });
   await content.link(accountId, 'history', recordId, asset.id, 'result', 0);
   const ready = await content.wait(accountId, asset.id, 5000);
   assert.equal(ready.type, 'image/webp'); assert.equal(await content.read(accountId, asset.id).then(bytes => bytes.toString()), 'generated');

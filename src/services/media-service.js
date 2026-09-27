@@ -95,7 +95,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
             if (!asset) {
               asset = await content.createFromUrl(accountId, { url, name: `result-${linkIndex}`, origin: { kind: 'result', provider: record.providerId || 'media', recordId: id, position: linkIndex } });
               await content.link(accountId, 'history', id, asset.id, 'result', linkIndex);
-            } else if (asset.status === 'failed') await content.retry(accountId, asset.id);
+            } else if (['failed', 'missing'].includes(asset.status)) await content.retry(accountId, asset.id);
             const ready = await content.wait(accountId, asset.id);
             const file = { assetId: ready.id, name: ready.name, type: ready.type, url, size: ready.size, savedAt: new Date().toISOString() };
             const index = localFiles.findIndex(item => item.url === url);

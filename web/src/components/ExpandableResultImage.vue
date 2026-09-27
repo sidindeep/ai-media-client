@@ -19,7 +19,7 @@ watch(() => props.src, close);
   <Teleport to="body">
     <dialog ref="dialog" class="result-image-lightbox" :aria-label="t('result.expandedImage')" @click.self="close" @close="restoreFocus">
       <div class="result-image-lightbox-toolbar">
-        <a class="result-image-lightbox-download" :href="downloadUrl" download>
+        <a class="result-image-lightbox-download" :href="downloadUrl" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>
           {{ t('common.download') }}
         </a>

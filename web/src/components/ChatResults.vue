@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
           <footer class="chat-result-meta"><span v-for="item in meta(record)" :key="item">{{ item }}</span></footer>
         </div>
         <div v-if="resultUrls(record).length" class="chat-result-download-row">
-          <a class="chat-result-download" :href="resultDownloadUrl(record, 0, resultUrls(record)[0])" download>
+          <a class="chat-result-download" :href="resultDownloadUrl(record, 0, resultUrls(record)[0])" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>
             {{ t('common.download') }}
           </a>

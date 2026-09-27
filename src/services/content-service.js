@@ -15,6 +15,7 @@ const EXTENSIONS = new Map([
   ['image/png', '.png'], ['image/jpeg', '.jpg'], ['image/webp', '.webp'], ['image/gif', '.gif'], ['image/svg+xml', '.svg'],
   ['video/mp4', '.mp4'], ['video/webm', '.webm'], ['video/quicktime', '.mov'],
 ]);
+const TYPES_BY_EXTENSION = new Map([...EXTENSIONS].map(([type, extension]) => [extension, type]));
 function publicResultUrl(value) {
   const url = new URL(value);
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -49,7 +50,8 @@ async function fetchPublicResult(target, signal, lookupImpl = lookup, requestImp
   return new Promise((resolve, reject) => {
     const request = requestImpl(url, {
       signal,
-      ...(selected ? { lookup: (_host, _options, callback) => callback(null, selected.address, selected.family) } : {}),
+      ...(selected ? { lookup: (_host, options, callback) => options?.all
+        ? callback(null, [selected]) : callback(null, selected.address, selected.family) } : {}),
     }, incoming => {
       const headers = new Headers();
       for (const [key, value] of Object.entries(incoming.headers)) {
@@ -237,7 +239,10 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     if (disk.bavail * disk.bsize < maxDownloadBytes + 64 * 1024 * 1024) throw new Error('Недостаточно места для сохранения результата');
     const declaredSize = Number(response.headers.get('content-length'));
     if (Number.isFinite(declaredSize) && declaredSize > maxDownloadBytes) throw new Error('Результат превышает лимит сохранения');
-    const type = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+    let type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (type === 'application/octet-stream') {
+      type = TYPES_BY_EXTENSION.get(path.extname(target.pathname).toLowerCase()) || type;
+    }
     if (!TYPES.test(type)) throw new Error('Провайдер вернул неподдерживаемый тип контента');
     const hash = createHash('sha256'); let size = 0;
     const meter = new Transform({ transform(chunk, _encoding, callback) {

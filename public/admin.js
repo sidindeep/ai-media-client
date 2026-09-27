@@ -296,7 +296,7 @@ void loadAccounts().catch(error => { document.getElementById('adminStatus').text
     busy = true; clearTimeout(timer); refresh.disabled = true;
     try {
       const value = await adminRequest('/api/admin/kie-session/status');
-      status.textContent = ({ connected: 'Вход в кабинет Kie выполнен.', disconnected: 'Вход в Kie ещё не выполнен.', unavailable: 'Браузер Kie на сервере недоступен.' })[value.state] || 'Неизвестный статус.';
+      status.textContent = ({ connected: 'Вход в кабинет Kie выполнен.', disconnected: 'Вход в Kie ещё не выполнен.', sleeping: 'Браузер Kie выключен до открытия экрана.', unavailable: 'Браузер Kie на сервере недоступен.' })[value.state] || 'Неизвестный статус.';
       show.hidden = !value.embedded;
       if (value.loginUrl && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(value.loginUrl)) {
         open.href = value.loginUrl; open.hidden = false;

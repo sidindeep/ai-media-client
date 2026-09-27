@@ -88,6 +88,7 @@ function loadConfig(env = process.env) {
       embedded: env.MEDIA_KIE_BROWSER_EMBEDDED === 'true',
       cdpUrl: env.MEDIA_KIE_BROWSER_CDP || (env.MEDIA_KIE_BROWSER_EMBEDDED === 'true' ? 'http://127.0.0.1:9222' : ''),
       loginUrl: env.MEDIA_KIE_BROWSER_LOGIN_URL || '',
+      idleMinutes: integer(env.MEDIA_KIE_BROWSER_IDLE_MINUTES, 5, 1, 60),
     },
     codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
       embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },

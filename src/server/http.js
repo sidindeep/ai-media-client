@@ -184,7 +184,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
   if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
   result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, kieBrowserControl = null }) {
   let uploadBytesInFlight = 0;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
@@ -510,16 +510,22 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (url.pathname.startsWith('/api/admin/')) {
         if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
         if (url.pathname === '/api/admin/kie-session/status' && req.method === 'GET') {
+          if (kieBrowserControl && !kieBrowserControl.running()) return json(res, 200, { result: { state: 'sleeping', loginUrl: null, embedded: true } });
           return json(res, 200, { result: await kieBrowserSession.status() });
         }
         if (url.pathname === '/api/admin/kie-session/frame' && req.method === 'GET') {
           if (!config.kieBrowser?.embedded) return json(res, 404, { error: 'Встроенный браузер не включён' });
-          return json(res, 200, { result: await kieBrowserSession.frame() });
+          await kieBrowserControl?.ensureActive();
+          const result = await kieBrowserSession.frame();
+          kieBrowserControl?.touch();
+          return json(res, 200, { result });
         }
         if (url.pathname === '/api/admin/kie-session/input' && req.method === 'POST') {
           if (!config.kieBrowser?.embedded || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Встроенный браузер не включён' });
           const action = JSON.parse((await readBody(req, 4096)).toString('utf8'));
+          await kieBrowserControl?.ensureActive();
           await kieBrowserSession.input(action);
+          kieBrowserControl?.touch();
           return json(res, 200, { result: { ok: true } });
         }
         if (url.pathname === '/api/admin/credit-conversion' && req.method === 'GET') {

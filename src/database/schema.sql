@@ -345,3 +345,21 @@ CREATE TABLE IF NOT EXISTS media_deleted_chat_records (
   PRIMARY KEY(account_id,namespace,id)
 );
 INSERT INTO media_schema_versions(version) VALUES (9) ON CONFLICT DO NOTHING;
+
+-- A chat may reference only a project in its own account. The preflight is
+-- explicit so an upgrade with inconsistent historical rows stops safely.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM media_chats c JOIN media_projects p ON p.id=c.project_id WHERE c.account_id<>p.account_id) THEN
+    RAISE EXCEPTION 'Cross-account chat/project links must be repaired before schema v10';
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS media_projects_account_id_unique ON media_projects(account_id,id);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='media_chats_account_project_fkey') THEN
+    ALTER TABLE media_chats ADD CONSTRAINT media_chats_account_project_fkey
+      FOREIGN KEY(account_id,project_id) REFERENCES media_projects(account_id,id);
+  END IF;
+END $$;
+INSERT INTO media_schema_versions(version) VALUES (10) ON CONFLICT DO NOTHING;

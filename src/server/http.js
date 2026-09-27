@@ -11,6 +11,7 @@ const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { readProviderStatus } = require('../services/provider-status');
 const { createKieBrowserSession } = require('../services/kie-browser-session');
+const { handleCommerceRequest } = require('./routes/commerce');
 const { buildInfo } = require('./build-info');
 const { checkDatabase, transientConnection } = require('../database/database');
 const trace = require('../generation-log');
@@ -122,8 +123,21 @@ async function sendFile(req, res, filename, type, attachment = false) {
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
 function forwardToExecutor(req, res, executorUrl, executorPublicOrigin, publicOrigin) {
-  const target = new URL(req.url, executorUrl);
+  // Only origin-form paths may be proxied. URL() otherwise accepts //host/path
+  // and silently replaces the trusted executor authority.
+  if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')
+    || /\\|%2f|%5c/i.test(req.url.split('?')[0])) {
+    return Promise.resolve(json(res, 400, { error: 'Недопустимый адрес запроса' }));
+  }
+  const executor = new URL(executorUrl);
+  const target = new URL(req.url, executor);
+  if (target.origin !== executor.origin) return Promise.resolve(json(res, 400, { error: 'Недопустимый адрес запроса' }));
   const headers = { ...req.headers, host: new URL(executorPublicOrigin).host };
+  const hopHeaders = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+    'te', 'trailer', 'transfer-encoding', 'upgrade', 'proxy-connection']);
+  for (const name of String(headers.connection || '').split(',')) hopHeaders.add(name.trim().toLowerCase());
+  for (const name of hopHeaders) delete headers[name];
+  delete headers['x-forwarded-host']; delete headers['x-forwarded-proto']; delete headers['x-forwarded-for'];
   if (headers.origin === `http://${req.headers.host}`) headers.origin = executorPublicOrigin;
   return new Promise(resolve => {
     const upstream = (target.protocol === 'https:' ? https : http).request(target, { method: req.method, headers }, response => {
@@ -144,6 +158,7 @@ function forwardToExecutor(req, res, executorUrl, executorPublicOrigin, publicOr
       else res.destroy();
       resolve();
     });
+    upstream.setTimeout(30000, () => upstream.destroy(new Error('Executor timeout')));
     res.once('close', () => upstream.destroy());
     req.pipe(upstream);
   });
@@ -183,6 +198,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   let loginWindow = Date.now(), loginRequests = 0;
   const server = http.createServer(async (req, res) => {
     try {
+      if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')
+        || /\\|%2f|%5c/i.test(req.url.split('?')[0])) return json(res, 400, { error: 'Недопустимый адрес запроса' });
       const localPort = server.address().port;
       const allowedHosts = new Set([`127.0.0.1:${localPort}`, `localhost:${localPort}`, `[::1]:${localPort}`]);
       if (config.publicOrigin) allowedHosts.add(new URL(config.publicOrigin).host);
@@ -190,6 +207,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       const url = new URL(req.url, `http://${req.headers.host}`);
       const normalizedPath = url.pathname.length > 1 ? url.pathname.replace(/\/$/, '') : url.pathname;
       if (req.method === 'POST' && url.pathname === `/api/payments/webhooks/yookassa/${config.payments?.environment || 'test'}`) {
+        if (config.replicaRole === 'web') return forwardToExecutor(req, res, config.executorUrl, config.executorPublicOrigin, config.publicOrigin);
         if (!payments || config.payments?.provider !== 'yookassa') return json(res, 404, { error: 'Не найдено' });
         if (!(req.headers['content-type'] || '').startsWith('application/json')) return json(res, 415, { error: 'Ожидается JSON' });
         const body = JSON.parse((await readBody(req, 256 * 1024)).toString('utf8'));
@@ -419,23 +437,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null,
         starterPack: accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null } });
       if (accounts && url.pathname.startsWith('/api/commerce/')) {
-        if (!commerce) return json(res, 503, { error: 'Платёжный модуль пока недоступен', code: 'PAYMENTS_DISABLED' });
-        const checkoutMode = config.payments?.provider === 'yookassa-stub' ? 'stub' : 'redirect';
-        if (req.method === 'GET' && url.pathname === '/api/commerce/offers') return json(res, 200, { result: config.commerce?.salesEnabled ? commerce.offers().map(offer => ({ ...offer, checkoutMode })) : [] });
-        if (req.method === 'GET' && url.pathname === '/api/commerce/orders') return json(res, 200, { result: (await commerce.listOrders(user.id)).map(order => ({ ...order, checkoutMode })) });
-        const orderMatch = /^\/api\/commerce\/orders\/([a-f0-9-]{36})(?:\/(checkout))?$/.exec(url.pathname);
-        if (req.method === 'GET' && orderMatch && !orderMatch[2]) return json(res, 200, { result: { ...await commerce.getOrder(user.id, orderMatch[1]), checkoutMode } });
-        if (req.method === 'POST' && url.pathname === '/api/commerce/orders' && req.headers['x-media-client'] === 'web') {
-          if (!config.commerce?.salesEnabled) return json(res, 503, { error: 'Продажа кредитов пока недоступна', code: 'SALES_DISABLED' });
-          const body = JSON.parse((await readBody(req, 8192)).toString('utf8'));
-          return json(res, 200, { result: await commerce.createOrder(user.id, body) });
-        }
-        if (req.method === 'POST' && orderMatch?.[2] === 'checkout' && req.headers['x-media-client'] === 'web') {
-          if (!config.commerce?.salesEnabled) return json(res, 503, { error: 'Продажа кредитов пока недоступна', code: 'SALES_DISABLED' });
-          const returnUrl = `${config.auth.origin}/app?order=${encodeURIComponent(orderMatch[1])}`;
-          return json(res, 200, { result: { ...await commerce.checkout(user.id, orderMatch[1], returnUrl), checkoutMode } });
-        }
-        return json(res, 404, { error: 'Метод не найден' });
+        return handleCommerceRequest({ req, url, user, config, commerce,
+          send: (status, body) => json(res, status, body),
+          readJson: async limit => JSON.parse((await readBody(req, limit)).toString('utf8')) });
       }
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
         const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
@@ -457,7 +461,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
         if (!since) await accounts.workspaces.ensureDefaultChatId(workspaceAccount);
         const activeIds = url.searchParams.getAll('active');
-        if (activeIds.length > 20 || activeIds.some(id => !/^[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
+        if (activeIds.length > 20 || activeIds.some(id => !/^(?:(?:codex|routerai):)?[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
         const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
         const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
         const [historyResult, activeRecords, projects, chats, queue, unassignedCount] = await Promise.all([
@@ -542,6 +546,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           const { billingReconciliation } = require('../services/billing-reconciliation');
           return json(res, 200, { result: await billingReconciliation(accounts.pool, url.searchParams.get('days') || 30) });
         }
+        if (url.pathname === '/api/admin/operations' && req.method === 'GET') {
+          const { operationsMetrics } = require('../services/operations-metrics');
+          return json(res, 200, { result: await operationsMetrics(accounts.pool) });
+        }
         if (url.pathname.startsWith('/api/admin/codex/')) {
           const action = url.pathname.slice('/api/admin/codex/'.length);
           if (!((action === 'status' && req.method === 'GET') || (['start', 'cancel'].includes(action) && req.method === 'POST' && req.headers['x-media-client'] === 'web'))) return json(res, 404, { error: 'Не найдено' });
@@ -583,7 +591,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
         if (url.pathname === '/api/source') {
           const type = (req.headers['content-type'] || '').split(';')[0];
-          if (!/^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/.test(type)) throw new Error('Этот тип исходника не поддерживается');
+          if (!/^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/.test(type))
+            return json(res, 400, { error: 'Этот тип исходника не поддерживается', code: 'UNSUPPORTED_MEDIA_TYPE' });
           const declared = Number(req.headers['content-length']);
           const reservation = Number.isSafeInteger(declared) && declared > 0 ? declared : config.uploadLimit;
           if (reservation > config.uploadLimit) return json(res, 413, { error: 'Файл слишком большой' });
@@ -683,14 +692,16 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       const message = error.code?.startsWith('E') || error instanceof SyntaxError ? 'Не удалось обработать запрос' : error.message;
       const knownMessage = ['Некоррект', 'Недостаточно', 'Цена', 'Требуется', 'Для расчёта', 'Этот запрос', 'Укажите', 'Начисление', 'Проверьте', 'Генерация'].some(prefix => message.startsWith(prefix));
-      const hiddenUnexpectedError = accounts && !error.status && !knownMessage;
+      const hiddenUnexpectedError = !error.status && !knownMessage;
       if (hiddenUnexpectedError) {
         const requestPath = req.url?.split('?')[0] || '';
         const rpc = /^\/api\/rpc\/([a-zA-Z]+)$/.exec(requestPath)?.[1];
         trace.write('service.request.error', { method: req.method, path: requestPath, rpc, error });
         console.error('Service request failed:', error.code || error.name || 'UNEXPECTED');
       }
-      json(res, error.status || 400, { error: hiddenUnexpectedError ? 'Не удалось выполнить запрос' : message });
+      const status = error.status || (knownMessage ? 400 : 500);
+      json(res, status, { error: hiddenUnexpectedError ? 'Не удалось выполнить запрос' : message,
+        ...(error.status && /^[A-Z][A-Z0-9_]*$/.test(error.code || '') ? { code: error.code } : {}) });
     }
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;

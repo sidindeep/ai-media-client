@@ -57,6 +57,7 @@ test('connection retries support both pg pool interfaces without replaying queri
 test('idle account services are released after listeners and queue work end', async t => {
   const { openDatabase } = require('../src/database/database');
   const { createAccounts } = require('../src/services/accounts');
+  await fs.mkdir(path.join(__dirname, '../artifacts'), { recursive: true });
   const directory = await fs.mkdtemp(path.join(__dirname, '../artifacts/account-idle-test-'));
   const pool = await openDatabase({}, testPool());
   const accountId = randomUUID();
@@ -149,6 +150,8 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(await runtime.accounts.wallet.purchase(alice.id, 1000, 'payment-first-alice', 'Первая тестовая оплата'), false);
   await assert.rejects(runtime.accounts.wallet.purchase(alice.id, 2000, 'payment-first-alice', 'Первая тестовая оплата'));
   await runtime.accounts.wallet.purchase(bob.id, 1000, 'payment-first-bob', 'Первая тестовая оплата');
+  assert.ok(await runtime.accounts.scope({ id: alice.id, role: alice.role }, alice.id), 'a linked Telegram user may select their own account');
+  await assert.rejects(runtime.accounts.scope({ id: alice.id, role: alice.role }, bob.id), /Доступ запрещён/);
   assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).active, false);
   assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).modelAccess, 'all');
   assert.equal((await rpc(alice, 'createTask', [{ modelId, input, requestId: 'forbidden-kie-account', kieAccountId: 'secondary' }])).status, 403);
@@ -276,7 +279,8 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
     assert.equal(quote.credits, 2.5);
   }
   const adminPayload = { modelId, input, requestId: randomUUID(), billingExemptActor: owner.id };
-  assert.equal((await rpc(owner, 'createTask', [adminPayload])).status, 400);
+  const emptyAdminBalance = await rpc(owner, 'createTask', [adminPayload]);
+  assert.equal(emptyAdminBalance.status, 400, await emptyAdminBalance.text());
   assert.equal((await rpc(owner, 'createTask', [adminPayload], { 'X-Media-Account': 'legacy' })).status, 400);
   await runtime.accounts.wallet.grant(owner.id, owner.id, 5000, 'admin-test-balance', 'Тестовый баланс');
   const adminJob = await result(rpc(owner, 'createTask', [adminPayload]));

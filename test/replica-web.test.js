@@ -71,4 +71,14 @@ test('web replica streams writes to its executor and rejects foreign origins', a
     headers: { Origin: 'https://foreign.example', 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(forbidden.status, 403);
   assert.equal(received.length, 2);
+  for (const unsafePath of ['//127.0.0.1:1/api/rpc/createTask', '/%2f127.0.0.1:1/api/rpc/createTask', '/api\\rpc\\createTask']) {
+    const response = await new Promise((resolve, reject) => {
+      const request = http.request({ host: '127.0.0.1', port: web.address().port, path: unsafePath, method: 'POST' }, reply => {
+        reply.resume(); reply.once('end', () => resolve(reply));
+      });
+      request.once('error', reject); request.end();
+    });
+    assert.equal(response.statusCode, 400, unsafePath);
+  }
+  assert.equal(received.length, 2);
 });

@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const transientConnectionCodes = new Set([
   'EAI_AGAIN', 'ECONNABORTED', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETDOWN', 'ENETUNREACH', 'ENOTFOUND', 'EPIPE', 'ETIMEDOUT',
   'PROTOCOL_CONNECTION_LOST', 'UND_ERR_CONNECT_TIMEOUT', '53300', '57P01', '57P02', '57P03',
@@ -50,15 +51,53 @@ async function openDatabase(config, suppliedPool) {
     // Initialize the session after authentication, before handing it to callers.
     onConnect: client => client.query('SET statement_timeout = 15000') }));
   pool.on?.('error', () => console.error('Соединение с БД потеряно'));
+  const baseline = await fs.readFile(path.join(__dirname, 'schema.sql'), 'utf8');
+  const checksum = sql => createHash('sha256').update(sql).digest('hex');
+  const migrationFiles = (await fs.readdir(path.join(__dirname, 'migrations'))).filter(name => /^\d{4}-[a-z0-9-]+\.sql$/.test(name)).sort();
+  const migrations = await Promise.all(migrationFiles.map(async name => ({ version: Number(name.slice(0, 4)), sql: await fs.readFile(path.join(__dirname, 'migrations', name), 'utf8') })));
+  const latestVersion = migrations.at(-1)?.version || 10;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await transaction(pool, async client => {
         await client.query('SELECT pg_advisory_xact_lock(18274691)');
-        await client.query(await fs.readFile(path.join(__dirname, 'schema.sql'), 'utf8'));
+        const existing = (await client.query("SELECT to_regclass('media_schema_versions') AS name")).rows[0]?.name;
+        let version = existing ? Number((await client.query('SELECT COALESCE(max(version),0) AS version FROM media_schema_versions')).rows[0].version) : 0;
+        if (version > latestVersion) throw Object.assign(new Error('Версия БД новее версии приложения'), { code: 'DATABASE_VERSION_NEWER' });
+        if (version < 10) {
+          if (config.migrate === false) throw Object.assign(new Error('Требуется миграция БД'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+          await client.query(baseline);
+          version = 10;
+        }
+        const journal = (await client.query("SELECT to_regclass('media_schema_migrations') AS name")).rows[0]?.name;
+        if (!journal && config.migrate === false) throw Object.assign(new Error('Требуется журнал миграций БД'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+        if (!journal) await client.query(`CREATE TABLE media_schema_migrations (
+          version integer PRIMARY KEY, checksum text NOT NULL CHECK (checksum ~ '^[a-f0-9]{64}$'), applied_at timestamptz NOT NULL DEFAULT now())`);
+        const applied = (await client.query('SELECT version,checksum FROM media_schema_migrations')).rows;
+        const known = new Map(applied.map(row => [Number(row.version), row.checksum]));
+        const baselineHash = checksum(baseline);
+        if (known.has(10) && known.get(10) !== baselineHash) throw Object.assign(new Error('Контрольная сумма базовой схемы изменилась'), { code: 'DATABASE_MIGRATION_CHANGED' });
+        if (!known.has(10)) {
+          if (config.migrate === false) throw Object.assign(new Error('Базовая схема не зарегистрирована'), { code: 'DATABASE_MIGRATION_REQUIRED' });
+          await client.query('INSERT INTO media_schema_migrations(version,checksum) VALUES(10,$1)', [baselineHash]);
+        }
+        for (const migration of migrations) {
+          const hash = checksum(migration.sql);
+          if (known.has(migration.version)) {
+            if (known.get(migration.version) !== hash) throw Object.assign(new Error(`Миграция ${migration.version} изменена`), { code: 'DATABASE_MIGRATION_CHANGED' });
+            continue;
+          }
+          if (config.migrate === false) throw Object.assign(new Error(`Требуется миграция БД до ${migration.version}`), { code: 'DATABASE_MIGRATION_REQUIRED' });
+          await client.query(migration.sql);
+          await client.query('INSERT INTO media_schema_versions(version) VALUES($1) ON CONFLICT DO NOTHING', [migration.version]);
+          await client.query('INSERT INTO media_schema_migrations(version,checksum) VALUES($1,$2)', [migration.version, hash]);
+        }
       });
       return pool;
     } catch (error) {
-      if (!transientConnection(error) || attempt === 2) { await pool.end(); throw new Error('Не удалось подключить или подготовить БД аккаунтов'); }
+      if (!transientConnection(error) || attempt === 2) {
+        await pool.end();
+        throw Object.assign(new Error('Не удалось подключить или подготовить БД аккаунтов'), { code: error.code || 'DATABASE_STARTUP_FAILED', cause: error });
+      }
       // Only idempotent schema initialization is retried, never paid requests.
       console.error('Database startup retry:', error.code || 'CONNECTION_TIMEOUT');
       await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));

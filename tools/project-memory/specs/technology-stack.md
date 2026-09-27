@@ -167,8 +167,8 @@ fallback в `data/service`. Старый файловый слой исполь�
 
 Telegram-интерфейс использует Bot API через нативный `fetch` и long polling —
 отдельной Telegram-библиотеки нет. Поддерживаются публичный доступ к личным чатам
-или private allowlist. В режиме продуктовых аккаунтов бот пока отключён до
-реализации привязки Telegram-пользователя к аккаунту.
+или private allowlist. В режиме продуктовых аккаунтов поддерживается привязка
+Telegram-пользователя одноразовой ссылкой к его аккаунту.
 
 ## Очередь и биллинг
 
@@ -239,15 +239,14 @@ Electron не входит в активный production runtime текущег
 - сохранён архив `desktop.7z` исторического Windows-клиента;
 - Electron остаётся только средством запуска скрытого UI smoke в доступном
   окружении разработчика;
-- старые ссылки на desktop-сборку в README и runbook следует считать
-  документационным долгом до отдельной очистки согласованного scope.
+- архив по решению владельца оставлен без восстановления в этой работе.
 
 ## Основные источники
 
 - `package.json`, `pnpm-lock.yaml` — версии runtime-зависимостей.
 - `web/vite.config.mts`, `web/tsconfig.json`, `web/src/` — Vue-приложение.
 - `server.js`, `src/server/`, `src/services/` — backend и оркестрация.
-- `src/database/schema.sql` — продуктовая SQL-схема.
+- `src/database/schema.sql`, `src/database/migrations/` — базовая схема v10 и новые проверяемые миграции.
 - `src/object-storage.js` — S3 и файловый storage adapter.
 - `config/codex-models.json`, `src/services/codex-*` — Codex worker.
 - `compose.yaml`, `Dockerfile`, `Dockerfile.codex` — production topology.
@@ -255,8 +254,6 @@ Electron не входит в активный production runtime текущег
 
 ## Открытые ограничения
 
-- Покупка кредитов и автоматическая балансировка провайдеров не подключены.
-- Telegram ещё не связан с продуктовыми аккаунтами.
-- В проекте нет централизованной metrics/tracing-платформы.
-- Host-версия pnpm не закреплена в `package.json`; production-образ фиксирует
-  pnpm 11.19.0.
+- Debug checkout работает через заглушку; live-оплаты/возвраты не подтверждены.
+- Операционные счётчики доступны администратору через `/api/admin/operations`; централизованной платформы alerts/tracing пока нет.
+- Runtime PostgreSQL пока использует прежнюю роль до отдельного переключения учётных данных.

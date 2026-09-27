@@ -71,6 +71,70 @@ test('two outbox dispatchers claim one event once', async t => {
   assert.equal(row.lease_token, null);
 });
 
+test('payment webhook resolves pending checkout and grants credits once', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const accountId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Webhook buyer')", [accountId]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,0)', [accountId]);
+  const catalog = { get: () => ({ id: 'credits-10', version: 'v1', name: '10 кредитов', description: '', creditUnits: 10000, amountMinor: 9900, currency: 'RUB', active: true }) };
+  let commerce;
+  const payments = createPayments({ pool, provider: createFakePaymentProvider({ behavior: 'pending' }), onEvent: event => commerce.handlePaymentEvent(event) });
+  commerce = createCommerce({ pool, catalog, paymentClient: payments, paymentContext: { clientId: 'ai-media-client', environment: 'test' } });
+  const order = await commerce.createOrder(accountId, { offerId: 'credits-10', offerVersion: 'v1', idempotencyKey: 'webhook-first' });
+  const checkout = await commerce.checkout(accountId, order.id, 'https://example.test/app');
+  const attempt = (await pool.query('SELECT provider_payment_id FROM payment_attempts WHERE payment_id=$1', [checkout.paymentId])).rows[0];
+  const event = { providerPaymentId: attempt.provider_payment_id, status: 'succeeded', resolution: 'known', amountMinor: 9900, currency: 'RUB' };
+  await payments.webhook(event);
+  await payments.webhook(event);
+  assert.equal(Number((await pool.query('SELECT balance FROM media_wallets WHERE account_id=$1', [accountId])).rows[0].balance), 10000);
+  assert.equal(Number((await pool.query("SELECT count(*) AS count FROM media_ledger WHERE account_id=$1 AND kind='purchase'", [accountId])).rows[0].count), 1);
+});
+
+test('verified early webhook is processed after provider payment ID is stored', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const accountId = randomUUID();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Early webhook')", [accountId]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,0)', [accountId]);
+  const catalog = { get: () => ({ id: 'credits-10', version: 'v1', name: '10 кредитов', description: '', creditUnits: 10000, amountMinor: 9900, currency: 'RUB', active: true }) };
+  const provider = createFakePaymentProvider({ behavior: 'pending' });
+  const originalCreate = provider.createPayment.bind(provider);
+  let payments, commerce;
+  provider.createPayment = async request => {
+    const pending = await originalCreate(request);
+    await payments.webhook({ ...pending, status: 'succeeded' });
+    return pending;
+  };
+  payments = createPayments({ pool, provider, onEvent: event => commerce.handlePaymentEvent(event) });
+  commerce = createCommerce({ pool, catalog, paymentClient: payments, paymentContext: { clientId: 'ai-media-client', environment: 'test' } });
+  const order = await commerce.createOrder(accountId, { offerId: 'credits-10', offerVersion: 'v1', idempotencyKey: 'early-webhook' });
+  await commerce.checkout(accountId, order.id, 'https://example.test/app');
+  assert.equal((await commerce.getOrder(accountId, order.id)).status, 'fulfilled');
+  assert.equal(Number((await pool.query('SELECT balance FROM media_wallets WHERE account_id=$1', [accountId])).rows[0].balance), 10000);
+  assert.ok((await pool.query('SELECT processed_at FROM payment_webhook_inbox')).rows[0].processed_at);
+});
+
+test('uncertain create recovers with its saved request and original provider key', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const provider = createFakePaymentProvider({ behavior: 'timeout-after-accept' });
+  const payments = createPayments({ pool, provider });
+  const ctx = { clientId: 'recovery-test', environment: 'test' };
+  const input = { externalOrderId: randomUUID(), amountMinor: 9900, currency: 'RUB',
+    idempotencyKey: randomUUID(), description: 'Recovery test', returnUrl: 'https://example.test/return' };
+  await assert.rejects(payments.createPayment(ctx, input), error => error.code === 'OPERATION_UNCERTAIN');
+  const command = (await pool.query('SELECT request_payload,idempotency_key FROM payment_commands')).rows[0];
+  assert.equal(command.idempotency_key, input.idempotencyKey);
+  assert.equal(command.request_payload.externalOrderId, input.externalOrderId);
+  await pool.query("UPDATE payment_commands SET created_at=now()-interval '31 seconds'");
+  await payments.recoverCommands();
+  const payment = await payments.getPaymentByOrder(ctx, { externalOrderId: input.externalOrderId });
+  assert.equal(payment.status, 'succeeded');
+  await payments.recoverCommands();
+  assert.equal(Number((await pool.query('SELECT count(*) AS n FROM payment_outbox')).rows[0].n), 1);
+});
+
 test('payment idempotency is scoped and conflicting payload is rejected', async t => {
   const f = await fixture(); t.after(() => f.pool.end());
   const ctx = { clientId: 'second-product', environment: 'test' };
@@ -88,6 +152,7 @@ test('YooKassa adapter uses Basic auth, exact RUB string and verifies test envir
   const provider = createYooKassaProvider({ shopId: 'shop', secretKey: 'secret', fetcher: async (url, options) => {
     request = { url, options }; return { ok: true, async json() { return { id: 'provider-1', status: 'pending', test: true, amount: { value: '99.00', currency: 'RUB' }, confirmation: { confirmation_url: 'https://yookassa.test/pay' } }; } };
   } });
+  assert.equal(provider.capabilities().refunds, false);
   const result = await provider.createPayment({ clientId: 'ai-media-client', externalOrderId: 'order-1', amountMinor: 9900, currency: 'RUB', idempotencyKey: 'idem-12345678', description: 'Пакет', returnUrl: 'https://example.test/app' });
   assert.equal(result.confirmationUrl, 'https://yookassa.test/pay');
   assert.match(request.options.headers.Authorization, /^Basic /);

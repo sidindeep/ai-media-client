@@ -29,8 +29,9 @@ function createYooKassaProvider({ shopId, secretKey, environment = 'test', fetch
   };
   return {
     id: 'yookassa', accountId: String(shopId), environment,
-    capabilities: () => ({ paymentMethods: ['bank_card', 'yoo_money'], refunds: true, partialRefunds: true }),
+    capabilities: () => ({ paymentMethods: ['bank_card', 'yoo_money'], refunds: false, partialRefunds: false }),
     async createPayment(request) {
+      if (request.idempotencyKey.length > 64) throw paymentError('INVALID_REQUEST', 'Ключ идемпотентности ЮKassa слишком длинный');
       const body = { amount: { value: amountValue(request.amountMinor), currency: request.currency }, capture: true,
         confirmation: { type: 'redirect', return_url: request.returnUrl }, description: request.description,
         metadata: { client_id: request.clientId, external_order_id: request.externalOrderId } };

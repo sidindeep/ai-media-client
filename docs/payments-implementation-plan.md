@@ -1,6 +1,6 @@
 # План реализации платежей для AI Media Client
 
-Дата: 2026-09-22. Статус: базовый поток P0–P4 реализован частично; локальный DEBUG checkout работает через test-заглушку, настоящий sandbox не проверен.
+Дата: 2026-09-22. Статус: базовый поток P0–P4 реализован частично; 2026-09-27 добавлены durable inbox, восстановление create с исходным ключом в пределах 23 часов, реальный PostgreSQL concurrency test и admin-счётчики. Локальный DEBUG checkout работает через test-заглушку, настоящий sandbox не проверен.
 Исполнитель: GPT-5.6 Sol, reasoning effort medium. Модель сама по себе не
 заменяет проверки денежных инвариантов. Этапы выполнять последовательно.
 
@@ -11,8 +11,8 @@
 Реализованы контракты, schema v5, payment attempt/outbox, адаптер ЮKassa,
 каталог и snapshot заказа, HTTP facade, product inbox, атомарное начисление,
 return-state UI и изолированный контейнерный тестовый target. Остаются durable
-command worker для неизвестного результата, webhook raw inbox, leases/fencing,
-многосоединительные PostgreSQL-тесты, refunds, admin/metrics и живой sandbox.
+ручной recovery за пределами 24-часового окна, leases/fencing outbox,
+refunds и их продуктовая политика, полный admin UI и живой sandbox.
 Для DEBUG добавлен `yookassa-stub`: карточка создаёт заказ и pending-платёж через
 тот же payment module, но не открывает платёжную страницу, не принимает webhook,
 не списывает деньги и не начисляет кредиты. Он разрешён только в test-среде.

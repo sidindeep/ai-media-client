@@ -92,7 +92,7 @@ function loadConfig(env = process.env) {
     codex: { url: env.MEDIA_CODEX_URL || (env.MEDIA_CODEX_EMBEDDED === 'true' ? 'http://127.0.0.1:3210' : ''),
       embedded: env.MEDIA_CODEX_EMBEDDED === 'true' && !env.MEDIA_CODEX_URL },
     database: { url: env.DATABASE_URL || '', ssl: env.DATABASE_SSL === '1',
-      poolMax: integer(env.MEDIA_DB_POOL_MAX, 5, 1, 30) },
+      poolMax: integer(env.MEDIA_DB_POOL_MAX, 5, 1, 30), migrate: env.MEDIA_DB_MIGRATE !== 'false' },
     sse: { maxConnections: integer(env.MEDIA_SSE_MAX_CONNECTIONS, 100, 1, 1000),
       maxPerAccount: integer(env.MEDIA_SSE_MAX_PER_ACCOUNT, 8, 1, 100) },
     storage: {

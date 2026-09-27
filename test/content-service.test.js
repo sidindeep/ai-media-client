@@ -29,7 +29,8 @@ async function setup(t, options = {}) {
   const pool = await openDatabase({}, testPool()), storage = options.storage || memoryStorage();
   const accountId = randomUUID();
   await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Test')", [accountId]);
-  const content = await createContentService({ pool, storage, dataDirectory: directory, fetchImpl: options.fetchImpl, interval: 5, concurrency: options.concurrency });
+  const content = await createContentService({ pool, storage, dataDirectory: directory, fetchImpl: options.fetchImpl, interval: 5, concurrency: options.concurrency,
+    maxDownloadBytes: options.maxDownloadBytes });
   t.after(async () => { await content.close(); await pool.end(); await fs.rm(directory, { recursive: true, force: true }); });
   return { directory, pool, storage, accountId, content };
 }
@@ -73,6 +74,38 @@ test('content URL jobs survive as database work and link ready results to a gene
   assert.equal(ready.type, 'image/webp'); assert.equal(await content.read(accountId, asset.id).then(bytes => bytes.toString()), 'generated');
   const link = (await pool.query('SELECT role,position FROM content_links WHERE asset_id=$1', [asset.id])).rows[0];
   assert.deepEqual({ role: link.role, position: link.position }, { role: 'result', position: 0 });
+});
+
+test('remote result stops at its byte limit and removes partial staging', async t => {
+  const fetchImpl = async () => new Response(Buffer.alloc(20), { status: 200, headers: { 'Content-Type': 'image/png' } });
+  const { directory, pool, accountId, content } = await setup(t, { fetchImpl, maxDownloadBytes: 10 });
+  const asset = await content.createFromUrl(accountId, { url: 'https://provider.example/oversized' });
+  let rejected = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const job = (await pool.query('SELECT state,last_error FROM content_jobs WHERE asset_id=$1', [asset.id])).rows[0];
+    if (job.state === 'retry') { assert.match(job.last_error, /лимит сохранения/); rejected = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(rejected, true);
+  assert.deepEqual(await fs.readdir(path.join(directory, 'content-staging')), []);
+});
+
+test('remote result rejects local addresses and unsafe redirects', async t => {
+  let fetches = 0;
+  const fetchImpl = async () => { fetches++; return Response.redirect('https://127.0.0.1/private', 302); };
+  const { accountId, content } = await setup(t, { fetchImpl });
+  await assert.rejects(content.createFromUrl(accountId, { url: 'https://127.0.0.1/private' }), /Недопустимый адрес/);
+  await assert.rejects(content.createFromUrl(accountId, { url: 'http://provider.example/result' }), /Недопустимый адрес/);
+  const asset = await content.createFromUrl(accountId, { url: 'https://provider.example/result' });
+  const row = await content.file(accountId, asset.id).catch(error => error);
+  assert.equal(row.status, 409);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const current = await content.file(accountId, asset.id).catch(error => error);
+    if (current.message.includes('Недопустимый адрес')) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.match((await content.file(accountId, asset.id).catch(error => error)).message, /Недопустимый адрес/);
+  assert.equal(fetches, 1);
 });
 
 test('a failed content write keeps one asset id and can be retried without regenerating', async t => {

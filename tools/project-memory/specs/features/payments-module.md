@@ -1,6 +1,6 @@
 # Платёжный модуль с возможностью выделения в сервис
 
-Статус: базовый внутренний модуль реализован 2026-09-22; sandbox ЮKassa не подключён.
+Статус: внутренний модуль дополнен 2026-09-27; sandbox ЮKassa не подключён, live-операции не выполнялись.
 План исполнения: [docs/payments-implementation-plan.md](../../../../docs/payments-implementation-plan.md).
 
 ## Назначение и границы
@@ -63,9 +63,17 @@ AI Media Client — первый потребитель. Другие проду
 - Контейнерные тесты проверяют minor units, переходы, повтор checkout,
   единственную проводку, conflict payload и запрос адаптера ЮKassa.
 
-Не реализованы: refunds, durable provider command worker после unknown,
-lease/fencing outbox, admin/reconciliation UI и эксплуатационные метрики.
-Многосоединительные гонки настоящего PostgreSQL и sandbox ЮKassa не проверены.
+Ранний проверенный webhook сохраняется в `payment_webhook_inbox` до появления
+provider payment ID; executor повторно обрабатывает inbox и outbox. Потерянный
+ответ create восстанавливается с тем же сохранённым payload и idempotency key
+до 23 часов от записи команды. После этого автоматический повтор запрещён:
+ЮKassa [гарантирует идемпотентность лишь 24 часа](https://yookassa.ru/developers/using-api/interaction-format). Статусы блокируются `FOR UPDATE`,
+поздний pending не возвращает terminal state назад. Конкурентный переход проверен
+на двух соединениях отдельной PostgreSQL test profile.
+
+Не реализованы: refunds и их продуктовая политика, безопасное ручное связывание
+платежа после истечения окна идемпотентности, полноценный admin/reconciliation UI,
+lease/fencing outbox и живой sandbox ЮKassa. Capabilities возвратов отключены.
 
 Исходники могут измениться: перед реализацией перечитать эти точки, не стирать
 накопленные изменения контента/S3 и других задач.

@@ -97,7 +97,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     nextCommerce = createCommerce({ pool: activePool, catalog: createProductCatalog(config.commerce.offersFile), paymentClient: nextPayments,
       paymentContext: { clientId: config.payments.clientId, environment: config.payments.environment },
       onPurchase: accountId => accounts?.notifyContent(accountId) });
-    if (!webReplica) await nextPayments.deliver();
+    if (!webReplica) { await nextPayments.drainWebhooks(); await nextPayments.recoverCommands(); }
     return { payments: nextPayments, commerce: nextCommerce };
   };
   const waitForRetry = delay => new Promise(resolve => {
@@ -189,7 +189,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       await accounts.recover();
       ({ payments, commerce } = await createBusinessServices(pool));
       if (config.replicaRole === 'executor') await service.queue.recover();
-      if (payments && !webReplica) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
+      if (payments && !webReplica) paymentTimer = setInterval(() => payments.drainWebhooks().then(() => payments.recoverCommands()).catch(error => console.error('Payment recovery failed:', error.code || error.message)), 5000);
       databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
     }
     if (!webReplica && config.codex?.embedded) {
@@ -234,7 +234,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             telegram.setAccountServices(accounts, telegramLinks);
             if (!webReplica && !telegramStarted) { telegram.start(); telegramStarted = true; }
             if (paymentTimer) clearInterval(paymentTimer);
-            if (payments && !webReplica) paymentTimer = setInterval(() => payments.deliver().catch(error => console.error('Payment outbox delivery failed:', error.code || error.message)), 5000);
+            if (payments && !webReplica) paymentTimer = setInterval(() => payments.drainWebhooks().then(() => payments.recoverCommands()).catch(error => console.error('Payment recovery failed:', error.code || error.message)), 5000);
             databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
           } catch (error) {
             if (nextAccounts) await nextAccounts.close().catch(() => {});

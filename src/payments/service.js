@@ -4,8 +4,8 @@ const { normalizeCreate, normalizeContext, payloadHash, assertTransition, public
 
 function createPayments({ pool, provider, onEvent }) {
   if (!pool || !provider) throw new Error('Payments requires pool and provider');
-  const select = async (executor, ctx, id, byOrder = false) => (await executor.query(
-    `SELECT * FROM payment_payments WHERE client_id=$1 AND environment=$2 AND ${byOrder ? 'external_order_id' : 'id'}=$3`,
+  const select = async (executor, ctx, id, byOrder = false, lock = false) => (await executor.query(
+    `SELECT * FROM payment_payments WHERE client_id=$1 AND environment=$2 AND ${byOrder ? 'external_order_id' : 'id'}=$3${lock ? ' FOR UPDATE' : ''}`,
     [ctx.clientId, ctx.environment, id])).rows[0];
 
   async function emit(client, row, type) {
@@ -20,9 +20,10 @@ function createPayments({ pool, provider, onEvent }) {
 
   async function applyProviderResult(ctx, paymentId, result) {
     return transaction(pool, async client => {
-      const row = await select(client, ctx, paymentId);
+      const row = await select(client, ctx, paymentId, false, true);
       if (!row) throw paymentError('NOT_FOUND', 'Платеж не найден', 404);
       if (result.amountMinor != null && (result.amountMinor !== Number(row.amount_minor) || result.currency !== row.currency)) throw paymentError('PROVIDER_UNAVAILABLE', 'Сумма платежа у провайдера не совпадает', 502);
+      if (['succeeded', 'canceled', 'failed'].includes(row.status) && row.status !== result.status) return publicPayment(row);
       assertTransition(row.status, result.status);
       const changed = row.status !== result.status;
       const next = (await client.query(`UPDATE payment_payments SET status=$2,resolution=$3,confirmation_url=$4,expires_at=$5,
@@ -55,6 +56,53 @@ function createPayments({ pool, provider, onEvent }) {
     }
   }
 
+  async function drainWebhooks(limit = 20) {
+    const pending = (await pool.query(`SELECT event_identity,payload FROM payment_webhook_inbox
+      WHERE provider_id=$1 AND provider_account_id=$2 AND environment=$3 AND processed_at IS NULL
+      ORDER BY created_at LIMIT $4`, [provider.id, provider.accountId, provider.environment, limit])).rows;
+    for (const event of pending) {
+      const result = event.payload;
+      const attempt = (await pool.query(`SELECT a.payment_id,p.client_id,p.environment FROM payment_attempts a
+        JOIN payment_payments p ON p.id=a.payment_id WHERE a.provider_id=$1 AND a.provider_account_id=$2
+        AND a.environment=$3 AND a.provider_payment_id=$4`,
+      [provider.id, provider.accountId, provider.environment, result.providerPaymentId])).rows[0];
+      if (!attempt) continue;
+      await applyProviderResult({ clientId: attempt.client_id, environment: attempt.environment }, attempt.payment_id, result);
+      await pool.query(`UPDATE payment_webhook_inbox SET processed_at=now() WHERE provider_id=$1 AND provider_account_id=$2
+        AND environment=$3 AND event_identity=$4 AND processed_at IS NULL`, [provider.id, provider.accountId, provider.environment, event.event_identity]);
+    }
+    await deliver();
+  }
+
+  async function recoverCommands(limit = 10) {
+    const token = randomUUID();
+    const rows = await transaction(pool, async client => {
+      const ready = (await client.query(`SELECT c.id,c.payment_id,c.client_id,c.environment,c.idempotency_key,c.request_payload
+        FROM payment_commands c JOIN payment_payments p ON p.id=c.payment_id
+        WHERE c.operation='create' AND c.request_payload IS NOT NULL
+          AND c.created_at<now()-interval '30 seconds' AND c.created_at>now()-interval '23 hours'
+          AND c.next_attempt_at<=now() AND (c.leased_until IS NULL OR c.leased_until<now())
+          AND (p.status='created' OR p.resolution='unknown')
+        ORDER BY c.created_at FOR UPDATE OF c SKIP LOCKED LIMIT $1`, [limit])).rows;
+      for (const row of ready) await client.query(`UPDATE payment_commands SET lease_token=$2,leased_until=now()+interval '2 minutes'
+        WHERE id=$1`, [row.id, token]);
+      return ready;
+    });
+    for (const row of rows) {
+      try {
+        const ctx = { clientId: row.client_id, environment: row.environment };
+        const result = await provider.createPayment({ ...row.request_payload, ...ctx, idempotencyKey: row.idempotency_key });
+        await applyProviderResult(ctx, row.payment_id, result);
+        await drainWebhooks();
+        await pool.query('UPDATE payment_commands SET lease_token=NULL,leased_until=NULL WHERE id=$1 AND lease_token=$2', [row.id, token]);
+      } catch (error) {
+        await pool.query(`UPDATE payment_commands SET lease_token=NULL,leased_until=NULL,next_attempt_at=now()+interval '5 minutes'
+          WHERE id=$1 AND lease_token=$2`, [row.id, token]);
+        console.error('Payment command recovery failed:', error.code || error.message);
+      }
+    }
+  }
+
   return {
     capabilities(ctx) { normalizeContext(ctx); return provider.capabilities(); },
     async createPayment(rawCtx, rawInput) {
@@ -74,8 +122,8 @@ function createPayments({ pool, provider, onEvent }) {
         const id = randomUUID(); created = true;
         const inserted = (await client.query(`INSERT INTO payment_payments(id,client_id,environment,external_order_id,amount_minor,currency,status,resolution)
           VALUES($1,$2,$3,$4,$5,$6,'created','known') RETURNING *`, [id, ctx.clientId, ctx.environment, input.externalOrderId, input.amountMinor, input.currency])).rows[0];
-        await client.query(`INSERT INTO payment_commands(id,operation,client_id,environment,idempotency_key,payload_hash,payment_id)
-          VALUES($1,'create',$2,$3,$4,$5,$6)`, [randomUUID(), ctx.clientId, ctx.environment, input.idempotencyKey, hash, id]);
+        await client.query(`INSERT INTO payment_commands(id,operation,client_id,environment,idempotency_key,payload_hash,payment_id,request_payload)
+          VALUES($1,'create',$2,$3,$4,$5,$6,$7)`, [randomUUID(), ctx.clientId, ctx.environment, input.idempotencyKey, hash, id, input]);
         await client.query(`INSERT INTO payment_attempts(id,payment_id,provider_id,provider_account_id,environment,provider_idempotency_key,state,resolution)
           VALUES($1,$2,$3,$4,$5,$6,'created','known')`, [randomUUID(), id, provider.id, provider.accountId, ctx.environment, input.idempotencyKey]);
         return inserted;
@@ -100,7 +148,7 @@ function createPayments({ pool, provider, onEvent }) {
         await pool.query(`UPDATE payment_payments SET resolution=$2,updated_at=now() WHERE id=$1`, [row.id, error.outcome === 'not_sent' ? 'known' : 'unknown']);
         throw Object.assign(error, { code: error.code || (error.outcome === 'not_sent' ? 'PROVIDER_UNAVAILABLE' : 'OPERATION_UNCERTAIN'), status: error.status || 502 });
       }
-      const payment = await applyProviderResult(ctx, row.id, result); await deliver(); return payment;
+      const payment = await applyProviderResult(ctx, row.id, result); await drainWebhooks(); return payment;
     },
     async getPayment(rawCtx, { paymentId }) { const ctx = normalizeContext(rawCtx), row = await select(pool, ctx, paymentId); if (!row) throw paymentError('NOT_FOUND', 'Платеж не найден', 404); return publicPayment(row); },
     async getPaymentByOrder(rawCtx, { externalOrderId }) { const ctx = normalizeContext(rawCtx), row = await select(pool, ctx, externalOrderId, true); if (!row) throw paymentError('NOT_FOUND', 'Платеж не найден', 404); return publicPayment(row); },
@@ -112,13 +160,19 @@ function createPayments({ pool, provider, onEvent }) {
     },
     async webhook(body) {
       const result = await provider.verifyWebhook(body);
-      const attempt = (await pool.query('SELECT payment_id FROM payment_attempts WHERE provider_id=$1 AND provider_account_id=$2 AND environment=$3 AND provider_payment_id=$4',
-        [provider.id, provider.accountId, provider.environment, result.providerPaymentId])).rows[0];
-      if (!attempt) throw paymentError('NOT_FOUND', 'Платеж для уведомления не найден', 404);
-      const row = (await pool.query('SELECT client_id,environment FROM payment_payments WHERE id=$1', [attempt.payment_id])).rows[0];
-      const payment = await applyProviderResult(row, attempt.payment_id, result); await deliver(); return payment;
+      if (!result?.providerPaymentId || !['pending', 'succeeded', 'canceled', 'failed'].includes(result.status)) throw paymentError('INVALID_REQUEST', 'Некорректное уведомление провайдера');
+      const payload = { providerPaymentId: result.providerPaymentId, status: result.status, resolution: result.resolution || 'known',
+        amountMinor: result.amountMinor, currency: result.currency, confirmationUrl: result.confirmationUrl || null, expiresAt: result.expiresAt || null };
+      const identity = `${payload.providerPaymentId}:${payload.status}`;
+      await pool.query(`INSERT INTO payment_webhook_inbox(provider_id,provider_account_id,environment,event_identity,payload_hash,payload)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+      [provider.id, provider.accountId, provider.environment, identity, payloadHash(payload), payload]);
+      await drainWebhooks();
+      return { accepted: true };
     },
     deliver,
+    drainWebhooks,
+    recoverCommands,
   };
 }
 module.exports = { createPayments };

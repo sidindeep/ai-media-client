@@ -1,3 +1,12 @@
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-workspace
+COPY web ./web
+COPY public ./public
+RUN pnpm check:web:vue && pnpm build:web
+
 FROM node:24-bookworm-slim AS runtime
 ARG CODEX_VERSION=0.155.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates chromium xvfb fonts-liberation util-linux \
@@ -10,8 +19,9 @@ RUN pnpm install --prod --frozen-lockfile --ignore-workspace
 COPY server.js ./
 COPY src ./src
 COPY public ./public
+COPY --from=frontend /app/public/vue ./public/vue
 COPY config ./config
-COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/resolve-git-commit.cjs ./scripts/
+COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/migrate-schema.cjs scripts/grant-runtime-role.cjs scripts/database-preflight.cjs scripts/resolve-git-commit.cjs ./scripts/
 COPY .git /tmp/media-git
 RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 RUN node src/server/build-info.js /opt/media-build.json /opt/media-commit
@@ -33,10 +43,11 @@ COPY public ./public
 COPY web ./web
 COPY config ./config
 COPY scripts/resolve-git-commit.cjs ./scripts/
+COPY scripts/check-server-syntax.cjs ./scripts/
 COPY .git /tmp/media-git
 RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 COPY test ./test
-COPY tools/load-test/codex-memory.cjs ./tools/load-test/
+COPY tools/load-test ./tools/load-test
 CMD ["node", "--test", "test/*.test.js"]
 
 FROM runtime AS production

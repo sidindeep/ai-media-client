@@ -1,5 +1,16 @@
 # Архитектура
 
+## Актуальный checkout (проверено 2026-09-27)
+
+Исполняемый веб-сервис и Telegram находятся в корне: `server.js`, `src/`,
+`web/src/`, `public/`, `compose.yaml`. PostgreSQL хранит аккаунты, историю,
+кредиты, задания и связи контента; приватное хранилище держит файлы. Один
+executor владеет платными отправками и фоновой работой, web-реплики обслуживают
+чтение и SSE по [контракту владения](specs/features/replica-ownership.md).
+Текущий checkout не содержит `desktop/`, поэтому расположенные ниже описания
+Electron и прежнего `web-tg/` являются историей архитектуры, а не картой
+доступных файлов или подтверждением собранного Windows-дистрибутива.
+
 ## Веб-сервис и Telegram (2026-09-17)
 
 В корне репозитория находятся Node HTTP-сервис server.js, браузерное представление public/ с собственными
@@ -38,4 +49,4 @@ flowchart LR
 
 Для основного окна заданы contextIsolation=true, nodeIntegration=false, sandbox=true. Не считать это аудитом всех IPC-методов: общий контроль отправителя применяется не ко всем обработчикам (см. known-issues.md).
 
-Текущая структура: веб/Telegram — корневые src/, public/, server.js, package.json, Dockerfile. Windows — desktop/src/, desktop/test/, desktop/scripts/ и desktop/package.json. Единственный дистрибутив — desktop/dist/queue-header. Данные сервиса — data/service, локальные .env не входят в Git.
+Историческая структура на 2026-09-17: веб/Telegram — корневые src/, public/, server.js, package.json, Dockerfile. Windows — desktop/src/, desktop/test/, desktop/scripts/ и desktop/package.json. Единственный предусмотренный дистрибутив — desktop/dist/queue-header. Данные сервиса — data/service, локальные .env не входят в Git.

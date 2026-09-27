@@ -8,7 +8,7 @@
 | Запуск веба и настроенного бота | pnpm start |
 | Проверка веба | pnpm check |
 | Тесты веба | pnpm test |
-| Изолированные контейнерные тесты платежей | pnpm test:payments:container |
+| Полные контейнерные тесты с PostgreSQL и Vue | docker compose --profile test run --build --rm tests |
 | Зависимости Windows | pnpm --dir desktop install --frozen-lockfile |
 | Запуск Windows | pnpm start:desktop |
 | Проверка Windows | pnpm check:desktop |
@@ -20,6 +20,9 @@
 | Docker сборка и запуск | docker compose up -d --build |
 | Подготовить новую заливку | pnpm release:bump |
 | Docker состояние | docker compose ps |
+| Миграции БД отдельной ролью | docker compose run --rm media node scripts/migrate-schema.cjs |
+| Read-only проверка данных перед DDL | docker compose exec -T media node scripts/database-preflight.cjs |
+| Выдать права ограниченной роли | docker compose run --rm media node scripts/grant-runtime-role.cjs |
 | Нагрузка на один отдельный Compose без генераций | [tools/load-test/README.md](load-test/README.md) |
 | Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
 | Зарегистрировать и перенести legacy-контент в каталог/S3 | pnpm migrate:content |
@@ -31,7 +34,7 @@
 
 Обязательный порядок после каждой правки: завершить целостный пакет изменений → `docker compose up -d --build` → дождаться готовности сервисов → проверить `docker compose ps` и `Invoke-RestMethod -Uri http://127.0.0.1:3000/api/health` → только затем выполнять и засчитывать итоговые проверки изменённого поведения. Проверки, выполненные до Docker-пересборки или только на host runtime, являются предварительными и должны быть повторены в нужном объёме на свежем контейнере. Если Docker-сборка, сервисы или health не подтверждены, задача остаётся незавершённой с явным blocker.
 
-Единственный output: desktop/dist/queue-header. EXE: desktop/dist/queue-header/win-unpacked/AI Media Client.exe. Не обходить desktop/scripts/single-distribution.cjs. Если EXE занят, закрыть приложение штатно с сохранением черновиков. Для smoke пакета задайте AI_CLIENT_PACKAGED_PATH абсолютным путём к desktop/dist/queue-header/win-unpacked/resources/app.asar и добавьте --packaged к smoke-команде.
+Команды desktop выше относятся к архивному клиенту: исходного `desktop/` в текущем checkout нет. Если владелец решит вернуть клиент, единственным output будет desktop/dist/queue-header; нельзя обходить desktop/scripts/single-distribution.cjs.
 
 Веб: http://127.0.0.1:3000; health: /api/health. Конфиг: .env, образец .env.example. Данные: data/service, включая logs/generation.jsonl. Docker монтирует тот же каталог. Остановка Node: Ctrl+C. Не запускайте одновременно Node и Docker с одними данными.
 
@@ -51,7 +54,7 @@ Codex и платят внутренними кредитами. Настрой�
 `docker compose exec codex codex login --device-auth` — открыть выданную ссылку
 в своём браузере и ввести код из терминала хоста.
 
-Профиль Electron, история, ключи и черновики остаются в прежнем userData. Не читать его без отдельной задачи. Каталог обновляется командами node scripts/import-kie.js и node scripts/import-special.js из desktop/ (сетевые операции).
+Исторический профиль Electron, ключи и черновики не читать без отдельной задачи. Команды импорта из `desktop/` доступны только после восстановления архива.
 
 GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настройки источника: tools/project-memory/instruction-kit.json.
 
@@ -60,8 +63,8 @@ GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настр
 Аккаунты: [PostgreSQL/OAuth/кредиты](../docs/accounts-and-credits.md). По умолчанию
 MEDIA_AUTH_ENABLED=true; DATABASE_URL обязателен. `.env.example` содержит только
 пустые секреты. Для полноценного входа нужны Google/VK приложения и HTTPS origin.
-Схема v4 применяется на старте транзакционно, старая JSON-история не мигрирует.
+Базовая схема v10 и новые миграции до v13 применяются транзакционно только при необходимости; checksum проверяется при каждом старте. Для отдельного запуска миграций: `docker compose run --rm media node scripts/migrate-schema.cjs`; затем runtime может работать с `MEDIA_DB_MIGRATE=false`. Старая JSON-история не мигрирует.
 Тарифы config/native-prices.json: Nano Banana 2 Lite и все режимы Codex —
 4 внутренних кредита за запрос по решению владельца от 2026-09-18;
 остальные цены публикуются отдельно.
-Docker копирует этот конфиг. В auth-режиме Telegram отключён до привязки аккаунтов.
+Docker копирует этот конфиг. В auth-режиме Telegram работает для пользователей с подтверждённой привязкой при настроенном токене.

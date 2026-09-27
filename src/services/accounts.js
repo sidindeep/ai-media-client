@@ -110,11 +110,11 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
       for (const row of rows) await get(row.account_id);
     },
     async scope(user, selected) {
-      if (selected && user.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
+      if (selected && selected !== user.id && user.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
       if (selected === 'legacy') return {
         ...legacy,
         async dispatch(method, args = []) {
-          if (method === 'createTask') throw new Error('Для генерации выберите аккаунт с кредитным балансом');
+          if (method === 'createTask') throw Object.assign(new Error('Для генерации выберите аккаунт с кредитным балансом'), { status: 400, code: 'ACCOUNT_REQUIRED' });
           return legacy.dispatch(method, args);
         }
       };

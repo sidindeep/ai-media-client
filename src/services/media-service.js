@@ -81,7 +81,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     if (pendingSaves.has(id)) return pendingSaves.get(id);
     const operation = (async () => {
       const record = typeof history.get === 'function' ? await history.get(id) : (await history.list()).find(item => item.id === id);
-      if (record?.state !== 'success') throw new Error('Результат ещё не готов');
+      if (record?.state !== 'success') throw Object.assign(new Error('Результат ещё не готов'), { status: 400, code: 'RESULT_NOT_READY' });
       const links = urls(record);
       if (!links.length) throw new Error('Нет ссылок на результат');
       const localFiles = [...(record.localFiles || [])];
@@ -290,15 +290,15 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     },
     async sourceFile(id) {
       if (/^[a-f0-9-]{36}$/.test(id) && content) return content.file(accountId,id);
-      if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Исходник не найден');
+      if (!/^[a-f0-9]{64}$/.test(id)) throw Object.assign(new Error('Исходник не найден'), { status: 400, code: 'SOURCE_NOT_FOUND' });
       const metadata = typeof sourceMetadata.get === 'function' ? await sourceMetadata.get(id) : (await sourceMetadata.list()).find(item => item.id === id);
-      if (!metadata) throw new Error('Исходник не найден');
+      if (!metadata) throw Object.assign(new Error('Исходник не найден'), { status: 400, code: 'SOURCE_NOT_FOUND' });
       if (storage && await storage.head(assets.key(id)).then(() => true).catch(() => false)) return { storageKey: assets.key(id), name: metadata.name, type: metadata.type };
       return { path: path.join(assets.directory, id), type: metadata.type };
     },
     async resultFile(id, index) {
       const record = typeof history.get === 'function' ? await history.get(id) : (await history.list()).find(item => item.id === id);
-      if (!Number.isInteger(index) || index < 0 || !record?.localFiles?.[index]) throw new Error('Файл не найден');
+      if (!Number.isInteger(index) || index < 0 || !record?.localFiles?.[index]) throw Object.assign(new Error('Файл не найден'), { status: 400, code: 'RESULT_NOT_FOUND' });
       const file = record.localFiles[index];
       if (file.assetId) {
         const stored = await content.file(accountId,file.assetId);
@@ -442,7 +442,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           if (balance === null) throw new Error('Некорректный баланс');
           return { balance, audit: null };
         }
-        default: throw new Error('Метод сервиса не поддерживается');
+        default: throw Object.assign(new Error('Метод сервиса не поддерживается'), { status: 400, code: 'UNSUPPORTED_METHOD' });
       }
     },
     async close() {

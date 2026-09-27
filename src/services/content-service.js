@@ -4,6 +4,8 @@ const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { createHash, randomUUID } = require('node:crypto');
+const { isIP } = require('node:net');
+const { lookup } = require('node:dns/promises');
 const { transaction } = require('../database/database');
 
 const UUID = /^[a-f0-9-]{36}$/;
@@ -12,6 +14,25 @@ const EXTENSIONS = new Map([
   ['image/png', '.png'], ['image/jpeg', '.jpg'], ['image/webp', '.webp'], ['image/gif', '.gif'], ['image/svg+xml', '.svg'],
   ['video/mp4', '.mp4'], ['video/webm', '.webm'], ['video/quicktime', '.mov'],
 ]);
+function publicResultUrl(value) {
+  const url = new URL(value);
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (url.protocol !== 'https:' || url.username || url.password || !host || host === 'localhost'
+    || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) throw new Error('Недопустимый адрес результата');
+  const kind = isIP(host);
+  if (kind === 6) {
+    const first = Number.parseInt(host.split(':')[0], 16);
+    if (!Number.isInteger(first) || first < 0x2000 || first > 0x3fff) throw new Error('Недопустимый адрес результата');
+  }
+  if (kind === 4) {
+    const [a, b] = host.split('.').map(Number);
+    if (a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && (b === 0 || b === 168)) || (a === 198 && (b === 18 || b === 19)))
+      throw new Error('Недопустимый адрес результата');
+  }
+  return url;
+}
 
 function cleanName(value, fallback = 'content') {
   const name = path.basename(String(value || fallback)).replace(/[\u0000-\u001f\u007f]/g, '').trim();
@@ -41,9 +62,11 @@ async function streamHash(stream) {
   return { size, sha256: hash.digest('hex') };
 }
 
-async function createContentService({ pool, storage, dataDirectory, fetchImpl = fetch, onChange = () => {}, interval = 1000, concurrency = 3, background = true }) {
+async function createContentService({ pool, storage, dataDirectory, fetchImpl = fetch, onChange = () => {}, interval = 1000, concurrency = 3, background = true,
+  maxDownloadBytes = 256 * 1024 * 1024 }) {
   if (!pool || !storage) return null;
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) throw new Error('Некорректная параллельность сохранения');
+  if (!Number.isSafeInteger(maxDownloadBytes) || maxDownloadBytes < 1) throw new Error('Некорректный лимит размера результата');
   const stagingDirectory = path.join(dataDirectory, 'content-staging');
   await fs.mkdir(stagingDirectory, { recursive: true });
   const workerFile = path.join(dataDirectory, 'content-worker-id');
@@ -115,8 +138,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
     } catch (error) { await fs.unlink(filename).catch(() => {}); throw error; }
   }
   async function createFromUrl(accountId, { url, name = 'result', origin = {} }) {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) throw new Error('Для сохранения результата требуется HTTPS-ссылка');
+    const parsed = publicResultUrl(url);
     const assetId = randomUUID();
     return insertAsset(accountId, assetId, { name, type: 'application/octet-stream', origin }, { type: 'url', url: parsed.toString() });
   }
@@ -140,13 +162,39 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
   }
   async function download(job, asset) {
     const filename = stagePath(asset.id), temporary = filename + '.part';
-    const response = await fetchImpl(job.source.url, { signal: AbortSignal.timeout(300000) });
+    let target = publicResultUrl(job.source.url);
+    const signal = AbortSignal.timeout(300000);
+    let response;
+    for (let redirects = 0; redirects <= 3; redirects++) {
+      if (fetchImpl === fetch && !isIP(target.hostname)) {
+        const addresses = await lookup(target.hostname, { all: true });
+        if (!addresses.length || addresses.some(item => {
+          try { publicResultUrl(`https://${item.family === 6 ? `[${item.address}]` : item.address}/`); return false; }
+          catch { return true; }
+        })) throw new Error('DNS результата указывает на недопустимый адрес');
+      }
+      response = await fetchImpl(target, { signal, redirect: 'manual' });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      if (redirects === 3) throw new Error('Слишком много перенаправлений результата');
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      if (!location) throw new Error('Перенаправление результата без адреса');
+      target = publicResultUrl(new URL(location, target));
+    }
     if (!response.ok || !response.body) throw new Error(`Скачивание результата: HTTP ${response.status}`);
-    if (response.url && new URL(response.url).protocol !== 'https:') throw new Error('Небезопасное перенаправление результата');
+    if (response.url) publicResultUrl(response.url);
+    const disk = await fs.statfs(stagingDirectory);
+    if (disk.bavail * disk.bsize < maxDownloadBytes + 64 * 1024 * 1024) throw new Error('Недостаточно места для сохранения результата');
+    const declaredSize = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declaredSize) && declaredSize > maxDownloadBytes) throw new Error('Результат превышает лимит сохранения');
     const type = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
     if (!TYPES.test(type)) throw new Error('Провайдер вернул неподдерживаемый тип контента');
     const hash = createHash('sha256'); let size = 0;
-    const meter = new Transform({ transform(chunk, _encoding, callback) { size += chunk.length; hash.update(chunk); callback(null, chunk); } });
+    const meter = new Transform({ transform(chunk, _encoding, callback) {
+      size += chunk.length;
+      if (size > maxDownloadBytes) return callback(new Error('Результат превышает лимит сохранения'));
+      hash.update(chunk); callback(null, chunk);
+    } });
     try { await pipeline(Readable.fromWeb(response.body), meter, createWriteStream(temporary, { flags: 'wx' })); await fs.rename(temporary, filename); }
     finally { await fs.unlink(temporary).catch(() => {}); }
     if (!size) throw new Error('Провайдер вернул пустой файл');

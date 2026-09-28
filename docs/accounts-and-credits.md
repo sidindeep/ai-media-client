@@ -1,9 +1,9 @@
 # Аккаунты, OAuth и нативные кредиты
 
-Веб-сервис поддерживает отдельные аккаунты с входом Google и VK ID. Первый
+Веб-сервис поддерживает отдельные аккаунты с входом Google, VK ID, Яндекс ID, Telegram Login, MAX и по подтверждённому email с паролем. Новые способы отображаются только после настройки. Первый
 успешный вход создаёт пользователя со стартовым пакетом на 150 кредитов. Повторный вход по тому
 же `provider + subject` возвращает тот же аккаунт. Email не является ключом
-аккаунта; автоматического объединения Google/VK нет. Новые способы входа
+аккаунта; автоматического объединения аккаунтов разных провайдеров нет. Новые способы входа
 добавляются адаптерами `authorize/exchange` в `src/auth/providers.js`.
 
 ## Подключение
@@ -20,6 +20,25 @@
 4. Создайте VK ID application с callback
    `https://ваш-домен/auth/vk/callback`. Задайте `VK_CLIENT_ID`. Используется
    Authorization Code с PKCE и `device_id`; старый implicit VK OAuth не используется.
+   Для Яндекс ID зарегистрируйте приложение с callback
+   `https://ваш-домен/auth/yandex/callback` и задайте `YANDEX_CLIENT_ID`,
+   `YANDEX_CLIENT_SECRET`. Для Telegram Login добавьте origin и
+   `https://ваш-домен/auth/telegram/callback` в разрешённые адреса у @BotFather,
+   затем задайте `TELEGRAM_LOGIN_CLIENT_ID`, `TELEGRAM_LOGIN_CLIENT_SECRET`.
+   Эти значения отличаются от токена Telegram-бота для уведомлений.
+   Для email-входа настройте SMTP: `MEDIA_EMAIL_AUTH_ENABLED=true`,
+   `MEDIA_SMTP_HOST`, `MEDIA_SMTP_PORT`, `MEDIA_SMTP_USER`,
+   `MEDIA_SMTP_PASSWORD`, `MEDIA_SMTP_FROM`. На порту 465 используется TLS,
+   на других портах обязателен STARTTLS. Регистрация активируется после перехода
+   по ссылке в письме; ссылка действует 30 минут. Сброс пароля также требует
+   письма и завершает все прежние сессии аккаунта. Пароль — от 12 до 128 символов,
+   в базе хранится только scrypt-хеш.
+   Для MAX нужен бот с мини-приложением на платформе MAX для партнёров.
+   Задайте URL мини-приложения `https://ваш-домен/auth/max/confirm`,
+   `MAX_LOGIN_BOT_NAME` и `MAX_LOGIN_BOT_TOKEN`. Вход из браузера открывает
+   мини-приложение через одноразовый диплинк; сервер проверяет подписанные
+   `WebAppData`, включая `start_param`, и возвращает сессию только исходной
+   вкладке с HttpOnly-cookie. Токен бота хранится только на сервере.
 5. Задайте `MEDIA_ADMIN_IDENTITIES=google:subject,vk:subject` для нужных
    идентификаторов разработчика. Узнать свой подтверждённый subject после входа
    можно в `/api/account`, поле `identities`. Перезапустите сервер и войдите снова.
@@ -64,9 +83,12 @@ consumed_by/consumed_at и событие журнала ролей. Это не
 media_admin_invitations и media_role_audit; прежние данные сохранены.
 
 OAuth-адаптеры проверены подставными HTTP-ответами. Живой вход требует регистрации
-приложений и настройки callback у Google/VK. Источники протоколов:
+приложений и настройки callback у соответствующего провайдера. Источники протоколов:
 [Google Web OAuth](https://developers.google.com/identity/protocols/oauth2/web-server),
-[официальный VK ID SDK](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts).
+[официальный VK ID SDK](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts),
+[Яндекс ID](https://yandex.ru/dev/id/doc/ru/codes/code-url),
+[Telegram Login](https://core.telegram.org/bots/telegram-login),
+[MAX Mini Apps](https://dev.max.ru/docs/webapps/validation).
 
 ## Данные и доступ
 

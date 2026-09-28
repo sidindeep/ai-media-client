@@ -19,7 +19,7 @@ const systemErrors = require('../system-errors');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const publicAssets = new Set(['web.js', 'web.css', 'account-menu.js', 'native-costs.js', 'admin.js', 'codex-models.js']);
-const publicPageAssets = new Set(['brand-logo.png', 'landing.css', 'landing.js', 'legal.css', 'login.js', 'web.css', 'version.js', 'theme.css', 'theme.js', 'localization-en.js', 'localization-runtime.js']);
+const publicPageAssets = new Set(['brand-logo.png', 'landing.css', 'landing.js', 'legal.css', 'login.js', 'max-wait.js', 'max-confirm.js', 'web.css', 'version.js', 'theme.css', 'theme.js', 'localization-en.js', 'localization-runtime.js']);
 const landingModelIcons = new Set([
   'openai.svg', 'google.svg', 'bytedance.svg', 'kling.svg', 'grok.svg', 'flux.svg',
   'hailuo.svg', 'minimax.svg', 'ideogram.svg', 'qwen.svg', 'recraft.svg', 'topaz.svg',
@@ -97,11 +97,11 @@ async function readBody(req, limit) {
   for await (const chunk of req) { size += chunk.length; if (size > limit) throw new Error('Файл или запрос слишком большой'); chunks.push(chunk); }
   return Buffer.concat(chunks);
 }
-function json(res, status, value) {
-  res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+function json(res, status, value, extraHeaders = {}) {
+  res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extraHeaders });
   res.end(JSON.stringify(value));
 }
-async function sendFile(req, res, filename, type, attachment = false) {
+async function sendFile(req, res, filename, type, attachment = false, extraHeaders = {}) {
   const stat = await fs.stat(filename);
   if (!stat.isFile()) throw new Error('Файл не найден');
   let start = 0, end = stat.size - 1, status = 200;
@@ -113,12 +113,15 @@ async function sendFile(req, res, filename, type, attachment = false) {
     status = 206;
   }
   const contentType = type || mime[path.extname(filename).toLowerCase()] || 'application/octet-stream';
-  res.writeHead(status, {
+  const responseHeaders = {
     ...headers, 'Content-Type': contentType, 'Content-Length': stat.size ? end - start + 1 : 0,
     'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
     ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${stat.size}` } : {}),
-    ...(attachment ? { 'Content-Disposition': `attachment; filename="${path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')}"` } : {})
-  });
+    ...(attachment ? { 'Content-Disposition': `attachment; filename="${path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')}"` } : {}),
+    ...extraHeaders
+  };
+  if (responseHeaders['X-Frame-Options'] === null) delete responseHeaders['X-Frame-Options'];
+  res.writeHead(status, responseHeaders);
   if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
   const stream = createReadStream(filename, { start, end });
   stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
@@ -223,15 +226,19 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       const sameOrigin = !req.headers.origin || req.headers.origin === `http://${req.headers.host}` || (config.publicOrigin && req.headers.origin === config.publicOrigin);
       const callbackProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/callback$/.exec(url.pathname)?.[1];
-      const oauthCallback = req.method === 'GET' && auth?.providers().some(provider => provider.id === callbackProvider);
+      const oauthCallback = req.method === 'GET' && auth?.providers().some(provider => !['email', 'max'].includes(provider.id) && provider.id === callbackProvider);
+      const emailVerify = req.method === 'GET' && url.pathname === '/auth/email/verify' && Boolean(auth?.email);
+      const maxStart = req.method === 'GET' && url.pathname === '/auth/max/start' && Boolean(auth?.max);
+      const maxPage = ['GET', 'HEAD'].includes(req.method) && ['/auth/max/wait', '/auth/max/confirm'].includes(url.pathname) && Boolean(auth?.max);
       const oauthStartProvider = /^\/auth\/([a-z][a-z0-9_-]*)\/start$/.exec(url.pathname)?.[1];
-      const oauthStart = req.method === 'GET' && auth?.providers().some(provider => provider.id === oauthStartProvider);
+      const oauthStart = req.method === 'GET' && auth?.providers().some(provider => !['email', 'max'].includes(provider.id) && provider.id === oauthStartProvider);
       const pageNavigation = ['GET', 'HEAD'].includes(req.method)
         && (['/', '/index.html', '/app', '/app/', '/legacy', '/legacy/', '/login'].includes(url.pathname) || Boolean(legalPage))
         && req.headers['sec-fetch-mode'] === 'navigate'
         && req.headers['sec-fetch-dest'] === 'document';
-      const allowedTopLevelNavigation = pageNavigation || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
-      if (!allowedTopLevelNavigation && !oauthCallback && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+      const allowedTopLevelNavigation = pageNavigation || maxPage || (oauthStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document')
+        || (maxStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
+      if (!allowedTopLevelNavigation && !oauthCallback && !emailVerify && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       if (config.replicaRole === 'web' && (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
         || /^\/api\/(?:codex|routerai|admin)\//.test(url.pathname)
         || url.pathname === '/api/startup' || url.pathname === '/api/account/telegram')) {
@@ -303,7 +310,51 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
       const authRoute = /^\/auth\/([a-z][a-z0-9_-]*)\/(start|callback)$/.exec(url.pathname);
-      if (auth && req.method === 'GET' && authRoute) {
+      if (auth && req.method === 'GET' && authRoute && !['email', 'max'].includes(authRoute[1])) {
+      if (auth?.max && maxStart) {
+        if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
+        if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
+        const flow = await auth.max.begin();
+        return redirect(flow.location, flow.cookie);
+      }
+      if (auth?.max && maxPage) {
+        const file = url.pathname.endsWith('/wait') ? 'max-wait.html' : 'max-confirm.html';
+        const frameHeaders = file === 'max-confirm.html' ? { 'X-Frame-Options': null,
+          'Content-Security-Policy': headers['Content-Security-Policy'].replace("frame-ancestors 'none'", 'frame-ancestors https://max.ru https://*.max.ru') } : {};
+        return sendFile(req, res, path.join(config.root, 'public', file), undefined, false, frameHeaders);
+      }
+      if (auth?.max && req.method === 'GET' && url.pathname === '/auth/max/link') {
+        try { return json(res, 200, { url: await auth.max.link(req) }); }
+        catch (error) { return json(res, 400, { error: error.message }); }
+      }
+      if (auth?.max && req.method === 'GET' && url.pathname === '/auth/max/status') {
+        try { const result = await auth.max.status(req); return json(res, 200, { ready: result.ready }, result.cookie ? { 'Set-Cookie': result.cookie } : {}); }
+        catch (error) { return json(res, 400, { error: error.message }); }
+      }
+      if (auth?.max && req.method === 'POST' && url.pathname === '/auth/max/confirm') {
+        if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
+        if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
+        if (!String(req.headers['content-type'] || '').startsWith('application/json') || !req.headers.origin || !sameOrigin) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+        try { const body = JSON.parse((await readBody(req, 10000)).toString('utf8')); await auth.max.confirm(body.initData); return json(res, 200, { ok: true }); }
+        catch (error) { return json(res, 400, { error: error.message || 'Вход MAX не выполнен' }); }
+      }
+      if (auth?.email && emailVerify) {
+        try { return redirect('/app', await auth.email.verify(req, url.searchParams.get('token'))); }
+        catch { return redirect('/login?error=verify'); }
+      }
+      if (auth?.email && req.method === 'POST' && /^\/auth\/email\/(register|login|forgot|reset)$/.test(url.pathname)) {
+        if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
+        if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
+        if (!String(req.headers['content-type'] || '').startsWith('application/json') || !req.headers.origin || !sameOrigin) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
+        try {
+          const body = JSON.parse((await readBody(req, 2048)).toString('utf8'));
+          if (url.pathname.endsWith('/register')) { await auth.email.register(body.email, body.password); return json(res, 200, { ok: true }); }
+          if (url.pathname.endsWith('/forgot')) { await auth.email.forgot(body.email); return json(res, 200, { ok: true }); }
+          if (url.pathname.endsWith('/reset')) { await auth.email.reset(body.token, body.password); return json(res, 200, { ok: true }); }
+          const session = await auth.email.login(req, body.email, body.password);
+          return json(res, 200, { ok: true }, { 'Set-Cookie': session });
+        } catch (error) { return json(res, error.message === 'Неверный email или пароль' ? 401 : 400, { error: error.message || 'Вход не выполнен' }); }
+      }
         if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
         if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
         if (authRoute[2] === 'start') { const result = await auth.begin(authRoute[1]); return redirect(result.location, result.cookie); }

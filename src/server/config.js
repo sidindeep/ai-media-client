@@ -69,6 +69,14 @@ function loadConfig(env = process.env) {
   if (!['yookassa', 'yookassa-stub'].includes(paymentProvider)) throw new Error('Неизвестный платёжный провайдер');
   if (paymentProvider === 'yookassa-stub' && paymentEnvironment !== 'test') throw new Error('Заглушка ЮKassa доступна только в test');
   if (env.MEDIA_SALES_ENABLED === 'true' && env.MEDIA_PAYMENTS_ENABLED !== 'true') throw new Error('Продажи нельзя включить без платёжного модуля');
+  const emailEnabled = env.MEDIA_EMAIL_AUTH_ENABLED === 'true';
+  if (env.MEDIA_EMAIL_AUTH_ENABLED && !['true', 'false'].includes(env.MEDIA_EMAIL_AUTH_ENABLED)) throw new Error('MEDIA_EMAIL_AUTH_ENABLED должен быть true или false');
+  if (emailEnabled && (!env.MEDIA_SMTP_HOST || !env.MEDIA_SMTP_USER || !env.MEDIA_SMTP_PASSWORD || !env.MEDIA_SMTP_FROM)) {
+    throw new Error('Для входа по email нужны MEDIA_SMTP_HOST, MEDIA_SMTP_USER, MEDIA_SMTP_PASSWORD и MEDIA_SMTP_FROM');
+  }
+  if ((env.MAX_LOGIN_BOT_NAME || env.MAX_LOGIN_BOT_TOKEN) && (!/^[A-Za-z0-9_]{3,64}$/.test(env.MAX_LOGIN_BOT_NAME || '') || !env.MAX_LOGIN_BOT_TOKEN)) {
+    throw new Error('Для входа через MAX нужны корректные MAX_LOGIN_BOT_NAME и MAX_LOGIN_BOT_TOKEN');
+  }
   return {
     root, host, port, dataDirectory, replicaRole, executorUrl: executorUrl?.origin || '', executorPublicOrigin,
     kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
@@ -107,7 +115,12 @@ function loadConfig(env = process.env) {
       sessionSeconds: integer(env.MEDIA_SESSION_SECONDS, 604800, 300, 2592000),
       adminIdentities: (env.MEDIA_ADMIN_IDENTITIES || '').split(',').map(s => s.trim()).filter(Boolean),
       google: { clientId: env.GOOGLE_CLIENT_ID || '', clientSecret: env.GOOGLE_CLIENT_SECRET || '' },
-      vk: { clientId: env.VK_CLIENT_ID || '' }
+      vk: { clientId: env.VK_CLIENT_ID || '' },
+      yandex: { clientId: env.YANDEX_CLIENT_ID || '', clientSecret: env.YANDEX_CLIENT_SECRET || '' },
+      telegram: { clientId: env.TELEGRAM_LOGIN_CLIENT_ID || '', clientSecret: env.TELEGRAM_LOGIN_CLIENT_SECRET || '' },
+      email: { enabled: emailEnabled, smtp: { host: env.MEDIA_SMTP_HOST || '', port: integer(env.MEDIA_SMTP_PORT, 587, 1, 65535),
+        user: env.MEDIA_SMTP_USER || '', password: env.MEDIA_SMTP_PASSWORD || '', from: env.MEDIA_SMTP_FROM || '' } },
+      max: { botName: env.MAX_LOGIN_BOT_NAME || '', botToken: env.MAX_LOGIN_BOT_TOKEN || '' }
     }
   };
 }

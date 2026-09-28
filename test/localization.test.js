@@ -34,7 +34,7 @@ test('standalone pages have English text for every Russian static fragment', asy
   const context = { window: {} };
   vm.runInNewContext(script, context);
   const english = context.window.aiMediaEnglish;
-  const pages = ['login.html', 'admin.html', 'index.html',
+  const pages = ['login.html', 'max-wait.html', 'max-confirm.html', 'admin.html', 'index.html',
     'legal/terms.html', 'legal/privacy.html', 'legal/personal-data-consent.html', 'legal/offer.html'];
   const missing = [];
   for (const page of pages) {

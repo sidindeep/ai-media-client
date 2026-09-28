@@ -1,6 +1,8 @@
 const { randomBytes, randomUUID, createHash } = require('node:crypto');
 const { transaction } = require('../database/database');
 const { createProviders } = require('./providers');
+const { createEmailAuth } = require('./email');
+const { createMaxAuth } = require('./max-login');
 const { ensureDefaultChatRow } = require('../services/workspaces');
 const token = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -11,10 +13,22 @@ function createAuth({ pool, config, providers = createProviders(config), starter
   const sessionName = secure ? '__Host-media-session' : 'media-session';
   const flowName = secure ? '__Host-media-flow' : 'media-flow';
   const sessionSeconds = config.sessionSeconds;
+  const issueSession = async (client, req, accountId) => {
+    const raw = token();
+    const previous = cookieValue(req, sessionName);
+    if (previous) await client.query('DELETE FROM media_sessions WHERE token_hash=$1', [hash(previous)]);
+    await client.query('INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)', [hash(raw), accountId, new Date(Date.now() + sessionSeconds * 1000)]);
+    return cookie(sessionName, raw, sessionSeconds);
+  };
+  const email = createEmailAuth({ pool, config, starterPack, issueSession });
+  const max = createMaxAuth({ pool, config, starterPack, issueSession, cookieValue });
   return {
     sessionName,
+    email,
+    max,
     async identities(accountId) { return (await pool.query('SELECT provider,subject,verified_email AS email FROM media_identities WHERE account_id=$1', [accountId])).rows; },
-    providers: () => [...providers].map(([id, adapter]) => ({ id, label: adapter.label })),
+    providers: () => [...providers].map(([id, adapter]) => ({ id, label: adapter.label }))
+      .concat(max ? [{ id: 'max', label: 'MAX' }] : [], email ? [{ id: 'email', label: 'Email' }] : []),
     async user(req) {
       const raw = cookieValue(req, sessionName);
       if (!/^[\w-]{43}$/.test(raw)) return null;
@@ -38,7 +52,7 @@ function createAuth({ pool, config, providers = createProviders(config), starter
       try { profile = await adapter.exchange({ state, code: params.get('code'), deviceId: params.get('device_id'), verifier: flow.verifier, redirectUri: `${config.origin}/auth/${provider}/callback` }); }
       catch { throw new Error('Не удалось подтвердить аккаунт у провайдера'); }
       if (typeof profile.subject !== 'string' || !profile.subject || profile.subject.length > 255) throw new Error('Некорректный аккаунт');
-      const raw = token();
+      let sessionCookie;
       await transaction(pool, async client => {
         await client.query('SELECT pg_advisory_xact_lock(18274692)');
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${provider}:${profile.subject}`]);
@@ -63,11 +77,9 @@ function createAuth({ pool, config, providers = createProviders(config), starter
           }
         }
         // Rotate any previous session in this browser. Email never merges identities.
-        const previous = cookieValue(req, sessionName);
-        if (previous) await client.query('DELETE FROM media_sessions WHERE token_hash=$1', [hash(previous)]);
-        await client.query('INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)', [hash(raw), identity.account_id, new Date(Date.now() + sessionSeconds * 1000)]);
+        sessionCookie = await issueSession(client, req, identity.account_id);
       });
-      return [cookie(sessionName, raw, sessionSeconds), cookie(flowName, '', 0)];
+      return [sessionCookie, cookie(flowName, '', 0)];
     },
     async logout(req) {
       const raw = cookieValue(req, sessionName);

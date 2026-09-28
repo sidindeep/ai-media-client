@@ -5,6 +5,41 @@ export function mediaFieldOptions(field: MediaField): unknown[] {
   return field.options || field.schema?.enum || [];
 }
 
+export function minimumPricingFieldValue(field: MediaField): unknown {
+  if (field.type === 'files') return undefined;
+  const key = field.key.toLowerCase();
+  const options = mediaFieldOptions(field);
+  if ((key === 'audio' || key === 'generate_audio')
+    && (field.type === 'boolean' || field.schema?.type === 'boolean' || options.includes(false))) {
+    return options.length && !options.includes(false) ? field.default ?? field.apiDefault : false;
+  }
+  if (key === 'resolution' || key === 'size') {
+    const ranked = options.map(value => {
+      const label = String(value).toLowerCase();
+      const pixels = /^(\d+)(p|k)$/.exec(label);
+      const dimensions = /^(\d+)x(\d+)$/.exec(label);
+      const rank = pixels ? Number(pixels[1]) * (pixels[2] === 'k' ? 1000 : 1)
+        : dimensions ? Number(dimensions[1]) * Number(dimensions[2]) : NaN;
+      return { value, rank };
+    }).filter(item => Number.isFinite(item.rank));
+    if (ranked.length) return ranked.reduce((lowest, item) => item.rank < lowest.rank ? item : lowest).value;
+  }
+  if (key === 'quality') {
+    const cheapest = ['draft', 'low', 'basic', 'standard']
+      .map(label => options.find(value => String(value).toLowerCase() === label))
+      .find(value => value !== undefined);
+    if (cheapest !== undefined) return cheapest;
+  }
+  if (/^(?:duration|n|num_images|num_outputs|count|steps)$/.test(key)) {
+    const numbers = options.map(Number).filter(value => Number.isFinite(value) && value > 0);
+    if (numbers.length) return Math.min(...numbers);
+    const minimum = Number(field.min ?? field.schema?.minimum);
+    if (Number.isFinite(minimum) && minimum > 0) return minimum;
+    if (/^(?:n|num_images|num_outputs|count)$/.test(key)) return 1;
+  }
+  return field.default ?? field.apiDefault;
+}
+
 function matchesOption(option: unknown, value: unknown) {
   return typeof option === 'number' || typeof value === 'number'
     ? Number(option) === Number(value)
@@ -60,6 +95,10 @@ export function normalizeMediaInput(fields: MediaField[], input: Record<string, 
         normalized[field.key] = mediaFileValue(field, Array.isArray(value) ? value : [value]);
       }
       continue;
+    }
+    if (normalized[field.key] === undefined) {
+      const minimum = minimumPricingFieldValue(field);
+      if (minimum !== undefined) normalized[field.key] = minimum;
     }
     const options = mediaFieldOptions(field);
     const value = normalized[field.key];

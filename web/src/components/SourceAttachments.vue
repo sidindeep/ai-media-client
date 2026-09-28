@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { MediaField } from '../types';
 import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
@@ -19,8 +19,21 @@ const fileFields = computed(() => orderedFileFields(props.fields.filter(field =>
 const frameFields = computed(() => frameFieldPair(fileFields.value));
 const otherFileFields = computed(() => frameFields.value
   ? fileFields.value.filter(field => !frameFields.value!.includes(field)) : fileFields.value);
-const apimartReferenceFields = computed(() => studio.provider === 'apimart'
-  ? props.fields.filter(isReferenceField) : []);
+watch(() => [studio.provider, props.fields] as const, () => {
+  if (studio.provider !== 'apimart') return;
+  const input = { ...studio.mediaInput };
+  let changed = false;
+  for (const field of props.fields.filter(isReferenceField)) {
+    if (!(field.key in input)) continue;
+    const refs = new Set(studio.sourceFiles.filter(file => file.fieldKey === field.key).map(file => file.ref));
+    const previous = input[field.key];
+    const values = (Array.isArray(previous) ? previous : [previous]).filter(value => refs.has(String(value)));
+    const next = field.type === 'files' ? mediaFileValue(field, values) : undefined;
+    if (next === undefined) delete input[field.key]; else input[field.key] = next;
+    changed = true;
+  }
+  if (changed) studio.mediaInput = input;
+}, { immediate: true });
 const hasSourcePicker = computed(() => studio.provider === 'codex'
   ? studio.currentCodexModel?.inputModalities?.includes('image') === true
   : ['media', 'apimart', 'routerai'].includes(studio.provider) && fileFields.value.length > 0);
@@ -47,23 +60,6 @@ function dropFieldLabel(field: MediaField) {
   if (field === frameFields.value?.[0]) return t('composer.frame.first');
   if (field === frameFields.value?.[1]) return t('composer.frame.last');
   return field.label || field.key;
-}
-function apimartReferences(field: MediaField) {
-  const value = studio.mediaInput[field.key];
-  return Array.isArray(value) ? value.filter(item => !String(item).startsWith('content:')).join('\n')
-    : String(value || '').startsWith('content:') ? '' : String(value || '');
-}
-function updateApimartReferences(field: MediaField, event: Event) {
-  const value = (event.target as HTMLTextAreaElement).value.trim();
-  const previous = studio.mediaInput[field.key];
-  const uploaded = Array.isArray(previous) ? previous.filter(item => String(item).startsWith('content:')) : [];
-  const next = field.schema?.type === 'array' ? [...uploaded, ...value.split(/\r?\n/).filter(Boolean)] : value || undefined;
-  const input = { ...studio.mediaInput };
-  if (next === undefined || Array.isArray(next) && !next.length) delete input[field.key]; else input[field.key] = next;
-  studio.mediaInput = input;
-  if (field.schema?.type !== 'array' && value) {
-    studio.sourceFiles = studio.sourceFiles.filter(file => file.fieldKey !== field.key);
-  }
 }
 function matchesAccept(file: File, accept?: string) {
   const accepted = String(accept || '').split(',').map(value => value.trim().toLowerCase().replace(/\.+$/, '')).filter(Boolean);
@@ -248,12 +244,6 @@ onBeforeUnmount(() => {
       <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(index)">×</button>
     </article>
   </div>
-  <details v-for="field in apimartReferenceFields" :key="field.key" class="apimart-reference-details" :open="field.required || Boolean(apimartReferences(field))">
-    <summary>{{ field.type === 'files' ? t('apimart.admin.addImageByUrl') : field.label || field.key }}{{ field.required ? ' *' : '' }}</summary>
-    <label>{{ field.type === 'files' ? t('apimart.admin.imageUrls') : field.label || field.key }}
-      <textarea :value="apimartReferences(field)" :placeholder="t('apimart.admin.sourceUrls')" @change="updateApimartReferences(field, $event)"></textarea>
-    </label>
-  </details>
   <Teleport to="body">
     <div v-if="draggingFiles" class="chat-drop-overlay" :class="{ unavailable: !dropReady }" @dragover.prevent>
       <section class="chat-drop-panel" role="status" aria-live="assertive">

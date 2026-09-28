@@ -49,6 +49,7 @@ export type MediaField = {
   type?: string;
   required?: boolean;
   default?: unknown;
+  apiDefault?: unknown;
   options?: Array<string | number | boolean>;
   scalar?: boolean;
   maxFiles?: number;

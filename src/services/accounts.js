@@ -8,7 +8,7 @@ const { createCreditConversion } = require('../billing/conversion');
 const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
 const { lockWallet, settle } = require('../billing/wallet');
-const { generationHistory, generationHistorySince, generationHistoryPage, generationActive } = require('./generation-history');
+const { generationHistory, generationHistorySince, generationHistoryPage, generationActive, countUnassignedGenerations } = require('./generation-history');
 const { spendingHistory } = require('./spending-history');
 const { generationJournal } = require('./generation-journal');
 const { createWorkspaces } = require('./workspaces');
@@ -100,6 +100,18 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
   sweepTimer.unref?.();
   return {
     pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get, sweepIdle,
+    async updateProfile(accountId, name) {
+      const value = typeof name === 'string' ? name.trim() : '';
+      if (!value || value.length > 200) throw new Error('Укажите имя до 200 символов');
+      await pool.query('UPDATE media_accounts SET display_name=$2 WHERE id=$1', [accountId, value]);
+      return { name: value };
+    },
+    async workspaceSyncReadModel(accountId, includeUnassigned) {
+      const cursorValue = (await pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
+      const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
+      if (!includeUnassigned) return { cursor, unassignedCount: null };
+      return { cursor, unassignedCount: await countUnassignedGenerations(pool, accountId) };
+    },
     async createTelegramTask(telegramUserId, request, confirmationToken) {
       const identity = (await pool.query('SELECT a.id,a.role FROM media_telegram_links l JOIN media_accounts a ON a.id=l.account_id WHERE l.telegram_user_id=$1', [String(telegramUserId)])).rows[0];
       if (!identity) throw Object.assign(new Error('Сначала привяжите Telegram к аккаунту сайта'), { status: 403 });
@@ -247,7 +259,19 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
       return (await pool.query('SELECT r.*,a.display_name AS name FROM media_role_audit r JOIN media_accounts a ON a.id=r.account_id ORDER BY r.created_at DESC LIMIT 100')).rows;
     },
     async ledger(accountId) {
-      return (await pool.query('SELECT kind,amount,note,actor_id,created_at FROM media_ledger WHERE account_id=$1 ORDER BY created_at DESC LIMIT 200', [accountId])).rows;
+      return wallet.auditLedger(accountId);
+    },
+    async kieSubmissionStatistics(days) {
+      const { kieSubmissionStatistics } = require('./kie-submission-statistics');
+      return kieSubmissionStatistics(pool, days);
+    },
+    async billingReconciliation(days) {
+      const { billingReconciliation } = require('./billing-reconciliation');
+      return billingReconciliation(pool, days);
+    },
+    async operationsMetrics() {
+      const { operationsMetrics } = require('./operations-metrics');
+      return operationsMetrics(pool);
     },
     async reconcile(actorId, accountId, jobId, outcome, evidence) {
       if (!['success', 'fail'].includes(outcome) || typeof evidence !== 'string' || !evidence.trim() || evidence.length > 2000) throw new Error('Укажите исход и основание сверки');

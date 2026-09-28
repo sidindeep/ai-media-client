@@ -17,3 +17,7 @@
 - [Правила установки GI](patterns/SHARED_INSTRUCTIONS_BOOTSTRAP.md).
 - [Слои документации](patterns/PROJECT_DOCUMENTATION_LAYERS.md).
 - [Правила инвентаризации стека](patterns/TECHNOLOGY_STACK_INVENTORY.md).
+- [Проектирование модульных систем](patterns/MODULAR_SERVICE_ENGINEERING.md).
+- [Шаблон карты системы](templates/SYSTEM_MAP.template.md).
+- [Шаблон паспорта модуля](templates/MODULE_PASSPORT.template.md).
+- [Шаблон контракта модулей](templates/MODULE_CONTRACT.template.md).

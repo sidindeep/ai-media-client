@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { loadConfig } = require('./src/server/config');
 const { createHttpServer } = require('./src/server/http');
+const { createGenerationSupport, createGenerationServices, recoverGenerationServices, closeGenerationServices } = require('./src/server/generation-services');
 const { createKieAccounts } = require('./src/services/kie-accounts');
 const { createKieEmbeddedBrowser } = require('./src/services/kie-embedded-browser');
 const { createMediaService } = require('./src/services/media-service');
@@ -91,6 +92,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       idleMs: config.kieBrowser.idleMinutes * 60 * 1000 }) : null;
   let ownerClient = null, ownerTimer = null;
   const storage = createObjectStorage(config.storage);
+  let generationSupport, generationServices;
   let closing = false, retryTimer, wakeRetry, telegramStarted = false;
   const databaseAvailability = createDatabaseAvailability({ state: config.auth.enabled ? 'connecting' : 'disabled' });
   const readiness = {
@@ -154,6 +156,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     wakeRetry?.();
     await telegram?.stop();
     server?.closeEvents();
+    closeGenerationServices(generationServices);
     if (codexWorker) {
       codexWorker.stopActive(); codexWorker.closeAllConnections();
       if (codexWorker.listening) await new Promise(resolve => codexWorker.close(resolve));
@@ -172,6 +175,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     if (lock) { await lock.close(); await fs.unlink(lockPath).catch(() => {}); }
   };
   try {
+    generationSupport = createGenerationSupport(config);
     provider = provider || await createKieAccounts({ primaryKey: config.kieKey, secondaryKey: config.kieSecondaryKey });
     if (storage) await storage.check();
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' });
@@ -202,8 +206,9 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     telegram = createTelegramGateway({ service, config: webReplica ? { ...config.telegram, enabled: false } : config.telegram, directory: config.dataDirectory,
       accountMode: config.auth.enabled, accounts, telegramLinks });
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled && !telegramLinks ? { disabledReason: 'account-database-unavailable' } : {}) });
-    server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce, kieBrowserControl });
-    if (!webReplica) { await server.recoverCodex(); await server.recoverRouterAi(); await server.recoverApimart(); }
+    generationServices = createGenerationServices({ config, accounts, storage, support: generationSupport });
+    server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce, generationServices, kieBrowserControl });
+    if (!webReplica) await recoverGenerationServices(generationServices);
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     if (!webReplica && (config.replicaRole !== 'executor' || ownerClient)) { telegram.start(); telegramStarted = true; }
     if (startupChecks && !webReplica) void checkProviderReadiness(service, readiness);
@@ -225,7 +230,13 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             await nextAccounts.recover();
             if (closing) { await nextAccounts.close(); await nextContent?.close(); await releaseOwnership(); await nextPool.end(); return; }
             const nextBusiness = await createBusinessServices(nextPool);
-            await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce);
+            const nextGenerationServices = createGenerationServices({ config, accounts: nextAccounts, storage, support: generationSupport });
+            try {
+              if (!webReplica) await recoverGenerationServices(nextGenerationServices);
+              await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce, nextGenerationServices);
+              closeGenerationServices(generationServices);
+              generationServices = nextGenerationServices;
+            } catch (error) { closeGenerationServices(nextGenerationServices); throw error; }
             if (config.replicaRole === 'executor') await service.queue.recover();
             pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
             systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });

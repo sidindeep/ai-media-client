@@ -88,6 +88,9 @@ Windows: `desktop/`, запуск `pnpm start:desktop`.
 - During meaningful behavior or architecture work, keep scoped code, tests,
   affected docs, and focused project-memory contracts aligned before the
   implementation task is complete.
+- For modular-system work, follow `patterns/MODULAR_SERVICE_ENGINEERING.md`:
+  record module boundaries, data ownership, public contracts, and assembled
+  workflow checks; logical modules need not be separate deployable services.
 - Do not revert user changes without an explicit request. Ask before destructive
   operations, broad formatting churn, dependency replacement, data migration,
   public contract changes, or unrelated expansion.

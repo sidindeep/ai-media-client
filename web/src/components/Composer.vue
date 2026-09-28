@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { diagnoseProvider, getApimartQuote, getCodexQuote, getMediaQuote, getRouterAiQuote } from '../api/client';
 import type { ProviderDiagnostics } from '../api/client';
@@ -11,7 +11,7 @@ import AdvancedParameters from './AdvancedParameters.vue';
 import SchemaField from './SchemaField.vue';
 import SourceAttachments from './SourceAttachments.vue';
 import { mediaAdvancedParameters, routerAiAdvancedParameters } from '../domain/advanced-parameters';
-import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, parseMediaFieldValue } from '../domain/media-fields';
+import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, minimumPricingFieldValue, parseMediaFieldValue } from '../domain/media-fields';
 import { apimartModelBrandId, mediaModelBrandId, routerAiModelBrandId } from '../domain/model-catalog';
 import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
@@ -19,6 +19,7 @@ import { unionFields, unionVariants } from '../domain/union-model-fields';
 import { isReferenceField } from '../domain/source-attachments';
 import { formatCreditCost, roundedCreditCost } from '../domain/credits';
 import { useI18n } from '../i18n';
+import { useLatestQuote } from '../composables/useLatestQuote';
 
 const studio = useStudioStore();
 const { formatDate, formatNumber, t } = useI18n();
@@ -31,11 +32,13 @@ const uploading = ref(false);
 const sourceAttachments = ref<InstanceType<typeof SourceAttachments> | null>(null);
 const submitting = ref(false);
 const submitError = ref('');
-const quote = ref<{ credits: number | null; amountUnits?: number | null; amountUsd?: number; nativeCredits?: number;
+type ComposerQuote = { credits: number | null; amountUnits?: number | null; amountUsd?: number; nativeCredits?: number;
   estimatedInputTokens?: number; estimatedOutputTokens?: number; inputUsdPerToken?: number; outputUsdPerToken?: number;
-  status?: string; reason?: string; warning?: string } | null>(null);
-const quoteError = ref('');
-const quoteLoading = ref(false);
+  status?: string; reason?: string; warning?: string };
+const { quote, quoteError, quoteLoading, schedule: scheduleQuoteRefresh,
+  acceptIfCurrent: acceptDiagnosticQuote, currentRevision: currentQuoteRevision } = useLatestQuote<ComposerQuote>({
+  ready: quoteRequestReady, request: requestQuote, unavailableMessage: () => t('composer.priceUnavailable'),
+});
 const diagnosticOpen = ref(false);
 const diagnosticLoading = ref(false);
 const diagnosticError = ref('');
@@ -49,6 +52,15 @@ const routerAiVideoAspectRatio = ref('');
 const apimartMedia = computed(() => studio.provider === 'apimart' && studio.mode !== 'text');
 const apimartWhisper = computed(() => studio.provider === 'apimart' && studio.apimartModel === 'whisper-1');
 const apimartFields = computed(() => studio.provider === 'apimart' ? studio.currentApimartModel?.fields || [] : []);
+watch(() => [studio.provider, studio.apimartModel, apimartFields.value] as const, () => {
+  if (studio.provider !== 'apimart' || !apimartFields.value.length) return;
+  const defaults = Object.fromEntries(apimartFields.value.flatMap(field => {
+    if (field.type === 'files' || isReferenceField(field) || studio.mediaInput[field.key] !== undefined) return [];
+    const value = minimumPricingFieldValue(field);
+    return value === undefined ? [] : [[field.key, value]];
+  }));
+  if (Object.keys(defaults).length) studio.mediaInput = { ...defaults, ...studio.mediaInput };
+}, { immediate: true });
 const apimartPrimaryFields = computed(() => apimartFields.value.filter(field =>
   /^(size|aspect_ratio|resolution|quality|mode|version|duration|voice)$/.test(field.key) && field.options?.length).slice(0, 3));
 const apimartExtraFields = computed(() => apimartFields.value.filter(field => field.type !== 'files'
@@ -80,8 +92,6 @@ function updateApimartParameter(key: string, raw: unknown) {
 }
 const routerAiSpecial = computed(() => studio.provider === 'routerai' && studio.isAdmin
   && Boolean(studio.currentRouterAiModel) && !['text', 'image'].includes(studio.currentRouterAiModel!.kind));
-let quoteRevision = 0;
-let quoteTimer: ReturnType<typeof setTimeout> | null = null;
 const QUOTE_DEBOUNCE_MS = 1500;
 const effortOptions = computed(() => studio.currentCodexModel?.efforts || ['low', 'medium', 'high']);
 const currentFields = computed(() => studio.provider === 'apimart' ? apimartFields.value
@@ -269,7 +279,7 @@ const diagnosticTime = (value: string) => formatDate(value, { hour: '2-digit', m
 async function openDiagnostics() {
   if (diagnosticLoading.value) return;
   const modelId = studio.mediaModelId;
-  const revision = quoteRevision;
+  const revision = currentQuoteRevision();
   diagnosticOpen.value = true;
   diagnosticLoading.value = true;
   diagnosticError.value = '';
@@ -285,12 +295,8 @@ async function openDiagnostics() {
       result = await requestDiagnostics();
     }
     diagnostics.value = result;
-    if (result.ok && result.quote?.credits != null && revision === quoteRevision && studio.provider === 'media' && studio.mediaModelId === modelId) {
-      stopQuoteTimer();
-      quoteRevision++;
-      quote.value = { credits: Number(result.quote.credits) };
-      quoteError.value = '';
-      quoteLoading.value = false;
+    if (result.ok && result.quote?.credits != null && studio.provider === 'media' && studio.mediaModelId === modelId) {
+      acceptDiagnosticQuote(revision, { credits: Number(result.quote.credits) });
     }
   } catch (error) {
     diagnosticError.value = error instanceof Error ? error.message : t('composer.diagnosticLoadError');
@@ -300,7 +306,8 @@ async function openDiagnostics() {
 function normalizeCurrentFields() {
   const allowed = new Set(currentFields.value.map(field => field.key));
   const defaults = Object.fromEntries(currentFields.value.flatMap(field => {
-    if (field.default !== undefined) return [[field.key, field.default]];
+    const minimum = minimumPricingFieldValue(field);
+    if (minimum !== undefined) return [[field.key, minimum]];
     if (field.required && field.type === 'boolean') return [[field.key, false]];
     const firstOption = fieldOptions(field)[0];
     return firstOption === undefined ? [] : [[field.key, parseMediaFieldValue(field, firstOption)]];
@@ -324,7 +331,8 @@ watch(() => [studio.mode, studio.provider], () => { submitError.value = ''; fiel
 watch(() => studio.currentRouterAiModel?.id, () => {
   routerAiExtra.value = '{}';
   const model = studio.currentRouterAiModel;
-  routerAiVideoDuration.value = model?.supportedDurations?.[0] ?? null;
+  routerAiVideoDuration.value = model?.supportedDurations?.length
+    ? Math.min(...model.supportedDurations) : null;
   routerAiVideoResolution.value = model?.supportedResolutions?.[0] ?? '';
   routerAiVideoAspectRatio.value = model?.supportedAspectRatios?.[0] ?? '';
 }, { immediate: true });
@@ -364,12 +372,6 @@ async function routerAiPayload(prompt: string): Promise<Record<string, unknown>>
 }
 watch(() => studio.providerDiagnosticRequest, (request, previous) => { if (studio.isAdmin && request > previous) void openDiagnostics(); });
 
-function stopQuoteTimer() {
-  if (quoteTimer === null) return;
-  clearTimeout(quoteTimer);
-  quoteTimer = null;
-}
-
 function quoteRequestReady() {
   if (studio.provider === 'apimart') return Boolean(studio.apimartModel && (!studio.currentApimartModel?.promptRequired || studio.prompt.trim()));
   if (studio.provider === 'codex') return Boolean(studio.codexModel && studio.codexEffort);
@@ -377,56 +379,33 @@ function quoteRequestReady() {
   return Boolean(studio.mediaModelId && !missingRequiredFields.value.length);
 }
 
-async function refreshQuote(revision: number) {
-  try {
-    if (studio.provider === 'apimart') {
-      const result = await getApimartQuote(studio.apimartModel, studio.prompt.trim(),
-        studio.mode === 'text' ? {} : studio.mediaInput);
-      if (revision === quoteRevision) quote.value = result;
-    } else if (studio.provider === 'codex') {
-      if (!studio.codexModel || !studio.codexEffort) return;
-      const result = await getCodexQuote(studio.codexModel, studio.codexEffort, studio.codexSpeed);
-      if (revision === quoteRevision) { quote.value = result.quote; quoteError.value = result.error || ''; }
-    } else if (studio.provider === 'routerai') {
-      let payload: Record<string, unknown> = {};
-      if (studio.currentRouterAiModel?.kind === 'video') payload = routerAiVideoPayload(studio.prompt.trim());
-      else if (routerAiSpecial.value) {
-        const parsed: unknown = JSON.parse(routerAiExtra.value);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(t('routerai.admin.invalidBody'));
-        payload = parsed as Record<string, unknown>;
-      }
-      const result = await getRouterAiQuote(studio.routerAiModel, payload);
-      if (revision === quoteRevision) { quote.value = result.quote; quoteError.value = result.error || ''; }
-    } else if (studio.mediaModelId) {
-      const requestQuote = () => getMediaQuote(studio.mediaModelId, mediaRequestInput(), studio.sourceFiles);
-      let result;
-      try { result = await requestQuote(); }
-      catch (error) {
-        if (!retryableReadError(error)) throw error;
-        await new Promise(resolve => setTimeout(resolve, 500));
-        if (revision !== quoteRevision) return;
-        result = await requestQuote();
-      }
-      if (revision === quoteRevision) quote.value = result;
-    }
-  } catch (error) {
-    if (revision === quoteRevision) { quote.value = null; quoteError.value = error instanceof Error ? error.message : t('composer.priceUnavailable'); }
-  } finally {
-    if (revision === quoteRevision) quoteLoading.value = false;
+async function requestQuote(revision: number, isCurrent: (revision: number) => boolean): Promise<{ quote: ComposerQuote | null; error?: string }> {
+  if (studio.provider === 'apimart') {
+    return { quote: await getApimartQuote(studio.apimartModel, studio.prompt.trim(),
+      studio.mode === 'text' ? {} : studio.mediaInput) };
   }
-}
-
-function scheduleQuoteRefresh(delay = 0) {
-  stopQuoteTimer();
-  const revision = ++quoteRevision;
-  quote.value = null;
-  quoteError.value = '';
-  quoteLoading.value = quoteRequestReady();
-  if (!quoteLoading.value) return;
-  quoteTimer = setTimeout(() => {
-    quoteTimer = null;
-    if (revision === quoteRevision) void refreshQuote(revision);
-  }, delay);
+  if (studio.provider === 'codex') {
+    const result = await getCodexQuote(studio.codexModel, studio.codexEffort, studio.codexSpeed);
+    return { quote: result.quote, error: result.error };
+  }
+  if (studio.provider === 'routerai') {
+    let payload: Record<string, unknown> = {};
+    if (studio.currentRouterAiModel?.kind === 'video') payload = routerAiVideoPayload(studio.prompt.trim());
+    else if (routerAiSpecial.value) {
+      const parsed: unknown = JSON.parse(routerAiExtra.value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(t('routerai.admin.invalidBody'));
+      payload = parsed as Record<string, unknown>;
+    }
+    const result = await getRouterAiQuote(studio.routerAiModel, payload);
+    return { quote: result.quote, error: result.error };
+  }
+  const send = () => getMediaQuote(studio.mediaModelId, mediaRequestInput(), studio.sourceFiles);
+  try { return { quote: await send() }; }
+  catch (error) {
+    if (!retryableReadError(error)) throw error;
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return { quote: isCurrent(revision) ? await send() : null };
+  }
 }
 
 watch(() => [studio.provider, studio.apimartModel, studio.codexModel, studio.routerAiModel, studio.codexEffort, studio.codexSpeed, studio.mediaModelId, studio.mediaInput, studio.sourceFiles], () => scheduleQuoteRefresh(), { immediate: true, deep: true });
@@ -434,7 +413,6 @@ watch([routerAiExtra, routerAiVideoDuration, routerAiVideoResolution, routerAiVi
 watch(() => studio.prompt, () => {
   if (studio.provider === 'media' || studio.provider === 'apimart') scheduleQuoteRefresh(QUOTE_DEBOUNCE_MS);
 });
-onBeforeUnmount(() => { stopQuoteTimer(); quoteRevision++; });
 function animateToQueue(event?: Event) {
   const eventElement = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   const origin = eventElement?.classList.contains('generate-button') ? eventElement : document.querySelector<HTMLElement>('.generate-button');

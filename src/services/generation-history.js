@@ -131,4 +131,9 @@ async function generationActive(pool, accountId, service, present = record => re
     : row.namespace === 'codex' ? codexRecord(row.data)
       : row.namespace === 'apimart' ? apimartRecord(row.data) : routerAiRecord(row.data));
 }
-module.exports = { generationHistory, generationHistorySince, generationHistoryPage, generationActive };
+async function countUnassignedGenerations(pool, accountId) {
+  const result = await pool.query(`SELECT count(*)::int AS count FROM media_records WHERE account_id=$1
+    AND namespace IN ('history','codex','routerai','apimart') AND data->>'chatId' IS NULL`, [accountId]);
+  return result.rows[0]?.count || 0;
+}
+module.exports = { generationHistory, generationHistorySince, generationHistoryPage, generationActive, countUnassignedGenerations };

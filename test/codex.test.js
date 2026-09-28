@@ -6,11 +6,32 @@ const { openDatabase } = require('../src/database/database');
 const { createWallet } = require('../src/billing/wallet');
 const { createPricing } = require('../src/billing/pricing');
 const { createCodexBilling, priceKey } = require('../src/services/codex-billing');
+const { createCodexApplicationProvider } = require('../src/providers/codex/application');
 const { validateCodexRequest, codexArguments } = require('../src/services/codex-request');
 const { createCodexWorker, codexEnvironment } = require('../src/services/codex-worker');
 const { collectImage, validatePng } = require('../src/services/codex-images');
 const request = () => ({ requestId: randomUUID(), prompt: 'Привет', model: 'gpt-6-astra', effort: 'ultra', speed: 'fast' });
 const sampleUsage = { input_tokens: 100, cached_input_tokens: 60, output_tokens: 20, reasoning_output_tokens: 5, total_tokens: 120 };
+
+test('Codex application provider preserves the product quote and account-scoped job contract', async () => {
+  const calls = [];
+  const billing = {
+    quote: request => ({ credits: 4, amountUnits: 4000, version: `codex:${request.model}` }),
+    submit: async (account, payload) => { calls.push(['submit', account, payload.requestId]); return { id: payload.requestId }; },
+    read: async (account, requestId) => { calls.push(['read', account, requestId]); return { id: requestId }; },
+  };
+  const provider = createCodexApplicationProvider(billing);
+  assert.equal(provider.billing.mode, 'wallet');
+  assert.ok(provider.listModels().some(model => model.id === 'gpt-6-astra'));
+  const quote = provider.quote({ model: 'gpt-6-astra' });
+  assert.deepEqual(quote, { status: 'exact', credits: 4,
+    nativeQuote: { credits: 4, amountUnits: 4000, version: 'codex:gpt-6-astra' } });
+  const requestId = randomUUID();
+  await provider.submit('account-a', { requestId });
+  await provider.getTask('account-a', requestId);
+  assert.deepEqual(calls, [['submit', 'account-a', requestId], ['read', 'account-a', requestId]]);
+  assert.equal(provider.getStatus().balance, null);
+});
 
 test('CLI usage comes only from completed turn metadata, without counting cache or reasoning twice', () => {
   const { parseCodexOutput, normalizeUsage } = require('../src/services/codex-usage');

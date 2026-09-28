@@ -4,16 +4,13 @@ const fs = require('node:fs/promises');
 const { createReadStream } = require('node:fs');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
-const { validateCodexRequest } = require('../services/codex-request');
-const { createCodexBilling } = require('../services/codex-billing');
-const { createRouterAiBilling, validateRouterAiRequest } = require('../services/routerai-billing');
-const { createRouterAiCatalog } = require('../providers/routerai/catalog');
-const { createRouterAiClient } = require('../providers/routerai/client');
-const { createApimartJobs } = require('../services/apimart-jobs');
 const { ROLES, isAdminRole, assertAdminRole } = require('../auth/roles');
-const { readProviderStatus } = require('../services/provider-status');
 const { createKieBrowserSession } = require('../services/kie-browser-session');
 const { handleCommerceRequest } = require('./routes/commerce');
+const { handleWorkspaceRequest } = require('./routes/workspace');
+const { handleGenerationRequest } = require('./routes/generation');
+const { handleAdminRequest } = require('./routes/admin');
+const { handleSourceUpload, handleContentRead } = require('./routes/content');
 const { buildInfo } = require('./build-info');
 const { checkDatabase, transientConnection } = require('../database/database');
 const trace = require('../generation-log');
@@ -190,16 +187,16 @@ async function sendStored(req, res, storage, file, attachment = false) {
   if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
   result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, generationServices = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record }) {
   let uploadBytesInFlight = 0;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
-  let codex = accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url, dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
-  const routerAiModels = createRouterAiCatalog();
-  let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
-    content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
-  const routerAiStatus = config.routerAi?.apiKey ? createRouterAiClient({ apiKey: config.routerAi.apiKey }) : null;
-  let apimart = accounts && config.apimart?.apiKey ? createApimartJobs({ pool: accounts.pool, content: accounts.content, apiKey: config.apimart.apiKey }) : null;
+  let codex = generationServices?.codex || null;
+  let codexProvider = generationServices?.codexProvider || null;
+  let routerAi = generationServices?.routerAi || null;
+  let apimart = generationServices?.apimart || null;
+  let routerAiModels = generationServices?.routerAiModels || null;
+  let routerAiStatus = generationServices?.routerAiStatus || null;
   const connections = new Set();
   const eventLoopBaseline = performance.eventLoopUtilization();
   let loginWindow = Date.now(), loginRequests = 0;
@@ -395,128 +392,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (!config.auth.enabled || !telegram || req.method !== 'POST' || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Метод не найден' });
         return json(res, 200, { result: await telegram.unlink(user.id) });
       }
-      if (url.pathname.startsWith('/api/codex/')) {
-        await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
-        if (req.method === 'GET' && url.pathname === '/api/codex/status') return json(res, 200, { enabled: Boolean(codex), allowed: Boolean(accounts) });
-        if (!codex) return json(res, 503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
-        const imageRequest = /^\/api\/codex\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
-        if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
-          const selectedAccount = url.searchParams.get('account');
-          if (selectedAccount) await accounts.scope(user, selectedAccount);
-          const file = await codex.image(selectedAccount || user.id, imageRequest[1]);
-          return await sendMedia(req, res, () => file.storageKey
-            ? sendStored(req, res, storage, file, url.searchParams.get('download') === '1')
-            : sendFile(req, res, file, 'image/png', url.searchParams.get('download') === '1'));
-        }
-        if (req.method === 'GET' && url.pathname === '/api/codex/quote') {
-          try { return json(res, 200, { quote: codex.quote({ model: url.searchParams.get('model'), effort: url.searchParams.get('effort'), speed: url.searchParams.get('speed') }) }); }
-          catch { return json(res, 200, { quote: null, error: 'Цена этого режима Codex ещё не опубликована.' }); }
-        }
-        const jobPath = /^\/api\/codex\/jobs(?:\/[a-f0-9-]{36})?$/.test(url.pathname);
-        if (!jobPath || !['GET', 'POST'].includes(req.method) || (req.method === 'POST' && url.pathname !== '/api/codex/jobs')) return json(res, 404, { error: 'Не найдено' });
-        if (req.method === 'POST') {
-          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-          const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
-          const body = validateCodexRequest(raw);
-          const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
-          return json(res, 200, await codex.submit(user.id, { ...body, ...binding }));
-        }
-        return json(res, 200, await codex.read(user.id, url.pathname.split('/').pop()));
+      if (/^\/api\/(?:codex|apimart|routerai)\//.test(url.pathname)) {
+        return await handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, routerAiModels, headers,
+          send: (status, body) => json(res, status, body), readBody: limit => readBody(req, limit),
+          sendMedia: fn => sendMedia(req, res, fn),
+          sendStored: (file, attachment) => sendStored(req, res, storage, file, attachment),
+          sendFile: (file, type, attachment) => sendFile(req, res, file, type, attachment) });
       }
       if (req.method === 'POST' && url.pathname === '/auth/logout') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Доступ запрещён' });
         res.setHeader('Set-Cookie', auth ? await auth.logout(req) : '');
         for (const connection of connections) if (connection.accountId === user.id) connection.end();
         return json(res, 200, { result: true });
-      }
-      if (url.pathname.startsWith('/api/apimart/')) {
-        assertAdminRole(user.role);
-        if (!apimart) return json(res, 503, { error: 'APIMart не настроен' });
-        if (req.method === 'GET' && url.pathname === '/api/apimart/models') {
-          try { return json(res, 200, { models: await apimart.models() }); }
-          catch (error) { return json(res, 200, { models: [], error: error.status === 402
-            ? 'APIMart требует пополнить баланс для загрузки каталога.' : 'Каталог APIMart временно недоступен.' }); }
-        }
-        if (req.method === 'POST' && url.pathname === '/api/apimart/quote') {
-          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-          const raw = JSON.parse((await readBody(req, 50000)).toString('utf8'));
-          return json(res, 200, await apimart.quote(raw));
-        }
-        if (req.method === 'POST' && url.pathname === '/api/apimart/jobs') {
-          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-          const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
-          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return json(res, 400, { error: 'Некорректный запрос APIMart' });
-          const binding = await accounts.workspaces.assertBinding(user.id, raw.projectId, raw.chatId);
-          return json(res, 200, await apimart.submit(user.id, { ...raw, ...binding }));
-        }
-        const jobRequest = /^\/api\/apimart\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
-        if (req.method === 'GET' && jobRequest) {
-          const job = await apimart.get(user.id, jobRequest[1]);
-          return job ? json(res, 200, job) : json(res, 404, { error: 'Запрос не найден' });
-        }
-        return json(res, 404, { error: 'Не найдено' });
-      }
-      if (url.pathname.startsWith('/api/routerai/')) {
-        await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
-        if (!routerAi) return json(res, 503, { error: 'RouterAI не настроен.' });
-        if (req.method === 'GET' && url.pathname === '/api/routerai/models') return json(res, 200, await routerAiModels.list(user.role));
-        if (url.pathname.startsWith('/api/routerai/admin/')) {
-          assertAdminRole(user.role);
-          if (req.method === 'GET' && url.pathname === '/api/routerai/admin/models') return json(res, 200, await routerAiModels.all(user.role));
-          if (req.method === 'POST' && url.pathname === '/api/routerai/admin/jobs') {
-            if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-            const raw = JSON.parse((await readBody(req, 300000)).toString('utf8'));
-            const binding = await accounts.workspaces.assertBinding(user.id, raw.projectId, raw.chatId);
-            return json(res, 200, await routerAi.submitAdmin(user.id, { ...raw, ...binding }, (await routerAiModels.all(user.role)).models));
-          }
-          const adminVideo = /^\/api\/routerai\/admin\/jobs\/([a-f0-9-]{36})\/video\/(status|content)$/.exec(url.pathname);
-          if (req.method === 'GET' && adminVideo) {
-            if (adminVideo[2] === 'status') return json(res, 200, await routerAi.adminVideo(user.id, adminVideo[1]));
-            const bytes = await routerAi.adminVideo(user.id, adminVideo[1], true);
-            res.writeHead(200, { ...headers, 'Content-Type': 'video/mp4', 'Content-Length': bytes.length,
-              'Content-Disposition': `attachment; filename="routerai-${adminVideo[1]}.mp4"`, 'Cache-Control': 'no-store' });
-            res.end(bytes); return;
-          }
-          return json(res, 404, { error: 'Не найдено' });
-        }
-        if (req.method === 'GET' && url.pathname === '/api/routerai/quote') {
-          try {
-            const allowed = (await routerAiModels.list(user.role)).models;
-            const model = allowed.find(item => item.id === url.searchParams.get('model'));
-            if (!model) return json(res, 403, { quote: null, error: 'Модель RouterAI недоступна.' });
-            const rawPayload = url.searchParams.get('payload') || '{}';
-            if (rawPayload.length > 4096) return json(res, 400, { quote: null, error: 'Параметры слишком длинные.' });
-            const payload = JSON.parse(rawPayload);
-            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return json(res, 400, { quote: null, error: 'Некорректные параметры.' });
-            return json(res, 200, { quote: await routerAi.quote({ model: model.id, endpoint: model.endpoint ||
-              (model.kind === 'image' ? 'images' : 'chat/completions'), payload }, user.role) });
-          }
-          catch (error) { return json(res, 200, { quote: null, error: error.message || 'Цена модели RouterAI не опубликована.' }); }
-        }
-        const imageRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
-        if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
-          const file = await routerAi.image(user.id, imageRequest[1]);
-          return sendMedia(req, res, () => file.storageKey
-            ? sendStored(req, res, storage, file, url.searchParams.get('download') === '1' || file.type === 'image/svg+xml')
-            : sendFile(req, res, file.path, file.type, url.searchParams.get('download') === '1' || file.type === 'image/svg+xml'));
-        }
-        if (req.method === 'POST' && url.pathname === '/api/routerai/jobs') {
-          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-          const allowed = (await routerAiModels.list(user.role)).models;
-          const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
-          const body = validateRouterAiRequest(raw, allowed);
-          const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
-          const job = await routerAi.submit(user.id, { ...raw, ...binding }, user.role, allowed);
-          if (!isAdminRole(user.role)) delete job.providerCostRub;
-          return json(res, 200, job);
-        }
-        const jobRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
-        if (req.method === 'GET' && jobRequest) {
-          const job = await routerAi.get(user.id, jobRequest[1]);
-          if (job && !isAdminRole(user.role)) delete job.providerCostRub;
-          return job ? json(res, 200, job) : json(res, 404, { error: 'Запрос не найден' });
-        }
-        return json(res, 404, { error: 'Не найдено' });
       }
       if ((isLanding || isVueApp) && ['GET', 'HEAD'].includes(req.method)) {
         return await sendVueApplication(user);
@@ -530,172 +417,17 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
         const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
-        if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 200) throw new Error('Укажите имя до 200 символов');
-        await accounts.pool.query('UPDATE media_accounts SET display_name=$2 WHERE id=$1', [user.id, body.name.trim()]);
-        return json(res, 200, { result: { name: body.name.trim() } });
+        return json(res, 200, { result: await accounts.updateProfile(user.id, body.name) });
       }
-      if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/history') {
-        const startedAt = performance.now();
-        const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
-        const historyRequest = { cursor: url.searchParams.get('cursor') || null };
-        if (url.searchParams.has('chatId')) historyRequest.chatId = url.searchParams.get('chatId');
-        try {
-          const scoped = await accounts.scope(user, selected);
-          const result = await scoped.dispatch('getHistoryPage', [historyRequest]);
-          if (historyRequest.chatId) recordSystemEvent('studio', 'chat.history.loaded', 'Chat history loaded', {
-            accountId: selected || user.id, chatId: historyRequest.chatId.slice(0, 80), cursorPresent: Boolean(historyRequest.cursor),
-            records: result.records.length, hasNext: Boolean(result.next), durationMs: Math.round(performance.now() - startedAt),
-          });
-          return json(res, 200, { result });
-        } catch (error) {
-          if (historyRequest.chatId) recordSystemEvent('studio', 'chat.history.failed', error, {
-            accountId: selected || user.id, chatId: historyRequest.chatId.slice(0, 80), cursorPresent: Boolean(historyRequest.cursor),
-            durationMs: Math.round(performance.now() - startedAt),
-          });
-          throw error;
-        }
-      }
-      if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/sync') {
-        const startedAt = performance.now();
-        const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
-        const workspaceAccount = selectedWorkspaceAccount || user.id;
-        const scopedService = await accounts.scope(user, selectedWorkspaceAccount);
-        const rawSince = url.searchParams.get('since');
-        const since = rawSince ? new Date(rawSince) : null;
-        if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
-        if (!since) await accounts.workspaces.ensureDefaultChatId(workspaceAccount);
-        const activeIds = url.searchParams.getAll('active');
-        if (activeIds.length > 20 || activeIds.some(id => !/^(?:(?:codex|routerai|apimart):)?[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
-        const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
-        const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
-        const [historyResult, activeRecords, projects, chats, queue, unassignedCount] = await Promise.all([
-          scopedService.dispatch(since ? 'getHistoryDelta' : 'getHistoryPage', since ? [{ since: since.toISOString(), before: cursor, activeIds }] : [{ cursor: null }]),
-          since ? [] : scopedService.dispatch('getHistoryActive'),
-          since ? accounts.workspaces.listProjectChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listProjects(workspaceAccount),
-          since ? accounts.workspaces.listChatChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listChats(workspaceAccount),
-          scopedService.dispatch('queueStatus'),
-          since ? null : accounts.pool.query(`SELECT count(*)::int AS count FROM media_records WHERE account_id=$1
-            AND namespace IN ('history','codex','routerai','apimart') AND data->>'chatId' IS NULL`, [workspaceAccount]).then(result => result.rows[0]?.count || 0),
-        ]);
-        const records = since ? historyResult : [...activeRecords, ...historyResult.records];
-        if (!since) recordSystemEvent('studio', 'chat.sync.loaded', 'Workspace snapshot loaded', {
-          accountId: workspaceAccount, chatId: url.searchParams.get('chatId')?.slice(0, 80) || null, records: records.length,
-          unassignedCount, hasNext: Boolean(historyResult.next), durationMs: Math.round(performance.now() - startedAt),
-        });
-        return json(res, 200, { result: { cursor, full: !since, records, historyNext: since ? undefined : historyResult.next,
-          unassignedCount: since ? undefined : unassignedCount, projects, chats, queue } });
-      }
-      if (accounts && /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|restore|move))?)?$/.test(url.pathname)) {
-        const selectedWorkspaceAccount = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
-        const workspaceAccount = selectedWorkspaceAccount || user.id;
-        const workspaceService = await accounts.scope(user, selectedWorkspaceAccount);
-        const workspacePath = url.pathname.split('/').filter(Boolean);
-        const resource = workspacePath[1], resourceId = workspacePath[2], action = workspacePath[3];
-        const workspaceBody = async limit => JSON.parse((await readBody(req, limit)).toString('utf8'));
-        const workspaceChanged = result => { workspaceService.events?.emit('changed'); return json(res, 200, { result }); };
-        if (resource === 'projects') {
-          if (req.method === 'GET' && !resourceId) return json(res, 200, { result: await accounts.workspaces.listProjects(workspaceAccount, url.searchParams.get('includeArchived') === 'true') });
-          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.createProject(workspaceAccount, (await workspaceBody(4096)).name));
-          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameProject(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
-          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveProject(workspaceAccount, resourceId));
-          if (req.method === 'POST' && resourceId && action === 'restore' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.restoreProject(workspaceAccount, resourceId));
-        }
-        if (resource === 'chats') {
-          if (req.method === 'GET' && !resourceId) {
-            const projectFilter = url.searchParams.has('projectId') ? (url.searchParams.get('projectId') || null) : undefined;
-            return json(res, 200, { result: await accounts.workspaces.listChats(workspaceAccount, { projectId: projectFilter, includeArchived: url.searchParams.get('includeArchived') === 'true' }) });
-          }
-          if (req.method === 'GET' && resourceId && !action) return json(res, 200, { result: await accounts.workspaces.getChat(workspaceAccount, resourceId) });
-          if (req.method === 'POST' && !resourceId && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.createChat(workspaceAccount, await workspaceBody(8192)));
-          if (req.method === 'PATCH' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.renameChat(workspaceAccount, resourceId, (await workspaceBody(4096)).name));
-          if (req.method === 'POST' && resourceId && action === 'archive' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.archiveChat(workspaceAccount, resourceId));
-          if (req.method === 'POST' && resourceId && action === 'restore' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.restoreChat(workspaceAccount, resourceId));
-          if (req.method === 'DELETE' && resourceId && !action && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.deleteChat(workspaceAccount, resourceId));
-          if (req.method === 'POST' && resourceId && action === 'move' && req.headers['x-media-client'] === 'web') return workspaceChanged(await accounts.workspaces.moveChat(workspaceAccount, resourceId, (await workspaceBody(4096)).projectId ?? null));
-        }
-        return json(res, 404, { error: 'Метод не найден' });
+      if (accounts && ((req.method === 'GET' && ['/api/workspace/history', '/api/workspace/sync'].includes(url.pathname))
+        || /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|restore|move))?)?$/.test(url.pathname))) {
+        return await handleWorkspaceRequest({ req, url, user, accounts,
+          send: (status, body) => json(res, status, body),
+          readBody: limit => readBody(req, limit), recordSystemEvent });
       }
       if (url.pathname.startsWith('/api/admin/')) {
-        if (!accounts) return json(res, 403, { error: 'Доступ запрещён' });
-        assertAdminRole(user.role);
-        if (url.pathname === '/api/admin/kie-session/status' && req.method === 'GET') {
-          if (kieBrowserControl && !kieBrowserControl.running()) return json(res, 200, { result: { state: 'sleeping', loginUrl: null, embedded: true } });
-          return json(res, 200, { result: await kieBrowserSession.status() });
-        }
-        if (url.pathname === '/api/admin/kie-session/frame' && req.method === 'GET') {
-          if (!config.kieBrowser?.embedded) return json(res, 404, { error: 'Встроенный браузер не включён' });
-          await kieBrowserControl?.ensureActive();
-          const result = await kieBrowserSession.frame();
-          kieBrowserControl?.touch();
-          return json(res, 200, { result });
-        }
-        if (url.pathname === '/api/admin/kie-session/input' && req.method === 'POST') {
-          if (!config.kieBrowser?.embedded || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Встроенный браузер не включён' });
-          const action = JSON.parse((await readBody(req, 4096)).toString('utf8'));
-          await kieBrowserControl?.ensureActive();
-          await kieBrowserSession.input(action);
-          kieBrowserControl?.touch();
-          return json(res, 200, { result: { ok: true } });
-        }
-        if (url.pathname === '/api/admin/credit-conversion' && req.method === 'GET') {
-          return json(res, 200, { result: accounts.conversion.snapshot() });
-        }
-        if (url.pathname === '/api/admin/provider-status' && req.method === 'GET') {
-          const provider = url.searchParams.get('provider');
-          const kieAccountId = url.searchParams.get('kieAccountId') || 'primary';
-          const codexLimits = config.codex?.url ? async () => {
-            const response = await fetch(`${config.codex.url.replace(/\/$/, '')}/auth/limits`, {
-              headers: { 'x-account-id': user.id }, signal: AbortSignal.timeout(15000),
-            });
-            if (!response.ok) throw new Error('Не удалось прочитать лимиты Codex');
-            return response.json();
-          } : null;
-          try { return json(res, 200, await readProviderStatus({ provider, kieAccountId, kie: accounts.provider,
-            routerAi: routerAiStatus, apimart: apimart?.provider.getStatus, codex: codexLimits })); }
-          catch (error) { return json(res, error.status === 400 ? 400 : 502, { error: error.message || 'Не удалось проверить поставщика' }); }
-        }
-        if (url.pathname === '/api/admin/kie-submissions' && req.method === 'GET') {
-          const { kieSubmissionStatistics } = require('../services/kie-submission-statistics');
-          return json(res, 200, { result: await kieSubmissionStatistics(accounts.pool, url.searchParams.get('days') || 30) });
-        }
-        if (url.pathname === '/api/admin/billing-reconciliation' && req.method === 'GET') {
-          const { billingReconciliation } = require('../services/billing-reconciliation');
-          return json(res, 200, { result: await billingReconciliation(accounts.pool, url.searchParams.get('days') || 30) });
-        }
-        if (url.pathname === '/api/admin/operations' && req.method === 'GET') {
-          const { operationsMetrics } = require('../services/operations-metrics');
-          return json(res, 200, { result: await operationsMetrics(accounts.pool) });
-        }
-        if (url.pathname.startsWith('/api/admin/codex/')) {
-          const action = url.pathname.slice('/api/admin/codex/'.length);
-          if (!((action === 'status' && req.method === 'GET') || (['start', 'cancel'].includes(action) && req.method === 'POST' && req.headers['x-media-client'] === 'web'))) return json(res, 404, { error: 'Не найдено' });
-          if (!config.codex?.url) return json(res, 503, { error: 'Сервис Codex не подключён на сервере.' });
-          try {
-            const response = await fetch(`${config.codex.url.replace(/\/$/, '')}/auth/${action}`, { method: req.method, headers: { 'x-account-id': user.id }, signal: AbortSignal.timeout(15000) });
-            if (!response.ok) return json(res, 502, { error: 'Обновите и проверьте сервис Codex на сервере.' });
-            return json(res, 200, { result: await response.json() });
-          } catch { return json(res, 502, { error: 'Сервис Codex не отвечает. Проверьте его запуск.' }); }
-        }
-        if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return json(res, 200, { result: await accounts.list() });
-        if (url.pathname === '/api/admin/starter-pack' && req.method === 'GET') return json(res, 200, { result: await accounts.starterOverview() });
-        if (url.pathname === '/api/admin/roles' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
-          const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
-          await accounts.setRole(user.id, body.accountId, body.role, body.reason);
-          return json(res, 200, { result: true });
-        }
-        if (url.pathname === '/api/admin/roles' && req.method === 'GET') return json(res, 200, { result: await accounts.audit() });
-        if (url.pathname === '/api/admin/ledger' && req.method === 'GET') return json(res, 200, { result: await accounts.ledger(url.searchParams.get('account')) });
-        if (url.pathname === '/api/admin/reconcile' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
-          const body = JSON.parse((await readBody(req, 8192)).toString('utf8'));
-          const result = await accounts.reconcile(user.id, body.accountId, body.jobId, body.outcome, body.evidence);
-          return json(res, 200, { result });
-        }
-        if (url.pathname === '/api/admin/grant' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
-          const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));
-          await accounts.wallet.grant(user.id, body.accountId, body.amountUnits, body.reference, body.note);
-          return json(res, 200, { result: await accounts.wallet.get(body.accountId) });
-        }
-        return json(res, 404, { error: 'Метод не найден' });
+        return await handleAdminRequest({ req, url, user, accounts, config, kieBrowserControl, kieBrowserSession, routerAiStatus, apimart,
+          send: (status, body) => json(res, status, body), readBody: limit => readBody(req, limit) });
       }
       // An admin can explicitly select a workspace; ordinary users cannot supply a tenant.
       const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
@@ -706,21 +438,14 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'POST') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
         if (url.pathname === '/api/source') {
-          const type = (req.headers['content-type'] || '').split(';')[0];
-          if (!/^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/[a-z0-9.+-]+)$/.test(type))
-            return json(res, 400, { error: 'Этот тип исходника не поддерживается', code: 'UNSUPPORTED_MEDIA_TYPE' });
-          const declared = Number(req.headers['content-length']);
-          const reservation = Number.isSafeInteger(declared) && declared > 0 ? declared : config.uploadLimit;
-          if (reservation > config.uploadLimit) return json(res, 413, { error: 'Файл слишком большой' });
-          if (uploadBytesInFlight + reservation > (config.uploadInFlightLimit ?? 256 * 1024 * 1024))
-            return json(res, 429, { error: 'Слишком много одновременных загрузок' });
-          uploadBytesInFlight += reservation;
-          try {
-            const binding = accounts ? await accounts.workspaces.assertBinding(selected || user.id, url.searchParams.get('projectId') || undefined, url.searchParams.get('chatId') || undefined) : {};
-            const upload = { stream: req, limit: config.uploadLimit };
-            const saved = await service.saveSource({ name: url.searchParams.get('name') || 'source', type, ...upload, ...binding });
-            return json(res, 200, { result: saved });
-          } finally { uploadBytesInFlight -= reservation; }
+          return await handleSourceUpload({ req, url, user, accounts, selected, service, config,
+            send: (status, body) => json(res, status, body),
+            reserveUpload: async (reservation, action) => {
+              if (uploadBytesInFlight + reservation > (config.uploadInFlightLimit ?? 256 * 1024 * 1024))
+                return json(res, 429, { error: 'Слишком много одновременных загрузок' });
+              uploadBytesInFlight += reservation;
+              try { return await action(); } finally { uploadBytesInFlight -= reservation; }
+            } });
         }
         const match = rpcMatch;
         if (!match) return json(res, 404, { error: 'Метод не найден' });
@@ -749,32 +474,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         res.on('close', () => { clearInterval(heartbeat); if (changedTimer) clearTimeout(changedTimer); connections.delete(res); service.events.off('changed', notify); service.events.off('reset', reset); });
         return;
       }
-      const source = /^\/api\/sources\/([a-f0-9]{64})$/.exec(url.pathname);
-      if (source) {
-        const file = await service.sourceFile(source[1]);
-        return await sendMedia(req, res, () => file.storageKey ? sendStored(req, res, storage, file) : sendFile(req, res, file.path, file.type));
-      }
-      const result = /^\/api\/results\/([a-f0-9-]{36})\/(\d+)$/.exec(url.pathname);
-      if (result) {
-        const attachment = url.searchParams.has('download');
-        let file;
-        try { file = await service.resultFile(result[1], Number(result[2])); }
-        catch (error) {
-          if (!attachment || (error.code !== 'RESULT_NOT_FOUND' && ![404, 409].includes(error.status))) throw error;
-          await service.saveResults(result[1]);
-          file = await service.resultFile(result[1], Number(result[2]));
-        }
-        return await sendMedia(req, res, () => file.storageKey
-          ? sendStored(req, res, storage, file, attachment)
-          : sendFile(req, res, file.path, null, attachment));
-      }
-      const contentRequest = /^\/api\/content\/([a-f0-9-]{36})$/.exec(url.pathname);
-      if (contentRequest) {
-        if (!accounts?.content) throw Object.assign(new Error('Хранилище контента не подключено'), { status: 503 });
-        const accountId = selected || user.id;
-        const file = await accounts.content.file(accountId, contentRequest[1]);
-        const attachment = url.searchParams.has('download') || file.type === 'image/svg+xml';
-        return file.storageKey ? sendStored(req, res, storage, file, attachment) : sendFile(req, res, file.path, file.type, attachment);
+      if (/^\/api\/(?:sources\/[a-f0-9]{64}|results\/[a-f0-9-]{36}\/\d+|content\/[a-f0-9-]{36})$/.test(url.pathname)) {
+        return await handleContentRead({ url, user, selected, accounts, service,
+          sendMedia: fn => sendMedia(req, res, fn),
+          sendStored: (file, attachment) => sendStored(req, res, storage, file, attachment),
+          sendFile: (file, type, attachment) => sendFile(req, res, file, type, attachment) });
       }
       if (shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) assertAdminRole(user.role);
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
@@ -827,23 +531,16 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     }
   });
   server.requestTimeout = 60000; server.headersTimeout = 15000;
-  server.recoverCodex = () => codex?.recover();
-  server.recoverRouterAi = () => routerAi?.recover();
-  server.recoverApimart = () => apimart?.recover();
-  server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null) => {
-    const nextCodex = nextAccounts && config.codex?.url ? createCodexBilling({ accounts: nextAccounts, url: config.codex.url,
-      dataDirectory: config.dataDirectory, storage, content: nextAccounts.content }) : null;
-    const nextRouterAi = nextAccounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts: nextAccounts, apiKey: config.routerAi.apiKey,
-      content: nextAccounts.content, tariffFetcher: routerAiModels.tariff }) : null;
-    const nextApimart = nextAccounts && config.apimart?.apiKey ? createApimartJobs({ pool: nextAccounts.pool, content: nextAccounts.content, apiKey: config.apimart.apiKey }) : null;
-    try {
-      if (config.replicaRole !== 'web') { await nextCodex?.recover(); await nextRouterAi?.recover(); await nextApimart?.recover(); }
-    } catch (error) { nextCodex?.close(); nextRouterAi?.close(); throw error; }
-    codex?.close(); routerAi?.close();
+  server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null, nextGenerationServices = null) => {
     auth = nextAuth; accounts = nextAccounts; payments = nextPayments; commerce = nextCommerce;
-    codex = nextCodex; routerAi = nextRouterAi; apimart = nextApimart;
+    codex = nextGenerationServices?.codex || null;
+    codexProvider = nextGenerationServices?.codexProvider || null;
+    routerAi = nextGenerationServices?.routerAi || null;
+    apimart = nextGenerationServices?.apimart || null;
+    routerAiModels = nextGenerationServices?.routerAiModels || null;
+    routerAiStatus = nextGenerationServices?.routerAiStatus || null;
   };
-  server.closeEvents = () => { codex?.close(); routerAi?.close(); for (const connection of connections) connection.end(); };
+  server.closeEvents = () => { for (const connection of connections) connection.end(); };
   return server;
 }
 module.exports = { createHttpServer, readBody };

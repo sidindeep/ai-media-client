@@ -179,11 +179,10 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
     },
   };
   const accounts = {
-    pool: { query: async text => {
-      if (/clock_timestamp/.test(text)) return { rows: [{ cursor: new Date(cursorValues.shift()) }] };
-      assert.match(text, /count\(\*\)/);
-      return { rows: [{ count: 3 }] };
-    } },
+    workspaceSyncReadModel: async (accountId, includeUnassigned) => {
+      assert.equal(accountId, user.id);
+      return { cursor: cursorValues.shift(), unassignedCount: includeUnassigned ? 3 : null };
+    },
     scope: async () => service,
     workspaces: {
       ensureDefaultChatId: async accountId => { assert.equal(accountId, user.id); return 'chat-full'; },

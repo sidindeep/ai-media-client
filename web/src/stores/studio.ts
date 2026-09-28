@@ -208,8 +208,8 @@ export const useStudioStore = defineStore('studio', () => {
       || models.find(item => item.isDefault)
       || models[0];
     codexModel.value = model.id;
-    if (!model.efforts.includes(codexEffort.value)) codexEffort.value = model.defaultEffort || model.efforts[0] || 'medium';
-    if (!['standard', 'fast'].includes(codexSpeed.value)) codexSpeed.value = 'fast';
+    if (!model.efforts.includes(codexEffort.value)) codexEffort.value = model.efforts.includes('low') ? 'low' : model.efforts[0] || 'medium';
+    if (!['standard', 'fast'].includes(codexSpeed.value)) codexSpeed.value = 'standard';
     if (!['auto', '1:1', '16:9', '9:16', '3:2', '2:3'].includes(codexAspectRatio.value)) codexAspectRatio.value = 'auto';
   }
   function normalizeRouterAiControls() {
@@ -563,7 +563,12 @@ export const useStudioStore = defineStore('studio', () => {
     const previousModel = provider.value === 'media' ? currentMediaModel.value : undefined;
     const previousFiles = [...sourceFiles.value];
     rememberSelection();
-    if (provider.value === 'codex') codexModel.value = value;
+    if (provider.value === 'codex') {
+      codexModel.value = value;
+      const efforts = currentCodexModel.value?.efforts || [];
+      codexEffort.value = efforts.includes('low') ? 'low' : efforts[0] || 'medium';
+      codexSpeed.value = 'standard';
+    }
     else if (provider.value === 'routerai') routerAiModel.value = value;
     else if (provider.value === 'apimart') apimartModel.value = value;
     else mediaModelId.value = value;
@@ -709,8 +714,9 @@ export const useStudioStore = defineStore('studio', () => {
         || models.find(model => model.isDefault)?.id
         || models[0]?.id
         || '';
-      codexEffort.value = defaults?.effort || currentCodexModel.value?.defaultEffort || 'medium';
-      codexSpeed.value = defaults?.speed || 'standard';
+      codexEffort.value = currentCodexModel.value?.efforts.includes('low') ? 'low'
+        : currentCodexModel.value?.efforts[0] || 'medium';
+      codexSpeed.value = 'standard';
       codexKind.value = defaults?.kind === 'text' ? 'text' : 'image';
       normalizeCodexControls();
       normalizeRouterAiControls();

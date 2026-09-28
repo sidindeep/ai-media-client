@@ -111,6 +111,10 @@
   filesystem, external services, and configuration behind explicit boundaries.
   Record measurable quality goals and significant architecture tradeoffs. Follow
   `patterns/ARCHITECTURE_AND_CODE_QUALITY.md`.
+- For large modular systems, keep a project-local system map, module passports,
+  and public contracts. Coordinate agents through those contracts and verify an
+  assembled workflow. A module need not be a deployable service. Follow
+  `patterns/MODULAR_SERVICE_ENGINEERING.md`.
 - Treat senior agent behavior as a compact engineering execution standard, not
   as a separate personality label. Before code changes, agents should load
   relevant local context, preserve intended behavior, keep architecture and

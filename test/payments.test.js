@@ -225,9 +225,16 @@ test('test sales without YooKassa keys select the no-charge stub', () => {
 
 test('payment bounded context does not import product modules or query product tables', async () => {
   const fs = require('node:fs/promises');
-  const files = ['contracts.js', 'service.js', 'providers/yookassa.js'];
-  for (const file of files) {
-    const source = await fs.readFile(path.resolve(__dirname, '../src/payments', file), 'utf8');
-    assert.doesNotMatch(source, /require\(['"]\.\.\/commerce|media_(accounts|wallets|orders|ledger)/);
+  const paymentsRoot = path.resolve(__dirname, '../src/payments');
+  async function checkDirectory(directory) {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) { await checkDirectory(file); continue; }
+      if (!entry.isFile() || !file.endsWith('.js')) continue;
+      const source = await fs.readFile(file, 'utf8');
+      assert.doesNotMatch(source, /require\(['"]\.\.\/(?:\.\.\/)?(?:commerce|billing|services|auth)(?:\/|['"])|\bmedia_[a-z_]+\b/,
+        `${path.relative(paymentsRoot, file)} crossed the payment boundary`);
+    }
   }
+  await checkDirectory(paymentsRoot);
 });

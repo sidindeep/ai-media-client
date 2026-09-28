@@ -208,6 +208,8 @@ async function main() {
     await client.evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
     await client.until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='media'");
     await client.evaluate("const model=document.querySelector('.model-pill select');model.value='kie:nano-banana-2-lite';model.dispatchEvent(new Event('change',{bubbles:true}));const prompt=document.querySelector('.composer-body textarea');prompt.value='Browser retry';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await client.evaluate("document.querySelector('.source-preview .source-remove')?.click();void 0");
+    await client.until("document.querySelectorAll('.source-preview').length===0");
     await client.until("Boolean(document.querySelector('.aspect-native-select option[value=\"1:1\"]'))");
     await client.evaluate("const ratio=document.querySelector('.aspect-native-select');ratio.value='1:1';ratio.dispatchEvent(new Event('change',{bubbles:true}));void 0");
     await client.until("!document.querySelector('.generate-button').disabled");
@@ -216,7 +218,9 @@ async function main() {
       if(url.pathname==='/api/rpc/createTask')return Promise.resolve(new Response(JSON.stringify({error:'Test rejected before enqueue'}),{status:400,headers:{'Content-Type':'application/json'}}));
       return window.__acceptedFetch(input,init)};document.querySelector('.generate-button').click();void 0`);
     await client.until("Boolean(document.querySelector('.chat-result-item.selected .chat-result-state.state-fail'))");
-    await client.evaluate("window.fetch=window.__acceptedFetch;delete window.__acceptedFetch;document.querySelector('.generate-button').click();void 0");
+    await client.evaluate("window.fetch=window.__acceptedFetch;delete window.__acceptedFetch;void 0");
+    await client.until("!document.querySelector('.generate-button').disabled");
+    await client.evaluate("document.querySelector('.generate-button').click();void 0");
     await client.until("Boolean(document.querySelector('.result-card .panel-heading h2.is-success'))");
     await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:recraft/crisp-upscale';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
     await client.until("document.querySelector('.source-strip input[type=file]') !== null && document.querySelector('.composer-body textarea') === null");

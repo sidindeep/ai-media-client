@@ -73,6 +73,9 @@ function createWallet(pool, { onPurchase } = {}) {
     async ledger(accountId) {
       return (await pool.query('SELECT kind,reference,amount,created_at FROM media_ledger WHERE account_id=$1 ORDER BY created_at DESC LIMIT 200', [accountId])).rows;
     },
+    async auditLedger(accountId) {
+      return (await pool.query('SELECT kind,amount,note,actor_id,created_at FROM media_ledger WHERE account_id=$1 ORDER BY created_at DESC LIMIT 200', [accountId])).rows;
+    },
     async grant(actorId, accountId, amount, reference, note) {
       units(amount);
       if (!amount || typeof reference !== 'string' || !/^[\w-]{8,100}$/.test(reference) || typeof note !== 'string' || !note.trim() || note.length > 500) throw new Error('Укажите сумму, идентификатор и причину начисления');

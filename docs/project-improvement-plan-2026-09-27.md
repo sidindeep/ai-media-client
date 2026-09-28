@@ -86,6 +86,9 @@
 
 **Тип:** небольшие рефакторинги с сохранением API/поведения.
 
+Порядок пакетов, зависимости и критерии приёмки уточнены в
+[плане доработки модульности](modularity-improvement-plan.md) по ГИ 2026.09.28.2.
+
 - Вынести создание сервисов из HTTP в composition root; разделить routes по auth, workspace, generation, content, commerce/admin.
 - Описать узкие порты операций: generation submit/read, history page/delta, account access, content read/save. Скрыть прямое использование `accounts.pool`, `service.queue` и `service.history` за нужными командами.
 - Разделить studio store по причинам изменения: bootstrap/session, history sync, workspace selection, drafts, generation submission. Composer выделяет upload/quote/validation через composables.

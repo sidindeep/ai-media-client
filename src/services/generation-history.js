@@ -47,11 +47,25 @@ function routerAiRecord(job) {
   };
 }
 
+function apimartRecord(job) {
+  return {
+    id: `apimart:${job.id}`, providerId: 'apimart', providerName: 'APIMart',
+    modelId: job.model, model: job.model, modelName: job.model, kind: 'text',
+    state: job.state === 'running' ? 'generating' : job.state,
+    workspace: -1, queueHidden: true, requestId: job.id, revision: job.revision,
+    createdAt: job.createdAt, updatedAt: job.updatedAt,
+    generationStartedAt: job.createdAt, generationCompletedAt: job.completedAt, generationDurationMs: job.durationMs,
+    input: { prompt: job.prompt }, projectId: job.projectId || null, chatId: job.chatId || null,
+    output: job.output, usage: job.usage, error: job.error, resultJson: '{"resultUrls":[]}', localFiles: [],
+  };
+}
+
 async function generationHistory(pool, accountId, service, present = record => record) {
-  const [media, codex, routerAi] = await Promise.all([
-    service.listHistory(), new AccountRecords(pool, accountId, 'codex').list(), new AccountRecords(pool, accountId, 'routerai').list()
+  const [media, codex, routerAi, apimart] = await Promise.all([
+    service.listHistory(), new AccountRecords(pool, accountId, 'codex').list(),
+    new AccountRecords(pool, accountId, 'routerai').list(), new AccountRecords(pool, accountId, 'apimart').list()
   ]);
-  return [...media.map(present), ...codex.map(codexRecord), ...routerAi.map(routerAiRecord)]
+  return [...media.map(present), ...codex.map(codexRecord), ...routerAi.map(routerAiRecord), ...apimart.map(apimartRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
 async function generationHistorySince(pool, accountId, service, since, before, present = record => record, activeIds = []) {
@@ -59,12 +73,13 @@ async function generationHistorySince(pool, accountId, service, since, before, p
   // Re-read jobs still active in the browser, even outside the delta window.
   const providerIds = provider => activeIds.filter(id => id.startsWith(`${provider}:`))
     .map(id => `${provider}:${accountId}:${id.slice(provider.length + 1)}`);
-  const [media, codex, routerAi] = await Promise.all([
+  const [media, codex, routerAi, apimart] = await Promise.all([
     service.listHistorySince(since, before, activeIds.filter(id => !id.includes(':'))),
     new AccountRecords(pool, accountId, 'codex').listSince(since, before, providerIds('codex')),
-    new AccountRecords(pool, accountId, 'routerai').listSince(since, before, providerIds('routerai'))
+    new AccountRecords(pool, accountId, 'routerai').listSince(since, before, providerIds('routerai')),
+    new AccountRecords(pool, accountId, 'apimart').listSince(since, before, providerIds('apimart'))
   ]);
-  return [...media.map(present), ...codex.map(codexRecord), ...routerAi.map(routerAiRecord)]
+  return [...media.map(present), ...codex.map(codexRecord), ...routerAi.map(routerAiRecord), ...apimart.map(apimartRecord)]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
 const activeStates = ['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'running'];
@@ -74,7 +89,7 @@ function decodeCursor(value) {
     if (typeof value !== 'string' || value.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error();
     const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
     if (!Array.isArray(cursor) || cursor.length !== 3 || typeof cursor[0] !== 'string'
-      || !['history', 'codex', 'routerai'].includes(cursor[1]) || typeof cursor[2] !== 'string'
+      || !['history', 'codex', 'routerai', 'apimart'].includes(cursor[1]) || typeof cursor[2] !== 'string'
       || cursor[0].length > 40 || cursor[2].length > 200) throw new Error();
     return cursor;
   } catch { throw Object.assign(new Error('Некорректный курсор истории'), { status: 400 }); }
@@ -87,7 +102,7 @@ async function generationHistoryPage(pool, accountId, service, cursorValue, pres
   }
   const selectedChatId = chatId === 'system:recent' ? null : chatId;
   const rows = (await pool.query(`SELECT namespace,id,data,COALESCE(data->>'createdAt','') AS created FROM media_records
-    WHERE account_id=$1 AND namespace IN ('history','codex','routerai')
+    WHERE account_id=$1 AND namespace IN ('history','codex','routerai','apimart')
       AND COALESCE(data->>'state','')<>ALL($2::text[])
       AND ($3::text IS NULL OR (COALESCE(data->>'createdAt',''),namespace,id)<($3::text,$4::text,$5::text))
       AND ($7::boolean=false OR data->>'chatId' IS NOT DISTINCT FROM $8::text)
@@ -98,16 +113,18 @@ async function generationHistoryPage(pool, accountId, service, cursorValue, pres
   const presentedMedia = service.presentHistory ? await service.presentHistory(media) : media;
   const mediaById = new Map(presentedMedia.map(row => [row.id, present(row)]));
   const records = page.map(row => row.namespace === 'history' ? mediaById.get(row.id)
-    : row.namespace === 'codex' ? codexRecord(row.data) : routerAiRecord(row.data));
+    : row.namespace === 'codex' ? codexRecord(row.data)
+      : row.namespace === 'apimart' ? apimartRecord(row.data) : routerAiRecord(row.data));
   return { records, next: rows.length > limit ? encodeCursor(page[page.length - 1]) : null };
 }
 async function generationActive(pool, accountId, service, present = record => record) {
   const rows = (await pool.query(`SELECT namespace,data FROM media_records WHERE account_id=$1
-    AND namespace IN ('history','codex','routerai') AND data->>'state'=ANY($2::text[])`, [accountId, activeStates])).rows;
+    AND namespace IN ('history','codex','routerai','apimart') AND data->>'state'=ANY($2::text[])`, [accountId, activeStates])).rows;
   const media = rows.filter(row => row.namespace === 'history').map(row => row.data);
   const presentedMedia = service.presentHistory ? await service.presentHistory(media) : media;
   const mediaById = new Map(presentedMedia.map(row => [row.id, present(row)]));
   return rows.map(row => row.namespace === 'history' ? mediaById.get(row.data.id)
-    : row.namespace === 'codex' ? codexRecord(row.data) : routerAiRecord(row.data));
+    : row.namespace === 'codex' ? codexRecord(row.data)
+      : row.namespace === 'apimart' ? apimartRecord(row.data) : routerAiRecord(row.data));
 }
 module.exports = { generationHistory, generationHistorySince, generationHistoryPage, generationActive };

@@ -66,6 +66,8 @@ export type Catalog = {
   models: MediaModel[];
 };
 
+export type ApimartCatalog = { models: Array<{ id: string; name: string; kind: 'text' }>; error?: string };
+
 export type GenerationPreset = {
   id: string;
   name: string;

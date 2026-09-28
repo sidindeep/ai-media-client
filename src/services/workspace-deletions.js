@@ -33,16 +33,16 @@ function createWorkspaceDeletions(pool, { storage, dataDirectory }) {
       if (!chat) throw bad('Чат не найден', 404);
       if (!chat.archived_at) throw bad('Удалить можно только архивный чат', 409);
       const records = (await client.query(`SELECT namespace,id,data FROM media_records
-        WHERE account_id=$1 AND namespace IN ('history','codex','routerai') AND data->>'chatId'=$2 FOR UPDATE`, [accountId, chatId])).rows;
+        WHERE account_id=$1 AND namespace IN ('history','codex','routerai','apimart') AND data->>'chatId'=$2 FOR UPDATE`, [accountId, chatId])).rows;
       if (records.some(record => !FINISHED.has(record.data.state))) throw bad('Дождитесь завершения или сверки всех задач чата', 409);
       const linked = (await client.query(`SELECT DISTINCT l.asset_id FROM content_links l
         JOIN media_records r ON r.account_id=l.account_id AND r.namespace=l.namespace AND r.id=l.record_id
-        WHERE r.account_id=$1 AND r.namespace IN ('history','codex','routerai') AND r.data->>'chatId'=$2`, [accountId, chatId])).rows;
+        WHERE r.account_id=$1 AND r.namespace IN ('history','codex','routerai','apimart') AND r.data->>'chatId'=$2`, [accountId, chatId])).rows;
       const owned = (await client.query("SELECT id FROM content_assets WHERE account_id=$1 AND origin->>'recordId'=ANY($2::text[])",
         [accountId, records.map(record => record.id)])).rows;
       await client.query(`INSERT INTO media_deleted_chat_records(account_id,namespace,id,chat_id)
         SELECT account_id,namespace,id,$2::uuid FROM media_records
-        WHERE account_id=$1 AND namespace IN ('history','codex','routerai') AND data->>'chatId'=$2::text
+        WHERE account_id=$1 AND namespace IN ('history','codex','routerai','apimart') AND data->>'chatId'=$2::text
         ON CONFLICT(account_id,namespace,id) DO NOTHING`, [accountId, chatId]);
       const assetIds = new Set([...linked, ...owned].map(row => row.asset_id || row.id));
       for (const record of records) {
@@ -60,7 +60,7 @@ function createWorkspaceDeletions(pool, { storage, dataDirectory }) {
         }
       }
       await client.query(`DELETE FROM media_records WHERE account_id=$1
-        AND namespace IN ('history','codex','routerai') AND data->>'chatId'=$2`, [accountId, chatId]);
+        AND namespace IN ('history','codex','routerai','apimart') AND data->>'chatId'=$2`, [accountId, chatId]);
       await client.query("DELETE FROM media_records WHERE account_id=$1 AND namespace='drafts' AND id=$2", [accountId, `chat:${chatId}`]);
       if (assetIds.size) {
         const orphans = (await client.query(`SELECT a.id,a.storage_key,a.status FROM content_assets a

@@ -37,6 +37,7 @@ export const en = {
   'composer.priceUnitUnsupported': 'A tariff exists, but its pricing unit is not supported yet. You can generate without an upfront credit charge.',
   'composer.priceVariantUnknown': 'There is no verified price for these settings. You can generate without an upfront credit charge.',
   'routerai.admin.title': 'All RouterAI models · admin API mode',
+  'apimart.admin.billingNotice': 'APIMart is available to administrators only. Internal credit billing is not configured; usage is charged by APIMart.',
   'routerai.admin.description': 'Full RouterAI catalog. Prices use the current provider tariff: 1 RUB = 1 credit. Requests without a calculable price cannot be submitted.',
   'routerai.admin.loading': 'Loading catalog…',
   'routerai.admin.search': 'Search models',

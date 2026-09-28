@@ -13,6 +13,7 @@
 - [Веб и Telegram](specs/features/web-telegram.md) — сервер, общий workspace, бот и проверки.
 
 - [Граница медиа и провайдеров](specs/features/media-provider-boundary.md) — контракт приложения и клиенты провайдеров.
+- [APIMart](specs/features/apimart.md) — администраторский текстовый маршрут, ключ, история и границы тарификации.
 
 - [Архитектура](architecture.md) — границы процессов и поток данных.
 - [Стек](specs/technology-stack.md) — технологии и команды.

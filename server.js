@@ -195,7 +195,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       accountMode: config.auth.enabled, accounts, telegramLinks });
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled && !telegramLinks ? { disabledReason: 'account-database-unavailable' } : {}) });
     server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce, kieBrowserControl });
-    if (!webReplica) { await server.recoverCodex(); await server.recoverRouterAi(); }
+    if (!webReplica) { await server.recoverCodex(); await server.recoverRouterAi(); await server.recoverApimart(); }
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     if (!webReplica && (config.replicaRole !== 'executor' || ownerClient)) { telegram.start(); telegramStarted = true; }
     if (startupChecks && !webReplica) void checkProviderReadiness(service, readiness);

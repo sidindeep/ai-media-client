@@ -119,13 +119,16 @@ const quoteErrorMessage = computed(() => {
   return studio.provider === 'media' ? t('composer.quoteRetryKie', { error: quoteError.value }) : quoteError.value;
 });
 const modelChoice = computed({
-  get: () => studio.provider === 'codex' ? studio.codexModel : studio.provider === 'routerai' ? studio.routerAiModel : studio.mediaModelId,
+  get: () => studio.provider === 'codex' ? studio.codexModel : studio.provider === 'routerai' ? studio.routerAiModel
+    : studio.provider === 'apimart' ? studio.apimartModel : studio.mediaModelId,
   set: value => {
     studio.setSelectedModel(value);
     fieldErrors.value = {};
   },
 });
-const modelOptions = computed(() => studio.provider === 'routerai'
+const modelOptions = computed(() => studio.provider === 'apimart'
+  ? studio.apimartModels.map(model => ({ value: model.id, label: model.name, description: 'APIMart', groupId: 'apimart' }))
+  : studio.provider === 'routerai'
   ? studio.routerAiModels.map(model => ({ value: model.id, label: model.name, description: model.description || 'RouterAI', groupId: routerAiModelBrandId(model.id) }))
   : studio.provider === 'codex'
   ? (studio.codexCatalog?.models || []).map(model => ({ value: model.id, label: model.name, description: studio.isAdmin ? t('composer.codexDescriptionAdmin') : t('composer.codexDescription'), groupId: 'codex' }))
@@ -351,6 +354,7 @@ function stopQuoteTimer() {
 }
 
 function quoteRequestReady() {
+  if (studio.provider === 'apimart') return false;
   if (studio.provider === 'codex') return Boolean(studio.codexModel && studio.codexEffort);
   if (studio.provider === 'routerai') return Boolean(studio.routerAiModel);
   return Boolean(studio.mediaModelId && !missingRequiredFields.value.length);
@@ -625,7 +629,7 @@ async function submit(event?: Event) {
   if (missingRequiredFields.value.length) { submitError.value = t('composer.completeRequired'); return; }
   if (studio.provider === 'codex' && !quote.value) { submitError.value = studio.isAdmin ? (quoteError.value || t('composer.waitQuote')) : publicServiceError(quoteError.value, t('composer.waitQuote')); return; }
   if (studio.provider === 'routerai' && !quote.value) { submitError.value = quoteError.value || t('composer.waitQuote'); return; }
-  if ((studio.provider === 'codex' || studio.provider === 'routerai' && !(studio.currentRouterAiModel?.kind === 'transcription' && routerAiAudioFile.value)) && !studio.prompt.trim()) { submitError.value = t('composer.enterPrompt'); return; }
+  if ((studio.provider === 'codex' || studio.provider === 'apimart' || studio.provider === 'routerai' && !(studio.currentRouterAiModel?.kind === 'transcription' && routerAiAudioFile.value)) && !studio.prompt.trim()) { submitError.value = t('composer.enterPrompt'); return; }
   const selectedAtClick = submissionSelection();
   submitError.value = '';
   submitting.value = true;
@@ -680,8 +684,9 @@ async function submit(event?: Event) {
         <small>{{ t('composer.taskReference.hint') }}</small>
       </div>
       <div class="composer-controls">
-        <PresetBar />
+        <PresetBar v-if="studio.provider !== 'apimart'" />
         <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice" />
+        <span v-if="studio.provider === 'apimart'" class="quote warning" role="status">{{ studio.apimartCatalog?.error || t('apimart.admin.billingNotice') }}</span>
         <template v-if="studio.provider === 'codex'">
           <label class="select-pill"><span>{{ t('composer.reasoning') }}</span><select v-model="studio.codexEffort"><option v-for="effort in effortOptions" :key="effort" :value="effort">{{ effort }}</option></select></label>
           <AspectRatioPicker v-if="studio.mode === 'image'" v-model="studio.codexAspectRatio" :label="t('composer.format')" :options="['auto', '1:1', '16:9', '9:16', '3:2', '2:3']" />

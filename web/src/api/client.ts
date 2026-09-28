@@ -1,4 +1,4 @@
-import type { Account, Catalog, Chat, CodexCatalog, GenerationJournalPage, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
+import type { Account, ApimartCatalog, Catalog, Chat, CodexCatalog, GenerationJournalPage, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
 import { t } from '../i18n';
 
 type RpcResult<T> = { result: T };
@@ -227,6 +227,19 @@ export async function getCodexJob(id: string): Promise<GenerationRecord> {
 
 export async function getRouterAiCatalog(): Promise<RouterAiCatalog> {
   return parse(await fetch('/api/routerai/models', { headers: accountHeaders() }));
+}
+
+export async function getApimartCatalog(): Promise<ApimartCatalog> {
+  return parse(await fetch('/api/apimart/models', { headers: accountHeaders(), cache: 'no-store' }));
+}
+
+export async function submitApimart(input: { requestId: string; model: string; prompt: string; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
+  return parse(await fetch('/api/apimart/jobs', { method: 'POST',
+    headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
+}
+
+export async function getApimartJob(id: string): Promise<GenerationRecord> {
+  return parse(await fetch(`/api/apimart/jobs/${encodeURIComponent(id)}`, { headers: accountHeaders() }));
 }
 
 export async function getRouterAiQuote(model: string, payload: Record<string, unknown> = {}): Promise<{ quote: { credits: number | null; amountUnits: number | null; status?: string; warning?: string } | null; error?: string }> {

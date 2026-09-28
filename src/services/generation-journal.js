@@ -43,7 +43,7 @@ async function generationJournal(pool, accountId, input = {}, admin = false) {
     throw Object.assign(new Error('Некорректная страница журнала'), { status: 400 });
   }
   const provider = String(input?.provider || 'all');
-  if (!['all', 'kie', 'routerai', 'codex'].includes(provider)) {
+  if (!['all', 'kie', 'routerai', 'apimart', 'codex'].includes(provider)) {
     throw Object.assign(new Error('Некорректный провайдер журнала'), { status: 400 });
   }
   const [result, totals] = await Promise.all([

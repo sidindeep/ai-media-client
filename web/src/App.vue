@@ -81,6 +81,7 @@ const welcomeModel = computed(() => {
   if (studio.provider === 'routerai') {
     return { name: studio.currentRouterAiModel?.name || t('provider.selectModel'), provider: 'RouterAI', brand: modelBrand(studio.currentRouterAiModel ? routerAiModelBrandId(studio.currentRouterAiModel.id) : 'routerai') };
   }
+  if (studio.provider === 'apimart') return { name: studio.currentApimartModel?.name || t('provider.selectModel'), provider: 'APIMart', brand: modelBrand('apimart') };
   if (studio.provider === 'codex') {
     const model = studio.currentCodexModel;
     return { name: model?.name || (studio.isAdmin ? 'Codex' : t('provider.aiModel')), provider: studio.isAdmin ? 'Codex' : t('provider.aiModels'), brand: modelBrand('codex') };

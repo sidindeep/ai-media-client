@@ -21,11 +21,12 @@ const collapsed = ref(false);
 const menuId = ref<string | null>(null);
 const menuPosition = ref({ top: '0px', left: '0px' });
 const selectedProjectId = ref<string | null>(null);
-type ProviderId = 'codex' | 'media' | 'routerai';
+type ProviderId = 'codex' | 'media' | 'routerai' | 'apimart';
 type ProviderItem = { id: ProviderId; accountId?: 'primary' | 'secondary'; label: string; detail: string; icon: string; configured?: boolean };
 const providerItems = computed<ProviderItem[]>(() => (studio.isAdmin ? [
   { id: 'codex' as const, label: 'Codex CLI', detail: `GPT · ${t('sidebar.textImages').toLocaleLowerCase()}`, icon: 'C' },
   { id: 'routerai' as const, label: 'RouterAI', detail: t('sidebar.mediaAll'), icon: 'R', configured: Boolean(studio.routerAiCatalog?.models.length) },
+  { id: 'apimart' as const, label: 'APIMart', detail: t('composer.mode.text'), icon: 'A', configured: Boolean(studio.apimartCatalog) },
   ...(['primary', 'secondary'] as const).map((accountId, index) => {
     const account = studio.catalog?.kieAccounts?.find(item => item.id === accountId);
     return { id: 'media' as const, accountId, label: account?.name || `Kie.ai · ${index + 1}`, detail: account?.configured ? t('sidebar.mediaAll') : t('sidebar.kieNotConfigured'), icon: 'K', configured: Boolean(account?.configured) };
@@ -55,7 +56,7 @@ function statusLabel(item: ProviderItem) {
   return remaining.length ? t('sidebar.remainingLimit', { count: formatNumber(Math.min(...remaining), { maximumFractionDigits: 1 }) }) : t('sidebar.balanceUnavailable');
 }
 async function loadProviderStatus(item: ProviderItem) {
-  if (!studio.isAdmin || loadingStatuses.has(statusKey(item)) || item.configured === false) return;
+  if (!studio.isAdmin || item.id === 'apimart' || loadingStatuses.has(statusKey(item)) || item.configured === false) return;
   const key = statusKey(item);
   loadingStatuses.add(key);
   delete providerErrors.value[key];
@@ -269,7 +270,7 @@ function checkProvider() {
           <div v-for="item in providerItems" :key="item.accountId || item.id" class="sidebar-provider-row"><button type="button" class="sidebar-provider-option" :class="{ active: isActiveProvider(item) }" :data-provider="item.id" :data-kie-account="item.accountId" :disabled="item.configured === false" role="menuitemradio" :aria-checked="isActiveProvider(item)" @click="selectProvider(item, $event)"><span class="provider-option-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.label }}</strong><small>{{ item.detail }}</small><small v-if="studio.isAdmin && statusLabel(item)" class="sidebar-provider-balance">{{ statusLabel(item) }}</small></span><span v-if="isActiveProvider(item)" aria-hidden="true">✓</span></button></div>
         </div>
       </details>
-      <button v-if="studio.isAdmin" type="button" class="sidebar-provider-check" @click="checkProvider">{{ t('sidebar.checkProvider') }}</button>
+      <button v-if="studio.isAdmin && studio.provider !== 'apimart'" type="button" class="sidebar-provider-check" @click="checkProvider">{{ t('sidebar.checkProvider') }}</button>
     </template>
     <div class="sidebar-bottom"><span class="connection-dot" :class="{ ready: studio.accountReady && !studio.error }"></span><div class="sidebar-status-copy"><span>{{ studio.error ? t('sidebar.offline') : studio.accountReady ? t('sidebar.connected') : t('sidebar.connecting') }}</span><small v-if="startupTimingLabel" class="sidebar-startup-timing">{{ startupTimingLabel }}</small></div></div>
     <Teleport to="body"><div v-if="statusDialogOpen && statusDialogProvider" class="diagnostic-backdrop" @click.self="statusDialogOpen = false"><section class="diagnostic-dialog" role="dialog" aria-modal="true" :aria-label="t('composer.diagnostics')"><header><div><span class="eyebrow">{{ t('composer.diagnosticsEyebrow') }}</span><h2>{{ statusDialogProvider.label }}</h2></div><button type="button" class="dialog-close" :aria-label="t('common.close')" @click="statusDialogOpen = false">×</button></header><div v-if="loadingStatuses.has(statusKey(statusDialogProvider))" class="diagnostic-loading">{{ t('composer.diagnosticsChecking') }}</div><div v-else-if="providerErrors[statusKey(statusDialogProvider)]" class="diagnostic-summary error"><strong>{{ t('composer.diagnosticsUnavailable') }}</strong><span>{{ providerErrors[statusKey(statusDialogProvider)] }}</span></div><template v-else-if="statusFor(statusDialogProvider)"><div class="diagnostic-summary success"><strong>{{ t('composer.diagnosticsOk') }}</strong><span>{{ statusLabel(statusDialogProvider) }}</span></div><div v-if="statusFor(statusDialogProvider)?.windows.length" class="diagnostic-checks"><article v-for="(window, index) in statusFor(statusDialogProvider)?.windows" :key="index" class="ok"><span class="diagnostic-mark">✓</span><div><strong>{{ window.name }}</strong><p>{{ t('sidebar.windowRemaining', { minutes: window.windowMinutes ?? '—', percent: formatNumber(window.remainingPercent, { maximumFractionDigits: 1 }) }) }}<template v-if="window.resetsAt"> · {{ t('sidebar.resetsAt', { time: formatDate(new Date(window.resetsAt * 1000), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }) }}</template></p></div></article></div></template><footer><button type="button" class="secondary-button" @click="loadProviderStatus(statusDialogProvider)">{{ t('composer.retryCheck') }}</button><button type="button" class="primary-button" @click="statusDialogOpen = false">{{ t('common.close') }}</button></footer></section></div></Teleport>

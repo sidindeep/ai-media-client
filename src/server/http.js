@@ -9,6 +9,7 @@ const { createCodexBilling } = require('../services/codex-billing');
 const { createRouterAiBilling, validateRouterAiRequest } = require('../services/routerai-billing');
 const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { createRouterAiClient } = require('../providers/routerai/client');
+const { createApimartJobs } = require('../services/apimart-jobs');
 const { readProviderStatus } = require('../services/provider-status');
 const { createKieBrowserSession } = require('../services/kie-browser-session');
 const { handleCommerceRequest } = require('./routes/commerce');
@@ -197,6 +198,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
     content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
   const routerAiStatus = config.routerAi?.apiKey ? createRouterAiClient({ apiKey: config.routerAi.apiKey }) : null;
+  let apimart = accounts && config.apimart?.apiKey ? createApimartJobs({ pool: accounts.pool, apiKey: config.apimart.apiKey }) : null;
   const connections = new Set();
   const eventLoopBaseline = performance.eventLoopUtilization();
   let loginWindow = Date.now(), loginRequests = 0;
@@ -240,7 +242,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         || (maxStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
       if (!allowedTopLevelNavigation && !oauthCallback && !emailVerify && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       if (config.replicaRole === 'web' && (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
-        || /^\/api\/(?:codex|routerai|admin)\//.test(url.pathname)
+        || /^\/api\/(?:codex|routerai|apimart|admin)\//.test(url.pathname)
         || url.pathname === '/api/startup' || url.pathname === '/api/account/telegram')) {
         return forwardToExecutor(req, res, config.executorUrl, config.executorPublicOrigin, config.publicOrigin);
       }
@@ -426,6 +428,28 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         for (const connection of connections) if (connection.accountId === user.id) connection.end();
         return json(res, 200, { result: true });
       }
+      if (url.pathname.startsWith('/api/apimart/')) {
+        if (user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (!apimart) return json(res, 503, { error: 'APIMart не настроен' });
+        if (req.method === 'GET' && url.pathname === '/api/apimart/models') {
+          try { return json(res, 200, { models: await apimart.models() }); }
+          catch (error) { return json(res, 200, { models: [], error: error.status === 402
+            ? 'APIMart требует пополнить баланс для загрузки каталога.' : 'Каталог APIMart временно недоступен.' }); }
+        }
+        if (req.method === 'POST' && url.pathname === '/api/apimart/jobs') {
+          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
+          const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return json(res, 400, { error: 'Некорректный запрос APIMart' });
+          const binding = await accounts.workspaces.assertBinding(user.id, raw.projectId, raw.chatId);
+          return json(res, 200, await apimart.submit(user.id, { ...raw, ...binding }));
+        }
+        const jobRequest = /^\/api\/apimart\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
+        if (req.method === 'GET' && jobRequest) {
+          const job = await apimart.get(user.id, jobRequest[1]);
+          return job ? json(res, 200, job) : json(res, 404, { error: 'Запрос не найден' });
+        }
+        return json(res, 404, { error: 'Не найдено' });
+      }
       if (url.pathname.startsWith('/api/routerai/')) {
         await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
         if (!routerAi) return json(res, 503, { error: 'RouterAI не настроен.' });
@@ -535,7 +559,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (since && Number.isNaN(since.getTime())) return json(res, 400, { error: 'Некорректный курсор синхронизации' });
         if (!since) await accounts.workspaces.ensureDefaultChatId(workspaceAccount);
         const activeIds = url.searchParams.getAll('active');
-        if (activeIds.length > 20 || activeIds.some(id => !/^(?:(?:codex|routerai):)?[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
+        if (activeIds.length > 20 || activeIds.some(id => !/^(?:(?:codex|routerai|apimart):)?[a-f0-9-]{36}$/.test(id))) return json(res, 400, { error: 'Некорректный список активных задач' });
         const cursorValue = (await accounts.pool.query('SELECT clock_timestamp() AS cursor')).rows[0]?.cursor;
         const cursor = cursorValue instanceof Date ? cursorValue.toISOString() : new Date(cursorValue).toISOString();
         const [historyResult, activeRecords, projects, chats, queue, unassignedCount] = await Promise.all([
@@ -545,7 +569,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           since ? accounts.workspaces.listChatChanges(workspaceAccount, since.toISOString(), cursor) : accounts.workspaces.listChats(workspaceAccount),
           scopedService.dispatch('queueStatus'),
           since ? null : accounts.pool.query(`SELECT count(*)::int AS count FROM media_records WHERE account_id=$1
-            AND namespace IN ('history','codex','routerai') AND data->>'chatId' IS NULL`, [workspaceAccount]).then(result => result.rows[0]?.count || 0),
+            AND namespace IN ('history','codex','routerai','apimart') AND data->>'chatId' IS NULL`, [workspaceAccount]).then(result => result.rows[0]?.count || 0),
         ]);
         const records = since ? historyResult : [...activeRecords, ...historyResult.records];
         if (!since) recordSystemEvent('studio', 'chat.sync.loaded', 'Workspace snapshot loaded', {
@@ -797,17 +821,19 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   server.requestTimeout = 60000; server.headersTimeout = 15000;
   server.recoverCodex = () => codex?.recover();
   server.recoverRouterAi = () => routerAi?.recover();
+  server.recoverApimart = () => apimart?.recover();
   server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null) => {
     const nextCodex = nextAccounts && config.codex?.url ? createCodexBilling({ accounts: nextAccounts, url: config.codex.url,
       dataDirectory: config.dataDirectory, storage, content: nextAccounts.content }) : null;
     const nextRouterAi = nextAccounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts: nextAccounts, apiKey: config.routerAi.apiKey,
       content: nextAccounts.content, tariffFetcher: routerAiModels.tariff }) : null;
+    const nextApimart = nextAccounts && config.apimart?.apiKey ? createApimartJobs({ pool: nextAccounts.pool, apiKey: config.apimart.apiKey }) : null;
     try {
-      if (config.replicaRole !== 'web') { await nextCodex?.recover(); await nextRouterAi?.recover(); }
+      if (config.replicaRole !== 'web') { await nextCodex?.recover(); await nextRouterAi?.recover(); await nextApimart?.recover(); }
     } catch (error) { nextCodex?.close(); nextRouterAi?.close(); throw error; }
     codex?.close(); routerAi?.close();
     auth = nextAuth; accounts = nextAccounts; payments = nextPayments; commerce = nextCommerce;
-    codex = nextCodex; routerAi = nextRouterAi;
+    codex = nextCodex; routerAi = nextRouterAi; apimart = nextApimart;
   };
   server.closeEvents = () => { codex?.close(); routerAi?.close(); for (const connection of connections) connection.end(); };
   return server;

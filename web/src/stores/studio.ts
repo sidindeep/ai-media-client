@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
-import type { Catalog, Chat, CodexCatalog, RouterAiCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { ApimartCatalog, Catalog, Chat, CodexCatalog, RouterAiCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
 import { mediaFileValue, normalizeMediaInput } from '../domain/media-fields';
 import { t } from '../i18n';
 
@@ -22,6 +22,7 @@ export const useStudioStore = defineStore('studio', () => {
   const catalog = ref<Catalog | null>(null);
   const codexCatalog = ref<CodexCatalog | null>(null);
   const routerAiCatalog = ref<RouterAiCatalog | null>(null);
+  const apimartCatalog = ref<ApimartCatalog | null>(null);
   const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
   const historyNext = ref<string | null>(null);
@@ -54,7 +55,7 @@ export const useStudioStore = defineStore('studio', () => {
   const dataLoadElapsedMs = ref<number | null>(null);
   const readyElapsedMs = ref<number | null>(null);
   const prompt = ref('');
-  const provider = ref<'codex' | 'media' | 'routerai'>('codex');
+  const provider = ref<'codex' | 'media' | 'routerai' | 'apimart'>('codex');
   const kieAccountId = ref<'primary' | 'secondary'>('primary');
   const mode = ref<GenerationMode>('image');
   const mediaModelId = ref('');
@@ -62,9 +63,10 @@ export const useStudioStore = defineStore('studio', () => {
   const sourceFiles = ref<SourceAttachment[]>([]);
   const selectionCache = ref<Record<string, SelectionSnapshot>>({});
   const modelByContext = ref<Record<string, string>>({});
-  const providerByMode = ref<Partial<Record<GenerationMode, 'codex' | 'media' | 'routerai'>>>({});
+  const providerByMode = ref<Partial<Record<GenerationMode, 'codex' | 'media' | 'routerai' | 'apimart'>>>({});
   const codexModel = ref('');
   const routerAiModel = ref('');
+  const apimartModel = ref('');
   const codexEffort = ref('');
   const codexSpeed = ref('standard');
   const codexKind = ref<'image' | 'text'>('image');
@@ -120,6 +122,8 @@ export const useStudioStore = defineStore('studio', () => {
     || mode.value === 'text' && ['embeddings', 'rerank', 'decisions'].includes(model.kind)
     || mode.value === 'audio' && model.kind === 'transcription') || []);
   const currentRouterAiModel = computed(() => routerAiModels.value.find(model => model.id === routerAiModel.value) || routerAiModels.value[0]);
+  const apimartModels = computed(() => mode.value === 'text' ? apimartCatalog.value?.models || [] : []);
+  const currentApimartModel = computed(() => apimartModels.value.find(model => model.id === apimartModel.value) || apimartModels.value[0]);
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
 
@@ -144,14 +148,16 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function selectionKey() {
-    const modelId = provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value : routerAiModel.value;
+    const modelId = provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value
+      : provider.value === 'apimart' ? apimartModel.value : routerAiModel.value;
     return `${provider.value}:${mode.value}:${modelId}`;
   }
 
   function contextKey() { return `${provider.value}:${mode.value}`; }
 
   function selectedModelId() {
-    return provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value : routerAiModel.value;
+    return provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value
+      : provider.value === 'apimart' ? apimartModel.value : routerAiModel.value;
   }
 
   function useRememberedModel() {
@@ -159,6 +165,7 @@ export const useStudioStore = defineStore('studio', () => {
     if (!saved) return;
     if (provider.value === 'media') mediaModelId.value = saved;
     else if (provider.value === 'codex') codexModel.value = saved;
+    else if (provider.value === 'apimart') apimartModel.value = saved;
     else routerAiModel.value = saved;
   }
 
@@ -207,6 +214,9 @@ export const useStudioStore = defineStore('studio', () => {
   }
   function normalizeRouterAiControls() {
     if (!routerAiModels.value.some(model => model.id === routerAiModel.value)) routerAiModel.value = routerAiModels.value[0]?.id || '';
+  }
+  function normalizeApimartControls() {
+    if (!apimartModels.value.some(model => model.id === apimartModel.value)) apimartModel.value = apimartModels.value[0]?.id || '';
   }
 
   function recomputeWorkspaceCounts() {
@@ -376,8 +386,8 @@ export const useStudioStore = defineStore('studio', () => {
 
   function codexJobIdsToPoll() {
     return history.value
-      .filter(item => ['codex', 'routerai'].includes(item.providerId) && CODEX_POLL_STATES.has(item.state))
-      .map(item => ({ providerId: item.providerId, id: item.id.replace(/^(codex|routerai):/, '') }))
+      .filter(item => ['codex', 'routerai', 'apimart'].includes(item.providerId) && CODEX_POLL_STATES.has(item.state))
+      .map(item => ({ providerId: item.providerId, id: item.id.replace(/^(codex|routerai|apimart):/, '') }))
       .filter(item => /^[a-f0-9-]{36}$/.test(item.id));
   }
 
@@ -387,7 +397,8 @@ export const useStudioStore = defineStore('studio', () => {
     if (!ids.length) { stopCodexPolling(); return; }
     codexPollInFlight = true;
     try {
-      const statuses = await Promise.allSettled(ids.map(item => item.providerId === 'routerai' ? api.getRouterAiJob(item.id) : api.getCodexJob(item.id)));
+      const statuses = await Promise.allSettled(ids.map(item => item.providerId === 'routerai' ? api.getRouterAiJob(item.id)
+        : item.providerId === 'apimart' ? api.getApimartJob(item.id) : api.getCodexJob(item.id)));
       if (statuses.some(status => status.status === 'fulfilled')) await refresh();
     } catch {
       // A transient history/queue failure must not stop status reconciliation.
@@ -424,7 +435,7 @@ export const useStudioStore = defineStore('studio', () => {
     providerByMode.value = {};
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
-      if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai') provider.value = tab.provider;
+      if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai' || tab.provider === 'apimart' && isAdmin.value) provider.value = tab.provider;
       if (typeof tab.mediaModelId === 'string') mediaModelId.value = tab.mediaModelId;
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
@@ -444,16 +455,18 @@ export const useStudioStore = defineStore('studio', () => {
       }
       if (tab.providerByMode && typeof tab.providerByMode === 'object' && !Array.isArray(tab.providerByMode)) {
         providerByMode.value = Object.fromEntries(Object.entries(tab.providerByMode as Record<string, unknown>)
-          .filter(([key, value]) => ['text', 'image', 'video', 'audio'].includes(key) && ['codex', 'media', 'routerai'].includes(String(value)))) as typeof providerByMode.value;
+          .filter(([key, value]) => ['text', 'image', 'video', 'audio'].includes(key) && ['codex', 'media', 'routerai', 'apimart'].includes(String(value)))) as typeof providerByMode.value;
       }
       if (typeof tab.codexModel === 'string') codexModel.value = tab.codexModel;
       if (typeof tab.routerAiModel === 'string') routerAiModel.value = tab.routerAiModel;
+      if (typeof tab.apimartModel === 'string') apimartModel.value = tab.apimartModel;
       if (typeof tab.codexEffort === 'string') codexEffort.value = tab.codexEffort;
       if (typeof tab.codexSpeed === 'string') codexSpeed.value = tab.codexSpeed;
       if (typeof tab.codexAspectRatio === 'string') codexAspectRatio.value = tab.codexAspectRatio;
     }
     normalizeCodexControls();
     normalizeRouterAiControls();
+    normalizeApimartControls();
     normalizeMediaControls();
     normalizeCurrentMediaInput();
     if (!prompt.value && typeof mediaInput.value.text === 'string') prompt.value = mediaInput.value.text;
@@ -463,7 +476,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function hasMediaJobsToPoll() {
-    return history.value.some(item => !['codex', 'routerai'].includes(item.providerId) && MEDIA_POLL_STATES.has(item.state));
+    return history.value.some(item => !['codex', 'routerai', 'apimart'].includes(item.providerId) && MEDIA_POLL_STATES.has(item.state));
   }
 
   async function pollMediaJobs() {
@@ -488,7 +501,7 @@ export const useStudioStore = defineStore('studio', () => {
     if (!draftReady.value) return;
     rememberSelection();
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, selectionCache: selectionCache.value, modelByContext: modelByContext.value, providerByMode: providerByMode.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, selectionCache: selectionCache.value, modelByContext: modelByContext.value, providerByMode: providerByMode.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, apimartModel: apimartModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
   async function createProject(name: string) { const project = await api.createProject(name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
@@ -508,19 +521,22 @@ export const useStudioStore = defineStore('studio', () => {
     mode.value = value;
     const rememberedProvider = providerByMode.value[value];
     if (rememberedProvider && (rememberedProvider === 'codex' || fullModelAccess.value)
-      && (rememberedProvider !== 'routerai' || isAdmin.value || ['text', 'image'].includes(value))) provider.value = rememberedProvider;
+      && (rememberedProvider !== 'routerai' || isAdmin.value || ['text', 'image'].includes(value))
+      && (rememberedProvider !== 'apimart' || isAdmin.value && value === 'text')) provider.value = rememberedProvider;
     if (value === 'text') { if (provider.value === 'media') provider.value = 'codex'; codexKind.value = 'text'; }
-    else if (value === 'image') { codexKind.value = 'image'; }
-    else if (provider.value !== 'routerai' || !isAdmin.value) { provider.value = 'media'; }
+    else if (value === 'image') { codexKind.value = 'image'; if (provider.value === 'apimart') provider.value = 'media'; }
+    else if (provider.value === 'apimart' || provider.value !== 'routerai' || !isAdmin.value) { provider.value = 'media'; }
     useRememberedModel();
     normalizeMediaControls();
     normalizeRouterAiControls();
+    normalizeApimartControls();
     if (provider.value === 'codex') normalizeCodexControls();
     restoreSelection();
   }
 
-  function setProvider(value: 'codex' | 'media' | 'routerai') {
+  function setProvider(value: 'codex' | 'media' | 'routerai' | 'apimart') {
     if (value !== 'codex' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
+    if (value === 'apimart' && !isAdmin.value) throw new Error(t('studio.mediaLocked'));
     rememberSelection();
     provider.value = value;
     if (value === 'codex') {
@@ -532,6 +548,10 @@ export const useStudioStore = defineStore('studio', () => {
       if (!isAdmin.value && !['text', 'image'].includes(mode.value)) mode.value = 'image';
       useRememberedModel();
       normalizeRouterAiControls();
+    } else if (value === 'apimart') {
+      mode.value = 'text';
+      useRememberedModel();
+      normalizeApimartControls();
     } else {
       if (!['image', 'video', 'audio'].includes(mode.value)) mode.value = 'image';
       useRememberedModel();
@@ -546,6 +566,7 @@ export const useStudioStore = defineStore('studio', () => {
     rememberSelection();
     if (provider.value === 'codex') codexModel.value = value;
     else if (provider.value === 'routerai') routerAiModel.value = value;
+    else if (provider.value === 'apimart') apimartModel.value = value;
     else mediaModelId.value = value;
     restoreSelection();
     if (provider.value === 'media') carryCompatibleMediaSources(previousModel, previousFiles);
@@ -564,6 +585,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function currentPresetPayload(name: string): Omit<GenerationPreset, 'id' | 'createdAt' | 'updatedAt'> | null {
+    if (provider.value === 'apimart') return null;
     const base = { name, provider: provider.value, mode: mode.value };
     if (provider.value === 'codex') return {
       ...base,
@@ -661,7 +683,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
-  watch([prompt, mode, provider, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, routerAiModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch([prompt, mode, provider, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, routerAiModel, apimartModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
   function restoreWorkspaceSelection() {
@@ -680,7 +702,7 @@ export const useStudioStore = defineStore('studio', () => {
     chatHistoryNext.value = {}; chatHistoryLoaded.value = {}; chatHistoryError.value = false;
     if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
-      [catalog.value, codexCatalog.value, routerAiCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
+      [catalog.value, codexCatalog.value, routerAiCatalog.value, apimartCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), isAdmin.value ? api.getApimartCatalog().catch(() => null) : Promise.resolve(null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
       const defaults = codexCatalog.value?.uiDefaults;
       const models = codexCatalog.value?.models || [];
       codexModel.value = models.find(model => model.id === defaults?.model)?.id
@@ -693,6 +715,7 @@ export const useStudioStore = defineStore('studio', () => {
       codexKind.value = defaults?.kind === 'text' ? 'text' : 'image';
       normalizeCodexControls();
       normalizeRouterAiControls();
+      normalizeApimartControls();
       mediaModelId.value = mediaModelsFor(mode.value).find(model => model.startupDefault)?.id || mediaModelsFor(mode.value)[0]?.id || '';
       syncCursor = null;
       await refresh();
@@ -785,6 +808,7 @@ export const useStudioStore = defineStore('studio', () => {
     const submittedCodexAspectRatio = codexAspectRatio.value;
     const submittedMode = mode.value;
     const submittedRouterAiModel = currentRouterAiModel.value;
+    const submittedApimartModel = currentApimartModel.value;
     const submittedMediaModel = currentMediaModel.value;
     if (submittedProvider === 'media') normalizeCurrentMediaInput();
     const submittedMediaInput = { ...mediaInput.value };
@@ -817,6 +841,26 @@ export const useStudioStore = defineStore('studio', () => {
       try {
         const job = await api.submitCodex({ ...input, prompt: submittedPrompt, model: submittedCodexModel,
           kind: submittedMode === 'text' ? 'text' : 'image', sourceFiles: submittedSourceFiles.map(item => item.ref), ...context, requestId });
+        await refresh().catch(() => {});
+        return job;
+      } catch (error) {
+        await refreshFull().catch(() => {});
+        const accepted = history.value.find(item => item.requestId === requestId);
+        if (accepted) { acceptServerRecord(optimisticId, accepted); return accepted; }
+        failOptimisticRecord(optimisticId, error);
+        throw error;
+      }
+    }
+    if (submittedProvider === 'apimart') {
+      const model = submittedApimartModel;
+      if (!model) throw new Error(t('studio.selectModel'));
+      optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'apimart', providerName: 'APIMart',
+        modelId: model.id, modelName: model.name, kind: 'text', state: 'queued', createdAt, queuedAt: createdAt,
+        input: { prompt: submittedPrompt }, ...context };
+      pendingSubmissions.value.unshift(optimistic);
+      selectedId.value = optimisticId;
+      try {
+        const job = await api.submitApimart({ requestId, model: model.id, prompt: submittedPrompt, ...context });
         await refresh().catch(() => {});
         return job;
       } catch (error) {
@@ -901,6 +945,10 @@ export const useStudioStore = defineStore('studio', () => {
       if (record.modelId) codexModel.value = record.modelId;
       if (typeof record.input?.effort === 'string') codexEffort.value = record.input.effort;
       if (typeof record.input?.speed === 'string') codexSpeed.value = record.input.speed;
+    } else if (record.providerId === 'apimart') {
+      provider.value = 'apimart';
+      mode.value = 'text';
+      if (record.modelId) apimartModel.value = record.modelId;
     } else if (record.providerId === 'routerai') {
       const selectedModel = routerAiCatalog.value?.models.find(model => model.id === record.modelId);
       if (selectedModel?.kind === 'transcription') mode.value = 'audio';
@@ -913,7 +961,7 @@ export const useStudioStore = defineStore('studio', () => {
       if (record.modelId) mediaModelId.value = record.modelId;
     }
     restoreSelection();
-    if (record.providerId !== 'codex' && record.providerId !== 'routerai') {
+    if (record.providerId !== 'codex' && record.providerId !== 'routerai' && record.providerId !== 'apimart') {
       mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
       normalizeCurrentMediaInput();
     }
@@ -927,10 +975,10 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, routerAiCatalog, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, routerAiCatalog, apimartCatalog, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setSelectedModel, setModelAccess,
-    codexModel, routerAiModel, routerAiModels, currentRouterAiModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
+    codexModel, routerAiModel, routerAiModels, currentRouterAiModel, apimartModel, apimartModels, currentApimartModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,
     loadDraftForActive,

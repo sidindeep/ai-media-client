@@ -93,6 +93,7 @@ function loadConfig(env = process.env) {
       yooKassa: { shopId: env.YOOKASSA_SHOP_ID || '', secretKey: env.YOOKASSA_SECRET_KEY || '' },
     },
     routerAi: { apiKey: env.ROUTERAI_API_KEY || '' },
+    apimart: { apiKey: env.APIMART_API_KEY || '' },
     kieBrowser: {
       embedded: env.MEDIA_KIE_BROWSER_EMBEDDED === 'true',
       cdpUrl: env.MEDIA_KIE_BROWSER_CDP || (env.MEDIA_KIE_BROWSER_EMBEDDED === 'true' ? 'http://127.0.0.1:9222' : ''),

@@ -16,6 +16,12 @@ const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-prev
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
 const fakeProvider = () => ({ id: 'kie', isConfigured: () => true, upload: async () => 'https://example.test/source', create: async () => ({ taskId: 'remote-1' }), poll: async () => ({ state: 'success', resultJson: '{"resultUrls":["https://example.test/result.mp4"]}', creditsConsumed: 2 }), balance: async () => 100 });
 
+test('account database URL is required and validated before service startup', async () => {
+  await assert.rejects(start({ config: loadConfig({}) }), /DATABASE_URL/);
+  await assert.rejects(start({ config: loadConfig({ DATABASE_URL: 'not-a-database-url' }) }), /DATABASE_URL.*PostgreSQL/);
+  await assert.rejects(start({ config: loadConfig({ DATABASE_URL: 'postgres://user:secret@localhost' }) }), /DATABASE_URL.*PostgreSQL/);
+});
+
 test('concurrent source uploads respect the in-flight memory budget', async t => {
   let started, release;
   const entered = new Promise(resolve => { started = resolve; });

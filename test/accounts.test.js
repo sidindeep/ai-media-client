@@ -96,12 +96,15 @@ test('incomplete login integrations stay visible but cannot begin authentication
     MEDIA_EMAIL_AUTH_ENABLED: 'true', MEDIA_SMTP_PORT: 'invalid', GOOGLE_CLIENT_ID: ' ', GOOGLE_CLIENT_SECRET: 'secret' });
   const auth = createAuth({ pool: {}, config: broken.auth });
   assert.equal(auth.max, null);
+  assert.equal(broken.auth.max.invalid, true);
   assert.equal(auth.email, null);
   assert.deepEqual(auth.providers(), []);
   assert.deepEqual(auth.providerChoices().map(({ id, enabled }) => [id, enabled]), [
     ['google', false], ['vk', false], ['yandex', false], ['telegram', false], ['max', false], ['email', false]
   ]);
-  const ready = loadConfig({ MAX_LOGIN_BOT_NAME: 'StudioBot', MAX_LOGIN_BOT_TOKEN: 'token',
+  const placeholder = loadConfig({ MAX_LOGIN_BOT_NAME: 'StudioBot', MAX_LOGIN_BOT_TOKEN: 'placeholder' });
+  assert.equal(createAuth({ pool: {}, config: placeholder.auth }).max, null);
+  const ready = loadConfig({ MAX_LOGIN_BOT_NAME: 'StudioBot', MAX_LOGIN_BOT_TOKEN: 'sample-signing-value-123',
     GOOGLE_CLIENT_ID: 'client', GOOGLE_CLIENT_SECRET: 'secret' });
   const available = createAuth({ pool: {}, config: ready.auth });
   assert.deepEqual(available.providerChoices().filter(item => item.enabled).map(item => item.id), ['google', 'max']);

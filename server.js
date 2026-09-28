@@ -63,6 +63,14 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
   if (config.replicaRole !== 'single' && (!config.auth.enabled || (!config.database.url && !suppliedPool)))
     throw new Error('Нескольким репликам нужны авторизация и общая PostgreSQL');
   if (config.auth.enabled && !config.database.url && !suppliedPool) throw new Error('Для аккаунтов настройте DATABASE_URL. Локальный режим владельца: MEDIA_AUTH_ENABLED=false');
+  if (config.auth.enabled && !suppliedPool) {
+    let databaseUrl;
+    try { databaseUrl = new URL(config.database.url); } catch { /* Rejected below without logging credentials. */ }
+    if (!databaseUrl || !['postgres:', 'postgresql:'].includes(databaseUrl.protocol)
+      || !databaseUrl.hostname || databaseUrl.pathname.length < 2 || databaseUrl.hash)
+      throw new Error('DATABASE_URL должен быть корректным адресом PostgreSQL с именем базы данных');
+  }
+  if (config.auth.max?.invalid) console.warn('Вход MAX отключён: проверьте MAX_LOGIN_BOT_NAME и MAX_LOGIN_BOT_TOKEN.');
   await fs.mkdir(config.dataDirectory, { recursive: true });
   // Hosting mounts /app/data after image build, hiding directories created there.
   if (config.codex?.embedded && process.env.CODEX_HOME) {

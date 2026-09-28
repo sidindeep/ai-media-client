@@ -78,7 +78,8 @@
         action.className = 'account-button';
         action.dataset.provider = provider.id;
         if (provider.enabled) action.href = `/auth/${encodeURIComponent(provider.id)}/start`;
-        else { action.type = 'button'; action.disabled = true; action.title = 'Способ входа пока недоступен'; }
+        else { action.type = 'button'; action.disabled = true; action.title = provider.id === 'max'
+          ? 'Вход MAX недоступен: проверьте настройку бота' : 'Способ входа пока недоступен'; }
         action.textContent = `Продолжить с ${provider.label}`;
         providers.append(action);
       }

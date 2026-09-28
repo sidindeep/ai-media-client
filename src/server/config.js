@@ -74,9 +74,12 @@ function loadConfig(env = process.env) {
   const emailEnabled = env.MEDIA_EMAIL_AUTH_ENABLED === 'true' && smtpPortValid
     && ['MEDIA_SMTP_HOST', 'MEDIA_SMTP_USER', 'MEDIA_SMTP_PASSWORD', 'MEDIA_SMTP_FROM']
       .every(name => Boolean((env[name] || '').trim()));
-  const maxBotName = env.MAX_LOGIN_BOT_NAME || '';
-  const maxBotToken = env.MAX_LOGIN_BOT_TOKEN || '';
-  const maxLoginConfigured = /^[A-Za-z0-9_]{3,64}$/.test(maxBotName) && Boolean(maxBotToken.trim());
+  const maxBotName = (env.MAX_LOGIN_BOT_NAME || '').trim();
+  const maxBotToken = (env.MAX_LOGIN_BOT_TOKEN || '').trim();
+  const maxTokenPlaceholder = /^(?:token|test|example|placeholder|changeme|your[_-]?(?:bot[_-]?)?token(?:[_-]?here)?|x{3,})$/i.test(maxBotToken);
+  const maxLoginConfigured = /^[A-Za-z0-9_]{3,64}$/.test(maxBotName)
+    && Boolean(maxBotToken) && !maxTokenPlaceholder && !/\s/.test(maxBotToken);
+  const maxLoginInvalid = Boolean(maxBotName || maxBotToken) && !maxLoginConfigured;
   return {
     root, host, port, dataDirectory, replicaRole, executorUrl: executorUrl?.origin || '', executorPublicOrigin,
     kieKey: env.KIE_API_KEY || '', kieSecondaryKey: env.KIE_API_KEY_2 || '',
@@ -121,7 +124,7 @@ function loadConfig(env = process.env) {
       telegram: { clientId: env.TELEGRAM_LOGIN_CLIENT_ID || '', clientSecret: env.TELEGRAM_LOGIN_CLIENT_SECRET || '' },
       email: { enabled: emailEnabled, smtp: { host: env.MEDIA_SMTP_HOST || '', port: smtpPortValid ? smtpPort : 587,
         user: env.MEDIA_SMTP_USER || '', password: env.MEDIA_SMTP_PASSWORD || '', from: env.MEDIA_SMTP_FROM || '' } },
-      max: { botName: maxLoginConfigured ? maxBotName : '', botToken: maxLoginConfigured ? maxBotToken : '' }
+      max: { botName: maxLoginConfigured ? maxBotName : '', botToken: maxLoginConfigured ? maxBotToken : '', invalid: maxLoginInvalid }
     }
   };
 }

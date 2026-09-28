@@ -104,6 +104,7 @@ export type GenerationRecord = {
   input?: Record<string, unknown>;
   output?: string;
   error?: string;
+  errorInfo?: { providerCode?: string | number | null; providerMessage?: string | null } | null;
   resultJson?: string;
   localFiles?: Array<{ previewUrl?: string; url?: string; name?: string }>;
   nativeQuote?: { credits?: number };

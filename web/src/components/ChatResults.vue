@@ -16,6 +16,9 @@ const { formatDate, formatNumber, t } = useI18n();
 const now = ref(Date.now());
 const scrollBox = ref<HTMLElement | null>(null);
 const showLatestButton = ref(false);
+const errorDialog = ref<HTMLDialogElement | null>(null);
+const errorRecord = ref<GenerationRecord | null>(null);
+let errorTrigger: HTMLElement | null = null;
 let timer: ReturnType<typeof setInterval> | undefined;
 let resizeObserver: ResizeObserver | undefined;
 let saveFrame: number | undefined;
@@ -88,6 +91,28 @@ function status(record: GenerationRecord) {
   return generationStateLabel(record.state);
 }
 function select(record: GenerationRecord) { emit('select', record.id); }
+function fullError(record: GenerationRecord) {
+  const summary = resultError(record, studio.isAdmin);
+  if (!studio.isAdmin) return summary;
+  const code = record.errorInfo?.providerCode;
+  const message = record.errorInfo?.providerMessage?.trim();
+  return [summary,
+    code != null && !summary.includes(String(code)) ? `${t('generation.errorCode')}: ${code}` : '',
+    message && !summary.includes(message) ? `${t('generation.providerError')}: ${message}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+async function openErrorDetails(record: GenerationRecord, event: MouseEvent) {
+  errorTrigger = event.currentTarget as HTMLElement;
+  errorRecord.value = record;
+  await nextTick();
+  errorDialog.value?.showModal();
+}
+function closeErrorDetails() { errorDialog.value?.close(); }
+function onErrorDialogClose() {
+  errorRecord.value = null;
+  errorTrigger?.focus();
+  errorTrigger = null;
+}
 
 function scrollStorageKey() {
   const accountId = document.querySelector<HTMLMetaElement>('meta[name="account-id"]')?.content || 'local';
@@ -196,6 +221,7 @@ watch(() => studio.selectedId, () => {
   if (initialScrollRestored) void revealSelected();
 });
 watch(() => studio.activeChatId, (chatId, previousChatId) => {
+  closeErrorDetails();
   if (previousChatId && !restoring) saveScrollPosition(previousChatId);
   displayedChatId = chatId;
   initialScrollRestored = false;
@@ -240,12 +266,12 @@ onBeforeUnmount(() => {
       <div v-if="needsFirstPage || hasOlderRecords || studio.chatHistoryError" class="chat-older-records"><button type="button" class="action-button" :disabled="studio.chatHistoryLoading" @click="loadChatHistory(Boolean(studio.chatHistoryLoaded[studio.activeChatId]))">{{ studio.chatHistoryLoading ? t('history.loading') : t('history.loadMore') }}</button><p v-if="studio.chatHistoryError" role="alert">{{ t('studio.loadError') }}</p></div>
       <article v-for="record in records" :key="record.id" class="chat-result-item" :class="{ selected: studio.selectedId === record.id }" :data-record-id="record.id">
         <p class="chat-prompt">{{ prompt(record) }}</p>
-        <div class="chat-result-card" role="button" tabindex="0" :aria-label="t('generation.openDetails', { model: resultModelLabel(record, studio.isAdmin) })" @click="select(record)" @keydown.enter.prevent="select(record)" @keydown.space.prevent="select(record)">
-          <header class="chat-result-header">
+        <div class="chat-result-card" @click="select(record)">
+          <button type="button" class="chat-result-header" :aria-label="t('generation.openDetails', { model: resultModelLabel(record, studio.isAdmin) })" @click.stop="select(record)">
             <span class="chat-result-state" :class="`state-${record.state}`" aria-hidden="true"></span>
             <span class="chat-result-title"><strong>{{ resultModelLabel(record, studio.isAdmin) }}</strong><small>{{ status(record) }}</small></span>
             <span class="chat-result-arrow" aria-hidden="true">›</span>
-          </header>
+          </button>
           <p class="chat-result-prompt">{{ prompt(record) }}</p>
           <div v-if="resultUrls(record).length" class="chat-result-media">
             <video v-if="record.kind === 'video'" :src="resultUrls(record)[0]" controls playsinline @click.stop></video>
@@ -254,6 +280,9 @@ onBeforeUnmount(() => {
               :download-url="resultDownloadUrl(record, index, url)" :alt="t('generation.resultAlt')" />
           </div>
           <pre v-else class="chat-result-output" :class="{ pending: activeStates.has(record.state) }">{{ previewText(record) }}</pre>
+          <div v-if="record.error" class="chat-result-error-actions">
+            <button type="button" class="chat-result-error-details" @click.stop="openErrorDetails(record, $event)">{{ t('generation.errorDetailsButton') }}</button>
+          </div>
           <footer class="chat-result-meta"><span v-for="item in meta(record)" :key="item">{{ item }}</span></footer>
         </div>
         <div v-if="resultUrls(record).length" class="chat-result-download-row">
@@ -269,5 +298,19 @@ onBeforeUnmount(() => {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v14m-6-6 6 6 6-6" /></svg>
       </button>
     </Transition>
+    <Teleport to="body">
+      <dialog v-if="errorRecord" ref="errorDialog" class="chat-error-dialog" aria-labelledby="chat-error-dialog-title" @click.self="closeErrorDetails" @close="onErrorDialogClose">
+        <header class="chat-error-dialog-header">
+          <div><h2 id="chat-error-dialog-title">{{ t('generation.errorDetails') }}</h2><p>{{ resultModelLabel(errorRecord, studio.isAdmin) }}</p></div>
+          <button type="button" class="chat-error-dialog-close" :aria-label="t('common.close')" @click="closeErrorDetails">×</button>
+        </header>
+        <div class="chat-error-dialog-content">
+          <h3>{{ t('history.prompt') }}</h3>
+          <pre>{{ prompt(errorRecord) }}</pre>
+          <h3>{{ t('generation.errorMessage') }}</h3>
+          <pre class="chat-error-dialog-message">{{ fullError(errorRecord) }}</pre>
+        </div>
+      </dialog>
+    </Teleport>
   </section>
 </template>

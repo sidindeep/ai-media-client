@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { transaction } = require('../database/database');
+const { assertAdminAccount } = require('../auth/roles');
 const { units, SCALE } = require('./pricing');
 async function lockWallet(client, accountId) {
   const row = (await client.query('SELECT * FROM media_wallets WHERE account_id=$1 FOR UPDATE', [accountId])).rows[0];
@@ -76,7 +77,7 @@ function createWallet(pool, { onPurchase } = {}) {
       units(amount);
       if (!amount || typeof reference !== 'string' || !/^[\w-]{8,100}$/.test(reference) || typeof note !== 'string' || !note.trim() || note.length > 500) throw new Error('Укажите сумму, идентификатор и причину начисления');
       return transaction(pool, async client => {
-        if ((await client.query('SELECT role FROM media_accounts WHERE id=$1', [actorId])).rows[0]?.role !== 'admin') throw new Error('Доступ запрещён');
+        await assertAdminAccount(client, actorId);
         const wallet = await lockWallet(client, accountId);
         const previous = (await client.query("SELECT amount,note FROM media_ledger WHERE account_id=$1 AND kind='grant' AND reference=$2", [accountId, reference])).rows[0];
         if (previous) {

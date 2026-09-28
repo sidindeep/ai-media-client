@@ -10,6 +10,7 @@ const { createRouterAiBilling, validateRouterAiRequest } = require('../services/
 const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { createApimartJobs } = require('../services/apimart-jobs');
+const { ROLES, isAdminRole, assertAdminRole } = require('../auth/roles');
 const { readProviderStatus } = require('../services/provider-status');
 const { createKieBrowserSession } = require('../services/kie-browser-session');
 const { handleCommerceRequest } = require('./routes/commerce');
@@ -283,7 +284,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         // Page navigation reuses the process-wide pool. This is only a liveness
         // probe; pg reconnects the pool when the previous connection was lost.
         let database = accounts ? await checkDatabase(accounts.pool, { diagnostics: false }) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
-        let startupUser = config.auth.enabled ? null : { id: 'local', role: 'admin', name: 'Владелец' };
+        let startupUser = config.auth.enabled ? null : { id: 'local', role: ROLES.ADMIN, name: 'Владелец' };
         if (auth && database.state === 'connected') {
           try { startupUser = await assetUser(auth, req, true); }
           catch (error) {
@@ -375,7 +376,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (config.auth.enabled && !auth && retryReadOnlyRpc) await databaseAvailability?.waitUntilAvailable(databaseWaitMs);
       if (config.auth.enabled && !auth) return json(res, 503, { error: 'Подключаемся к базе данных. Повторите через несколько секунд.', code: 'DATABASE_UNAVAILABLE', retryable: true });
       // Retry only the read-only session lookup for assets, never account/API writes.
-      const user = auth ? await assetUser(auth, req, isAsset || retryReadOnlyRpc) : { id: 'local', role: 'admin', name: 'Владелец' };
+      const user = auth ? await assetUser(auth, req, isAsset || retryReadOnlyRpc) : { id: 'local', role: ROLES.ADMIN, name: 'Владелец' };
       if (!user) {
         if (isLanding) return await sendVueApplication(null);
         if (isVueApp || isLegacyApp) return redirect('/login');
@@ -429,7 +430,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 200, { result: true });
       }
       if (url.pathname.startsWith('/api/apimart/')) {
-        if (user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        assertAdminRole(user.role);
         if (!apimart) return json(res, 503, { error: 'APIMart не настроен' });
         if (req.method === 'GET' && url.pathname === '/api/apimart/models') {
           try { return json(res, 200, { models: await apimart.models() }); }
@@ -455,7 +456,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (!routerAi) return json(res, 503, { error: 'RouterAI не настроен.' });
         if (req.method === 'GET' && url.pathname === '/api/routerai/models') return json(res, 200, await routerAiModels.list(user.role));
         if (url.pathname.startsWith('/api/routerai/admin/')) {
-          if (user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+          assertAdminRole(user.role);
           if (req.method === 'GET' && url.pathname === '/api/routerai/admin/models') return json(res, 200, await routerAiModels.all(user.role));
           if (req.method === 'POST' && url.pathname === '/api/routerai/admin/jobs') {
             if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
@@ -501,13 +502,13 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           const body = validateRouterAiRequest(raw, allowed);
           const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
           const job = await routerAi.submit(user.id, { ...raw, ...binding }, user.role, allowed);
-          if (user.role !== 'admin') delete job.providerCostRub;
+          if (!isAdminRole(user.role)) delete job.providerCostRub;
           return json(res, 200, job);
         }
         const jobRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
         if (req.method === 'GET' && jobRequest) {
           const job = await routerAi.get(user.id, jobRequest[1]);
-          if (job && user.role !== 'admin') delete job.providerCostRub;
+          if (job && !isAdminRole(user.role)) delete job.providerCostRub;
           return job ? json(res, 200, job) : json(res, 404, { error: 'Запрос не найден' });
         }
         return json(res, 404, { error: 'Не найдено' });
@@ -610,7 +611,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 404, { error: 'Метод не найден' });
       }
       if (url.pathname.startsWith('/api/admin/')) {
-        if (!accounts || user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+        if (!accounts) return json(res, 403, { error: 'Доступ запрещён' });
+        assertAdminRole(user.role);
         if (url.pathname === '/api/admin/kie-session/status' && req.method === 'GET') {
           if (kieBrowserControl && !kieBrowserControl.running()) return json(res, 200, { result: { state: 'sleeping', loginUrl: null, embedded: true } });
           return json(res, 200, { result: await kieBrowserSession.status() });
@@ -768,13 +770,13 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         const attachment = url.searchParams.has('download') || file.type === 'image/svg+xml';
         return file.storageKey ? sendStored(req, res, storage, file, attachment) : sendFile(req, res, file.path, file.type, attachment);
       }
-      if (user.role !== 'admin' && shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) return json(res, 403, { error: 'Доступ запрещён' });
+      if (shared && ['tariff-snapshot.js', 'costs.js', 'costs-ui.js', 'price-audit.js'].includes(shared[1])) assertAdminRole(user.role);
       if (shared && sharedFiles.has(shared[1])) return await sendFile(req, res, path.join(config.root, 'src', shared[1]));
       const publicFile = isLegacyApp ? 'index.html' : url.pathname.slice(1);
       if (publicFile === 'index.html') {
         let html = await fs.readFile(path.join(config.root, 'public/index.html'), 'utf8');
         html = html.replace('<head>', `<head><meta name="account-id" content="${user.id}"><meta name="account-role" content="${user.role}">`);
-        if (user.role !== 'admin') {
+        if (!isAdminRole(user.role)) {
           html = html.replace(/<!-- provider-settings:start -->[\s\S]*?<!-- provider-settings:end -->/, '');
           html = html.replace(/<details id="officialTariff">[\s\S]*?<\/details>/, '');
           html = html.replace(/<script src="\/shared\/(tariff-snapshot|costs|price-audit|costs-ui)\.js"><\/script>/g, '');
@@ -784,7 +786,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(req.method === 'HEAD' ? '' : html);
       }
-      if (['admin.html', 'admin.js'].includes(publicFile) && user.role !== 'admin') return json(res, 403, { error: 'Доступ запрещён' });
+      if (['admin.html', 'admin.js'].includes(publicFile)) assertAdminRole(user.role);
       if (publicAssets.has(publicFile) || publicFile === 'admin.html') return await sendFile(req, res, path.join(config.root, 'public', publicFile));
       return json(res, 404, { error: 'Не найдено' });
     } catch (error) {

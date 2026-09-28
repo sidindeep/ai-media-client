@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { SCALE, units } = require('./pricing');
+const { ROLES, isAdminRole } = require('../auth/roles');
 
 function normalizeStarterPack(config = {}) {
   const enabled = config.enabled !== false;
@@ -20,7 +21,7 @@ function createStarterPack({ pool, config }) {
   if (reference.length > 100) throw new Error('Слишком длинная версия стартового пакета');
 
   function summarize(role, enrolled, paid) {
-    const active = settings.enabled && role !== 'admin' && Boolean(enrolled) && !paid;
+    const active = settings.enabled && !isAdminRole(role) && Boolean(enrolled) && !paid;
     return {
       enabled: settings.enabled,
       enrolled: Boolean(enrolled),
@@ -39,7 +40,7 @@ function createStarterPack({ pool, config }) {
     return { enrolled: Boolean(row.enrolled), paid: Boolean(row.paid) };
   }
 
-  async function status(accountId, role = 'user', executor = pool) {
+  async function status(accountId, role = ROLES.USER, executor = pool) {
     const value = await flags(executor, accountId);
     return summarize(role, value.enrolled, value.paid);
   }
@@ -48,8 +49,8 @@ function createStarterPack({ pool, config }) {
     reference,
     settings: () => ({ ...settings, allowedProviders: [...settings.allowedProviders] }),
     summarize,
-    async enroll(client, accountId, role = 'user') {
-      const amount = settings.enabled && role !== 'admin' ? settings.amountUnits : 0;
+    async enroll(client, accountId, role = ROLES.USER) {
+      const amount = settings.enabled && !isAdminRole(role) ? settings.amountUnits : 0;
       const inserted = await client.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,$2) ON CONFLICT(account_id) DO NOTHING RETURNING account_id', [accountId, amount]);
       if (!inserted.rowCount || !amount) return false;
       await client.query('INSERT INTO media_ledger(id,account_id,kind,reference,amount,note) VALUES($1,$2,\'grant\',$3,$4,$5)',

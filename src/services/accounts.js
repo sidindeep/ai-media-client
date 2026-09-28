@@ -14,6 +14,7 @@ const { generationJournal } = require('./generation-journal');
 const { createWorkspaces } = require('./workspaces');
 const trace = require('../generation-log');
 const { recordFailure } = require('../provider-diagnostics');
+const { ROLES, isAccountRole, isAdminRole, assertAdminAccount, assertAccountAccess } = require('../auth/roles');
 function publicRecord(record) {
   // Explicit allowlist: diagnostics, provider task IDs, costs and payloads stay internal.
   const fields = ['id', 'requestId', 'revision', 'state', 'createdAt', 'updatedAt', 'modelId', 'modelName', 'kind', 'input', 'sourceFiles', 'workspace', 'queueHidden', 'nativeQuote',
@@ -115,7 +116,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
       for (const row of rows) await get(row.account_id);
     },
     async scope(user, selected) {
-      if (selected && selected !== user.id && user.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
+      assertAccountAccess(user, selected);
       if (selected === 'legacy') return {
         ...legacy,
         async dispatch(method, args = []) {
@@ -128,7 +129,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         : /^[a-f0-9-]{36}$/.test(accountId) ? (await pool.query('SELECT id,role FROM media_accounts WHERE id=$1', [accountId])).rows[0] : null;
       if (!account) throw new Error('Аккаунт не найден');
       const service = await get(accountId);
-      if (user.role === 'admin') return {
+      if (isAdminRole(user.role)) return {
         ...service,
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
@@ -139,7 +140,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
           if (method === 'getHistoryPage') return generationHistoryPage(pool, accountId, service, args[0]?.cursor, undefined, 50, args[0]?.chatId);
           if (method === 'getHistoryActive') return generationActive(pool, accountId, service);
           if (['loadDrafts', 'saveDrafts'].includes(method)) return dispatchDraft(accountId, service, method, args);
-          if (method === 'saveGenerationPreset') return service.dispatch(method, [args[0], { routerAiRole: 'admin' }]);
+          if (method === 'saveGenerationPreset') return service.dispatch(method, [args[0], { routerAiRole: ROLES.ADMIN }]);
           if (method === 'createTask') {
             const [, binding] = await Promise.all([
               starterPack?.assertProvider(accountId, account.role, 'media'),
@@ -198,7 +199,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             case 'getTariffDescriptions': return { entries: {} };
             case 'keyStatus': case 'startQueue': case 'pauseQueue': case 'setConcurrency': case 'cancelQueued':
             case 'removeQueued': case 'clearQueue': case 'acknowledgeTask': case 'getFavoriteModels': case 'setFavoriteModels':
-            case 'saveGenerationPreset': return service.dispatch(method, [args[0], { routerAiRole: 'user' }]);
+            case 'saveGenerationPreset': return service.dispatch(method, [args[0], { routerAiRole: ROLES.USER }]);
             case 'listTemplates': case 'saveTemplate': case 'removeTemplate': case 'listGenerationPresets': case 'removeGenerationPreset':
             case 'storageSettings': case 'setAutoSave': case 'saveResults': return service.dispatch(method, args);
             default: throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
@@ -228,15 +229,14 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         enrolled: Number(row.enrolled), paid: Number(row.paid), active: Number(row.active) };
     },
     async setRole(actorId, accountId, role, reason) {
-      if (!['admin', 'user'].includes(role) || typeof reason !== 'string' || !reason.trim() || reason.length > 500) throw new Error('Укажите роль и причину изменения');
+      if (!isAccountRole(role) || typeof reason !== 'string' || !reason.trim() || reason.length > 500) throw new Error('Укажите роль и причину изменения');
       return transaction(pool, async client => {
         await client.query('SELECT pg_advisory_xact_lock(18274692)');
-        const actor = (await client.query('SELECT role FROM media_accounts WHERE id=$1', [actorId])).rows[0];
-        if (actor?.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
+        await assertAdminAccount(client, actorId);
         const target = (await client.query('SELECT role FROM media_accounts WHERE id=$1 FOR UPDATE', [accountId])).rows[0];
         if (!target) throw Object.assign(new Error('Аккаунт не найден'), { status: 404 });
         if (target.role === role) return true;
-        if (target.role === 'admin' && role === 'user' && Number((await client.query("SELECT count(*) AS count FROM media_accounts WHERE role='admin'")).rows[0].count) <= 1) throw Object.assign(new Error('Нельзя снять роль у последнего администратора'), { status: 409 });
+        if (isAdminRole(target.role) && role === ROLES.USER && Number((await client.query('SELECT count(*) AS count FROM media_accounts WHERE role=$1', [ROLES.ADMIN])).rows[0].count) <= 1) throw Object.assign(new Error('Нельзя снять роль у последнего администратора'), { status: 409 });
         await client.query('UPDATE media_accounts SET role=$2 WHERE id=$1', [accountId, role]);
         await client.query('INSERT INTO media_role_audit(id,account_id,actor_id,old_role,new_role,reason) VALUES($1,$2,$3,$4,$5,$6)', [randomUUID(), accountId, actorId, target.role, role, reason.trim()]);
         await client.query('DELETE FROM media_sessions WHERE account_id=$1', [accountId]);
@@ -252,7 +252,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     async reconcile(actorId, accountId, jobId, outcome, evidence) {
       if (!['success', 'fail'].includes(outcome) || typeof evidence !== 'string' || !evidence.trim() || evidence.length > 2000) throw new Error('Укажите исход и основание сверки');
       return transaction(pool, async client => {
-        if ((await client.query('SELECT role FROM media_accounts WHERE id=$1', [actorId])).rows[0]?.role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
+        await assertAdminAccount(client, actorId);
         await lockWallet(client, accountId);
         const prior = (await client.query('SELECT * FROM media_reconciliations WHERE job_id=$1', [jobId])).rows[0];
         if (prior) {

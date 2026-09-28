@@ -4,6 +4,7 @@ const modes = new Set(['text', 'image', 'video', 'audio']);
 const codexRatios = new Set(['auto', '1:1', '16:9', '9:16', '3:2', '2:3']);
 const routerAiCatalog = require('../config/routerai-models.json');
 const { createRouterAiCatalog } = require('./providers/routerai/catalog');
+const { isAdminRole } = require('./auth/roles');
 const liveRouterAiCatalog = createRouterAiCatalog();
 
 function shortString(value, limit, error) {
@@ -44,7 +45,7 @@ class GenerationPresets {
       settings = { mediaModelId: model.id, mediaInput };
     } else if (provider === 'routerai') {
       const routerAiModel = shortString(input.routerAiModel, 120, 'Выберите модель RouterAI');
-      const models = options?.routerAiRole === 'admin' ? (await liveRouterAiCatalog.all('admin')).models : routerAiCatalog.models;
+      const models = isAdminRole(options?.routerAiRole) ? (await liveRouterAiCatalog.all(options.routerAiRole)).models : routerAiCatalog.models;
       const selected = models.find(model => model.id === routerAiModel);
       const selectedMode = selected?.kind === 'transcription' ? 'audio'
         : ['embeddings', 'rerank', 'decisions'].includes(selected?.kind) ? 'text' : selected?.kind;

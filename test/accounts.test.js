@@ -157,6 +157,12 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request('/api/sources/' + 'a'.repeat(64))).status, 401);
   const alice = await login('alice'), bob = await login('bob'), owner = await login('owner'), otherIdentity = await login('alice', 'vk');
   assert.equal(alice.role, 'user'); assert.equal(owner.role, 'admin'); assert.notEqual(otherIdentity.id, alice.id);
+  for (const route of ['/api/apimart/models', '/api/admin/accounts', '/admin.html', '/shared/tariff-snapshot.js']) {
+    assert.equal((await request(route, { headers: { Cookie: alice.cookie } })).status, 403, route);
+  }
+  assert.equal((await request('/api/apimart/models', { headers: { Cookie: owner.cookie } })).status, 503);
+  assert.equal((await request('/api/admin/accounts', { headers: { Cookie: owner.cookie } })).status, 200);
+  assert.equal((await request('/admin.html', { headers: { Cookie: owner.cookie } })).status, 200);
   const defaultChatRows = (await pool.query("SELECT account_id,id,project_id,mode,name FROM media_chats WHERE account_id=ANY($1::uuid[]) ORDER BY account_id", [[alice.id, bob.id, owner.id, otherIdentity.id]])).rows;
   assert.equal(defaultChatRows.length, 4, 'registration creates one chat for each account');
   assert.ok(defaultChatRows.every(row => row.project_id === null && row.mode === 'system' && row.name === 'Основной чат'));

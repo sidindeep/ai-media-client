@@ -1,4 +1,5 @@
 const published = require('../../../config/routerai-models.json');
+const { isAdminRole, assertAdminRole } = require('../../auth/roles');
 
 const URL = 'https://routerai.ru/api/v1/models';
 const TTL_MS = 10 * 60 * 1000;
@@ -57,9 +58,9 @@ function createRouterAiCatalog({ fetchImpl = fetch, now = Date.now } = {}) {
     return pending;
   }
   return {
-    async list(role) { return { models: role === 'admin' ? await adminModels() : published.models }; },
+    async list(role) { return { models: isAdminRole(role) ? await adminModels() : published.models }; },
     async all(role) {
-      if (role !== 'admin') throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
+      assertAdminRole(role);
       return { models: await adminModels() };
     },
     async tariff(modelId, force = false) {

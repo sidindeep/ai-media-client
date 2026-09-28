@@ -29,6 +29,12 @@ function createAuth({ pool, config, providers = createProviders(config), starter
     async identities(accountId) { return (await pool.query('SELECT provider,subject,verified_email AS email FROM media_identities WHERE account_id=$1', [accountId])).rows; },
     providers: () => [...providers].map(([id, adapter]) => ({ id, label: adapter.label }))
       .concat(max ? [{ id: 'max', label: 'MAX' }] : [], email ? [{ id: 'email', label: 'Email' }] : []),
+    providerChoices: () => [
+      { id: 'google', label: 'Google' }, { id: 'vk', label: 'VK' },
+      { id: 'yandex', label: 'Яндекс' }, { id: 'telegram', label: 'Telegram' },
+      { id: 'max', label: 'MAX' }, { id: 'email', label: 'Email' }
+    ].map(provider => ({ ...provider, enabled: provider.id === 'max' ? Boolean(max)
+      : provider.id === 'email' ? Boolean(email) : providers.has(provider.id) })),
     async user(req) {
       const raw = cookieValue(req, sessionName);
       if (!/^[\w-]{43}$/.test(raw)) return null;

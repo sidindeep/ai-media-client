@@ -310,7 +310,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           payments: { enabled: Boolean(payments), salesEnabled: Boolean(commerce && config.commerce?.salesEnabled), environment: config.payments?.environment || 'test', provider: config.payments?.provider || null }, telegram: telegramStatus() });
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
-      if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
+      if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providerChoices() });
       if (auth?.max && maxStart) {
         if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
         if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });

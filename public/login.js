@@ -69,22 +69,23 @@
       if (!response.ok) throw new Error();
       const { result } = await response.json();
       for (const provider of result) {
-        if (provider.id === 'email') {
+        if (provider.id === 'email' && provider.enabled) {
           emailSection.hidden = false;
           document.getElementById('oauthRegisterNote').hidden = true;
           continue;
         }
-        const link = document.createElement('a');
-        link.className = 'account-button';
-        link.dataset.provider = provider.id;
-        link.href = `/auth/${encodeURIComponent(provider.id)}/start`;
-        link.textContent = `Продолжить с ${provider.label}`;
-        providers.append(link);
+        const action = document.createElement(provider.enabled ? 'a' : 'button');
+        action.className = 'account-button';
+        action.dataset.provider = provider.id;
+        if (provider.enabled) action.href = `/auth/${encodeURIComponent(provider.id)}/start`;
+        else { action.type = 'button'; action.disabled = true; action.title = 'Способ входа пока недоступен'; }
+        action.textContent = `Продолжить с ${provider.label}`;
+        providers.append(action);
       }
       if (!providers.children.length) providers.hidden = true;
       if (!providers.children.length) emailSection.querySelector('.login-divider').hidden = true;
       status.textContent = params.has('error') ? (params.get('error') === 'verify' ? 'Ссылка подтверждения недействительна или устарела.' : 'Вход не завершён. Попробуйте ещё раз.')
-        : result.length ? '' : 'Способы входа ещё не настроены администратором.';
+        : result.some(provider => provider.enabled) ? '' : 'Способы входа ещё не настроены администратором.';
     } catch { status.textContent = 'Сервис входа недоступен. Повторите позже.'; }
   }
   void loadLogin();

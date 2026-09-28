@@ -8,8 +8,9 @@ async function responseJson(fetcher, url, options) {
 }
 function createProviders(config, fetcher = fetch) {
   const registry = new Map();
+  const configured = value => typeof value === 'string' && Boolean(value.trim());
   const authorize = (endpoint, params) => { const url = new URL(endpoint); url.search = new URLSearchParams(params).toString(); return url.href; };
-  if (config.google.clientId && config.google.clientSecret) registry.set('google', {
+  if (configured(config.google.clientId) && configured(config.google.clientSecret)) registry.set('google', {
     label: 'Google',
     authorize: ({ state, challenge, redirectUri }) => authorize('https://accounts.google.com/o/oauth2/v2/auth', {
       client_id: config.google.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid profile email',
@@ -28,7 +29,7 @@ function createProviders(config, fetcher = fetch) {
           ? { verifiedEmail: user.email.trim().toLowerCase() } : {}) };
     }
   });
-  if (config.vk.clientId) registry.set('vk', {
+  if (configured(config.vk.clientId)) registry.set('vk', {
     label: 'VK',
     authorize: ({ state, challenge, redirectUri }) => authorize('https://id.vk.ru/authorize', {
       client_id: config.vk.clientId, redirect_uri: redirectUri, response_type: 'code', scope: '',
@@ -46,7 +47,7 @@ function createProviders(config, fetcher = fetch) {
       return { subject: String(result.user.user_id), name: [result.user.first_name, result.user.last_name].filter(Boolean).join(' ') || 'Пользователь VK' };
     }
   });
-  if (config.yandex?.clientId && config.yandex?.clientSecret) registry.set('yandex', {
+  if (configured(config.yandex?.clientId) && configured(config.yandex?.clientSecret)) registry.set('yandex', {
     label: 'Яндекс',
     authorize: ({ state, challenge, redirectUri }) => authorize('https://oauth.yandex.ru/authorize', {
       client_id: config.yandex.clientId, redirect_uri: redirectUri, response_type: 'code',
@@ -63,7 +64,7 @@ function createProviders(config, fetcher = fetch) {
       return { subject: String(user.id), name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.login || 'Пользователь Яндекса' };
     }
   });
-  if (config.telegram?.clientId && config.telegram?.clientSecret) registry.set('telegram', {
+  if (configured(config.telegram?.clientId) && configured(config.telegram?.clientSecret)) registry.set('telegram', {
     label: 'Telegram',
     authorize: ({ state, challenge, redirectUri }) => authorize('https://oauth.telegram.org/auth', {
       client_id: config.telegram.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid profile',

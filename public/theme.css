@@ -178,7 +178,8 @@ header > .theme-toggle { flex-shrink: 0; }
   text-decoration: none;
   transition: border-color .15s, background-color .15s, transform .15s;
 }
-.login-page .account-button:hover { border-color: #fa6c37; background: #2a1d18; transform: translateY(-1px); }
+.login-page .account-button:not(:disabled):hover { border-color: #fa6c37; background: #2a1d18; transform: translateY(-1px); }
+.login-page .account-button:disabled { opacity: .5; cursor: not-allowed; }
 .login-page .account-button:focus-visible { outline: 2px solid #fa6c37; outline-offset: 3px; }
 .login-page .account-button[data-provider='google']::before { content: 'G'; color: #4285f4; font-size: 18px; font-weight: 800; }
 .login-page .account-button[data-provider='vk']::before { content: 'ᴠκ'; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 6px; background: #0077ff; color: white; font-size: 10px; font-weight: 800; }
@@ -215,7 +216,7 @@ header > .theme-toggle { flex-shrink: 0; }
 :root[data-theme='light'] .login-brand p, :root[data-theme='light'] .login-register-note { color: #796b65; }
 :root[data-theme='light'] .login-page .legacy-locale-switcher { border-color: #e0d0c7; background: #fff; color: #51443f; }
 :root[data-theme='light'] .login-page .account-button { border-color: #dfcfc6; background: #fff; color: #30231e; }
-:root[data-theme='light'] .login-page .account-button:hover { border-color: #ed6531; background: #fff1e8; }
+:root[data-theme='light'] .login-page .account-button:not(:disabled):hover { border-color: #ed6531; background: #fff1e8; }
 :root[data-theme='light'] .login-page .login-email input { border-color: #dfcfc6; background: #fff; color: #30231e; }
 :root[data-theme='light'] .login-page .login-email label, :root[data-theme='light'] .login-divider { color: #78675e; }
 :root[data-theme='light'] .login-page .login-forgot { color: #89543f; }

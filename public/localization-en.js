@@ -741,6 +741,7 @@ window.aiMediaEnglish = {
   "Настройки звука": "Sound settings",
   "Админ": "Admin",
   "Продолжить с {0}": "Continue with {0}",
+  "Способ входа пока недоступен": "This sign-in method is not available yet",
   "Открыть страницу входа OpenAI ↗": "Open OpenAI login page ↗",
   "Не удалось сохранить черновики. Окно оставлено открытым:": "Failed to save drafts. Window left open:",
   "Удалить": "Delete",

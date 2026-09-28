@@ -90,6 +90,24 @@ test('native prices use exact minor units, explicit tariffs, no provider cost co
   assert.throws(() => loadConfig({ MEDIA_SALES_ENABLED: 'true' }), /платёжного модуля/);
 });
 
+test('incomplete login integrations stay visible but cannot begin authentication', () => {
+  const { createAuth } = require('../src/auth/service');
+  const broken = loadConfig({ MAX_LOGIN_BOT_NAME: '@bad', MAX_LOGIN_BOT_TOKEN: 'placeholder',
+    MEDIA_EMAIL_AUTH_ENABLED: 'true', MEDIA_SMTP_PORT: 'invalid', GOOGLE_CLIENT_ID: ' ', GOOGLE_CLIENT_SECRET: 'secret' });
+  const auth = createAuth({ pool: {}, config: broken.auth });
+  assert.equal(auth.max, null);
+  assert.equal(auth.email, null);
+  assert.deepEqual(auth.providers(), []);
+  assert.deepEqual(auth.providerChoices().map(({ id, enabled }) => [id, enabled]), [
+    ['google', false], ['vk', false], ['yandex', false], ['telegram', false], ['max', false], ['email', false]
+  ]);
+  const ready = loadConfig({ MAX_LOGIN_BOT_NAME: 'StudioBot', MAX_LOGIN_BOT_TOKEN: 'token',
+    GOOGLE_CLIENT_ID: 'client', GOOGLE_CLIENT_SECRET: 'secret' });
+  const available = createAuth({ pool: {}, config: ready.auth });
+  assert.deepEqual(available.providerChoices().filter(item => item.enabled).map(item => item.id), ['google', 'max']);
+  assert.deepEqual(available.providers().map(item => item.id), ['google', 'max']);
+});
+
 test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay and logout', { timeout: 60000 }, async t => {
   const artifacts = path.resolve(__dirname, '../artifacts'); await fs.mkdir(artifacts, { recursive: true });
   const directory = await fs.mkdtemp(path.join(artifacts, 'accounts-test-'));

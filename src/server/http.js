@@ -311,8 +311,6 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (req.method === 'GET' && url.pathname === '/api/version') return json(res, 200, release);
       if (auth && req.method === 'GET' && url.pathname === '/auth/providers') return json(res, 200, { result: auth.providers() });
-      const authRoute = /^\/auth\/([a-z][a-z0-9_-]*)\/(start|callback)$/.exec(url.pathname);
-      if (auth && req.method === 'GET' && authRoute && !['email', 'max'].includes(authRoute[1])) {
       if (auth?.max && maxStart) {
         if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
         if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
@@ -357,6 +355,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           return json(res, 200, { ok: true }, { 'Set-Cookie': session });
         } catch (error) { return json(res, error.message === 'Неверный email или пароль' ? 401 : 400, { error: error.message || 'Вход не выполнен' }); }
       }
+      const authRoute = /^\/auth\/([a-z][a-z0-9_-]*)\/(start|callback)$/.exec(url.pathname);
+      if (auth && req.method === 'GET' && authRoute && !['email', 'max'].includes(authRoute[1])) {
         if (Date.now() - loginWindow > 60000) { loginWindow = Date.now(); loginRequests = 0; }
         if (++loginRequests > 120) return json(res, 429, { error: 'Слишком много попыток входа. Повторите позже.' });
         if (authRoute[2] === 'start') { const result = await auth.begin(authRoute[1]); return redirect(result.location, result.cookie); }

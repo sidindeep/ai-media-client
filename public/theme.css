@@ -145,7 +145,13 @@ header > .theme-toggle { flex-shrink: 0; }
 .login-page .account-card-topbar { min-height: 32px; margin-bottom: 12px; }
 .login-page .account-back { font-size: 12px; color: #a69a96 !important; }
 .login-page .account-back:hover { color: #fff !important; }
-.login-page .theme-toggle { width: 32px; height: 32px; flex-basis: 32px; }
+.login-page .theme-toggle {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  box-sizing: border-box;
+  padding: 0;
+}
 .login-page .legacy-locale-switcher {
   order: -1;
   margin-left: auto;

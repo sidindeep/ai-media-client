@@ -228,12 +228,6 @@ function checkProvider() {
         <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><circle cx="12" cy="12" r="8.25" /><path d="M12 7.5v4.75l3.25 2" /></svg></span>
         <span>{{ t('navigation.history') }}</span>
       </button>
-      <button type="button" class="sidebar-home-link" :class="{ active: props.activeSection === 'spending' }" :aria-label="t('spending.title')" :title="t('spending.title')" @click="emit('spending')">
-        <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17M7 14h4" /></svg></span>
-        <span>{{ t('spending.title') }}</span>
-      </button>
-      <button type="button" class="sidebar-home-link sidebar-profile-link" :class="{ active: props.activeSection === 'profile' }" :aria-label="t('account.profile')" :title="t('account.profile')" @click="emit('profile')"><span class="sidebar-home-icon" aria-hidden="true">●</span><span>{{ t('account.profile') }}</span></button>
-      <button type="button" class="sidebar-home-link sidebar-plans-link" :class="{ active: props.activeSection === 'plans' }" :aria-label="t('commerce.plans')" :title="t('commerce.plans')" @click="emit('plans')"><span class="sidebar-home-icon" aria-hidden="true">◈</span><span>{{ t('commerce.plans') }}</span></button>
     </nav>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar" :class="{ 'archive-mode': activeTab === 'archive' }"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button v-if="activeTab !== 'archive'" class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>

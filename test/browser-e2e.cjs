@@ -103,15 +103,32 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
-    await client.evaluate("document.querySelector('.sidebar-profile-link').click();void 0");
+    assert.equal(await client.evaluate("Boolean(document.querySelector('.sidebar-profile-link, .sidebar-plans-link, .sidebar-primary-nav [aria-label=\"История расходов\"]'))"), false);
+    await client.evaluate("document.querySelector('.account-trigger').click();void 0");
+    await client.until("document.querySelector('.account-summary strong')?.textContent === 'Browser E2E'");
+    await client.evaluate("document.querySelector('.account-menu-section a[href=\"/app/profile\"]').click();void 0");
     await client.until("location.pathname==='/app/profile' && document.querySelector('.commerce-identity-card')?.textContent.includes('Browser E2E')");
     assert.equal(await client.evaluate("document.querySelector('.account-modal-backdrop') === null"), true);
     await client.evaluate("const input=document.querySelector('#commerce-profile-name');input.value='Browser updated';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.commerce-name-field button').click();void 0");
     await client.until("document.querySelector('.commerce-identity-card')?.textContent.includes('Browser updated')");
     assert.equal((await pool.query('SELECT display_name FROM media_accounts WHERE id=$1', [accountId])).rows[0].display_name, 'Browser updated');
+    await client.evaluate(`window.__commerceFetch=window.fetch.bind(window);window.fetch=(input,init)=>{
+      const url=new URL(typeof input==='string'?input:input.url,location.origin);
+      if(url.pathname==='/api/commerce/offers')return Promise.resolve(new Response(JSON.stringify({result:[{
+        id:'browser-package',version:'v1',name:'Browser package',description:'Test offer',creditUnits:450000,
+        amountMinor:49000,currency:'RUB',active:true,checkoutMode:'stub'}]}),{status:200,headers:{'Content-Type':'application/json'}}));
+      return window.__commerceFetch(input,init)};void 0`);
     await client.evaluate("document.querySelectorAll('.commerce-rail nav button')[1].click();void 0");
-    await client.until("location.pathname==='/app/plans' && Boolean(document.querySelector('.commerce-shell'))");
+    await client.until("location.pathname==='/app/plans' && document.querySelectorAll('.commerce-card').length>0");
     assert.equal(await client.evaluate("document.querySelector('.subscription-dialog') === null"), true);
+    await client.evaluate("document.querySelector('.commerce-card > button').click();void 0");
+    await client.until("Boolean(document.querySelector('.commerce-checkout .commerce-payment-method'))");
+    assert.equal(await client.evaluate("document.querySelectorAll('.commerce-card').length"), 0);
+    assert.equal(await client.evaluate("Array.from(document.querySelectorAll('.commerce-payment-method')).every(button=>button.disabled)"), true);
+    assert.equal((await pool.query('SELECT count(*)::integer AS count FROM media_orders WHERE account_id=$1', [accountId])).rows[0].count, 0);
+    await client.evaluate("document.querySelector('.commerce-back').click();void 0");
+    await client.until("document.querySelectorAll('.commerce-card').length>0");
+    await client.evaluate("window.fetch=window.__commerceFetch;delete window.__commerceFetch;void 0");
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.composer-body textarea'))");
     await client.evaluate("const field=document.querySelector('.composer-body textarea');field.value='Browser draft persists';field.dispatchEvent(new Event('input',{bubbles:true}));void 0");

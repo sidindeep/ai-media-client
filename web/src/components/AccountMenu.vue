@@ -48,11 +48,6 @@ async function toggleMenu() {
   if (menuOpen.value) await loadAccount();
 }
 
-function openProfile() {
-  menuOpen.value = false;
-  emit('profile');
-}
-
 async function openSettings() {
   status.value = '';
   menuOpen.value = false;
@@ -68,11 +63,6 @@ async function openSettings() {
   } finally {
     loading.value = false;
   }
-}
-
-function openTopup() {
-  menuOpen.value = false;
-  emit('plans');
 }
 
 function openHistory() {
@@ -197,9 +187,9 @@ onBeforeUnmount(() => {
         <span><strong>{{ account?.name }}</strong><small>{{ account?.role === 'admin' ? t('common.admin') : t('common.user') }}</small></span>
       </div>
       <div class="account-balance"><span>{{ t('account.available') }}</span><strong>{{ formatCredits(account?.wallet?.balance) }} {{ t('common.creditsShort') }}</strong></div>
-      <button class="account-topup" type="button" role="menuitem" @click="openTopup">＋ {{ t('account.topUp') }}</button>
+      <a class="account-topup" href="/app/plans" role="menuitem">＋ {{ t('account.topUp') }}</a>
       <div class="account-menu-section">
-        <button type="button" role="menuitem" @click="openProfile"><span>{{ t('account.profile') }}</span><small>{{ t('account.profileHint') }}</small></button>
+        <a href="/app/profile" role="menuitem"><span>{{ t('account.profile') }}</span><small>{{ t('account.profileHint') }}</small></a>
         <button type="button" role="menuitem" @click="openHistory"><span>{{ t('navigation.history') }}</span><small>{{ t('account.historyHint') }}</small></button>
         <button type="button" role="menuitem" @click="openSettings"><span>{{ t('account.settings') }}</span><small>{{ t('account.settingsHint') }}</small></button>
         <button v-if="account?.id !== 'local'" type="button" role="menuitem" @click="openTelegram"><span>{{ t('account.telegramTitle') }}</span><small>{{ t('account.telegramHint') }}</small></button>

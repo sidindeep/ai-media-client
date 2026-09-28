@@ -203,7 +203,7 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .account-popover { position: absolute; top: calc(100% + 8px); right: 0; display: grid; width: 280px; padding: 10px; border: 1px solid #37374d; border-radius: 14px; color: #e9e6f1; background: #151620; box-shadow: 0 22px 70px #000a; }
 .account-summary { display: flex; align-items: center; gap: 10px; padding: 3px 3px 10px; }.account-summary strong, .account-summary small { display: block; }.account-summary strong { font-size: 12px; }.account-summary small { margin-top: 3px; color: #827d93; font-size: 9px; }
 .account-balance { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; border: 1px solid #2c2d3e; border-radius: 9px; padding: 8px 9px; color: #858096; background: #101119; font-size: 10px; }.account-balance strong { color: #f0edf7; font-size: 12px; }
-.account-topup { border: 1px solid #7059dc; border-radius: 9px; padding: 8px; color: #fff; background: #5d46b7; font-size: 10px; font-weight: 700; }
+.account-topup { display: block; border: 1px solid #7059dc; border-radius: 9px; padding: 8px; color: #fff; background: #5d46b7; font-size: 10px; font-weight: 700; text-align: center; text-decoration: none; }
 .account-menu-section { display: grid; gap: 2px; margin-top: 9px; border-block: 1px solid #292a3a; padding-block: 7px; }.account-menu-section button, .account-menu-section a, .account-logout { display: grid; width: 100%; gap: 2px; border: 0; border-radius: 8px; padding: 8px 9px; color: #d6d2df; background: transparent; text-align: left; text-decoration: none; }.account-menu-section button:hover, .account-menu-section a:hover, .account-logout:hover { background: #242335; }.account-menu-section span { font-size: 11px; font-weight: 650; }.account-menu-section small { color: #777287; font-size: 9px; }.account-admin-link { color: #cfc4ff !important; background: rgba(99, 74, 190, .14) !important; }.account-admin-link:hover { background: rgba(99, 74, 190, .3) !important; }
 .account-logout { margin-top: 6px; color: #bc8f98; font-size: 10px; }.account-status { margin: 6px 4px 0; color: #e08d9c; font-size: 9px; line-height: 1.4; }
 .account-modal-backdrop { position: fixed; z-index: 160; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(5, 6, 11, .78); backdrop-filter: blur(9px); }
@@ -697,10 +697,7 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .locale-switcher select { min-width: 58px; border: 1px solid #37354d; border-radius: 999px; padding: 7px 22px 7px 10px; color: #d9d3ef; background: #191827; font: inherit; cursor: pointer; }
 :root[data-theme='light'] .locale-switcher select { border-color: #d7d2e2; color: #332f3e; background: #f5f2f8; }
 .studio-grid.spending-mode { display: block; overflow-y: auto; }
-.studio-grid.commerce-mode { display: block; overflow-y: auto; border-radius: 17px; padding: clamp(18px, 2.3vw, 34px); background: #f0e9dd; scrollbar-width: thin; }
-.account-layout .studio-main, :root[data-theme='light'] .account-layout .studio-main { background: #f0e9dd; }
-.account-layout .studio-header h1, :root[data-theme='light'] .account-layout .studio-header h1 { color: #261f20; }
-.account-layout .studio-header .eyebrow { color: #b25231; }
+.studio-grid.commerce-mode { display: block; overflow-y: auto; border-radius: 17px; padding: clamp(18px, 2.3vw, 34px); scrollbar-width: thin; }
 @media (max-width: 720px) { .studio-grid.commerce-mode { padding: 12px; } }
 .spending-page { min-height: 100%; padding: 22px; border: 1px solid #303144; border-radius: 17px; background: linear-gradient(145deg, rgba(23, 23, 37, .95), rgba(14, 15, 23, .95)); }
 .spending-header h2 { margin: 5px 0 0; font-size: 22px; }.spending-header p { margin: 7px 0 0; color: #89849a; font-size: 11px; }

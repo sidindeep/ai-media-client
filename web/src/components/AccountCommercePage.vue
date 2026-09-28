@@ -15,6 +15,7 @@ const selectedOffer = ref<CommerceOffer | null>(null);
 const profileName = ref('');
 const loading = ref(false);
 const saving = ref(false);
+const checkingOut = ref(false);
 const error = ref('');
 const status = ref('');
 const initials = computed(() => account.value?.name.trim().slice(0, 1).toUpperCase() || '•');
@@ -89,6 +90,31 @@ async function saveProfile() {
   }
 }
 
+async function continueToPayment() {
+  const offer = selectedOffer.value;
+  if (!offer || offer.checkoutMode !== 'redirect' || checkingOut.value) return;
+  checkingOut.value = true;
+  status.value = '';
+  const storageKey = `ai-media-checkout:${offer.id}:${offer.version}`;
+  try {
+    let checkoutKey = sessionStorage.getItem(storageKey);
+    if (!checkoutKey) {
+      checkoutKey = crypto.randomUUID();
+      sessionStorage.setItem(storageKey, checkoutKey);
+    }
+    const order = await api.createCommerceOrder(offer, checkoutKey);
+    const payment = await api.checkoutCommerceOrder(order.id);
+    orders.value = [payment, ...orders.value.filter(item => item.id !== payment.id)];
+    if (!payment.confirmationUrl || new URL(payment.confirmationUrl).protocol !== 'https:') {
+      throw new Error(t('subscription.paymentLinkUnavailable'));
+    }
+    window.location.assign(payment.confirmationUrl);
+  } catch (cause) {
+    status.value = cause instanceof Error ? cause.message : t('subscription.unavailable');
+    checkingOut.value = false;
+  }
+}
+
 watch(() => props.view, () => { selectedOffer.value = null; status.value = ''; void load(); });
 onMounted(() => { void load(); });
 </script>
@@ -112,8 +138,8 @@ onMounted(() => { void load(); });
       <p v-if="loading && !account" class="commerce-feedback" role="status">{{ t('common.loading') }}</p>
 
       <template v-if="view === 'plans'">
-        <div v-if="offers.length" class="commerce-cards">
-          <article v-for="offer in offers" :key="`${offer.id}:${offer.version}`" class="commerce-card" :class="{ selected: selectedOffer?.id === offer.id }">
+        <div v-if="!selectedOffer && offers.length" class="commerce-cards">
+          <article v-for="offer in offers" :key="`${offer.id}:${offer.version}`" class="commerce-card">
             <div class="commerce-card-top"><span class="commerce-card-mark">✦</span></div>
             <h3>{{ offer.name }}</h3>
             <div class="commerce-credit-count"><strong>{{ credits(offer.creditUnits / 1000) }}</strong><span>{{ t('common.creditsShort') }}</span></div>
@@ -123,11 +149,16 @@ onMounted(() => { void load(); });
             <button type="button" :disabled="loading" @click="selectedOffer = offer">{{ t('subscription.selectPackage') }}</button>
           </article>
         </div>
-        <p v-else-if="!loading && !error" class="commerce-feedback">{{ t('subscription.unavailable') }}</p>
+        <p v-else-if="!selectedOffer && !loading && !error" class="commerce-feedback">{{ t('subscription.unavailable') }}</p>
         <section v-if="selectedOffer" class="commerce-checkout" aria-labelledby="commerce-checkout-title">
-          <div><span class="eyebrow">{{ t('subscription.paymentEyebrow') }}</span><h3 id="commerce-checkout-title">{{ selectedOffer.name }} · {{ money(selectedOffer) }}</h3><p>{{ t('subscription.creditCount', { count: credits(selectedOffer.creditUnits / 1000) }) }}</p></div>
-          <p>{{ t('subscription.paymentUnavailable') }}</p>
-          <button type="button" @click="selectedOffer = null">{{ t('subscription.backToPackages') }}</button>
+          <button type="button" class="commerce-back" @click="selectedOffer = null">← {{ t('subscription.backToPackages') }}</button>
+          <div><span class="eyebrow">{{ t('subscription.paymentEyebrow') }}</span><h3 id="commerce-checkout-title">{{ t('subscription.paymentTitle') }}</h3><p>{{ selectedOffer.name }} · {{ money(selectedOffer) }} · {{ t('subscription.creditCount', { count: credits(selectedOffer.creditUnits / 1000) }) }}</p></div>
+          <button v-if="selectedOffer.checkoutMode === 'redirect'" type="button" class="commerce-payment-method" :disabled="checkingOut" @click="continueToPayment"><strong>{{ t('subscription.yookassaMethod') }}</strong><span>{{ checkingOut ? t('common.loading') : t('subscription.buy') }} →</span></button>
+          <template v-else>
+            <p>{{ t('subscription.paymentUnavailable') }}</p>
+            <button type="button" class="commerce-payment-method" disabled><strong>{{ t('subscription.bankCard') }}</strong><span>{{ t('subscription.methodUnavailable') }}</span></button>
+            <button type="button" class="commerce-payment-method" disabled><strong>{{ t('subscription.sbp') }}</strong><span>{{ t('subscription.methodUnavailable') }}</span></button>
+          </template>
         </section>
         <p v-if="status" class="commerce-feedback" role="status">{{ status }}</p>
         <p v-else-if="orders[0]" class="commerce-feedback">{{ t('subscription.lastOrder', { name: orders[0].offer.name }) }} · {{ orderStatus(orders[0]) }}</p>
@@ -155,17 +186,15 @@ onMounted(() => { void load(); });
 .commerce-identity-card { display: flex; align-items: center; gap: 20px; border-radius: 15px; padding: 24px; background: linear-gradient(115deg, #3b2927, #28202a); }.commerce-avatar { display: grid; width: 78px; height: 78px; flex: 0 0 78px; place-items: center; border-radius: 12px; color: white; background: #007d8f; font-size: 42px; }.commerce-identity-card h3 { margin: 0; font-size: 30px; }.commerce-identity-card p { margin: 8px 0 0; color: #d4c1bf; font-size: 13px; overflow-wrap: anywhere; }
 .commerce-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 18px; border: 1px solid #453a41; border-radius: 15px; padding: 25px; background: #211d25; }.commerce-overview > div { display: flex; min-height: 145px; flex-direction: column; align-items: flex-start; }.commerce-overview > div + div { border-left: 1px solid #a94c2e; padding-left: 28px; }.commerce-overview span { color: #aaa0ad; font-size: 12px; }.commerce-overview strong { margin-top: 7px; font-size: 29px; }.commerce-overview strong small { font-size: 13px; }.commerce-overview p { margin: 5px 0 12px; color: #a99fa9; font-size: 11px; }.commerce-overview button { margin-top: auto; }.commerce-overview .commerce-secondary-action { border: 1px solid #765a67; background: transparent; }
 .commerce-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }.commerce-panel h3 { margin: 0 0 18px; font-size: 19px; }.commerce-panel form { display: grid; gap: 8px; }.commerce-panel label, .commerce-panel small { color: #a9a2af; font-size: 11px; }.commerce-name-field { display: flex; gap: 8px; }.commerce-name-field input { width: 100%; min-width: 0; border: 1px solid #554c5b; border-radius: 8px; padding: 10px; color: #fff; background: #12121a; }.commerce-panel p { color: #d6b5c1; font-size: 12px; }.commerce-panel > small { display: block; margin-top: 20px; overflow-wrap: anywhere; }.commerce-panel ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }.commerce-panel li { display: grid; gap: 4px; overflow-wrap: anywhere; font-size: 12px; }.commerce-panel li span { color: #a9a2af; }.commerce-orders { margin-top: 18px; }.commerce-orders > div { display: flex; justify-content: space-between; gap: 15px; border-top: 1px solid #3b3644; padding: 11px 0; font-size: 12px; }.commerce-orders span { color: #b7aebd; }
-/* The account area follows the warm, full-page treatment of the supplied references. */
-.commerce-shell { color: #271f20; }
-.commerce-rail, .commerce-card, .commerce-panel, .commerce-checkout { border-color: #c5b3a7; color: #271f20; background: #e8ddcd; }
-.commerce-rail nav button { color: #332a2b; }.commerce-rail nav button:hover, .commerce-rail nav button.active { color: #e94e20; background: #f4e9dc; }
-.commerce-rail-balance { border-color: #c5b3a7; }.commerce-rail-balance span, .commerce-card ul, .commerce-card-bottom small, .commerce-checkout p, .commerce-panel label, .commerce-panel small, .commerce-panel li span, .commerce-orders span, .commerce-heading-note { color: #66585a; }
-.commerce-card p, .commerce-identity-card p, .commerce-overview p, .commerce-feedback { color: #584a4a; }
-.commerce-credit-count { border-color: #ad8b78; color: #5b2a1b; background: #f8b36c; }
-.commerce-identity-card { color: #251d1e; background: #e5d2b8; }
-.commerce-overview { border-color: #c5b3a7; color: #271f20; background: #e8ddcd; }.commerce-overview span { color: #765d5d; }
-.commerce-name-field input { border-color: #b9a79f; color: #271f20; background: #fffaf4; }
-.commerce-checkout button { border-color: #ae8f83; color: #70351f; }.commerce-card.selected { border-color: #e94e20; }.commerce-overview .commerce-secondary-action { color: #70351f; }
+.commerce-checkout { display: grid; align-content: start; gap: 16px; min-height: 300px; margin-top: 0; }
+.commerce-checkout > div { flex: none; }
+.commerce-checkout h3 { font-size: 26px; }
+.commerce-checkout .commerce-back { justify-self: start; border: 0; padding: 0; color: #bbaaf7; }
+.commerce-checkout .commerce-payment-method { display: flex; justify-content: space-between; gap: 15px; width: 100%; border: 1px solid #62536a; border-radius: 10px; padding: 16px; color: #f4f0f8; background: #272332; text-align: left; cursor: pointer; }
+.commerce-checkout .commerce-payment-method:hover:not(:disabled) { border-color: #a68bd7; background: #332b45; }
+.commerce-checkout .commerce-payment-method:disabled { color: #8d8799; cursor: not-allowed; }
+.commerce-checkout .commerce-payment-method span { color: #bbaaf7; font-size: 12px; }
+.commerce-checkout .commerce-payment-method:disabled span { color: #8d8799; }
 @media (max-width: 1000px) { .commerce-shell { grid-template-columns: 1fr; }.commerce-rail nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }.commerce-rail nav button { justify-content: center; flex-wrap: wrap; gap: 4px; text-align: center; }.commerce-rail-balance { display: none; } }
 @media (max-width: 720px) { .commerce-rail nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.commerce-cards, .commerce-profile-grid { grid-template-columns: 1fr; }.commerce-overview { grid-template-columns: 1fr; gap: 20px; }.commerce-overview > div + div { border-top: 1px solid #a94c2e; border-left: 0; padding: 20px 0 0; }.commerce-heading { align-items: flex-start; flex-direction: column; }.commerce-promo { align-items: flex-start; flex-direction: column; }.commerce-name-field { flex-direction: column; } }
 </style>

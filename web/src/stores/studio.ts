@@ -216,7 +216,7 @@ export const useStudioStore = defineStore('studio', () => {
     if (!routerAiModels.value.some(model => model.id === routerAiModel.value)) routerAiModel.value = routerAiModels.value[0]?.id || '';
   }
   function normalizeApimartControls() {
-    if (!apimartModels.value.some(model => model.id === apimartModel.value)) apimartModel.value = apimartModels.value[0]?.id || '';
+    if (!apimartModels.value.some(model => model.id === apimartModel.value)) apimartModel.value = apimartModels.value.find(model => model.id === 'gpt-4o-mini')?.id || apimartModels.value[0]?.id || '';
   }
 
   function recomputeWorkspaceCounts() {

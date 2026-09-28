@@ -7,6 +7,8 @@ const NAMESPACE = 'apimart';
 const MODEL_TTL_MS = 10 * 60 * 1000;
 const UUID = /^[a-f0-9-]{36}$/;
 const MODEL_ID = /^[a-z0-9][a-z0-9._:/-]{0,159}$/i;
+// APIMart labels these legacy base models as chat, but /chat/completions rejects them.
+const NON_CHAT_MODELS = new Set(['babbage-002', 'davinci-002']);
 
 function createApimartJobs({ pool, apiKey, fetchImpl, now = Date.now }) {
   const client = createApimartClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -18,7 +20,8 @@ function createApimartJobs({ pool, apiKey, fetchImpl, now = Date.now }) {
     if (!pending) pending = (async () => {
       const response = await client.models();
       if (!Array.isArray(response?.data)) throw new Error('APIMart вернул неверный каталог');
-      cachedModels = response.data.filter(item => item?.category === 'chat' && typeof item.id === 'string' && MODEL_ID.test(item.id))
+      cachedModels = response.data.filter(item => item?.category === 'chat' && typeof item.id === 'string'
+        && MODEL_ID.test(item.id) && !NON_CHAT_MODELS.has(item.id))
         .map(item => ({ id: item.id, name: item.id, kind: 'text' }));
       expiresAt = now() + MODEL_TTL_MS;
       return cachedModels;

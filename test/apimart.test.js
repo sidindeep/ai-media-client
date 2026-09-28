@@ -20,6 +20,7 @@ test('APIMart selects chat models and never sends the same accepted request twic
   const fetchImpl = async (url, init) => {
     requests.push({ url, body: init?.body });
     return { ok: true, json: async () => url.includes('/models?') ? { data: [
+      { id: 'babbage-002', category: 'chat' }, { id: 'davinci-002', category: 'chat' },
       { id: 'gpt-4o', category: 'chat' }, { id: 'gpt-image-2', category: 'image' },
     ] } : { choices: [{ message: { content: 'Готово' } }], usage: { total_tokens: 9 } } };
   };

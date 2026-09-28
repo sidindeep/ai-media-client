@@ -59,12 +59,15 @@ function mediaEstimate(payload, model, options = {}) {
   } else if (model.kind === 'video' && data.billing_type === 'per_second') {
     const resolution = String(selected('resolution', '')).toUpperCase();
     const referenceVideo = Array.isArray(options.video_urls) && options.video_urls.length > 0;
-    let perSecond = data.resolution_paid_prices?.[referenceVideo ? `${resolution}-input` : resolution] ?? data.paid_price;
-    if (data.billing_tier_paid_prices) {
+    const resolutionPrices = data.resolution_paid_prices;
+    let perSecond = resolutionPrices && Object.keys(resolutionPrices).length
+      ? resolutionPrices[referenceVideo ? `${resolution}-input` : resolution] : data.paid_price;
+    const tierPrices = data.billing_tier_paid_prices;
+    if (tierPrices && Object.keys(tierPrices).some(key => !/^token(?:-|$)/i.test(key))) {
       const mode = String(selected('mode', 'std'));
       const sound = selected('audio', false) === true || selected('generate_audio', false) === true;
       const tier = [mode === 'std' ? '' : mode, sound ? 'sound' : ''].filter(Boolean).join('-');
-      perSecond = tier ? data.billing_tier_paid_prices[tier] : data.paid_price;
+      if (tier) perSecond = tierPrices[tier];
     }
     const duration = Number(selected('duration', NaN));
     if (Number.isFinite(perSecond) && Number.isFinite(duration) && duration > 0 && duration <= 60) amountUsd = perSecond * duration;

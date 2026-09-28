@@ -213,6 +213,20 @@ test('APIMart estimates only supported media tariff shapes', () => {
   assert.equal(mediaEstimate({ data: { billing_type: 'per_second' } }, model), null);
 });
 
+test('APIMart Seedance 2.5 quote follows resolution prices despite token billing tiers', () => {
+  const model = describeModel({ id: 'seedance-2.5', category: 'video' });
+  const tariff = { data: { billing_type: 'per_second', paid_price: 0.216,
+    resolution_paid_prices: { '480P': 0.09608, '720P': 0.216, '1080P': 0.38488 },
+    billing_tier_paid_prices: { token: 10, 'token-1080P': 11 } } };
+  for (const [resolution, amountUsd] of [['480p', 0.4804], ['720p', 1.08], ['1080p', 1.9244]]) {
+    const quote = mediaEstimate(tariff, model, { resolution, duration: 5, generate_audio: false });
+    assert.ok(Math.abs(quote.amountUsd - amountUsd) < 1e-10, resolution);
+    assert.ok(Math.abs(quote.nativeCredits - amountUsd * 10) < 1e-10, resolution);
+  }
+  assert.ok(Math.abs(mediaEstimate(tariff, model, { resolution: '1080p', duration: 5, generate_audio: true }).amountUsd - 1.9244) < 1e-10);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '4k', duration: 5 }), null);
+});
+
 test('APIMart recovers a persisted media task by polling without another paid POST', async () => {
   const account = '11111111-1111-4111-8111-111111111111';
   let saved = { id: '33333333-3333-4333-8333-333333333333', state: 'running', kind: 'video', model: 'kling-v3',

@@ -147,7 +147,7 @@ export type ProviderDiagnostics = {
 };
 
 export type ProviderStatus = {
-  provider: 'media' | 'routerai' | 'codex';
+  provider: 'media' | 'routerai' | 'apimart' | 'codex';
   kieAccountId?: 'primary' | 'secondary';
   checkedAt: string;
   balance: { amount: number; unit: 'credits' | 'rub' } | null;
@@ -233,7 +233,15 @@ export async function getApimartCatalog(): Promise<ApimartCatalog> {
   return parse(await fetch('/api/apimart/models', { headers: accountHeaders(), cache: 'no-store' }));
 }
 
-export async function submitApimart(input: { requestId: string; model: string; prompt: string; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
+export type ApimartQuote = { status: 'estimated' | 'unavailable'; credits: null; amountUsd?: number;
+  nativeCredits?: number; estimatedInputTokens?: number; estimatedOutputTokens?: number;
+  inputUsdPerToken?: number; outputUsdPerToken?: number; reason?: string };
+export async function getApimartQuote(model: string, prompt: string, parameters: Record<string, unknown> = {}): Promise<ApimartQuote> {
+  return parse(await fetch('/api/apimart/quote', { method: 'POST',
+    headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, parameters }) }));
+}
+
+export async function submitApimart(input: { requestId: string; model: string; prompt: string; parameters?: Record<string, unknown>; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
   return parse(await fetch('/api/apimart/jobs', { method: 'POST',
     headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
 }

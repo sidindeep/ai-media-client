@@ -67,6 +67,8 @@ function meta(record: GenerationRecord) {
   return [
     timestamp(record.createdAt), duration(record),
     record.nativeQuote?.credits != null ? `${formatCreditCost(record.nativeQuote.credits)} ${t('common.creditsShort')}` : '',
+    record.providerId === 'apimart' && record.apimartTariffCost
+      ? `${t(record.apimartTariffCost.confirmed ? 'apimart.admin.actualCost' : 'apimart.admin.tariffCost')} ${record.apimartTariffCost.confirmed ? '' : '≈ '}${formatNumber(record.apimartTariffCost.nativeCredits, { maximumFractionDigits: 8 })} ${t('common.creditsShort')} ($${formatNumber(record.apimartTariffCost.amountUsd, { maximumFractionDigits: 8 })})` : '',
     studio.isAdmin && totalTokens(record) != null ? t('generation.tokensShort', { count: formatCount(totalTokens(record)) }) : '', effort, speed,
   ].filter(Boolean);
 }
@@ -274,8 +276,8 @@ onBeforeUnmount(() => {
           </button>
           <p class="chat-result-prompt">{{ prompt(record) }}</p>
           <div v-if="resultUrls(record).length" class="chat-result-media">
-            <video v-if="record.kind === 'video'" :src="resultUrls(record)[0]" controls playsinline @click.stop></video>
-            <audio v-else-if="record.kind === 'audio'" :src="resultUrls(record)[0]" controls @click.stop></audio>
+            <template v-if="record.kind === 'video'"><video v-for="url in resultUrls(record)" :key="url" :src="url" controls playsinline @click.stop></video></template>
+            <template v-else-if="record.kind === 'audio'"><audio v-for="url in resultUrls(record)" :key="url" :src="url" controls @click.stop></audio></template>
             <ExpandableResultImage v-else v-for="(url, index) in resultUrls(record)" :key="url" :src="url"
               :download-url="resultDownloadUrl(record, index, url)" :alt="t('generation.resultAlt')" />
           </div>

@@ -66,7 +66,8 @@ export type Catalog = {
   models: MediaModel[];
 };
 
-export type ApimartCatalog = { models: Array<{ id: string; name: string; kind: 'text' }>; error?: string };
+export type ApimartCatalog = { models: Array<{ id: string; name: string; kind: 'text' | 'image' | 'video' | 'audio';
+  capabilities?: string[]; fields: MediaField[]; promptRequired: boolean; documentation?: string }>; error?: string };
 
 export type GenerationPreset = {
   id: string;
@@ -108,6 +109,7 @@ export type GenerationRecord = {
   resultJson?: string;
   localFiles?: Array<{ previewUrl?: string; url?: string; name?: string }>;
   nativeQuote?: { credits?: number };
+  apimartTariffCost?: { nativeCredits: number; amountUsd: number; confirmed?: boolean } | null;
   generationStartedAt?: string;
   generationCompletedAt?: string;
   generationDurationMs?: number;

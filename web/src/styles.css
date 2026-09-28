@@ -751,6 +751,12 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 :root[data-theme='light'] .spending-operation-end button { color: #654bb4; }
 :root[data-theme='light'] .spending-more { border-color: #cbbde3; color: #574292; background: #f0ebfa; }
 .quote.warning { color: #f5c36b; }
+.apimart-billing-note { margin: 8px 0 0; color: #89859c; font-size: 11px; line-height: 1.4; }
+.apimart-billing-note.is-error { color: #f5c36b; }
+.apimart-reference-details { margin-top: 10px; color: #a9a4bb; font-size: 11px; }
+.apimart-reference-details summary { width: fit-content; }
+.apimart-reference-details label { display: block; margin-top: 10px; }
+.apimart-reference-details textarea { margin-top: 6px; padding: 10px; border: 1px solid #35364a; border-radius: 10px; background: #181925; }
 /* Schema-based editors for nested media-model inputs. */
 .schema-fields, .task-reference-field { display: grid; gap: 12px; margin-top: 12px; padding: 14px; border: 1px solid #35364a; border-radius: 12px; background: #181925; }
 .schema-field, .schema-field-items, .schema-field-object, .schema-field-item { display: grid; gap: 8px; min-width: 0; }

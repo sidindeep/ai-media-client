@@ -35,11 +35,10 @@ export function mediaAdvancedParameters(fields: MediaField[], optionLabel: (fiel
 }
 
 export function routerAiAdvancedParameters(model: RouterAiCatalog['models'][number] | undefined, labels: {
-  audioFile: string; duration: string; seconds: string; resolution: string; aspectRatio: string; body: string; parametersHint: string;
+  duration: string; seconds: string; resolution: string; aspectRatio: string; body: string; parametersHint: string;
 }): AdvancedParameter[] {
   if (!model || model.kind === 'text' || model.kind === 'image') return [];
   if (model.kind !== 'video') return [
-    ...(model.kind === 'transcription' ? [{ key: 'audioFile', label: labels.audioFile, kind: 'file' as const, accept: 'audio/*' }] : []),
     { key: 'body', label: labels.body, kind: 'json' as const, hint: labels.parametersHint },
   ];
   const select = (key: string, label: string, values: Array<string | number> | undefined, suffix = ''): AdvancedParameter[] =>

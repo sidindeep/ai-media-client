@@ -17,6 +17,7 @@
 !config/
 !config/native-prices.json
 !config/codex-models.json
+!config/apimart-schemas.json
 !config/product-offers.json
 !scripts/
 !scripts/migrate-content-assets.cjs

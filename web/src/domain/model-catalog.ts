@@ -21,6 +21,10 @@ export const MODEL_BRANDS: ModelBrand[] = [
   { id: 'codex', label: 'Codex', icon: `${ICON_ROOT}/chatgpt.webp`, accent: '#8f75ff' },
   { id: 'routerai', label: 'RouterAI', accent: '#67b7ff' },
   { id: 'apimart', label: 'APIMart', accent: '#f4a340' },
+  { id: 'anthropic', label: 'Anthropic', accent: '#d5a87d' },
+  { id: 'deepseek', label: 'DeepSeek', accent: '#6388ee' },
+  { id: 'meta', label: 'Meta', accent: '#4f9df7' },
+  { id: 'mistral', label: 'Mistral', accent: '#ef8c4b' },
   { id: 'kling', label: 'Kling', icon: `${ICON_ROOT}/kling.webp`, accent: '#32d6bc' },
   { id: 'seedance', label: 'Seedance', icon: `${ICON_ROOT}/seedance.webp`, accent: '#8f5cff' },
   { id: 'veo', label: 'Veo', icon: `${ICON_ROOT}/veo.webp`, accent: '#4f8cff' },
@@ -43,6 +47,10 @@ export const MODEL_BRANDS: ModelBrand[] = [
   { id: 'volcengine', label: 'Volcengine', icon: `${ICON_ROOT}/volcengine.svg`, accent: '#3377ff' },
   { id: 'elevenlabs', label: 'ElevenLabs', accent: '#f2f2f2' },
   { id: 'suno', label: 'Suno', accent: '#ff7a45' },
+  { id: 'midjourney', label: 'Midjourney', accent: '#b7c9ee' },
+  { id: 'ltx', label: 'LTX', accent: '#5ecbaf' },
+  { id: 'skyreels', label: 'SkyReels', accent: '#72a7ff' },
+  { id: 'flowmusic', label: 'Flow Music', accent: '#ed7eac' },
   { id: 'zimage', label: 'Z-Image', accent: '#9e83ff' },
   { id: 'other', label: 'Other', accent: '#8f8aa3' },
 ];
@@ -68,6 +76,28 @@ export function routerAiModelBrandId(id: string) {
     'alibaba': 'wan', 'elevenlabs': 'elevenlabs', 'suno': 'suno',
   };
   return known[vendor] || `routerai:${vendor}`;
+}
+
+export function apimartModelBrandId(id: string) {
+  const value = id.toLowerCase();
+  if (/^wan\d/.test(value)) return 'wan';
+  if (/^imagen/.test(value)) return 'google';
+  if (/^(?:dall-e|tts-|whisper-)/.test(value)) return 'openai';
+  if (/^(?:veo|gemini-omni|omni-flash)/.test(value)) return 'veo';
+  if (/^midjourney/.test(value)) return 'midjourney';
+  if (/^ltx/.test(value)) return 'ltx';
+  if (/^skyreels/.test(value)) return 'skyreels';
+  if (/^flowmusic/.test(value)) return 'flowmusic';
+  if (/^(?:gpt[-/]|chatgpt[-/]|o[134](?:[-/]|$)|openai[/-])/.test(value)) return 'openai';
+  if (/^(?:claude[-/]|anthropic[/-])/.test(value)) return 'anthropic';
+  if (/^(?:gemini[-/]|google[/-])/.test(value)) return 'google';
+  if (/^deepseek(?:[-/]|$)/.test(value)) return 'deepseek';
+  if (/^(?:qwen|qwq[-/]|alibaba[/-])/.test(value)) return 'qwen';
+  if (/^(?:grok[-/]|x-ai[/-])/.test(value)) return 'grok';
+  if (/^(?:llama[-/]|meta[/-])/.test(value)) return 'meta';
+  if (/^mistral(?:[-/]|$)/.test(value)) return 'mistral';
+  const mediaBrand = mediaModelBrandId(id, id);
+  return mediaBrand === 'other' ? 'apimart' : mediaBrand;
 }
 
 export function mediaModelBrandId(id: string, name: string) {

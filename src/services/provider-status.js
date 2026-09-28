@@ -15,7 +15,7 @@ function codexWindows(payload) {
   }));
 }
 
-async function readProviderStatus({ provider, kieAccountId, kie, routerAi, codex, now = () => new Date() }) {
+async function readProviderStatus({ provider, kieAccountId, kie, routerAi, apimart, codex, now = () => new Date() }) {
   const checkedAt = now().toISOString();
   if (provider === 'media') {
     if (!['primary', 'secondary'].includes(kieAccountId)) throw Object.assign(new Error('Неизвестный аккаунт Kie'), { status: 400 });
@@ -28,6 +28,11 @@ async function readProviderStatus({ provider, kieAccountId, kie, routerAi, codex
   if (provider === 'routerai') {
     if (!routerAi) throw Object.assign(new Error('RouterAI не настроен'), { status: 503 });
     return { provider, checkedAt, balance: { amount: await routerAi.credits(), unit: 'rub' }, windows: [] };
+  }
+  if (provider === 'apimart') {
+    if (!apimart) throw Object.assign(new Error('APIMart не настроен'), { status: 503 });
+    const status = await apimart();
+    return { provider, checkedAt, balance: status.balance, windows: [] };
   }
   if (provider === 'codex') {
     if (!codex) throw Object.assign(new Error('Codex не подключён'), { status: 503 });

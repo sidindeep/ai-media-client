@@ -122,7 +122,7 @@ export const useStudioStore = defineStore('studio', () => {
     || mode.value === 'text' && ['embeddings', 'rerank', 'decisions'].includes(model.kind)
     || mode.value === 'audio' && model.kind === 'transcription') || []);
   const currentRouterAiModel = computed(() => routerAiModels.value.find(model => model.id === routerAiModel.value) || routerAiModels.value[0]);
-  const apimartModels = computed(() => mode.value === 'text' ? apimartCatalog.value?.models || [] : []);
+  const apimartModels = computed(() => (apimartCatalog.value?.models || []).filter(model => model.kind === mode.value));
   const currentApimartModel = computed(() => apimartModels.value.find(model => model.id === apimartModel.value) || apimartModels.value[0]);
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
@@ -520,12 +520,12 @@ export const useStudioStore = defineStore('studio', () => {
     rememberSelection();
     mode.value = value;
     const rememberedProvider = providerByMode.value[value];
-    if (rememberedProvider && (rememberedProvider === 'codex' || fullModelAccess.value)
+    if (provider.value !== 'apimart' && rememberedProvider && (rememberedProvider === 'codex' || fullModelAccess.value)
       && (rememberedProvider !== 'routerai' || isAdmin.value || ['text', 'image'].includes(value))
-      && (rememberedProvider !== 'apimart' || isAdmin.value && value === 'text')) provider.value = rememberedProvider;
+      && (rememberedProvider !== 'apimart' || isAdmin.value)) provider.value = rememberedProvider;
     if (value === 'text') { if (provider.value === 'media') provider.value = 'codex'; codexKind.value = 'text'; }
-    else if (value === 'image') { codexKind.value = 'image'; if (provider.value === 'apimart') provider.value = 'media'; }
-    else if (provider.value === 'apimart' || provider.value !== 'routerai' || !isAdmin.value) { provider.value = 'media'; }
+    else if (value === 'image') { codexKind.value = 'image'; }
+    else if (provider.value !== 'apimart' && (provider.value !== 'routerai' || !isAdmin.value)) { provider.value = 'media'; }
     useRememberedModel();
     normalizeMediaControls();
     normalizeRouterAiControls();
@@ -549,7 +549,6 @@ export const useStudioStore = defineStore('studio', () => {
       useRememberedModel();
       normalizeRouterAiControls();
     } else if (value === 'apimart') {
-      mode.value = 'text';
       useRememberedModel();
       normalizeApimartControls();
     } else {
@@ -815,7 +814,7 @@ export const useStudioStore = defineStore('studio', () => {
     const submittedSourceFiles = [...sourceFiles.value];
     const submittedPrompt = prompt.value.trim() || (submittedProvider === 'routerai' && submittedRouterAiModel?.kind === 'transcription'
       ? t('routerai.admin.transcriptionPrompt') : '');
-    if (!submittedPrompt && submittedProvider !== 'media') throw new Error(t('studio.enterPrompt'));
+    if (!submittedPrompt && submittedProvider !== 'media' && !(submittedProvider === 'apimart' && !submittedApimartModel?.promptRequired)) throw new Error(t('studio.enterPrompt'));
     if (activeChatId.value === 'system:recent') {
       let target = chats.value.find(chat => chat.mode === 'system' && chat.projectId === activeProjectId.value);
       if (!target) {
@@ -855,12 +854,13 @@ export const useStudioStore = defineStore('studio', () => {
       const model = submittedApimartModel;
       if (!model) throw new Error(t('studio.selectModel'));
       optimistic = { id: optimisticId, requestId, optimistic: true, providerId: 'apimart', providerName: 'APIMart',
-        modelId: model.id, modelName: model.name, kind: 'text', state: 'queued', createdAt, queuedAt: createdAt,
-        input: { prompt: submittedPrompt }, ...context };
+        modelId: model.id, modelName: model.name, kind: model.kind, state: 'queued', createdAt, queuedAt: createdAt,
+        input: { prompt: submittedPrompt, ...submittedMediaInput }, ...context };
       pendingSubmissions.value.unshift(optimistic);
       selectedId.value = optimisticId;
       try {
-        const job = await api.submitApimart({ requestId, model: model.id, prompt: submittedPrompt, ...context });
+        const job = await api.submitApimart({ requestId, model: model.id, prompt: submittedPrompt,
+          parameters: submittedProvider === 'apimart' && model.kind !== 'text' ? submittedMediaInput : {}, ...context });
         await refresh().catch(() => {});
         return job;
       } catch (error) {
@@ -947,7 +947,6 @@ export const useStudioStore = defineStore('studio', () => {
       if (typeof record.input?.speed === 'string') codexSpeed.value = record.input.speed;
     } else if (record.providerId === 'apimart') {
       provider.value = 'apimart';
-      mode.value = 'text';
       if (record.modelId) apimartModel.value = record.modelId;
     } else if (record.providerId === 'routerai') {
       const selectedModel = routerAiCatalog.value?.models.find(model => model.id === record.modelId);
@@ -961,6 +960,7 @@ export const useStudioStore = defineStore('studio', () => {
       if (record.modelId) mediaModelId.value = record.modelId;
     }
     restoreSelection();
+    if (record.providerId === 'apimart') mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
     if (record.providerId !== 'codex' && record.providerId !== 'routerai' && record.providerId !== 'apimart') {
       mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
       normalizeCurrentMediaInput();

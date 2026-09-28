@@ -26,7 +26,7 @@ type ProviderItem = { id: ProviderId; accountId?: 'primary' | 'secondary'; label
 const providerItems = computed<ProviderItem[]>(() => (studio.isAdmin ? [
   { id: 'codex' as const, label: 'Codex CLI', detail: `GPT · ${t('sidebar.textImages').toLocaleLowerCase()}`, icon: 'C' },
   { id: 'routerai' as const, label: 'RouterAI', detail: t('sidebar.mediaAll'), icon: 'R', configured: Boolean(studio.routerAiCatalog?.models.length) },
-  { id: 'apimart' as const, label: 'APIMart', detail: t('composer.mode.text'), icon: 'A', configured: Boolean(studio.apimartCatalog) },
+  { id: 'apimart' as const, label: 'APIMart', detail: t('apimart.admin.modalities'), icon: 'A', configured: Boolean(studio.apimartCatalog?.models.length) },
   ...(['primary', 'secondary'] as const).map((accountId, index) => {
     const account = studio.catalog?.kieAccounts?.find(item => item.id === accountId);
     return { id: 'media' as const, accountId, label: account?.name || `Kie.ai · ${index + 1}`, detail: account?.configured ? t('sidebar.mediaAll') : t('sidebar.kieNotConfigured'), icon: 'K', configured: Boolean(account?.configured) };
@@ -50,13 +50,17 @@ const statusFor = (item: ProviderItem) => providerStatuses.value[statusKey(item)
 function statusLabel(item: ProviderItem) {
   const status = statusFor(item);
   if (!status) return providerErrors.value[statusKey(item)] ? t('sidebar.balanceUnavailable') : '';
+  if (item.id === 'apimart') {
+    return status.balance ? t('apimart.admin.remainingCredits', { count: formatNumber(status.balance.amount, { maximumFractionDigits: 4 }) })
+      : t('sidebar.balanceUnavailable');
+  }
   if (status.balance?.unit === 'credits') return t('sidebar.remainingCredits', { count: formatNumber(status.balance.amount) });
   if (status.balance?.unit === 'rub') return t('sidebar.remainingRubles', { count: formatNumber(status.balance.amount) });
   const remaining = status.windows.map(window => window.remainingPercent);
   return remaining.length ? t('sidebar.remainingLimit', { count: formatNumber(Math.min(...remaining), { maximumFractionDigits: 1 }) }) : t('sidebar.balanceUnavailable');
 }
 async function loadProviderStatus(item: ProviderItem) {
-  if (!studio.isAdmin || item.id === 'apimart' || loadingStatuses.has(statusKey(item)) || item.configured === false) return;
+  if (!studio.isAdmin || loadingStatuses.has(statusKey(item)) || item.configured === false) return;
   const key = statusKey(item);
   loadingStatuses.add(key);
   delete providerErrors.value[key];

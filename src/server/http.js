@@ -199,7 +199,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   let routerAi = accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
     content: accounts.content, tariffFetcher: routerAiModels.tariff }) : null;
   const routerAiStatus = config.routerAi?.apiKey ? createRouterAiClient({ apiKey: config.routerAi.apiKey }) : null;
-  let apimart = accounts && config.apimart?.apiKey ? createApimartJobs({ pool: accounts.pool, apiKey: config.apimart.apiKey }) : null;
+  let apimart = accounts && config.apimart?.apiKey ? createApimartJobs({ pool: accounts.pool, content: accounts.content, apiKey: config.apimart.apiKey }) : null;
   const connections = new Set();
   const eventLoopBaseline = performance.eventLoopUtilization();
   let loginWindow = Date.now(), loginRequests = 0;
@@ -437,6 +437,11 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           catch (error) { return json(res, 200, { models: [], error: error.status === 402
             ? 'APIMart требует пополнить баланс для загрузки каталога.' : 'Каталог APIMart временно недоступен.' }); }
         }
+        if (req.method === 'POST' && url.pathname === '/api/apimart/quote') {
+          if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
+          const raw = JSON.parse((await readBody(req, 50000)).toString('utf8'));
+          return json(res, 200, await apimart.quote(raw));
+        }
         if (req.method === 'POST' && url.pathname === '/api/apimart/jobs') {
           if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
           const raw = JSON.parse((await readBody(req, 100000)).toString('utf8'));
@@ -645,7 +650,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
             if (!response.ok) throw new Error('Не удалось прочитать лимиты Codex');
             return response.json();
           } : null;
-          try { return json(res, 200, await readProviderStatus({ provider, kieAccountId, kie: accounts.provider, routerAi: routerAiStatus, codex: codexLimits })); }
+          try { return json(res, 200, await readProviderStatus({ provider, kieAccountId, kie: accounts.provider,
+            routerAi: routerAiStatus, apimart: apimart?.provider.getStatus, codex: codexLimits })); }
           catch (error) { return json(res, error.status === 400 ? 400 : 502, { error: error.message || 'Не удалось проверить поставщика' }); }
         }
         if (url.pathname === '/api/admin/kie-submissions' && req.method === 'GET') {
@@ -829,7 +835,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       dataDirectory: config.dataDirectory, storage, content: nextAccounts.content }) : null;
     const nextRouterAi = nextAccounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts: nextAccounts, apiKey: config.routerAi.apiKey,
       content: nextAccounts.content, tariffFetcher: routerAiModels.tariff }) : null;
-    const nextApimart = nextAccounts && config.apimart?.apiKey ? createApimartJobs({ pool: nextAccounts.pool, apiKey: config.apimart.apiKey }) : null;
+    const nextApimart = nextAccounts && config.apimart?.apiKey ? createApimartJobs({ pool: nextAccounts.pool, content: nextAccounts.content, apiKey: config.apimart.apiKey }) : null;
     try {
       if (config.replicaRole !== 'web') { await nextCodex?.recover(); await nextRouterAi?.recover(); await nextApimart?.recover(); }
     } catch (error) { nextCodex?.close(); nextRouterAi?.close(); throw error; }

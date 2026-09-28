@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { uploadSource } from '../api/client';
+import { saveSourceAttachment } from '../domain/source-attachments';
 import { useI18n } from '../i18n';
 import { useStudioStore } from '../stores/studio';
 
@@ -55,9 +55,8 @@ async function selectFile(event: Event) {
   if (!file) return;
   uploading.value = true; uploadError.value = '';
   try {
-    const saved = await uploadSource(file, { projectId: studio.activeProjectId,
-      chatId: studio.activeChatId === 'system:recent' ? null : studio.activeChatId });
-    emit('uploaded', { ref: saved.ref, name: file.name, type: file.type, fieldKey: props.rootKey });
+    const saved = await saveSourceAttachment(file, studio, props.rootKey);
+    emit('uploaded', { ref: saved.ref, name: saved.name, type: saved.type, fieldKey: props.rootKey });
     emit('change', saved.ref);
   } catch (error) { uploadError.value = error instanceof Error ? error.message : t('composer.files.uploadError'); }
   finally { uploading.value = false; }

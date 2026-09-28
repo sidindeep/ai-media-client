@@ -14,7 +14,7 @@ import AccountMenu from './components/AccountMenu.vue';
 import HeaderAccountActions from './components/HeaderAccountActions.vue';
 import LocaleSwitcher from './components/LocaleSwitcher.vue';
 import { getStartupStatus, setAccountContext, subscribeToChanges } from './api/client';
-import { mediaModelBrandId, modelBrand, routerAiModelBrandId } from './domain/model-catalog';
+import { apimartModelBrandId, mediaModelBrandId, modelBrand, routerAiModelBrandId } from './domain/model-catalog';
 import { useI18n } from './i18n';
 import { useStudioStore } from './stores/studio';
 import type { GenerationRecord } from './types';
@@ -81,7 +81,7 @@ const welcomeModel = computed(() => {
   if (studio.provider === 'routerai') {
     return { name: studio.currentRouterAiModel?.name || t('provider.selectModel'), provider: 'RouterAI', brand: modelBrand(studio.currentRouterAiModel ? routerAiModelBrandId(studio.currentRouterAiModel.id) : 'routerai') };
   }
-  if (studio.provider === 'apimart') return { name: studio.currentApimartModel?.name || t('provider.selectModel'), provider: 'APIMart', brand: modelBrand('apimart') };
+  if (studio.provider === 'apimart') return { name: studio.currentApimartModel?.name || t('provider.selectModel'), provider: 'APIMart', brand: modelBrand(studio.currentApimartModel ? apimartModelBrandId(studio.currentApimartModel.id) : 'apimart') };
   if (studio.provider === 'codex') {
     const model = studio.currentCodexModel;
     return { name: model?.name || (studio.isAdmin ? 'Codex' : t('provider.aiModel')), provider: studio.isAdmin ? 'Codex' : t('provider.aiModels'), brand: modelBrand('codex') };

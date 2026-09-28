@@ -48,15 +48,19 @@ function routerAiRecord(job) {
 }
 
 function apimartRecord(job) {
+  const urls = Array.isArray(job.resultUrls) ? job.resultUrls : [];
   return {
     id: `apimart:${job.id}`, providerId: 'apimart', providerName: 'APIMart',
-    modelId: job.model, model: job.model, modelName: job.model, kind: 'text',
+    modelId: job.model, model: job.model, modelName: job.model, kind: job.kind || 'text',
     state: job.state === 'running' ? 'generating' : job.state,
     workspace: -1, queueHidden: true, requestId: job.id, revision: job.revision,
     createdAt: job.createdAt, updatedAt: job.updatedAt,
     generationStartedAt: job.createdAt, generationCompletedAt: job.completedAt, generationDurationMs: job.durationMs,
-    input: { prompt: job.prompt }, projectId: job.projectId || null, chatId: job.chatId || null,
-    output: job.output, usage: job.usage, error: job.error, resultJson: '{"resultUrls":[]}', localFiles: [],
+    input: { prompt: job.prompt, ...(job.parameters || {}) }, projectId: job.projectId || null, chatId: job.chatId || null,
+    output: job.output, usage: job.usage, apimartTariffCost: job.apimartTariffCost,
+    error: job.error, progress: job.progress, providerTaskId: job.providerTaskId,
+    resultJson: JSON.stringify({ resultUrls: urls }),
+    localFiles: urls.map(url => ({ url, previewUrl: url, exists: true, name: url.split('/').pop()?.split('?')[0] || 'result' })),
   };
 }
 

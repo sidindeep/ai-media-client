@@ -1,6 +1,6 @@
 {
-  "version": "2026-09-29-2",
-  "replaces": ["routes-2026-09-29-1"],
+  "version": "2026-09-29-3",
+  "replaces": ["routes-2026-09-29-2"],
   "canonical": {
     "prompt": "prompt",
     "aspect_ratio": "aspect_ratio",
@@ -14,11 +14,20 @@
     "input_urls": "source_images",
     "image_url": "source_images",
     "image_urls": "source_images",
+    "inputImage": "source_images",
+    "imageUrls": "reference_images",
+    "image_references": "reference_images",
     "first_frame_url": "first_frame",
     "first_frame_image": "first_frame",
+    "first_frame_image_url": "first_frame",
+    "first_frame": "first_frame",
     "last_frame_url": "last_frame",
     "last_frame_image": "last_frame",
+    "last_frame_image_url": "last_frame",
+    "last_frame": "last_frame",
     "reference_image_urls": "reference_images",
+    "reference_image": "reference_images",
+    "image_with_roles": "image_with_roles",
     "video_urls": "reference_videos",
     "reference_video_urls": "reference_videos",
     "audio_urls": "reference_audio",
@@ -34,6 +43,18 @@
     "n": "count",
     "output_format": "output_format",
     "watermark": "watermark"
+  },
+  "mediaMappings": {
+    "reference_images": [
+      { "canonical": "source_images", "transform": "direct" },
+      { "canonical": "image_with_roles", "transform": "image_role", "role": "reference_image" }
+    ],
+    "first_frame": [
+      { "canonical": "image_with_roles", "transform": "image_role", "role": "first_frame" }
+    ],
+    "last_frame": [
+      { "canonical": "image_with_roles", "transform": "image_role", "role": "last_frame" }
+    ]
   },
   "omitWhen": { "nsfw_checker": false, "background": "opaque", "output_format": "png", "enableTranslation": false, "watermark": "" },
   "pairOverrides": {

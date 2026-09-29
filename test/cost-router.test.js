@@ -18,6 +18,7 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
     configured: () => true,
     catalog: () => ({ models: [{ id: 'kie:gpt-image-2-text-to-image' }, { id: 'kie:nano-banana-pro' },
       { id: 'kie:flux-2/pro-text-to-image' }, { id: 'kie:seedance-2.5' },
+      { id: 'kie:bytedance/seedance-2-5' },
       { id: 'kie:veo3_lite:TEXT_2_VIDEO' }] }),
     providerBalance: async accountId => { balanceAccounts.push(accountId); return 100; },
     providerCostQuote: async () => {
@@ -33,7 +34,8 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
       require('../src/providers/apimart/catalog').describeModel({ id: 'gemini-3-pro-image-preview', category: 'image' }),
       { id: 'gemini-3.1-flash-lite-image' },
       { id: 'flux-2-pro', fields: [{ key: 'size', options: ['1:1'] }, { key: 'resolution', options: ['1K'] }, { key: 'n' }] },
-      { id: 'seedance-2.5' }, require('../src/providers/apimart/catalog').describeModel({ id: 'seedream-5-0-pro', category: 'image' }),
+      require('../src/providers/apimart/catalog').describeModel({ id: 'seedance-2.5', category: 'video' }),
+      require('../src/providers/apimart/catalog').describeModel({ id: 'seedream-5-0-pro', category: 'image' }),
       require('../src/providers/apimart/catalog').describeModel({ id: 'veo3.1-lite', category: 'video' })],
     status: async () => ({ balance: { amount: 100 } }),
     quote: async () => apimartUsd === null ? { status: 'unavailable', publishedTariff: apimartPublishedTariff }
@@ -67,6 +69,31 @@ test('active conversion document controls the parameters used for APIMart pricin
   const priced = await fixture({ conversions }).router.quote(user, request);
   assert.equal(priced.offers[1].parameters.resolution, '2k');
   assert.equal(priced.offers[1].conversionVersion, 'db-updated');
+});
+
+test('auto route retains reference images and frame roles for both provider quotes', async () => {
+  const first = 'content:55555555-5555-4555-8555-555555555555';
+  const last = 'content:66666666-6666-4666-8666-666666666666';
+  const base = { ...request, modelId: 'kie:bytedance/seedance-2-5',
+    input: { prompt: 'Animate', resolution: '720p', aspect_ratio: 'adaptive', duration: 5 } };
+  const image = await fixture({ apimartUsd: 0.01 }).router.quote(user, {
+    ...base, input: { ...base.input, reference_image_urls: [first] }, sourceFiles: [{ ref: first, type: 'image/png' }],
+  });
+  assert.equal(image.selected.providerId, 'apimart');
+  assert.deepEqual(image.offers[1].parameters.image_urls, [first]);
+  const frames = await fixture({ apimartUsd: 0.01 }).router.quote(user, {
+    ...base, input: { ...base.input, first_frame_url: first, last_frame_url: last },
+    sourceFiles: [{ ref: first, type: 'image/png' }, { ref: last, type: 'image/png' }],
+  });
+  assert.equal(frames.selected.providerId, 'apimart');
+  assert.deepEqual(frames.offers[1].parameters.image_with_roles, [
+    { url: first, role: 'first_frame' }, { url: last, role: 'last_frame' },
+  ]);
+  const unsafe = await fixture().router.quote(user, {
+    ...base, input: { ...base.input, reference_video_urls: [first] }, sourceFiles: [{ ref: first, type: 'video/mp4' }],
+  });
+  assert.equal(unsafe.offers[1].unavailable, true);
+  assert.match(unsafe.offers[1].reason, /Перенос исходников/);
 });
 
 test('full Kie catalog routes through provider schema constraints', async () => {

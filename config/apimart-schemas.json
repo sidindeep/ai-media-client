@@ -1377,7 +1377,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",
@@ -3375,7 +3376,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_list",
@@ -3505,7 +3507,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_list",
@@ -5375,7 +5378,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         }
       ]
     },
@@ -5437,7 +5441,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         }
       ]
     },
@@ -5531,7 +5536,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         }
       ]
     },
@@ -5640,7 +5646,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",
@@ -5773,7 +5780,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",
@@ -5906,7 +5914,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",
@@ -6043,7 +6052,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",
@@ -8778,7 +8788,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",
@@ -9110,7 +9121,8 @@
             "items": {
               "type": "object"
             }
-          }
+          },
+          "nestedImageKey": "url"
         },
         {
           "key": "video_urls",

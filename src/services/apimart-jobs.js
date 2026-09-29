@@ -175,7 +175,8 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
   async function prepareParameters(account, job) {
     const options = { ...job.parameters };
     let totalBytes = 0, position = 0;
-    for (const key of job.imageUploadFields || job.base64Fields || []) {
+    for (const imageField of job.imageUploadFields || job.base64Fields || []) {
+      const { key, nestedImageKey } = typeof imageField === 'string' ? { key: imageField } : imageField;
       const resolve = async value => {
         const id = /^content:([a-f0-9-]{36})$/.exec(String(value || ''))?.[1];
         if (!id) return value;
@@ -190,7 +191,15 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
         if (!/^https:\/\//.test(uploaded?.url || '')) throw Object.assign(new Error('APIMart не вернул ссылку на загруженное изображение'), { confirmedRejected: true });
         return uploaded.url;
       };
-      if (Array.isArray(options[key])) {
+      if (nestedImageKey && Array.isArray(options[key])) {
+        const resolved = [];
+        for (const item of options[key]) {
+          if (!item || typeof item !== 'object' || typeof item[nestedImageKey] !== 'string')
+            throw Object.assign(new Error('Некорректный вложенный исходник'), { confirmedRejected: true });
+          resolved.push({ ...item, [nestedImageKey]: await resolve(item[nestedImageKey]) });
+        }
+        options[key] = resolved;
+      } else if (Array.isArray(options[key])) {
         const resolved = [];
         for (const value of options[key]) resolved.push(await resolve(value));
         options[key] = resolved;
@@ -355,7 +364,8 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
     const createdAt = new Date().toISOString();
     const job = { id: raw.requestId, requestId: raw.requestId, model: raw.model, prompt: raw.prompt.trim(), kind: model.kind,
       parameters: options, endpoint: model.endpoint, nativeQuote,
-      imageUploadFields: model.fields.filter(field => field.uploadToApimart || field.acceptsBase64).map(field => field.key),
+      imageUploadFields: model.fields.filter(field => field.uploadToApimart || field.acceptsBase64 || field.nestedImageKey)
+        .map(field => ({ key: field.key, nestedImageKey: field.nestedImageKey || null })),
       state: 'running', revision: 1, createdAt, updatedAt: createdAt,
       projectId: raw.projectId || null, chatId: raw.chatId || null };
     try {

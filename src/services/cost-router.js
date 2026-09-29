@@ -40,6 +40,9 @@ function mappedParameters(request, model, mapping = {}) {
     throw new Error('Для APIMart нужен текстовый запрос');
   const fields = new Map((model.fields || []).map(field => [field.key, field]));
   const result = { ...mapping.constants };
+  const references = value => typeof value === 'string' ? /^content:[a-f0-9-]{36}$/.test(value) ? [value] : []
+    : Array.isArray(value) ? value.flatMap(references)
+      : value && typeof value === 'object' ? Object.values(value).flatMap(references) : [];
   for (const [key, value] of Object.entries(request.input)) {
     if (key === 'prompt' || value == null) continue;
     if (Array.isArray(value) && !value.length) continue;
@@ -49,6 +52,16 @@ function mappedParameters(request, model, mapping = {}) {
     const field = fields.get(target);
     if (!field) throw new Error(`Параметр ${key} не поддерживается APIMart`);
     const mappedValue = mapping.values?.[key]?.[value] ?? value;
+    const transform = mapping.transforms?.[key];
+    if (transform?.type === 'image_role') {
+      if (field.type !== 'json' || !field.nestedImageKey) throw new Error(`Исходники ${key} не поддерживаются APIMart`);
+      const values = Array.isArray(mappedValue) ? mappedValue : [mappedValue];
+      if (values.some(ref => typeof ref !== 'string' || !/^content:[a-f0-9-]{36}$/.test(ref)))
+        throw new Error('Для APIMart загрузите исходники в хранилище сервиса');
+      if (result[target] != null && !Array.isArray(result[target])) throw new Error(`Конфликт исходников для ${target}`);
+      result[target] = [...(result[target] || []), ...values.map(ref => ({ [field.nestedImageKey]: ref, role: transform.role }))];
+      continue;
+    }
     if (field.type === 'files') {
       if (!field.uploadToApimart && !field.acceptsBase64) throw new Error(`Перенос исходников ${key} в APIMart не поддерживается`);
       const values = Array.isArray(mappedValue) ? mappedValue : [mappedValue];
@@ -56,14 +69,17 @@ function mappedParameters(request, model, mapping = {}) {
         throw new Error('Для APIMart загрузите исходники в хранилище сервиса');
       if (field.maxFiles && values.length > field.maxFiles || field.scalar && values.length !== 1)
         throw new Error(`Слишком много исходников для ${target}`);
+      if (result[target] != null) throw new Error(`Конфликт исходников для ${target}`);
       result[target] = field.scalar ? values[0] : values;
       continue;
     }
+    if (references(mappedValue).length && !field.nestedImageKey)
+      throw new Error(`Перенос исходников ${key} в APIMart не поддерживается`);
     const option = field.options?.find(item => String(item).toLowerCase() === String(mappedValue).toLowerCase());
     if (field.options?.length && option === undefined) throw new Error(`Значение ${key} не поддерживается APIMart`);
     result[target] = option ?? mappedValue;
   }
-  const mappedRefs = new Set(Object.values(result).flat());
+  const mappedRefs = new Set(references(result));
   if (request.sourceFiles.some(file => !mappedRefs.has(file.ref)))
     throw new Error('Не все исходники удалось перенести в APIMart');
   if (fields.has('n') && result.n === undefined) result.n = 1;

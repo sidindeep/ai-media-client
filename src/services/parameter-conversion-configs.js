@@ -13,12 +13,14 @@ function buildSeedDocument() {
     kind: model.kind,
     fields: Object.entries(model.inputSchema?.properties || {}).map(([key, schema]) => ({
       key, canonical: canonical[key] || key, required: (model.inputSchema?.required || []).includes(key),
-      type: schema.type || null, values: schema.enum || null,
+      type: schema.type || null, itemsType: schema.items?.type || null, values: schema.enum || null,
     })),
   }]));
   const apimart = Object.fromEntries(Object.entries(apimartModels).map(([id, model]) => [id, {
     fields: (model.fields || []).map(field => ({ key: field.key, canonical: canonical[field.key] || field.key,
-      required: !!field.required, type: field.type || null, values: field.options || null })),
+      required: !!field.required, type: field.type || null, values: field.options || null,
+      uploadToApimart: !!(field.uploadToApimart || field.acceptsBase64),
+      nestedImageKey: field.nestedImageKey || null })),
     promptRequired: model.promptRequired !== false,
   }]));
   for (const pair of compatibility.pairs) {
@@ -33,13 +35,27 @@ function buildSeedDocument() {
     const target = apimart[pair.apimart];
     const override = seed.pairOverrides[pair.kie] || {};
     const fields = { ...pair.mapping?.fields, ...override.fields };
+    const transforms = {};
     for (const field of source?.fields || []) {
       if (field.key === 'prompt' || fields[field.key]) continue;
       const matching = (target?.fields || []).filter(item => item.canonical === field.canonical);
-      if (matching.length === 1) fields[field.key] = matching[0].key;
+      if (matching.length === 1) {
+        fields[field.key] = matching[0].key;
+        continue;
+      }
+      if (field.type !== 'string' && !(field.type === 'array' && field.itemsType === 'string')) continue;
+      for (const candidate of seed.mediaMappings?.[field.canonical] || []) {
+        const destination = (target?.fields || []).find(item => item.canonical === candidate.canonical
+          && (candidate.transform === 'direct' && item.type === 'files' && item.uploadToApimart
+            || candidate.transform === 'image_role' && item.type === 'json' && item.nestedImageKey));
+        if (!destination) continue;
+        fields[field.key] = destination.key;
+        if (candidate.transform !== 'direct') transforms[field.key] = { type: candidate.transform, role: candidate.role };
+        break;
+      }
     }
     return { kie: pair.kie, apimart: pair.apimart, kind: pair.kind,
-      mapping: { fields, constants: pair.mapping?.constants || {}, values: override.values || {},
+      mapping: { fields, transforms, constants: pair.mapping?.constants || {}, values: override.values || {},
         omitWhen: seed.omitWhen } };
   });
   return { version: seed.version, providers: { kie, apimart }, pairs };

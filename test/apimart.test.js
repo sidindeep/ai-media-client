@@ -166,7 +166,8 @@ test('APIMart uploads a selected Seedance image and sends its URL to generation'
   const fetchImpl = async (url, init) => {
     requests.push({ url, init });
     const data = url.includes('/pricing/model?') ? { paid_price: 0.22 }
-      : url.includes('/models?') ? [{ id: 'seedance-1-5-pro', category: 'video' }]
+      : url.includes('/models?') ? [{ id: 'seedance-1-5-pro', category: 'video' },
+        { id: 'seedance-2.5', category: 'video' }]
       : url.endsWith('/uploads/images') ? { url: 'https://upload.apimart.ai/f/image/reference.png' }
         : url.endsWith('/videos/generations') ? [{ task_id: 'video_task' }]
           : { status: 'completed', cost: 0.22, credits_cost: 2.2,
@@ -192,6 +193,17 @@ test('APIMart uploads a selected Seedance image and sends its URL to generation'
   await service.submit(account, input);
   assert.equal(requests.filter(item => item.url.endsWith('/uploads/images')).length, 1);
   assert.equal(requests.filter(item => item.url.endsWith('/videos/generations')).length, 1);
+  const rolesId = '77777777-7777-4777-8777-777777777777';
+  const rolesInput = { requestId: rolesId, model: 'seedance-2.5', prompt: 'First frame',
+    parameters: { image_with_roles: [{ url: `content:${assetId}`, role: 'first_frame' }] } };
+  await service.submit(account, rolesInput);
+  for (let i = 0; i < 100 && (await service.get(account, rolesId))?.state !== 'success'; i++)
+    await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal((await service.get(account, rolesId)).state, 'success');
+  const generations = requests.filter(item => item.url.endsWith('/videos/generations'));
+  assert.deepEqual(JSON.parse(generations[1].init.body).image_with_roles,
+    [{ url: 'https://upload.apimart.ai/f/image/reference.png', role: 'first_frame' }]);
+  assert.equal(requests.filter(item => item.url.endsWith('/uploads/images')).length, 2);
 });
 
 test('APIMart schemas select the model-specific fields and API before submitting', () => {

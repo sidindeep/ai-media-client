@@ -781,6 +781,7 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .auto-route-table tbody strong { color: #eee8fa; }
 .auto-route-model-name { display: block; margin-top: 4px; color: #c9c0d8; }
 .auto-route-table small { display: block; margin-top: 4px; color: #8f879f; overflow-wrap: anywhere; }
+.auto-route-published-tariff { min-width: 190px; max-width: 260px; white-space: pre-line; overflow-wrap: anywhere; }
 .auto-route-table td:nth-child(n+2):nth-child(-n+5) { white-space: nowrap; }
 :root[data-theme='light'] .auto-route-backdrop { background: rgba(52, 47, 59, .38); }
 :root[data-theme='light'] .auto-route-dialog { border-color: #d8d3df; color: #302c37; background: linear-gradient(155deg, #fff, #f7f5fa); box-shadow: 0 28px 90px rgba(52, 45, 63, .22); }

@@ -318,6 +318,7 @@ async function main() {
     await client.evaluate("document.querySelector('.auto-route-details-button').click();void 0");
     await client.until("document.querySelectorAll('.auto-route-table tbody tr').length===2");
     assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.auto-route-table tbody tr'), row=>row.classList.contains('selected'))"), [false, true]);
+    assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.auto-route-published-tariff'), cell=>cell.textContent.trim()!=='—')"), [true, true]);
     assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.auto-route-table tbody tr'), row=>Array.from(row.cells, cell=>cell.textContent.trim().replace(',', '.')).slice(2,5))"),
       [['4', '$0.005', '$0.02'], ['0.12', '$0.1', '$0.012']]);
     assert.match(await client.evaluate("document.querySelectorAll('.auto-route-table tbody tr')[0].textContent"), /Kie\.ai.*20.*\$0[,.]02/s);

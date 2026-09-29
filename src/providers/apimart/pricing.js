@@ -56,7 +56,9 @@ function mediaEstimate(payload, model, options = {}) {
       if (Number.isFinite(amountUsd)) amountUsd *= options.repeat;
     }
   } else if (model.kind === 'image' && data.billing_type !== 'per_second') {
-    const resolution = String(selected('resolution', '')).toUpperCase();
+    const requestedResolution = String(selected('resolution', '')).toUpperCase();
+    const resolutionField = model.fields?.find(field => field.key === 'resolution');
+    const resolution = resolutionField?.pricingAliases?.[requestedResolution] || requestedResolution;
     const layers = selected('layer_decomposition', false) === true;
     const resolutionPrices = layers ? data.layer_decomposition_paid_prices : data.resolution_paid_prices;
     const hasResolutionPrices = resolutionPrices && Object.keys(resolutionPrices).length > 0;
@@ -96,7 +98,10 @@ function mediaEstimate(payload, model, options = {}) {
       if (layers) warning = `Резерв до ${data.layer_decomposition_max_images} изображений; после выполнения спишется фактическая стоимость.`;
       else if (Number.isFinite(data.input_image_paid_price)) {
         const inputs = Array.isArray(options.image_urls) ? options.image_urls.length : 0;
-        amountUsd += Math.max(0, inputs - (data.input_image_first_free === true ? 1 : 0)) * data.input_image_paid_price;
+        const tierPrices = Object.values(data.input_image_paid_prices || {}).filter(price => Number.isFinite(price));
+        const inputPrice = tierPrices.length ? Math.max(...tierPrices) : data.input_image_paid_price;
+        amountUsd += Math.max(0, inputs - (data.input_image_first_free === true ? 1 : 0)) * inputPrice;
+        if (inputs && tierPrices.length) warning = 'Оценка входных изображений по максимальному тарифу: размер исходника пока неизвестен.';
       }
     }
   } else if (model.kind === 'video' && data.billing_type === 'per_second') {

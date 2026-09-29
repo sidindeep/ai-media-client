@@ -2,6 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCostRouter, normalizedRequest } = require('../src/services/cost-router');
 const compatibility = require('../config/cost-routing-compatibility.json');
+const { buildSeedDocument } = require('../src/services/parameter-conversion-configs');
+const sharedModels = require('../config/service-models-v2.json').models;
 const kieCatalog = require('../src/kie-models.json');
 
 const user = { id: '11111111-1111-4111-8111-111111111111', role: 'admin' };
@@ -9,7 +11,8 @@ const requestId = '22222222-2222-4222-8222-222222222222';
 const request = { requestId, modelId: 'kie:gpt-image-2-text-to-image',
   input: { prompt: 'A red apple', aspect_ratio: '1:1', resolution: '1K', background: 'opaque' }, projectId: null, chatId: null };
 
-function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100 } = {}) {
+function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
+  conversions = buildSeedDocument() } = {}) {
   const rows = new Map(), sent = [], balanceAccounts = [];
   const scoped = {
     configured: () => true,
@@ -41,8 +44,27 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100 } = {
     if (!rows.has(key)) rows.set(key, JSON.parse(params[2]));
     return { rowCount: 1 };
   } };
-  return { accounts, apimart, scoped, router: createCostRouter({ accounts, apimart, pool }), rows, sent, balanceAccounts };
+  return { accounts, apimart, scoped, router: createCostRouter({ accounts, apimart, pool,
+    loadConversions: async () => conversions }), rows, sent, balanceAccounts };
 }
+
+test('DB conversion document covers both provider catalogs and every priced shared media model', () => {
+  const document = buildSeedDocument();
+  assert.equal(Object.keys(document.providers.kie).length, kieCatalog.length);
+  assert.equal(Object.keys(document.providers.apimart).length >= 110, true);
+  const mapped = new Set(document.pairs.map(pair => pair.kie));
+  for (const row of sharedModels.filter(row => ['image', 'video'].includes(row.kind)
+    && kieCatalog.some(model => model.id === row.kie))) assert.ok(mapped.has(row.kie), row.kie);
+});
+
+test('active conversion document controls the parameters used for APIMart pricing', async () => {
+  const conversions = structuredClone(buildSeedDocument());
+  conversions.version = 'db-updated';
+  conversions.pairs.find(pair => pair.kie === request.modelId).mapping.values.resolution['1K'] = '2k';
+  const priced = await fixture({ conversions }).router.quote(user, request);
+  assert.equal(priced.offers[1].parameters.resolution, '2k');
+  assert.equal(priced.offers[1].conversionVersion, 'db-updated');
+});
 
 test('auto route compares the whole Kie cost with APIMart USD and chooses the cheaper route', async () => {
   const kie = fixture();
@@ -177,7 +199,8 @@ test('all catalog routes retain independent provider results, including a broken
   const env = fixture();
   env.accounts.scope = async () => { throw new Error('Kie account unavailable'); };
   const models = require('../config/apimart-schemas.json').models;
-  env.apimart.models = async () => Object.keys(models).map(id => ({ id }));
+  env.apimart.models = async () => Object.keys(models).map(id =>
+    require('../src/providers/apimart/catalog').describeModel({ id, category: 'image' }));
   for (const id of Object.keys(models)) {
     const result = await env.router.quote(user, { modelId: `apimart:${id}`, input: { prompt: 'A tree' } });
     assert.equal(result.selected?.providerId, 'apimart', id);

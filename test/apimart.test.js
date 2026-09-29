@@ -259,6 +259,20 @@ test('published image tariffs account for references and layer preauthorization 
   assert.equal(mediaEstimate({ data: { paid_price: 0.03 } }, model, { layer_decomposition: true, image_urls: ['one'] }), null);
 });
 
+test('schema-defined resolution aliases and tiered input images produce a priced quote', () => {
+  const model = describeModel({ id: 'flux-2-pro', category: 'image' });
+  const tariff = { data: { resolution_paid_prices: { '1MP': 0.024, '2MP': 0.036, '3MP': 0.048, '4MP': 0.06 },
+    input_image_paid_price: 0.012, input_image_paid_prices: { '1MP': 0.012, '2MP': 0.024, '3MP': 0.036, '4MP': 0.048 } } };
+  assert.equal(mediaEstimate(tariff, model, { resolution: '1K', size: '1:1' }).amountUsd, 0.036);
+  const withReference = mediaEstimate(tariff, model, { resolution: '1K', size: '1:1', image_urls: ['content:one'] });
+  assert.ok(Math.abs(withReference.amountUsd - 0.084) < 1e-10);
+  assert.match(withReference.warning, /максимальному тарифу/);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '2K', size: '1:1' }).amountUsd, 0.048);
+  const anotherModel = { id: 'another-provider-image', kind: 'image', fields: [
+    { key: 'resolution', pricingAliases: { '1K': '2MP' } }] };
+  assert.equal(mediaEstimate(tariff, anotherModel, { resolution: '1K' }).amountUsd, 0.036);
+});
+
 test('APIMart Seedance 2.5 quote follows resolution prices despite token billing tiers', () => {
   const model = describeModel({ id: 'seedance-2.5', category: 'video' });
   const tariff = { data: { billing_type: 'per_second', paid_price: 0.216,

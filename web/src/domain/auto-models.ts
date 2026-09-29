@@ -16,6 +16,15 @@ export function serviceNameForApimart(id: string, rows: ServiceModelRow[]): stri
   return common.replace(/[\s—–-]+$/, '') || matches[0].name;
 }
 
+export function publishedTariffForRoute(selectedModelId: string, providerId: string, routeModelId: string,
+  rows: ServiceModelRow[]): string {
+  const selected = rows.find(row => row.kie === selectedModelId || `apimart:${row.apimart}` === selectedModelId);
+  const route = selected && (!routeModelId || (providerId === 'kie' ? selected.kie === routeModelId : selected.apimart === routeModelId))
+    ? selected : rows.find(row => providerId === 'kie' ? row.kie === routeModelId : row.apimart === routeModelId);
+  const price = providerId === 'kie' ? route?.kiePrice : route?.apimartPrice;
+  return price && price !== '—' ? price : '';
+}
+
 export function autoModelOptions(kie: Catalog['models'], apimart: ApimartCatalog['models'], mode: string,
   selectedValue: string, rows: ServiceModelRow[], listedOnly = false): ModelPickerOption[] {
   const kieById = new Map(kie.filter(model => (model.kind || 'image') === mode).map(model => [model.id, model]));

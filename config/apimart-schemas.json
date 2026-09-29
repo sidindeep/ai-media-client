@@ -58,7 +58,17 @@
             "4K"
           ],
           "hint": "По умолчанию: 2MP",
-          "apiDefault": "2MP"
+          "apiDefault": "2MP",
+          "pricingAliases": {
+            "512": "1MP",
+            "512P": "1MP",
+            "1M": "1MP",
+            "1K": "2MP",
+            "1024": "2MP",
+            "2K": "3MP",
+            "2048": "3MP",
+            "4K": "4MP"
+          }
         },
         {
           "key": "size",
@@ -185,7 +195,17 @@
             "4K"
           ],
           "hint": "По умолчанию: 2MP",
-          "apiDefault": "2MP"
+          "apiDefault": "2MP",
+          "pricingAliases": {
+            "512": "1MP",
+            "512P": "1MP",
+            "1M": "1MP",
+            "1K": "2MP",
+            "1024": "2MP",
+            "2K": "3MP",
+            "2048": "3MP",
+            "4K": "4MP"
+          }
         },
         {
           "key": "size",
@@ -312,7 +332,17 @@
             "4K"
           ],
           "hint": "По умолчанию: 2MP",
-          "apiDefault": "2MP"
+          "apiDefault": "2MP",
+          "pricingAliases": {
+            "512": "1MP",
+            "512P": "1MP",
+            "1M": "1MP",
+            "1K": "2MP",
+            "1024": "2MP",
+            "2K": "3MP",
+            "2048": "3MP",
+            "4K": "4MP"
+          }
         },
         {
           "key": "size",

@@ -62,8 +62,7 @@ test('automatic picker uses priced service rows and keeps unmatched priced APIMa
   const apimart = [...new Map(table.filter(row => row.apimart).map(row => [row.apimart,
     { id: row.apimart, name: row.apimart, kind: row.kind }])).values()];
   const options = ['text', 'image', 'video', 'audio'].flatMap(mode => autoModelOptions(kie, apimart, mode, '', table, true));
-  const usableRows = table.filter(row => row.apimart || kie.some(model => model.id === row.kie));
-  assert.equal(options.length, usableRows.length);
+  assert.equal(options.length, table.length, 'all priced catalog rows remain visible');
   assert.equal(new Set(options.map(option => option.value)).size, options.length);
   assert.deepEqual(options.filter(option => option.label.startsWith('Seedream 4.0')).map(option => option.label).sort(),
     ['Seedream 4.0 - Edit', 'Seedream 4.0 - Text to Image']);
@@ -86,6 +85,22 @@ test('second service catalog contains exactly the models available in both provi
   const options = ['text', 'image', 'video', 'audio'].flatMap(mode => autoModelOptions(kie, apimart, mode, '', shared.models, true));
   assert.equal(options.length, shared.models.length);
   assert.ok(options.every(option => shared.models.some(row => row.kie === option.value || `apimart:${row.apimart}` === option.value)));
+});
+
+test('route comparison can show every published provider tariff in the priced catalog', () => {
+  const { publishedTariffForRoute } = loadAutoModels();
+  let pricedPairs = 0;
+  for (const row of table) {
+    const selected = row.kie || `apimart:${row.apimart}`;
+    if (row.kiePrice && row.kiePrice !== '—')
+      assert.equal(publishedTariffForRoute(selected, 'kie', row.kie, table), row.kiePrice, row.name);
+    if (row.apimartPrice && row.apimartPrice !== '—')
+      assert.equal(publishedTariffForRoute(selected, 'apimart', row.apimart, table), row.apimartPrice, row.name);
+    if (row.kie && row.apimartPrice && row.apimartPrice !== '—')
+      assert.equal(publishedTariffForRoute(row.kie, 'apimart', '', table), row.apimartPrice, row.name);
+    if (row.kiePrice && row.kiePrice !== '—' && row.apimartPrice && row.apimartPrice !== '—') pricedPairs++;
+  }
+  assert.ok(pricedPairs > 0, 'the catalog must contain models with both published tariffs');
 });
 
 test('model correspondence configurations persist with one active version', async t => {

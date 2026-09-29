@@ -30,8 +30,8 @@ export const useStudioStore = defineStore('studio', () => {
   const serviceModelConfigError = ref(false);
   const serviceModelChoices = computed(() => {
     const latest = new Map<string, ServiceModelConfigSummary>();
-    for (const item of serviceModelConfigs.value) if (item.variant === 'shared') latest.set(item.variant, item);
-    return [...latest.values()];
+    for (const item of serviceModelConfigs.value) latest.set(item.variant, item);
+    return [...latest.values()].sort((a, b) => Number(b.variant === 'all') - Number(a.variant === 'all'));
   });
   async function selectServiceModelConfig(id: string) {
     if (serviceModelConfigLoading.value || serviceModelConfig.value?.id === id) return;
@@ -150,7 +150,7 @@ export const useStudioStore = defineStore('studio', () => {
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
   watch([provider, mode, mediaModelId, kieAccountId, isAdmin], () => {
-    if (autoRouting.value && (!isAdmin.value || !['media', 'apimart'].includes(provider.value)
+    if (autoRouting.value && (!fullModelAccess.value || !['media', 'apimart'].includes(provider.value)
       || provider.value === 'media' && kieAccountId.value !== 'primary')) autoRouting.value = false;
   });
 
@@ -464,7 +464,8 @@ export const useStudioStore = defineStore('studio', () => {
     autoRouting.value = false;
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
-      if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai' || tab.provider === 'apimart' && isAdmin.value) provider.value = tab.provider;
+      if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai'
+        || tab.provider === 'apimart' && (isAdmin.value || tab.autoRouting === true && fullModelAccess.value)) provider.value = tab.provider;
       if (typeof tab.mediaModelId === 'string') mediaModelId.value = tab.mediaModelId;
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
@@ -498,9 +499,9 @@ export const useStudioStore = defineStore('studio', () => {
     normalizeApimartControls();
     normalizeMediaControls();
     normalizeCurrentMediaInput();
-    autoRouting.value = Boolean(isAdmin.value && tab?.autoRouting === true
+    autoRouting.value = Boolean(fullModelAccess.value && tab?.autoRouting === true
       && (provider.value === 'apimart' || provider.value === 'media' && kieAccountId.value === 'primary'));
-    if (!tab && isAdmin.value && (mediaModels.value.length || apimartModels.value.length)) setAutoProvider();
+    if (!tab && fullModelAccess.value && (mediaModels.value.length || apimartModels.value.length)) setAutoProvider();
     if (!prompt.value && typeof mediaInput.value.text === 'string') prompt.value = mediaInput.value.text;
     // The active fields in older drafts remain authoritative for the active selection.
     rememberSelection();
@@ -566,15 +567,15 @@ export const useStudioStore = defineStore('studio', () => {
     if (provider.value === 'codex') normalizeCodexControls();
     restoreSelection();
     if (wasAuto) {
-      if (provider.value !== 'media' && provider.value !== 'apimart') setProvider('apimart');
-      if (provider.value === 'media' && !mediaModels.value.length) setProvider('apimart');
+      if (provider.value !== 'media' && provider.value !== 'apimart') setProvider('apimart', true);
+      if (provider.value === 'media' && !mediaModels.value.length) setProvider('apimart', true);
       autoRouting.value = true;
     }
   }
 
-  function setProvider(value: 'codex' | 'media' | 'routerai' | 'apimart') {
+  function setProvider(value: 'codex' | 'media' | 'routerai' | 'apimart', forAuto = false) {
     if (value !== 'codex' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
-    if (value === 'apimart' && !isAdmin.value) throw new Error(t('studio.mediaLocked'));
+    if (value === 'apimart' && !isAdmin.value && !forAuto) throw new Error(t('studio.mediaLocked'));
     rememberSelection();
     autoRouting.value = false;
     provider.value = value;
@@ -599,11 +600,11 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   function setAutoProvider() {
-    if (!isAdmin.value || !(catalog.value?.models.length || apimartCatalog.value?.models.length))
+    if (!fullModelAccess.value || !(catalog.value?.models.length || apimartCatalog.value?.models.length))
       throw new Error(t('studio.catalogUnavailable'));
     kieAccountId.value = 'primary';
     if (provider.value !== 'media' && provider.value !== 'apimart') {
-      if (mode.value === 'text' || !mediaModels.value.length) setProvider('apimart');
+      if (mode.value === 'text' || !mediaModels.value.length) setProvider('apimart', true);
       else {
         setProvider('media');
         if (mode.value === 'image' && catalog.value?.models.some(model => model.id === AUTO_ROUTE_MODEL_ID)) {
@@ -613,15 +614,15 @@ export const useStudioStore = defineStore('studio', () => {
       }
     }
     autoRouting.value = true;
-    const shared = serviceModelChoices.value.find(item => item.variant === 'shared');
-    if (shared && serviceModelConfig.value?.id !== shared.id) void selectServiceModelConfig(shared.id);
+    const priced = serviceModelChoices.value.find(item => item.variant === 'all');
+    if (priced && serviceModelConfig.value?.id !== priced.id) void selectServiceModelConfig(priced.id);
   }
 
   function setAutoModel(value: string) {
     if (!autoRouting.value) return;
     const target = value.startsWith('apimart:') ? 'apimart' : 'media';
     const modelId = target === 'apimart' ? value.slice('apimart:'.length) : value;
-    if (target !== provider.value) setProvider(target);
+    if (target !== provider.value) setProvider(target, true);
     if (target === 'media') kieAccountId.value = 'primary';
     setSelectedModel(modelId);
     autoRouting.value = true;
@@ -774,10 +775,10 @@ export const useStudioStore = defineStore('studio', () => {
     chatHistoryNext.value = {}; chatHistoryLoaded.value = {}; chatHistoryError.value = false;
     if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
-      [catalog.value, codexCatalog.value, routerAiCatalog.value, apimartCatalog.value, serviceModelConfig.value, serviceModelConfigs.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), isAdmin.value ? api.getApimartCatalog().catch(() => null) : Promise.resolve(null), api.getServiceModelConfig().catch(() => null), api.listServiceModelConfigs().catch(() => []), api.getRelease().catch(() => null), api.listGenerationPresets()]);
-      const sharedMenu = serviceModelChoices.value[0];
-      if (sharedMenu && serviceModelConfig.value?.id !== sharedMenu.id) {
-        serviceModelConfig.value = await api.getServiceModelConfigById(sharedMenu.id).catch(() => null);
+      [catalog.value, codexCatalog.value, routerAiCatalog.value, apimartCatalog.value, serviceModelConfig.value, serviceModelConfigs.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), fullModelAccess.value ? api.getApimartCatalog().catch(() => null) : Promise.resolve(null), api.getServiceModelConfig().catch(() => null), api.listServiceModelConfigs().catch(() => []), api.getRelease().catch(() => null), api.listGenerationPresets()]);
+      const pricedMenu = serviceModelChoices.value.find(item => item.variant === 'all');
+      if (pricedMenu && serviceModelConfig.value?.id !== pricedMenu.id) {
+        serviceModelConfig.value = await api.getServiceModelConfigById(pricedMenu.id).catch(() => null);
         serviceModelConfigError.value = !serviceModelConfig.value;
       }
       const defaults = codexCatalog.value?.uiDefaults;

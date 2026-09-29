@@ -27,18 +27,27 @@ export function autoModelOptions(kie: Catalog['models'], apimart: ApimartCatalog
     if (row.kind !== mode) continue;
     const kieModel = row.kie ? kieById.get(row.kie) : undefined;
     const apimartModel = row.apimart ? apimartById.get(row.apimart) : undefined;
-    if (kieModel) {
-      options.push({ value: kieModel.id, label: row.name, description: kieModel.description,
+    const kiePrice = row.kiePrice && row.kiePrice !== '—' ? row.kiePrice : '';
+    const apimartPrice = row.apimartPrice && row.apimartPrice !== '—' ? row.apimartPrice : '';
+    const publishedPrice = [apimartPrice && `APIMart: ${apimartPrice.split('\n').slice(0, 2).join(' · ')}`,
+      kiePrice && `Kie: ${kiePrice.split('\n').slice(0, 2).join(' · ')}`].filter(Boolean).join(' | ');
+    if (kieModel && kiePrice) {
+      options.push({ value: kieModel.id, label: row.name, description: kieModel.description, price: publishedPrice,
         groupId: mediaModelBrandId(kieModel.id, row.name) });
       usedKie.add(kieModel.id);
       if (apimartModel) usedApimart.add(apimartModel.id);
-    } else if (apimartModel && !usedApimart.has(apimartModel.id)) {
-      options.push({ value: `apimart:${apimartModel.id}`, label: row.name, description: 'APIMart',
+    } else if (apimartModel && apimartPrice && !usedApimart.has(apimartModel.id)) {
+      options.push({ value: `apimart:${apimartModel.id}`, label: row.name, description: 'APIMart', price: publishedPrice,
         groupId: apimartModelBrandId(apimartModel.id) });
       usedApimart.add(apimartModel.id);
+    } else if (publishedPrice && (row.kie || !row.apimart || !usedApimart.has(row.apimart))) {
+      const value = row.kie || `apimart:${row.apimart}`;
+      options.push({ value, label: row.name, price: publishedPrice, disabled: true,
+        disabledReason: 'Нет в подключённом каталоге провайдера',
+        groupId: row.kie ? mediaModelBrandId(row.kie, row.name) : apimartModelBrandId(row.apimart || '') });
     }
   }
-  // Once a versioned service list is loaded, only its priced rows are visible.
+  // Once a versioned service list is loaded, only priced, available provider models are visible.
   if (listedOnly) return options;
   for (const model of kieById.values()) {
     if (!usedKie.has(model.id)) options.push({ value: model.id, label: model.name.trim(),

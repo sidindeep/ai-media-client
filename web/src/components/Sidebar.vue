@@ -33,6 +33,7 @@ const providerItems = computed<ProviderItem[]>(() => (studio.isAdmin ? [
     return { id: 'media' as const, accountId, label: account?.name || `Kie.ai · ${index + 1}`, detail: account?.configured ? t('sidebar.mediaAll') : t('sidebar.kieNotConfigured'), icon: 'K', configured: Boolean(account?.configured) };
   }),
 ] : [
+  { id: 'auto' as const, label: t('sidebar.autoProvider'), detail: t('sidebar.autoProviderDetail'), icon: '✦', configured: Boolean(studio.catalog?.models.length) },
   { id: 'codex' as const, label: t('provider.aiModels'), detail: t('sidebar.textImages'), icon: '✦' },
   { id: 'routerai' as const, label: 'RouterAI', detail: t('sidebar.textImages'), icon: 'R', configured: Boolean(studio.routerAiCatalog?.models.length) },
   { id: 'media' as const, label: t('provider.mediaModels'), detail: t('sidebar.mediaAll'), icon: '◇' },

@@ -25,7 +25,8 @@ const search = ref('');
 const activeGroup = ref('');
 const panelStyle = ref<Record<string, string>>({});
 
-const selected = computed(() => props.models.find(model => model.value === props.modelValue) || props.models[0]);
+const selected = computed(() => props.models.find(model => model.value === props.modelValue && !model.disabled)
+  || props.models.find(model => !model.disabled));
 const selectedCatalog = computed(() => props.catalogs?.find(catalog => catalog.id === props.catalogId));
 const selectedBrand = computed(() => modelBrand(selected.value?.groupId || 'other'));
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
@@ -152,7 +153,7 @@ onBeforeUnmount(() => {
       <span class="model-picker-chevron" aria-hidden="true">⌄</span>
     </button>
     <select class="model-native-select" :value="modelValue" tabindex="-1" aria-hidden="true" @change="nativeChange">
-      <option v-for="model in models" :key="model.value" :value="model.value">{{ model.label }}</option>
+      <option v-for="model in models" :key="model.value" :value="model.value" :disabled="model.disabled">{{ model.label }}</option>
     </select>
     <Teleport to="body">
       <section v-if="open" ref="panel" class="model-catalog-popover" role="dialog" :style="panelStyle" :aria-label="t('model.select')">
@@ -182,7 +183,7 @@ onBeforeUnmount(() => {
             </button>
           </nav>
           <div class="model-catalog-list" role="listbox" :aria-label="normalizedSearch ? t('model.searchResults') : modelBrand(activeGroup).label">
-            <button v-for="model in shownModels" :key="model.value" type="button" class="model-catalog-item" role="option" :aria-selected="model.value === modelValue" :class="{ selected: model.value === modelValue }" @click="choose(model.value)">
+            <button v-for="model in shownModels" :key="model.value" type="button" class="model-catalog-item" role="option" :aria-selected="model.value === modelValue" :class="{ selected: model.value === modelValue }" :disabled="model.disabled" @click="choose(model.value)">
               <span class="model-brand-icon row-icon" :style="{ '--brand-accent': modelBrand(model.groupId).accent }">
                 <img v-if="modelBrand(model.groupId).icon" :src="modelBrand(model.groupId).icon" alt="" :class="{ monochrome: modelBrand(model.groupId).monochrome }">
                 <span v-else>{{ modelBrand(model.groupId).label.slice(0, 1) }}</span>
@@ -191,7 +192,9 @@ onBeforeUnmount(() => {
                 <strong>{{ model.label }}</strong>
                 <small>{{ modelSummary(model.label, model.description) }}</small>
                 <span v-if="model.value === modelValue && price" class="model-catalog-price">↯ {{ price }}</span>
-                <span v-else class="model-catalog-provider">{{ modelBrand(model.groupId).label }}</span>
+                <span v-if="model.price" class="model-catalog-price" :title="model.price">{{ model.price }}</span>
+                <span v-if="model.disabledReason" class="model-catalog-provider">{{ model.disabledReason }}</span>
+                <span v-else-if="model.value !== modelValue || !price" class="model-catalog-provider">{{ modelBrand(model.groupId).label }}</span>
               </span>
               <span v-if="model.value === modelValue" class="model-selected-check" aria-hidden="true">✓</span>
             </button>

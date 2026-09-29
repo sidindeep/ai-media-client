@@ -5,12 +5,19 @@ const { isAdminRole, assertAdminRole } = require('../../auth/roles');
 async function handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, costRouter, routerAiModels,
   send, readBody, sendMedia, sendStored, sendFile, headers }) {
   if (url.pathname.startsWith('/api/auto/')) {
-    assertAdminRole(user.role);
+    await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
     if (!costRouter) return send(503, { error: 'Автоматический выбор не настроен' });
     if (req.method !== 'POST' || !['/api/auto/quote', '/api/auto/jobs'].includes(url.pathname)) return send(404, { error: 'Не найдено' });
     if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
     const raw = JSON.parse((await readBody(50000)).toString('utf8'));
-    return send(200, url.pathname.endsWith('/quote') ? await costRouter.quote(user, raw) : await costRouter.submit(user, raw));
+    if (url.pathname.endsWith('/quote')) {
+      const quote = await costRouter.quote(user, raw);
+      if (isAdminRole(user.role)) return send(200, quote);
+      const publicOffer = offer => ({ providerId: offer.providerId, modelId: offer.modelId,
+        credits: offer.credits, unavailable: offer.unavailable, reason: offer.reason });
+      return send(200, { selected: quote.selected && publicOffer(quote.selected), offers: quote.offers.map(publicOffer) });
+    }
+    return send(200, await costRouter.submit(user, raw));
   }
   if (url.pathname.startsWith('/api/codex/')) {
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
@@ -41,7 +48,10 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codex, c
     return send(200, await codexProvider.getTask(user.id, url.pathname.split('/').pop()));
   }
   if (url.pathname.startsWith('/api/apimart/')) {
-    assertAdminRole(user.role);
+    if (req.method === 'GET' && (url.pathname === '/api/apimart/models'
+      || /^\/api\/apimart\/jobs\/[a-f0-9-]{36}$/.test(url.pathname)))
+      await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
+    else assertAdminRole(user.role);
     if (!apimart) return send(503, { error: 'APIMart не настроен' });
     if (req.method === 'GET' && url.pathname === '/api/apimart/models') {
       try { return send(200, { models: await apimart.models() }); }

@@ -13,6 +13,7 @@ import SourceAttachments from './SourceAttachments.vue';
 import { mediaAdvancedParameters, routerAiAdvancedParameters } from '../domain/advanced-parameters';
 import { formatMediaFieldValue, mediaFieldOptions, mediaFieldValueError, minimumPricingFieldValue, parseMediaFieldValue } from '../domain/media-fields';
 import { apimartModelBrandId, mediaModelBrandId, routerAiModelBrandId } from '../domain/model-catalog';
+import type { ModelPickerOption } from '../domain/model-catalog';
 import { autoModelOptions, serviceNameForApimart, serviceNameForKie } from '../domain/auto-models';
 import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
@@ -34,8 +35,8 @@ const sourceAttachments = ref<InstanceType<typeof SourceAttachments> | null>(nul
 const submitting = ref(false);
 const submitError = ref('');
 const autoRouting = computed(() => studio.autoRouting);
-const autoEligible = computed(() => studio.isAdmin && ['media', 'apimart'].includes(studio.provider)
-  && (studio.provider !== 'media' || studio.kieAccountId === 'primary') && modelOptions.value.length > 0);
+const autoEligible = computed(() => studio.fullModelAccess && ['media', 'apimart'].includes(studio.provider)
+  && (studio.provider !== 'media' || studio.kieAccountId === 'primary') && modelOptions.value.some(model => !model.disabled));
 type ComposerQuote = { credits: number | null; amountUnits?: number | null; amountUsd?: number; nativeCredits?: number;
   estimatedInputTokens?: number; estimatedOutputTokens?: number; inputUsdPerToken?: number; outputUsdPerToken?: number;
   status?: string; reason?: string; warning?: string; selectedProviderId?: string;
@@ -149,7 +150,7 @@ const routerAiAdvancedFields = computed(() => routerAiSpecial.value ? routerAiAd
 const routerAiAdvancedValues = computed(() => ({ duration: routerAiVideoDuration.value, resolution: routerAiVideoResolution.value,
   aspect_ratio: routerAiVideoAspectRatio.value, body: routerAiExtra.value }));
 const total = computed(() => quote.value?.credits != null
-  && (autoRouting.value ? quote.value.selectedProviderId === 'kie' : studio.provider !== 'apimart')
+  && (autoRouting.value ? quote.value.selectedProviderId === 'kie' || !studio.isAdmin : studio.provider !== 'apimart')
   ? roundedCreditCost(quote.value.credits) : null);
 const autoProviderLabel = computed(() => quote.value?.selectedProviderId === 'kie'
   ? studio.catalog?.kieAccounts?.find(account => account.id === 'primary')?.name || 'Kie.ai'
@@ -199,7 +200,7 @@ const serviceModelIds = computed(() => studio.serviceModelConfig
   ? { kie: new Set((studio.serviceModelConfig.models || []).map(row => row.kie)),
       apimart: new Set((studio.serviceModelConfig.models || []).map(row => row.apimart)) }
   : null);
-const modelOptions = computed(() => studio.autoRouting
+const modelOptions = computed<ModelPickerOption[]>(() => studio.autoRouting
   ? autoModelOptions(studio.catalog?.models || [], studio.apimartCatalog?.models || [], studio.mode, modelChoice.value,
     studio.serviceModelConfig?.models || [], Boolean(serviceModelIds.value))
   : studio.provider === 'apimart'
@@ -212,7 +213,10 @@ const modelOptions = computed(() => studio.autoRouting
   : studio.mediaModels.filter(model => !serviceModelIds.value || serviceModelIds.value.kie.has(model.id))
     .map(model => ({ value: model.id, label: serviceNameForKie(model.id, studio.serviceModelConfig?.models || []) || model.name.trim(), description: model.description, groupId: mediaModelBrandId(model.id, model.name) })));
 watch(modelOptions, options => {
-  if (options.length && !options.some(option => option.value === modelChoice.value)) modelChoice.value = options[0].value;
+  if (options.length && !options.some(option => option.value === modelChoice.value && !option.disabled)) {
+    const first = options.find(option => !option.disabled);
+    if (first) modelChoice.value = first.value;
+  }
 });
 const autoModelName = computed(() => modelOptions.value.find(model => model.value === modelChoice.value)?.label || modelChoice.value);
 const promptField = computed(() => studio.provider === 'media' ? currentFields.value.find(field => field.key === 'prompt' || field.key === 'text') : undefined);
@@ -583,7 +587,7 @@ async function submit(event?: Event) {
         <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (autoRouting && (!autoEligible || !quote?.selectedProviderId)) || (studio.provider === 'apimart' && !autoRouting && quote?.status !== 'estimated') || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span><span v-else-if="!quoteLoading && !submitting && apimartPrice"> · {{ apimartPrice }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
       </div>
       <p v-if="studio.provider === 'apimart' && !autoRouting" class="apimart-billing-note" :class="{ 'is-error': studio.apimartCatalog?.error }" :role="studio.apimartCatalog?.error ? 'alert' : undefined">{{ studio.apimartCatalog?.error || apimartBreakdown || t(apimartMedia ? 'apimart.admin.mediaBillingNotice' : 'apimart.admin.billingNotice') }}</p>
-      <p v-if="autoRouting" class="auto-route-note" role="status"><template v-if="!autoEligible">{{ t('composer.autoUnsupported') }}</template><template v-else-if="quote?.selectedProviderId"><strong>{{ t('composer.autoSelected', { provider: autoProviderLabel }) }}</strong><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span> · {{ t('composer.autoEstimate', { usd: formatNumber(quote.amountUsd ?? 0, { maximumFractionDigits: 6 }) }) }}</span></template><template v-else-if="quote?.autoOffers?.length"><span>{{ t('composer.autoNoRoute') }}</span><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-for="offer in quote.autoOffers.filter(item => item.unavailable)" :key="offer.providerId"> · {{ autoOfferLabel(offer.providerId) }}: {{ offer.reason }}</span></template><template v-else>{{ quoteError || t('composer.calculating') }}</template></p>
+      <p v-if="autoRouting" class="auto-route-note" role="status"><template v-if="!autoEligible">{{ t('composer.autoUnsupported') }}</template><template v-else-if="quote?.selectedProviderId"><strong>{{ t('composer.autoSelected', { provider: autoProviderLabel }) }}</strong><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-if="studio.isAdmin && quote.amountUsd != null"> · {{ t('composer.autoEstimate', { usd: formatNumber(quote.amountUsd, { maximumFractionDigits: 6 }) }) }}</span></template><template v-else-if="quote?.autoOffers?.length"><span>{{ t('composer.autoNoRoute') }}</span><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-for="offer in quote.autoOffers.filter(item => item.unavailable)" :key="offer.providerId"> · {{ autoOfferLabel(offer.providerId) }}: {{ offer.reason }}</span></template><template v-else>{{ quoteError || t('composer.calculating') }}</template></p>
       <AdvancedParameters v-if="apimartMedia" :key="`apimart:${studio.apimartModel}`" :fields="apimartAdvancedFields" :values="apimartAdvancedValues" :errors="allFieldErrors" @change="updateApimartParameter" />
       <AdvancedParameters v-if="apimartFallbackFields.length" :fields="apimartFallbackFields" :values="{ parameters: JSON.stringify(studio.mediaInput, null, 2) }" :errors="fieldErrors" @change="updateApimartFallback" />
       <AdvancedParameters v-if="studio.provider === 'media'" :key="`media:${studio.mediaModelId}`" :fields="mediaAdvancedFields" :values="mediaAdvancedValues" :errors="allFieldErrors" @change="updateMediaAdvanced" />
@@ -602,10 +606,10 @@ async function submit(event?: Event) {
         <section class="auto-route-dialog" role="dialog" aria-modal="true" :aria-label="t('composer.autoRoutesTitle')">
           <header><div><span class="eyebrow">{{ quote.selectedProviderId ? t('composer.autoSelected', { provider: autoProviderLabel }) : t('composer.autoNoRoute') }}</span><h2>{{ t('composer.autoRoutesTitle') }}</h2><p class="auto-route-dialog-model">{{ t('composer.autoModel') }}: {{ autoModelName }}</p></div><button ref="autoDetailsClose" type="button" class="dialog-close" :aria-label="t('common.close')" @click="closeAutoDetails">×</button></header>
           <p class="auto-route-dialog-intro">{{ t(quote.selectedProviderId ? 'composer.autoRoutesExplanation' : 'composer.autoNoRouteExplanation') }}</p>
-          <div class="auto-route-table-wrap"><table class="auto-route-table"><thead><tr><th scope="col">{{ t('composer.autoRouter') }}</th><th scope="col">{{ t('composer.autoPrice') }}</th><th scope="col">{{ t('composer.autoProviderCredits') }}</th><th scope="col">{{ t('composer.autoProviderCreditPrice') }}</th><th scope="col">{{ t('composer.autoPurchaseEstimate') }}</th><th scope="col">{{ t('composer.autoStatus') }}</th></tr></thead>
-            <tbody><tr v-for="(offer, index) in quote.autoOffers || []" :key="`${offer.providerId}:${index}`" :class="{ selected: offer.providerId === quote.selectedProviderId && !offer.unavailable }"><th scope="row"><strong>{{ autoOfferLabel(offer.providerId) }}</strong><span class="auto-route-model-name">{{ offer.modelId ? autoModelName : '—' }}</span><small v-if="offer.modelId">{{ offer.modelId }}</small></th><td>{{ offer.credits != null ? `${formatCreditCost(offer.credits)} ${t('common.creditsShort')}` : '—' }}</td><td>{{ offer.providerCredits != null ? formatNumber(offer.providerCredits, { maximumFractionDigits: 8 }) : '—' }}</td><td>{{ offer.usdPerProviderCredit != null ? `$${formatNumber(offer.usdPerProviderCredit, { maximumFractionDigits: 8 })}` : '—' }}</td><td>{{ offer.costUsd != null ? `$${formatNumber(offer.costUsd, { maximumFractionDigits: 6 })}` : '—' }}</td><td>{{ offer.unavailable ? offer.reason || t('composer.autoUnavailable') : offer.providerId === quote.selectedProviderId ? t('composer.autoSelectedStatus') : t('composer.autoAvailableStatus') }}<small v-if="offer.warning">{{ offer.warning }}</small></td></tr></tbody>
+          <div class="auto-route-table-wrap"><table class="auto-route-table"><thead><tr><th scope="col">{{ t('composer.autoRouter') }}</th><th scope="col">{{ t('composer.autoPrice') }}</th><th v-if="studio.isAdmin" scope="col">{{ t('composer.autoProviderCredits') }}</th><th v-if="studio.isAdmin" scope="col">{{ t('composer.autoProviderCreditPrice') }}</th><th v-if="studio.isAdmin" scope="col">{{ t('composer.autoPurchaseEstimate') }}</th><th scope="col">{{ t('composer.autoStatus') }}</th></tr></thead>
+            <tbody><tr v-for="(offer, index) in quote.autoOffers || []" :key="`${offer.providerId}:${index}`" :class="{ selected: offer.providerId === quote.selectedProviderId && !offer.unavailable }"><th scope="row"><strong>{{ autoOfferLabel(offer.providerId) }}</strong><span class="auto-route-model-name">{{ offer.modelId ? autoModelName : '—' }}</span><small v-if="offer.modelId">{{ offer.modelId }}</small></th><td>{{ offer.credits != null ? `${formatCreditCost(offer.credits)} ${t('common.creditsShort')}` : '—' }}</td><td v-if="studio.isAdmin">{{ offer.providerCredits != null ? formatNumber(offer.providerCredits, { maximumFractionDigits: 8 }) : '—' }}</td><td v-if="studio.isAdmin">{{ offer.usdPerProviderCredit != null ? `$${formatNumber(offer.usdPerProviderCredit, { maximumFractionDigits: 8 })}` : '—' }}</td><td v-if="studio.isAdmin">{{ offer.costUsd != null ? `$${formatNumber(offer.costUsd, { maximumFractionDigits: 6 })}` : '—' }}</td><td>{{ offer.unavailable ? offer.reason || t('composer.autoUnavailable') : offer.providerId === quote.selectedProviderId ? t('composer.autoSelectedStatus') : t('composer.autoAvailableStatus') }}<small v-if="offer.warning">{{ offer.warning }}</small></td></tr></tbody>
           </table></div>
-          <p class="auto-route-dialog-note">{{ t('composer.autoRoutesFootnote') }}</p>
+          <p v-if="studio.isAdmin" class="auto-route-dialog-note">{{ t('composer.autoRoutesFootnote') }}</p>
         </section>
       </div>
     </Teleport>

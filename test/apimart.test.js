@@ -44,6 +44,14 @@ test('APIMart quote keeps provider credits and USD separate', () => {
     prompt_tokens_details: { cached_tokens: 50 } }), null);
   assert.equal(simpleRates({ data: { pricing: { unit: 'usd_per_million_tokens', tier_count: 2,
     effective_rates: { input: 1, output: 2 } } } }), null);
+  assert.deepEqual(simpleRates({ data: { pricing: { unit: 'usd_per_million_tokens', tier_count: 2,
+    effective_rates: { input: 8, output: 40 }, tiers: [
+      { up_to_input_tokens: 272000, input: 10, output: 50 }, { input: 20, output: 75 },
+    ] } } }), { input: 8, output: 40 });
+  assert.equal(simpleRates({ data: { pricing: { unit: 'usd_per_million_tokens', tier_count: 2,
+    effective_rates: { input: 8, output: 40 }, tiers: [
+      { up_to_input_tokens: 1000, input: 10, output: 50 }, { input: 20, output: 75 },
+    ] } } }), null);
 });
 
 test('application provider contract distinguishes external billing from free usage', async () => {

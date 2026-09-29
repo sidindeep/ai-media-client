@@ -4,6 +4,9 @@ export type ModelPickerOption = {
   value: string;
   label: string;
   description?: string;
+  price?: string;
+  disabled?: boolean;
+  disabledReason?: string;
   groupId: string;
 };
 

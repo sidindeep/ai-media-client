@@ -3,10 +3,13 @@ const ESTIMATED_OUTPUT_TOKENS = 512;
 function simpleRates(payload) {
   const pricing = payload?.data?.pricing;
   const rates = pricing?.effective_rates;
-  if (pricing?.unit !== 'usd_per_million_tokens' || pricing?.tier_count !== 1
+  if (pricing?.unit !== 'usd_per_million_tokens' || !Number.isInteger(pricing?.tier_count) || pricing.tier_count < 1
     || !rates || Object.keys(rates).some(key => !['input', 'output', 'cached_input', 'cache_write', 'cache_write_5m', 'cache_write_1h'].includes(key))
     || !Number.isFinite(rates.input) || !Number.isFinite(rates.output)
     || rates.input < 0 || rates.output < 0) return null;
+  if (pricing.tier_count > 1 && (!Array.isArray(pricing.tiers) || pricing.tiers.length !== pricing.tier_count
+    || !Number.isFinite(pricing.tiers[0]?.up_to_input_tokens)
+    || pricing.tiers[0].up_to_input_tokens < 20000)) return null;
   return { input: rates.input, output: rates.output };
 }
 

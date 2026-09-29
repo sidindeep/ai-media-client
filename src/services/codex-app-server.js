@@ -31,6 +31,7 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
   const report = event => { try { diagnostic(event); } catch {} };
   let session, starting, closed = false;
   const runs = new Set();
+  let modelCatalog, modelCatalogPromise;
   async function start() {
     if (closed) throw uncertain();
     if (starting) return starting;
@@ -247,7 +248,39 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
       }
     }
   }
-  return { run, async rateLimits() {
+  async function listModels() {
+    if (modelCatalog && session && !session.dead && Date.now() - Date.parse(modelCatalog.checkedAt) < 60_000) return modelCatalog;
+    if (modelCatalogPromise) return modelCatalogPromise;
+    modelCatalogPromise = (async () => {
+      const current = await start();
+      const models = [], seen = new Set();
+      let cursor;
+      for (let page = 0; page < 20; page++) {
+        const response = await current.rpc('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) });
+        if (!Array.isArray(response?.data)) throw new Error('Codex вернул некорректный каталог моделей');
+        for (const item of response.data) {
+          const id = item.model || item.id;
+          if (item.hidden || typeof id !== 'string' || !/^[a-z0-9][a-z0-9._/-]{0,119}$/.test(id) || seen.has(id)) continue;
+          const efforts = [...new Set((item.supportedReasoningEfforts || []).map(value => value.reasoningEffort)
+            .filter(value => ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value)))];
+          if (!efforts.length) continue;
+          seen.add(id);
+          models.push({ id, name: typeof item.displayName === 'string' ? item.displayName.slice(0, 120) : id,
+            isDefault: Boolean(item.isDefault), efforts,
+            defaultEffort: efforts.includes(item.defaultReasoningEffort) ? item.defaultReasoningEffort : efforts[0],
+            inputModalities: Array.isArray(item.inputModalities) ? item.inputModalities.filter(value => ['text', 'image'].includes(value)) : ['text', 'image'] });
+        }
+        cursor = response.nextCursor;
+        if (!cursor) break;
+        if (page === 19) throw new Error('Каталог Codex превысил предел страниц');
+      }
+      if (!models.length) throw new Error('Codex вернул пустой каталог моделей');
+      modelCatalog = { source: 'app-server', checkedAt: new Date().toISOString(), models };
+      return modelCatalog;
+    })();
+    try { return await modelCatalogPromise; } finally { modelCatalogPromise = null; }
+  }
+  return { run, listModels, async rateLimits() {
       const current = await start();
       return current.rpc('account/rateLimits/read', {});
     }, close() { closed = true; session?.break('shutdown'); },

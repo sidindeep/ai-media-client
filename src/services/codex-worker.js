@@ -11,6 +11,8 @@ const { normalizeUsage } = require('./codex-usage');
 const { codexEnvironment } = require('./codex-runtime');
 const { execute } = require('./codex-exec');
 const { createCodexAppServerPool } = require('./codex-app-server-pool');
+const { createCodexAppServer } = require('./codex-app-server');
+const snapshotCatalog = require('../../config/codex-models.json');
 const { validatePng } = require('./codex-images');
 const { safeErrorText } = require('./codex-errors');
 
@@ -21,6 +23,8 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
   if (!['exec', 'app-server'].includes(transport)) throw new Error('MEDIA_CODEX_TRANSPORT должен быть exec или app-server');
   if (!Number.isSafeInteger(maxPendingJobs) || maxPendingJobs < 1 || maxPendingJobs > 10000) throw new Error('MEDIA_CODEX_MAX_PENDING_JOBS должен быть от 1 до 10000');
   const adapter = !run && transport === 'app-server' ? createCodexAppServerPool() : null;
+  const catalogAdapter = !run ? adapter || createCodexAppServer() : null;
+  const models = () => catalogAdapter ? catalogAdapter.listModels() : Promise.resolve(snapshotCatalog);
   run = run || adapter?.run || execute;
   const controller = new AbortController();
   // Active and queued requests listen for shutdown; the app-server pool limits execution.
@@ -63,6 +67,10 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
       if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, transport, ...(adapter ? { pool: adapter.status() } : {}) });
       const account = req.headers['x-account-id'];
       if (typeof account !== 'string' || !/^(local|[a-f0-9-]{36})$/.test(account)) return send(res, 403, { error: 'Доступ запрещён' });
+      if (url.pathname === '/models' && req.method === 'GET') {
+        try { return send(res, 200, await models()); }
+        catch { return send(res, 503, { error: 'Каталог Codex временно недоступен' }); }
+      }
       if (url.pathname === '/auth/status' && req.method === 'GET') return send(res, 200, await login.status());
       if (url.pathname === '/auth/limits' && req.method === 'GET') {
         if (!adapter) return send(res, 200, { rateLimits: null, rateLimitsByLimitId: null });
@@ -99,7 +107,7 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
       if (req.method !== 'POST' || url.pathname !== '/jobs') return send(res, 404, { error: 'Не найдено' });
       const chunks = []; let length = 0;
       for await (const chunk of req) { length += chunk.length; if (length > 128 * 1024 * 1024) return send(res, 413, { error: 'Запрос слишком большой' }); chunks.push(chunk); }
-      const input = validateCodexRequest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      const input = validateCodexRequest(JSON.parse(Buffer.concat(chunks).toString('utf8')), (await models()).models);
       const key = account + ':' + input.requestId;
       const previous = await storedJob(account, input.requestId);
       if (previous) return send(res, 200, previous);
@@ -134,8 +142,8 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });
   server.requestTimeout = 15000;
-  server.stopActive = () => { controller.abort(); adapter?.close(); login.close(); };
-  server.on('close', () => { clearInterval(sweep); adapter?.close(); login.close(); });
+  server.stopActive = () => { controller.abort(); catalogAdapter?.close(); login.close(); };
+  server.on('close', () => { clearInterval(sweep); catalogAdapter?.close(); login.close(); });
   return server;
 }
 if (require.main === module) createCodexWorker().listen(3210, '0.0.0.0', () => console.log('Codex worker ready'));

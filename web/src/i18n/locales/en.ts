@@ -444,6 +444,7 @@ export const en = {
   'composer.mode.video': 'Video',
   'composer.mode.audio': 'Audio',
   'composer.audioUnavailable': 'Audio models are not available yet.',
+  'composer.codexCatalogUnavailable': 'Could not load Codex models. Refresh the page.',
   'composer.promptAria': 'Generation prompt',
   'composer.sources': 'Sources',
   'composer.uploading': 'Uploading…',

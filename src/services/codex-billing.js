@@ -65,6 +65,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     });
     return value;
   }
+  const models = () => remote('local', '/models');
   async function remoteImage(account, requestId) {
     const response = await fetchImpl(url + '/jobs/' + requestId + '/image', {
       headers: { 'X-Account-Id': account }, signal: AbortSignal.timeout(10000),
@@ -196,7 +197,9 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     activeState: 'submitting', activePatch: { stage: 'submitting' }, queuedPatch: { stage: 'queued' },
     retryDelayMs, dispatch: dispatchRetry });
   async function submit(account, raw) {
-    const request = validateCodexRequest(raw);
+    const catalog = await models();
+    const request = validateCodexRequest(raw, catalog.models);
+    const modelName = catalog.models.find(model => model.id === request.model)?.name || request.model;
     const images = await loadImages(account, request);
     let fresh = false;
     const job = await transaction(accounts.pool, async client => {
@@ -211,7 +214,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       const nativeQuote = quote(request);
       await reserve(client, account, id(account, request.requestId), nativeQuote);
       const createdAt = new Date().toISOString();
-      const record = { ...request, id: request.requestId, revision: 1, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, updatedAt: createdAt, startedAt: createdAt };
+      const record = { ...request, modelName, id: request.requestId, revision: 1, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, updatedAt: createdAt, startedAt: createdAt };
       await client.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'codex',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
       await appendGenerationEvent(client, account, 'codex', record, 'created');
       fresh = true; return record;
@@ -219,7 +222,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     if (!fresh) return job;
     return send(account, request, images);
   }
-  return { quote, submit, status, read,
+  return { quote, models, submit, status, read,
     async image(account, requestId) {
       const job = await get(account, requestId);
       if (!job?.hasImage || job.state !== 'success') throw Object.assign(new Error('Изображение не найдено'), { status: 404 });

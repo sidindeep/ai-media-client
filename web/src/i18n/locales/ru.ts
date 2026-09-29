@@ -442,6 +442,7 @@ export const ru = {
   'composer.mode.video': 'Видео',
   'composer.mode.audio': 'Аудио',
   'composer.audioUnavailable': 'Аудиомодели пока недоступны.',
+  'composer.codexCatalogUnavailable': 'Не удалось загрузить модели Codex. Обновите страницу.',
   'composer.promptAria': 'Промпт генерации',
   'composer.sources': 'Исходники',
   'composer.uploading': 'Загрузка…',

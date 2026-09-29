@@ -26,7 +26,7 @@
 | Read-only проверка данных перед DDL | docker compose exec -T media node scripts/database-preflight.cjs |
 | Выдать права ограниченной роли | docker compose run --rm media node scripts/grant-runtime-role.cjs |
 | Нагрузка на один отдельный Compose без генераций | [tools/load-test/README.md](load-test/README.md) |
-| Обновить каталог Codex из авторизованного контейнера | node scripts/sync-codex-models.cjs |
+| Обновить архивный снимок Codex для начальных настроек | node scripts/sync-codex-models.cjs |
 | Зарегистрировать и перенести legacy-контент в каталог/S3 | pnpm migrate:content |
 | Сверить каталог контента с S3 без удаления | pnpm audit:content |
 | Проверить эксплуатационные алерты (код выхода 2 при срабатывании) | pnpm check:operations |
@@ -49,9 +49,12 @@ Dockerfile и контекст сборки находятся в корне. О
 Codex и платят внутренними кредитами. Настройка и тарифы:
 [Codex в вебе](../docs/codex.md).
 
-Каталог `config/codex-models.json` обновляется через `model/list` контейнера
-`../llm_providers` без генерации. Другой каталог провайдера можно передать
-первым аргументом команды. После обновления пересобрать оба контейнера.
+Веб получает живой каталог через `GET /api/codex/models` от своего Codex worker;
+worker запрашивает `model/list` текущего авторизованного app-server. Архивный
+`config/codex-models.json` хранит начальные настройки и имена старых моделей.
+Команда `scripts/sync-codex-models.cjs` обновляет только этот снимок через
+контейнер `../llm_providers` и для появления новых моделей в меню не нужна.
+После изменения снимка или тарифов пересобрать оба контейнера.
 Для первой сборки необходим образ `llm-providers:local`; Compose использует
 приватный том `llm-providers_codex-auth`. Повторный вход на хосте:
 `docker compose exec codex codex login --device-auth` — открыть выданную ссылку

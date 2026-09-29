@@ -1,6 +1,7 @@
 const { validateCodexRequest } = require('../../services/codex-request');
 const { validateRouterAiRequest } = require('../../services/routerai-billing');
 const { isAdminRole, assertAdminRole } = require('../../auth/roles');
+const snapshotCatalog = require('../../../config/codex-models.json');
 
 async function handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, costRouter, routerAiModels,
   send, readBody, sendMedia, sendStored, sendFile, headers }) {
@@ -23,6 +24,10 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codex, c
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
     if (req.method === 'GET' && url.pathname === '/api/codex/status') return send(200, { enabled: Boolean(codexProvider), allowed: Boolean(accounts) });
     if (!codex) return send(503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
+    if (req.method === 'GET' && url.pathname === '/api/codex/models') {
+      try { return send(200, { ...await codex.models(), uiDefaults: snapshotCatalog.uiDefaults }); }
+      catch { return send(503, { error: 'Каталог Codex временно недоступен.' }); }
+    }
     const imageRequest = /^\/api\/codex\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
     if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
       const selectedAccount = url.searchParams.get('account');
@@ -41,7 +46,7 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codex, c
     if (req.method === 'POST') {
       if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
       const raw = JSON.parse((await readBody(100000)).toString('utf8'));
-      const body = validateCodexRequest(raw);
+      const body = validateCodexRequest(raw, (await codex.models()).models);
       const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
       return send(200, await codexProvider.submit(user.id, { ...body, ...binding }));
     }

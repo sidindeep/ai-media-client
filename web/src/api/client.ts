@@ -220,7 +220,7 @@ export async function clearQueue(): Promise<unknown> {
 }
 
 export async function getCodexCatalog(): Promise<CodexCatalog> {
-  const response = await fetch('/codex-models.json', { headers: accountHeaders() });
+  const response = await fetch('/api/codex/models', { headers: accountHeaders() });
   return parse<CodexCatalog>(response);
 }
 

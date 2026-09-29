@@ -231,6 +231,8 @@ export type CodexModel = {
 
 export type CodexCatalog = {
   models: CodexModel[];
+  source?: 'app-server';
+  checkedAt?: string;
   uiDefaults?: { model?: string; effort?: string; speed?: string; kind?: string };
 };
 

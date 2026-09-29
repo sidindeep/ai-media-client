@@ -8,7 +8,7 @@ function codexRecord(job) {
   return {
     id: `codex:${job.id}`, providerId: 'codex', providerName: 'Codex CLI',
     modelId: job.model, model: job.model,
-    modelName: catalog.models.find(model => model.id === job.model)?.name || job.model,
+    modelName: job.modelName || catalog.models.find(model => model.id === job.model)?.name || job.model,
     kind: job.kind || 'text', state: job.state === 'running' ? 'generating' : job.state,
     workspace: -1, queueHidden: true,
     requestId: job.id, revision: job.revision,

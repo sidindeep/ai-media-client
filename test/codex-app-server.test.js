@@ -59,6 +59,27 @@ test('App-server multiplexes threads, handles notifications before RPC response 
   assert.equal(h.adapter.status().active, 0);
 });
 
+test('App-server reads every visible model page and reuses the recent catalog', async t => {
+  const h = await harness(t, ({ m, reply }) => {
+    if (m.method !== 'model/list') return;
+    if (!m.params.cursor) return reply(m, { data: [
+      { model: 'gpt-6-sol', displayName: 'GPT-6 Sol', hidden: false, isDefault: true,
+        supportedReasoningEfforts: [{ reasoningEffort: 'none' }, { reasoningEffort: 'medium' }],
+        defaultReasoningEffort: 'medium', inputModalities: ['text', 'image'] },
+      { model: 'hidden-model', hidden: true, supportedReasoningEfforts: [{ reasoningEffort: 'low' }] },
+    ], nextCursor: 'page-2' });
+    reply(m, { data: [{ model: 'gpt-6-luna', displayName: 'GPT-6 Luna',
+      supportedReasoningEfforts: [{ reasoningEffort: 'low' }], defaultReasoningEffort: 'low' }], nextCursor: null });
+  });
+  const first = await h.adapter.listModels();
+  assert.deepEqual(first.models.map(model => model.id), ['gpt-6-sol', 'gpt-6-luna']);
+  assert.deepEqual(first.models[0].efforts, ['none', 'medium']);
+  assert.equal(first.models[1].defaultEffort, 'low');
+  assert.equal(first.source, 'app-server');
+  assert.equal((await h.adapter.listModels()).checkedAt, first.checkedAt);
+  assert.equal(h.calls.filter(call => call.method === 'model/list').length, 2);
+});
+
 test('App-server startup failure is unknown, does not replay, and a new request can start a new process', async t => {
   let fail = true;
   const h = await harness(t, data => { if (data.m.method === 'turn/start') { if (fail) data.child.kill(); else complete(data, 'OK'); } });

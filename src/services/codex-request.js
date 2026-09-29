@@ -1,10 +1,10 @@
 const catalog = require('../../config/codex-models.json');
 function invalid(message) { return Object.assign(new Error(message), { status: 400 }); }
-function validateCodexRequest(input) {
+function validateCodexRequest(input, models = catalog.models) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw invalid('Некорректный запрос Codex');
   if (Object.keys(input).some(key => !['prompt', 'model', 'effort', 'speed', 'requestId', 'kind', 'aspectRatio', 'sourceFiles', 'images', 'projectId', 'chatId'].includes(key))) throw invalid('Недопустимые параметры Codex');
   if (input.kind !== undefined && !['text', 'image'].includes(input.kind)) throw invalid('Некорректный тип результата');
-  const model = catalog.models.find(item => item.id === input.model);
+  const model = models.find(item => item.id === input.model);
   if (!model || !model.efforts.includes(input.effort)) throw invalid('Модель или уровень рассуждения недоступны');
   if (!['standard', 'fast'].includes(input.speed)) throw invalid('Некорректная скорость');
   if (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 20000) throw invalid('Укажите текст до 20 000 символов');

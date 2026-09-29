@@ -258,7 +258,7 @@
   });
   async function load() {
     try {
-      [catalog, permissions] = await Promise.all([api('/codex-models.json'), api('/api/codex/status')]);
+      [catalog, permissions] = await Promise.all([api('/api/codex/models'), api('/api/codex/status')]);
       settings = { ...catalog.uiDefaults, ...settings };
       $('generationProvider').value = settings.provider === 'codex' ? 'codex' : 'kie';
       switchProvider();

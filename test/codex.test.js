@@ -16,13 +16,14 @@ const sampleUsage = { input_tokens: 100, cached_input_tokens: 60, output_tokens:
 test('Codex application provider preserves the product quote and account-scoped job contract', async () => {
   const calls = [];
   const billing = {
+    models: async () => ({ models: [{ id: 'gpt-6-astra' }] }),
     quote: request => ({ credits: 4, amountUnits: 4000, version: `codex:${request.model}` }),
     submit: async (account, payload) => { calls.push(['submit', account, payload.requestId]); return { id: payload.requestId }; },
     read: async (account, requestId) => { calls.push(['read', account, requestId]); return { id: requestId }; },
   };
   const provider = createCodexApplicationProvider(billing);
   assert.equal(provider.billing.mode, 'wallet');
-  assert.ok(provider.listModels().some(model => model.id === 'gpt-6-astra'));
+  assert.ok((await provider.listModels()).some(model => model.id === 'gpt-6-astra'));
   const quote = provider.quote({ model: 'gpt-6-astra' });
   assert.deepEqual(quote, { status: 'exact', credits: 4,
     nativeQuote: { credits: 4, amountUnits: 4000, version: 'codex:gpt-6-astra' } });
@@ -31,6 +32,31 @@ test('Codex application provider preserves the product quote and account-scoped 
   await provider.getTask('account-a', requestId);
   assert.deepEqual(calls, [['submit', 'account-a', requestId], ['read', 'account-a', requestId]]);
   assert.equal(provider.getStatus().balance, null);
+});
+
+test('Web model catalog comes from the active worker and fails closed when it is unavailable', async t => {
+  const { createHttpServer } = require('../src/server/http');
+  const { loadConfig } = require('../src/server/config');
+  let unavailable = false;
+  const server = createHttpServer({ config: loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false' }), service: {},
+    accounts: { starterPack: { assertProvider: async () => {} } },
+    generationServices: { codex: { models: async () => {
+      if (unavailable) throw new Error('worker offline');
+      return { source: 'app-server', checkedAt: '2026-09-29T12:00:00.000Z', models: [{ id: 'gpt-6-sol', efforts: ['medium'] }] };
+    } } } });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const endpoint = `http://127.0.0.1:${server.address().port}/api/codex/models`;
+  const response = await fetch(endpoint);
+  assert.equal(response.status, 200);
+  const catalog = await response.json();
+  assert.equal(catalog.source, 'app-server');
+  assert.deepEqual(catalog.models.map(model => model.id), ['gpt-6-sol']);
+  assert.equal(catalog.uiDefaults.model, 'gpt-5.5');
+  unavailable = true;
+  const failed = await fetch(endpoint);
+  assert.equal(failed.status, 503);
+  assert.equal((await failed.json()).models, undefined);
 });
 
 test('CLI usage comes only from completed turn metadata, without counting cache or reasoning twice', () => {
@@ -99,6 +125,9 @@ test('Codex validates model-specific effort, speed and executable boundary', () 
   assert.equal(args[args.indexOf('shell_tool') - 1], '--disable');
   assert.ok(args.includes('--json'));
   assert.throws(() => validateCodexRequest({ ...input, kind: 'video' }));
+  const liveModel = { id: 'gpt-6-sol', efforts: ['none', 'medium'] };
+  assert.equal(validateCodexRequest({ ...input, model: 'gpt-6-sol', effort: 'none' }, [liveModel]).model, 'gpt-6-sol');
+  assert.throws(() => validateCodexRequest({ ...input, model: 'gpt-6-sol', effort: 'ultra' }, [liveModel]));
 });
 
 test('Codex accepts content and legacy references and rejects unsupported sources', () => {
@@ -252,6 +281,7 @@ test('Codex credit reservations survive replay, failure and unknown transport', 
   let mode = 'running', sent = 0, polled = 0;
   const accounts = { pool, wallet: createWallet(pool), pricing: createPricing({ version: 'test', models: { [priceKey(request())]: { baseUnits: 1000 } } }) };
   const billing = createCodexBilling({ accounts, url: 'http://worker', fetchImpl: async (_url, options) => {
+    if (_url.endsWith('/models')) return { ok: true, json: async () => require('../config/codex-models.json') };
     if (options.method === 'POST') sent++;
     else polled++;
     if (mode === 'network') throw new Error('network');
@@ -321,6 +351,7 @@ test('Codex retries only an explicit unaccepted 429 after restart', async t => {
   let sends = 0;
   const options = { accounts, url: 'http://worker', retryDelayMs: 150,
     fetchImpl: async (_url, requestOptions) => {
+      if (_url.endsWith('/models')) return { ok: true, json: async () => require('../config/codex-models.json') };
       if (requestOptions.method === 'POST') {
         sends++;
         if (sends === 1) return { ok: false, status: 429, json: async () => ({ error: 'busy', accepted: false }) };
@@ -361,7 +392,10 @@ test('Codex does not repeat a 429 without proof that the worker rejected it', as
   let sends = 0;
   const billing = createCodexBilling({ accounts: { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) },
     url: 'http://worker', retryDelayMs: 10,
-    fetchImpl: async () => { sends++; return { ok: false, status: 429, json: async () => ({ error: 'busy' }) }; } });
+    fetchImpl: async url => {
+      if (url.endsWith('/models')) return { ok: true, json: async () => require('../config/codex-models.json') };
+      sends++; return { ok: false, status: 429, json: async () => ({ error: 'busy' }) };
+    } });
   t.after(() => billing.close());
   assert.equal((await billing.submit(account, input)).state, 'unknown');
   await new Promise(resolve => setTimeout(resolve, 30));

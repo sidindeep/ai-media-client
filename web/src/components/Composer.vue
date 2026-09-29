@@ -548,6 +548,7 @@ async function submit(event?: Event) {
     </div>
     <div class="composer-body">
       <p v-if="studio.provider === 'media' && studio.mode === 'audio' && !modelOptions.length" class="notice" role="status">{{ t('composer.audioUnavailable') }}</p>
+      <p v-if="studio.provider === 'codex' && !studio.codexCatalog && !studio.loading" class="notice" role="status">{{ t('composer.codexCatalogUnavailable') }}</p>
       <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" :aria-label="t('composer.promptAria')" @keydown.ctrl.enter="submit"></textarea>
       <label v-if="studio.provider === 'media' && currentUnionVariants.length" class="select-pill"><span>{{ t('composer.unionMode') }}</span><select :value="unionMode" @change="selectUnionMode"><option v-for="(variant, index) in currentUnionVariants" :key="index" :value="index">{{ variant.title || t('composer.unionVariant', { number: index + 1 }) }}</option></select></label>
       <SourceAttachments ref="sourceAttachments" :fields="currentFields" @error="submitError = $event" @uploading="uploading = $event" />

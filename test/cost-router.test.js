@@ -47,6 +47,9 @@ test('auto route compares the whole Kie cost with APIMart USD and chooses the ch
   const kieQuote = await kie.router.quote(user, request);
   assert.equal(kieQuote.selected.providerId, 'kie');
   assert.equal(kieQuote.selected.credits, 5);
+  assert.equal(kieQuote.selected.providerCredits, 5);
+  assert.equal(kieQuote.selected.usdPerProviderCredit, 0.005);
+  assert.equal(kieQuote.selected.costUsd, 0.025);
   assert.deepEqual(kie.balanceAccounts, ['primary']);
   await kie.router.submit(user, request);
   assert.equal(kie.sent[0].args[0].kieAccountId, 'primary');
@@ -55,6 +58,9 @@ test('auto route compares the whole Kie cost with APIMart USD and chooses the ch
   assert.equal(apimartQuote.selected.providerId, 'apimart');
   assert.equal(apimartQuote.selected.nativeCredits, 0.1);
   assert.equal(apimartQuote.selected.credits, 0.1);
+  assert.equal(apimartQuote.selected.providerCredits, 0.1);
+  assert.ok(Math.abs(apimartQuote.selected.usdPerProviderCredit - 0.1) < 1e-12);
+  assert.equal(apimartQuote.selected.costUsd, 0.01);
   assert.equal((await apimart.router.submit(user, request)).providerId, 'apimart');
   assert.equal(apimart.sent[0].args.parameters.size, '1:1');
   assert.equal(apimart.sent[0].args.parameters.resolution, '1k');

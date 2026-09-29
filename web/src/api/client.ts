@@ -119,7 +119,7 @@ export const getCommerceOrder = (orderId: string) => workspaceRequest<CommerceOr
 export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number | null; amountUnits: number | null; status?: string; reason?: string; warning?: string }> {
   return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }
-export type AutoRouteQuote = { selected: { providerId: string; costUsd: number; credits?: number; nativeCredits?: number }; offers: Array<{ providerId: string; modelId: string; costUsd?: number; credits?: number; nativeCredits?: number; unavailable?: boolean; reason?: string }> };
+export type AutoRouteQuote = { selected: { providerId: string; costUsd: number; credits?: number; nativeCredits?: number; providerCredits?: number; usdPerProviderCredit?: number }; offers: Array<{ providerId: string; modelId: string; costUsd?: number; credits?: number; providerCredits?: number; usdPerProviderCredit?: number; unavailable?: boolean; reason?: string }> };
 export async function getAutoRouteQuote(input: { modelId: string; input: Record<string, unknown>; sourceFiles?: Array<{ ref: string; [key: string]: unknown }> }): Promise<AutoRouteQuote> {
   return parse(await fetch('/api/auto/quote', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
 }

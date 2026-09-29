@@ -117,8 +117,10 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
           const cost = await scoped.providerCostQuote(route.modelId, request.input, request.sourceFiles, fresh);
           if (!Number.isSafeInteger(cost.amountUnits) || cost.amountUnits <= 0) throw new Error('Цена Kie неизвестна');
           if (!Number.isFinite(cost.productCredits) || cost.productCredits <= 0) throw new Error('Цена в кредитах приложения неизвестна');
+          const providerCredits = cost.amountUnits / 1000;
           const offer = { providerId: 'kie', modelId: route.modelId, priority,
-            costUsd: cost.amountUnits / 1000 * kieUsdPerCredit, credits: cost.productCredits,
+            costUsd: providerCredits * kieUsdPerCredit, providerCredits, usdPerProviderCredit: kieUsdPerCredit,
+            credits: cost.productCredits,
             source: cost.source, tariffVersion: cost.version, costVersion: routingPolicy.version };
           if (wallet.balance < cost.productCredits) return { ...offer, unavailable: true, reason: 'Недостаточно кредитов сервиса' };
           const balance = await scoped.providerBalance(AUTO_KIE_ACCOUNT_ID);
@@ -137,7 +139,9 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
           }
           if (!Number.isFinite(cost.nativeCredits) || cost.nativeCredits <= 0) throw new Error('Цена в кредитах APIMart неизвестна');
           const offer = { providerId: 'apimart', modelId: route.modelId, priority,
-            costUsd: cost.amountUsd, nativeCredits: cost.nativeCredits, credits: cost.credits,
+            costUsd: cost.amountUsd, nativeCredits: cost.nativeCredits,
+            providerCredits: cost.nativeCredits, usdPerProviderCredit: cost.amountUsd / cost.nativeCredits,
+            credits: cost.credits,
             parameters, source: 'apimart-pricing', tariffVersion: 'live', costVersion: routingPolicy.version };
           if (wallet.balance < cost.credits) return { ...offer, unavailable: true, reason: 'Недостаточно кредитов сервиса' };
           const status = await apimart.status();

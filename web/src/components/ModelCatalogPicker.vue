@@ -27,7 +27,6 @@ const panelStyle = ref<Record<string, string>>({});
 
 const selected = computed(() => props.models.find(model => model.value === props.modelValue && !model.disabled)
   || props.models.find(model => !model.disabled));
-const selectedCatalog = computed(() => props.catalogs?.find(catalog => catalog.id === props.catalogId));
 const selectedBrand = computed(() => modelBrand(selected.value?.groupId || 'other'));
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
 const matchingModels = computed(() => {
@@ -144,7 +143,6 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="model-picker model-pill">
     <button ref="trigger" type="button" class="model-picker-trigger select-pill" aria-haspopup="dialog" :aria-expanded="open" :disabled="!models.length && !catalogs?.length" @click="open ? close() : show()">
-      <span class="model-picker-label">{{ selectedCatalog?.title || t('model.label') }}</span>
       <span class="model-brand-icon compact" :style="{ '--brand-accent': selectedBrand.accent }">
         <img v-if="selectedBrand.icon" :src="selectedBrand.icon" alt="" :class="{ monochrome: selectedBrand.monochrome }">
         <span v-else>{{ selectedBrand.label.slice(0, 1) }}</span>

@@ -1,5 +1,6 @@
 {
-  "version": "2026-09-29-1",
+  "version": "2026-09-29-2",
+  "replaces": ["routes-2026-09-29-1"],
   "canonical": {
     "prompt": "prompt",
     "aspect_ratio": "aspect_ratio",
@@ -34,7 +35,7 @@
     "output_format": "output_format",
     "watermark": "watermark"
   },
-  "omitWhen": { "nsfw_checker": false, "background": "opaque", "output_format": "png" },
+  "omitWhen": { "nsfw_checker": false, "background": "opaque", "output_format": "png", "enableTranslation": false, "watermark": "" },
   "pairOverrides": {
     "kie:gpt-image-2-text-to-image": { "fields": { "input_urls": "image_urls" }, "values": { "resolution": { "1K": "1k", "2K": "2k", "4K": "4k" } } },
     "kie:gpt-image-2-image-to-image": { "values": { "resolution": { "1K": "1k", "2K": "2k", "4K": "4k" } } },

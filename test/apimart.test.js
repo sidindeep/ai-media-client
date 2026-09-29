@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { createApimartClient } = require('../src/providers/apimart/client');
 const { createApimartJobs } = require('../src/services/apimart-jobs');
 const { defineProvider } = require('../src/providers/contract');
-const { simpleRates, estimate, usedCost, mediaEstimate } = require('../src/providers/apimart/pricing');
+const { simpleRates, estimate, usedCost, mediaEstimate, publishedMediaTariff } = require('../src/providers/apimart/pricing');
 const { readProviderStatus } = require('../src/services/provider-status');
 const { describeModel } = require('../src/providers/apimart/catalog');
 const { openDatabase } = require('../src/database/database');
@@ -287,6 +287,19 @@ test('APIMart Seedance 2.5 quote follows resolution prices despite token billing
   assert.equal(mediaEstimate(tariff, model, { resolution: '4k', duration: 5 }), null);
   assert.equal(mediaEstimate(tariff, model, { resolution: '720p', duration: 5,
     video_urls: ['https://example.com/reference.mp4'] }), null);
+  assert.equal(publishedMediaTariff(tariff, model),
+    '480P: $0.09608 / с\n720P: $0.216 / с\n1080P: $0.38488 / с');
+});
+
+test('published APIMart video tariffs use the base rate and priced resolutions', () => {
+  const model = describeModel({ id: 'veo3.1-lite', category: 'video' });
+  const tariff = { data: { paid_price: 0.07, resolution_paid_prices: { '4K': 0.57 } } };
+  assert.equal(publishedMediaTariff(tariff, model), '720P: $0.07 / запрос\n4K: $0.57 / запрос');
+  assert.equal(mediaEstimate(tariff, model, { resolution: '720p' }).amountUsd, 0.07);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '1080p' }), null);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '4k' }).amountUsd, 0.57);
+  assert.equal(model.fields.some(field => field.key === 'image_urls'), false);
+  assert.deepEqual(model.fields.find(field => field.key === 'duration').options, [8]);
 });
 
 test('APIMart recovers a persisted media task by polling without another paid POST', async () => {

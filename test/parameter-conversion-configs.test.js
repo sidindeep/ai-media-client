@@ -1,0 +1,35 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { ensureCurrentParameterConversionConfig } = require('../src/services/parameter-conversion-configs');
+
+function poolWithCurrent(active) {
+  const rows = new Map([[active, { id: active, isCurrent: true }]]);
+  const client = { release() {}, async query(sql, parameters = []) {
+    if (sql.startsWith('SELECT id FROM media_parameter_conversion_configs WHERE is_current'))
+      return { rows: [...rows.values()].filter(row => row.isCurrent).map(row => ({ id: row.id })) };
+    if (sql.startsWith('INSERT INTO media_parameter_conversion_configs')) {
+      rows.set(parameters[0], rows.get(parameters[0]) || { id: parameters[0], document: JSON.parse(parameters[2]), isCurrent: false });
+    }
+    if (sql.startsWith('UPDATE media_parameter_conversion_configs SET is_current=false'))
+      for (const row of rows.values()) row.isCurrent = false;
+    if (sql.includes('SET is_current=true')) rows.get(parameters[0]).isCurrent = true;
+    return { rows: [] };
+  } };
+  return { rows, connect: async () => client };
+}
+
+test('new built-in conversion version replaces the previous built-in version', async () => {
+  const pool = poolWithCurrent('routes-2026-09-29-1');
+  await ensureCurrentParameterConversionConfig(pool);
+  const current = [...pool.rows.values()].find(row => row.isCurrent);
+  assert.equal(current.id, 'routes-2026-09-29-2');
+  assert.equal(Object.keys(current.document.providers.kie).length, 176);
+  assert.ok(current.document.pairs.some(pair => pair.kie === 'kie:veo3_lite:TEXT_2_VIDEO'));
+});
+
+test('new built-in conversion version preserves a custom active configuration', async () => {
+  const pool = poolWithCurrent('routes-user-config');
+  await ensureCurrentParameterConversionConfig(pool);
+  assert.equal([...pool.rows.values()].find(row => row.isCurrent).id, 'routes-user-config');
+  assert.ok(pool.rows.has('routes-2026-09-29-2'));
+});

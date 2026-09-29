@@ -462,7 +462,7 @@ export const en = {
   'composer.autoModel': 'Selected model',
   'composer.autoRoutesExplanation': 'Auto checked route compatibility and prices. The lowest available provider cost is selected; other rows show a price or why a route was excluded.',
   'composer.autoPublishedTariff': 'Published tariff',
-  'composer.autoPublishedTariffNote': 'The catalog snapshot shows known model rates. The quote shows the price for the selected settings and whether the route is available.',
+  'composer.autoPublishedTariffNote': 'APIMart rates come from its current pricing response; Kie rates come from the catalog snapshot. The quote shows the price and availability for the selected settings.',
   'composer.autoRouter': 'Router and model',
   'composer.autoPrice': 'Your price',
   'composer.autoProviderCredits': 'Provider credits',

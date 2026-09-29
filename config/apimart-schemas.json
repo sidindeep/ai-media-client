@@ -61,12 +61,12 @@
           "apiDefault": "2MP",
           "pricingAliases": {
             "512": "1MP",
+            "1024": "2MP",
+            "2048": "3MP",
             "512P": "1MP",
             "1M": "1MP",
             "1K": "2MP",
-            "1024": "2MP",
             "2K": "3MP",
-            "2048": "3MP",
             "4K": "4MP"
           }
         },
@@ -198,12 +198,12 @@
           "apiDefault": "2MP",
           "pricingAliases": {
             "512": "1MP",
+            "1024": "2MP",
+            "2048": "3MP",
             "512P": "1MP",
             "1M": "1MP",
             "1K": "2MP",
-            "1024": "2MP",
             "2K": "3MP",
-            "2048": "3MP",
             "4K": "4MP"
           }
         },
@@ -335,12 +335,12 @@
           "apiDefault": "2MP",
           "pricingAliases": {
             "512": "1MP",
+            "1024": "2MP",
+            "2048": "3MP",
             "512P": "1MP",
             "1M": "1MP",
             "1K": "2MP",
-            "1024": "2MP",
             "2K": "3MP",
-            "2048": "3MP",
             "4K": "4MP"
           }
         },
@@ -7536,7 +7536,11 @@
           "key": "duration",
           "label": "Длительность, сек.",
           "type": "number",
-          "required": false
+          "required": false,
+          "options": [
+            8
+          ],
+          "apiDefault": 8
         },
         {
           "key": "aspect_ratio",
@@ -7580,7 +7584,8 @@
             "720p",
             "1080p",
             "4k"
-          ]
+          ],
+          "apiDefault": "720p"
         },
         {
           "key": "enable_gif",
@@ -7607,7 +7612,11 @@
           "key": "duration",
           "label": "Длительность, сек.",
           "type": "number",
-          "required": false
+          "required": false,
+          "options": [
+            8
+          ],
+          "apiDefault": 8
         },
         {
           "key": "aspect_ratio",
@@ -7651,7 +7660,8 @@
             "720p",
             "1080p",
             "4k"
-          ]
+          ],
+          "apiDefault": "720p"
         },
         {
           "key": "enable_gif",
@@ -7686,7 +7696,10 @@
           "type": "number",
           "required": false,
           "hint": "По умолчанию: 8",
-          "apiDefault": 8
+          "apiDefault": 8,
+          "options": [
+            8
+          ]
         },
         {
           "key": "aspect_ratio",
@@ -7798,7 +7811,11 @@
           "key": "duration",
           "label": "Длительность, сек.",
           "type": "number",
-          "required": false
+          "required": false,
+          "options": [
+            8
+          ],
+          "apiDefault": 8
         },
         {
           "key": "aspect_ratio",
@@ -7811,29 +7828,6 @@
           ]
         },
         {
-          "key": "generation_type",
-          "label": "generation_type",
-          "type": "string",
-          "required": false
-        },
-        {
-          "key": "image_urls",
-          "label": "Изображения",
-          "type": "files",
-          "required": false,
-          "schema": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "uploadToApimart": true,
-          "accept": "image/png,image/jpeg,image/webp,image/gif",
-          "maxSizeMb": 20,
-          "scalar": false,
-          "maxFiles": 3
-        },
-        {
           "key": "resolution",
           "label": "Разрешение",
           "type": "string",
@@ -7842,21 +7836,14 @@
             "720p",
             "1080p",
             "4k"
-          ]
+          ],
+          "apiDefault": "720p"
         },
         {
           "key": "enable_gif",
           "label": "enable_gif",
           "type": "boolean",
           "required": false
-        },
-        {
-          "key": "official_fallback",
-          "label": "official_fallback",
-          "type": "boolean",
-          "required": false,
-          "hint": "По умолчанию: false",
-          "apiDefault": false
         }
       ]
     },
@@ -7869,7 +7856,11 @@
           "key": "duration",
           "label": "Длительность, сек.",
           "type": "number",
-          "required": false
+          "required": false,
+          "options": [
+            8
+          ],
+          "apiDefault": 8
         },
         {
           "key": "aspect_ratio",
@@ -7882,29 +7873,6 @@
           ]
         },
         {
-          "key": "generation_type",
-          "label": "generation_type",
-          "type": "string",
-          "required": false
-        },
-        {
-          "key": "image_urls",
-          "label": "Изображения",
-          "type": "files",
-          "required": false,
-          "schema": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "uploadToApimart": true,
-          "accept": "image/png,image/jpeg,image/webp,image/gif",
-          "maxSizeMb": 20,
-          "scalar": false,
-          "maxFiles": 3
-        },
-        {
           "key": "resolution",
           "label": "Разрешение",
           "type": "string",
@@ -7913,21 +7881,14 @@
             "720p",
             "1080p",
             "4k"
-          ]
+          ],
+          "apiDefault": "720p"
         },
         {
           "key": "enable_gif",
           "label": "enable_gif",
           "type": "boolean",
           "required": false
-        },
-        {
-          "key": "official_fallback",
-          "label": "official_fallback",
-          "type": "boolean",
-          "required": false,
-          "hint": "По умолчанию: false",
-          "apiDefault": false
         }
       ]
     },
@@ -7940,7 +7901,11 @@
           "key": "duration",
           "label": "Длительность, сек.",
           "type": "number",
-          "required": false
+          "required": false,
+          "options": [
+            8
+          ],
+          "apiDefault": 8
         },
         {
           "key": "aspect_ratio",
@@ -7984,7 +7949,8 @@
             "720p",
             "1080p",
             "4k"
-          ]
+          ],
+          "apiDefault": "720p"
         },
         {
           "key": "enable_gif",
@@ -8011,7 +7977,11 @@
           "key": "duration",
           "label": "Длительность, сек.",
           "type": "number",
-          "required": false
+          "required": false,
+          "options": [
+            8
+          ],
+          "apiDefault": 8
         },
         {
           "key": "aspect_ratio",
@@ -8055,7 +8025,8 @@
             "720p",
             "1080p",
             "4k"
-          ]
+          ],
+          "apiDefault": "720p"
         },
         {
           "key": "enable_gif",
@@ -8090,7 +8061,10 @@
           "type": "number",
           "required": false,
           "hint": "По умолчанию: 8",
-          "apiDefault": 8
+          "apiDefault": 8,
+          "options": [
+            8
+          ]
         },
         {
           "key": "aspect_ratio",

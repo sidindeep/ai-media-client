@@ -4,7 +4,7 @@ const { appendGenerationEvent } = require('./generation-journal');
 const { transaction } = require('../database/database');
 const wallet = require('../billing/wallet');
 const { defineProvider } = require('../providers/contract');
-const { simpleRates, estimate, usedCost, mediaEstimate, unavailableMediaReason } = require('../providers/apimart/pricing');
+const { simpleRates, estimate, usedCost, mediaEstimate, unavailableMediaReason, publishedMediaTariff } = require('../providers/apimart/pricing');
 const { describeModel, MUSIC_MODELS, SPEECH_MODELS, MODEL_ID } = require('../providers/apimart/catalog');
 const { isDeepStrictEqual } = require('node:util');
 
@@ -61,7 +61,11 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
     const model = (await models()).find(item => item.id === raw.model);
     if (!model) throw Object.assign(new Error('Модель APIMart недоступна'), { status: 403 });
     const options = parameters(raw);
+    const invalidField = (model.fields || []).find(field => options[field.key] != null && field.options?.length
+      && !field.options.some(option => String(option).toLowerCase() === String(options[field.key]).toLowerCase()));
     if (model.kind === 'text') {
+      if (invalidField) return { status: 'unavailable', credits: null, reason: 'unsupported_parameters',
+        message: `Значение ${invalidField.key} не поддерживается APIMart` };
       const tariff = await rates(raw.model, fresh);
       if (!tariff) return { status: 'unavailable', credits: null, reason: 'unsupported_tariff',
         message: 'Провайдер не вернул поддерживаемый текстовый тариф для этого запроса' };
@@ -69,9 +73,13 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
       return { status: 'estimated', ...priced, credits: creditUnits(priced.nativeCredits) / 1000 };
     }
     const published = await tariff(raw.model, fresh);
+    const publishedTariff = publishedMediaTariff(published, model);
+    if (invalidField) return { status: 'unavailable', credits: null, publishedTariff,
+      reason: 'unsupported_parameters', message: `Значение ${invalidField.key} не поддерживается APIMart` };
     const mediaQuote = mediaEstimate(published, model, options);
-    return mediaQuote ? { ...mediaQuote, credits: creditUnits(mediaQuote.nativeCredits) / 1000 }
-      : { status: 'unavailable', credits: null, reason: 'unsupported_tariff', message: unavailableMediaReason(published, model, options) };
+    return mediaQuote ? { ...mediaQuote, publishedTariff, credits: creditUnits(mediaQuote.nativeCredits) / 1000 }
+      : { status: 'unavailable', credits: null, publishedTariff,
+        reason: 'unsupported_tariff', message: unavailableMediaReason(published, model, options) };
   }
   async function status() {
     const result = await client.balance();

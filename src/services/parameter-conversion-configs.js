@@ -1,7 +1,7 @@
 const seed = require('../../config/parameter-conversions.json');
 const compatibility = require('../../config/cost-routing-compatibility.json');
 const sharedModels = require('../../config/service-models-v2.json').models;
-const kieModels = require('../kie-models.json');
+const { models: kieModels } = require('../catalog');
 const apimartModels = require('../../config/apimart-schemas.json').models;
 const { transaction } = require('../database/database');
 
@@ -39,7 +39,8 @@ function buildSeedDocument() {
       if (matching.length === 1) fields[field.key] = matching[0].key;
     }
     return { kie: pair.kie, apimart: pair.apimart, kind: pair.kind,
-      mapping: { fields, constants: pair.mapping?.constants || {}, values: override.values || {}, omitWhen: seed.omitWhen } };
+      mapping: { fields, constants: pair.mapping?.constants || {}, values: override.values || {},
+        omitWhen: seed.omitWhen } };
   });
   return { version: seed.version, providers: { kie, apimart }, pairs };
 }
@@ -61,8 +62,11 @@ async function ensureCurrentParameterConversionConfig(pool) {
     const current = await client.query('SELECT id FROM media_parameter_conversion_configs WHERE is_current');
     await client.query(`INSERT INTO media_parameter_conversion_configs(id,source_version,document)
       VALUES($1,$2,$3::jsonb) ON CONFLICT(id) DO NOTHING`, [configId, seed.version, JSON.stringify(document)]);
-    if (!current.rows.length) await client.query(`UPDATE media_parameter_conversion_configs
-      SET is_current=true,activated_at=now() WHERE id=$1`, [configId]);
+    if (!current.rows.length || seed.replaces?.includes(current.rows[0].id)) {
+      await client.query('UPDATE media_parameter_conversion_configs SET is_current=false WHERE is_current');
+      await client.query(`UPDATE media_parameter_conversion_configs
+        SET is_current=true,activated_at=now() WHERE id=$1`, [configId]);
+    }
     return current.rows[0]?.id || configId;
   });
 }

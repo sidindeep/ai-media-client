@@ -190,10 +190,12 @@ function fallbackQuote(model, input) {
 function checkedInput(model, input) {
   if (!model || model.providerId !== 'kie') throw new Error('Модель Kie не найдена');
   input = normalizePricingInput(model, input);
-  // The shared Veo page publishes a flat per-video rate without a duration
-  // dimension. Its verified estimate covers the 8-second request only.
-  if (model.adapter === 'veo' && Number(input.duration ?? 8) !== 8) {
-    throw new Error('Цена выбранной длительности Kie ещё не определена');
+  // The published Veo rate is per video, without a duration tier. Valid
+  // durations share that fixed rate; schema validation rejects other values.
+  const durations = model.inputSchema?.properties?.duration?.enum;
+  if (input.duration != null && Array.isArray(durations) && durations.length
+    && !durations.some(value => String(value) === String(input.duration))) {
+    throw new Error('Выбранная длительность не поддерживается моделью Kie');
   }
   return input;
 }

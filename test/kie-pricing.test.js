@@ -79,7 +79,12 @@ test('Veo 3.1 shared pricing page resolves the exact mode, tier and resolution',
     assert.equal(quoteKie(model, input, { rows }).credits, prices[tier][mode], model.id);
     assert.equal(quoteKie(model, { ...input, resolution: '1080p' }, { rows }).credits, prices[tier][mode] + 5, model.id);
     assert.throws(() => quoteKie(model, { ...input, resolution: '4K' }, { rows }), /параметров/, model.id);
-    assert.throws(() => quoteKie(model, { ...input, duration: 4 }, { rows }), /длительности/, model.id);
+    if (model.inputSchema.properties.duration.enum.includes(4)) {
+      assert.equal(quoteKie(model, { ...input, duration: 4 }, { rows }).credits, prices[tier][mode], model.id);
+    } else {
+      assert.throws(() => quoteKie(model, { ...input, duration: 4 }, { rows }), /длительность/, model.id);
+    }
+    assert.throws(() => quoteKie(model, { ...input, duration: 100 }, { rows }), /длительность/, model.id);
   }
 });
 

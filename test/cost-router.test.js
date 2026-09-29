@@ -4,7 +4,7 @@ const { createCostRouter, normalizedRequest } = require('../src/services/cost-ro
 const compatibility = require('../config/cost-routing-compatibility.json');
 const { buildSeedDocument } = require('../src/services/parameter-conversion-configs');
 const sharedModels = require('../config/service-models-v2.json').models;
-const kieCatalog = require('../src/kie-models.json');
+const kieCatalog = require('../src/catalog').models;
 
 const user = { id: '11111111-1111-4111-8111-111111111111', role: 'admin' };
 const requestId = '22222222-2222-4222-8222-222222222222';
@@ -12,12 +12,13 @@ const request = { requestId, modelId: 'kie:gpt-image-2-text-to-image',
   input: { prompt: 'A red apple', aspect_ratio: '1:1', resolution: '1K', background: 'opaque' }, projectId: null, chatId: null };
 
 function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
-  conversions = buildSeedDocument() } = {}) {
+  conversions = buildSeedDocument(), apimartPublishedTariff = null } = {}) {
   const rows = new Map(), sent = [], balanceAccounts = [];
   const scoped = {
     configured: () => true,
     catalog: () => ({ models: [{ id: 'kie:gpt-image-2-text-to-image' }, { id: 'kie:nano-banana-pro' },
-      { id: 'kie:flux-2/pro-text-to-image' }, { id: 'kie:seedance-2.5' }] }),
+      { id: 'kie:flux-2/pro-text-to-image' }, { id: 'kie:seedance-2.5' },
+      { id: 'kie:veo3_lite:TEXT_2_VIDEO' }] }),
     providerBalance: async accountId => { balanceAccounts.push(accountId); return 100; },
     providerCostQuote: async () => {
       if (kieUnits === null) throw new Error('Kie tariff unavailable');
@@ -32,10 +33,12 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
       require('../src/providers/apimart/catalog').describeModel({ id: 'gemini-3-pro-image-preview', category: 'image' }),
       { id: 'gemini-3.1-flash-lite-image' },
       { id: 'flux-2-pro', fields: [{ key: 'size', options: ['1:1'] }, { key: 'resolution', options: ['1K'] }, { key: 'n' }] },
-      { id: 'seedance-2.5' }, require('../src/providers/apimart/catalog').describeModel({ id: 'seedream-5-0-pro', category: 'image' })],
+      { id: 'seedance-2.5' }, require('../src/providers/apimart/catalog').describeModel({ id: 'seedream-5-0-pro', category: 'image' }),
+      require('../src/providers/apimart/catalog').describeModel({ id: 'veo3.1-lite', category: 'video' })],
     status: async () => ({ balance: { amount: 100 } }),
-    quote: async () => apimartUsd === null ? { status: 'unavailable' }
-      : { status: 'estimated', amountUsd: apimartUsd, nativeCredits: apimartUsd * 10, credits: apimartUsd * 10 },
+    quote: async () => apimartUsd === null ? { status: 'unavailable', publishedTariff: apimartPublishedTariff }
+      : { status: 'estimated', amountUsd: apimartUsd, nativeCredits: apimartUsd * 10,
+        credits: apimartUsd * 10, publishedTariff: apimartPublishedTariff },
     submit: async (_account, args) => { sent.push({ providerId: 'apimart', args }); return { id: requestId, providerId: 'apimart' }; },
   };
   const pool = { query: async (sql, params) => {
@@ -64,6 +67,24 @@ test('active conversion document controls the parameters used for APIMart pricin
   const priced = await fixture({ conversions }).router.quote(user, request);
   assert.equal(priced.offers[1].parameters.resolution, '2k');
   assert.equal(priced.offers[1].conversionVersion, 'db-updated');
+});
+
+test('full Kie catalog routes through provider schema constraints', async () => {
+  const modelId = 'kie:veo3_lite:TEXT_2_VIDEO';
+  const base = { ...request, modelId, input: { prompt: 'A tree', aspect_ratio: '16:9',
+    resolution: '720p', duration: 8, enableTranslation: false } };
+  const eight = await fixture().router.quote(user, base);
+  assert.equal(eight.offers[1].modelId, 'veo3.1-lite');
+  assert.deepEqual(eight.offers[1].parameters, { aspect_ratio: '16:9', resolution: '720p', duration: 8 });
+  const four = await fixture({ apimartPublishedTariff: '720P: $0.07 / запрос' }).router.quote(user,
+    { ...base, input: { ...base.input, duration: 4 } });
+  assert.equal(four.selected.providerId, 'kie');
+  assert.match(four.offers[1].reason, /Значение duration/);
+  assert.equal(four.offers[1].publishedTariff, '720P: $0.07 / запрос');
+  const source = await fixture().router.quote(user, { ...base, modelId: 'kie:veo3_lite:REFERENCE_2_VIDEO',
+    input: { ...base.input, imageUrls: ['content:55555555-5555-4555-8555-555555555555'] } });
+  assert.equal(source.offers[1].unavailable, true);
+  assert.match(source.offers[1].reason, /imageUrls/);
 });
 
 test('auto route compares the whole Kie cost with APIMart USD and chooses the cheaper route', async () => {

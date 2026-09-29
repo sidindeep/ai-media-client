@@ -120,6 +120,7 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
           const parameters = apimartParameters(request, route, model);
           const cost = await apimart.quote({ model: route.modelId, prompt: request.input.prompt || '',
             parameters }, { fresh });
+          offer = { providerId: 'apimart', modelId: route.modelId, priority, publishedTariff: cost.publishedTariff };
           if (cost.status !== 'estimated' || !Number.isFinite(cost.amountUsd) || cost.amountUsd <= 0) {
             throw new Error(cost.message || `Цена APIMart недоступна: ${cost.reason || 'провайдер не вернул тариф'}`);
           }
@@ -129,6 +130,7 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
             costUsd: cost.amountUsd, nativeCredits: cost.nativeCredits,
             providerCredits: cost.nativeCredits, usdPerProviderCredit: cost.amountUsd / cost.nativeCredits,
             credits: cost.credits, warning: cost.warning,
+            publishedTariff: cost.publishedTariff,
             parameters, source: 'apimart-pricing', tariffVersion: 'live', costVersion: routingPolicy.version,
             conversionVersion: request.conversionVersion };
           if (wallet.balance < cost.credits) return { ...offer, unavailable: true, reason: 'Недостаточно кредитов сервиса' };
@@ -140,6 +142,13 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
         }
         throw new Error('Провайдер не подключён к выбору');
       } catch (error) {
+        if (route.providerId === 'apimart' && route.modelId && apimart && !offer?.publishedTariff) {
+          try {
+            const tariff = await apimart.quote({ model: route.modelId, prompt: request.input.prompt || '',
+              parameters: {} }, { fresh });
+            if (tariff.publishedTariff) offer = { ...offer, publishedTariff: tariff.publishedTariff };
+          } catch { /* Keep the original route failure. */ }
+        }
         return { ...offer, providerId: route.providerId, modelId: route.modelId, priority,
           unavailable: true, reason: error.message || 'Цена недоступна' };
       }

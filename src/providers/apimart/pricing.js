@@ -36,6 +36,32 @@ function usedCost(rates, usage) {
   return cost(rates, input, output);
 }
 
+function publishedMediaTariff(payload, model) {
+  const data = payload?.data;
+  if (!data || !['image', 'video'].includes(model.kind)) return null;
+  const unit = model.kind === 'video' && data.billing_type === 'per_second' ? 'с'
+    : model.kind === 'video' ? 'запрос' : 'изображение';
+  const lines = [];
+  const rates = data.resolution_paid_prices;
+  const format = value => Number(value).toString();
+  const baseResolution = String(data.default_resolution
+    ?? model.fields?.find(field => field.key === 'resolution')?.apiDefault ?? '').toUpperCase();
+  if (Number.isFinite(data.paid_price) && data.paid_price > 0
+    && (!rates || !Object.keys(rates).length || baseResolution && !Number.isFinite(rates[baseResolution]))) {
+    lines.push(`${baseResolution || 'Базовая цена'}: $${format(data.paid_price)} / ${unit}`);
+  }
+  for (const [tier, amount] of Object.entries(rates || {})) {
+    if (Number.isFinite(amount) && amount > 0) lines.push(`${tier}: $${format(amount)} / ${unit}`);
+  }
+  if (!lines.length && data.billing_type === 'per_second') {
+    for (const [tier, amount] of Object.entries(data.billing_tier_paid_prices || {})) {
+      if (!/^token(?:-|$)/i.test(tier) && Number.isFinite(amount) && amount > 0)
+        lines.push(`${tier}: $${format(amount)} / ${unit}`);
+    }
+  }
+  return lines.length ? lines.join('\n') : null;
+}
+
 function mediaEstimate(payload, model, options = {}) {
   const data = payload?.data;
   if (!data || model.kind === 'text') return null;
@@ -126,7 +152,10 @@ function mediaEstimate(payload, model, options = {}) {
     if (Number.isFinite(perSecond) && Number.isFinite(duration) && duration > 0 && duration <= 60) amountUsd = perSecond * duration;
   } else if (model.kind === 'video' && Number.isFinite(data.paid_price)) {
     const resolution = String(selected('resolution', '')).toUpperCase();
-    amountUsd = data.resolution_paid_prices?.[resolution] ?? data.paid_price;
+    const baseResolution = String(data.default_resolution
+      ?? model.fields?.find(field => field.key === 'resolution')?.apiDefault ?? '').toUpperCase();
+    amountUsd = data.resolution_paid_prices?.[resolution]
+      ?? (!resolution || resolution === baseResolution ? data.paid_price : null);
   }
   return Number.isFinite(amountUsd) && amountUsd >= 0
     ? { status: 'estimated', credits: null, amountUsd, nativeCredits: amountUsd * 10, ...(warning ? { warning } : {}) } : null;
@@ -148,4 +177,4 @@ function unavailableMediaReason(payload, model, options = {}) {
   return 'Провайдер не вернул поддерживаемый тариф для этой модели';
 }
 
-module.exports = { simpleRates, estimate, usedCost, mediaEstimate, unavailableMediaReason };
+module.exports = { simpleRates, estimate, usedCost, mediaEstimate, unavailableMediaReason, publishedMediaTariff };

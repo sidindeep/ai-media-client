@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import * as api from '../api/client';
-import type { ApimartCatalog, Catalog, Chat, CodexCatalog, RouterAiCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo } from '../types';
+import type { ApimartCatalog, Catalog, Chat, CodexCatalog, RouterAiCatalog, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, ServiceModelConfig, ServiceModelConfigSummary } from '../types';
 import { mediaFileValue, normalizeMediaInput } from '../domain/media-fields';
 import { t } from '../i18n';
 
@@ -24,6 +24,27 @@ export const useStudioStore = defineStore('studio', () => {
   const codexCatalog = ref<CodexCatalog | null>(null);
   const routerAiCatalog = ref<RouterAiCatalog | null>(null);
   const apimartCatalog = ref<ApimartCatalog | null>(null);
+  const serviceModelConfig = ref<ServiceModelConfig | null>(null);
+  const serviceModelConfigs = ref<ServiceModelConfigSummary[]>([]);
+  const serviceModelConfigLoading = ref(false);
+  const serviceModelConfigError = ref(false);
+  const serviceModelChoices = computed(() => {
+    const latest = new Map<string, ServiceModelConfigSummary>();
+    for (const item of serviceModelConfigs.value) if (item.variant === 'shared') latest.set(item.variant, item);
+    return [...latest.values()];
+  });
+  async function selectServiceModelConfig(id: string) {
+    if (serviceModelConfigLoading.value || serviceModelConfig.value?.id === id) return;
+    serviceModelConfigLoading.value = true;
+    serviceModelConfigError.value = false;
+    try {
+      serviceModelConfig.value = await api.getServiceModelConfigById(id);
+    } catch {
+      serviceModelConfigError.value = true;
+    } finally {
+      serviceModelConfigLoading.value = false;
+    }
+  }
   const release = ref<ReleaseInfo | null>(null);
   const history = ref<GenerationRecord[]>([]);
   const historyNext = ref<string | null>(null);
@@ -592,6 +613,8 @@ export const useStudioStore = defineStore('studio', () => {
       }
     }
     autoRouting.value = true;
+    const shared = serviceModelChoices.value.find(item => item.variant === 'shared');
+    if (shared && serviceModelConfig.value?.id !== shared.id) void selectServiceModelConfig(shared.id);
   }
 
   function setAutoModel(value: string) {
@@ -751,7 +774,12 @@ export const useStudioStore = defineStore('studio', () => {
     chatHistoryNext.value = {}; chatHistoryLoaded.value = {}; chatHistoryError.value = false;
     if (!dataLoadStartedAt) dataLoadStartedAt = performance.now();
     try {
-      [catalog.value, codexCatalog.value, routerAiCatalog.value, apimartCatalog.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), isAdmin.value ? api.getApimartCatalog().catch(() => null) : Promise.resolve(null), api.getRelease().catch(() => null), api.listGenerationPresets()]);
+      [catalog.value, codexCatalog.value, routerAiCatalog.value, apimartCatalog.value, serviceModelConfig.value, serviceModelConfigs.value, release.value, presets.value] = await Promise.all([api.getCatalog().catch(() => null), api.getCodexCatalog().catch(() => null), api.getRouterAiCatalog().catch(() => null), isAdmin.value ? api.getApimartCatalog().catch(() => null) : Promise.resolve(null), api.getServiceModelConfig().catch(() => null), api.listServiceModelConfigs().catch(() => []), api.getRelease().catch(() => null), api.listGenerationPresets()]);
+      const sharedMenu = serviceModelChoices.value[0];
+      if (sharedMenu && serviceModelConfig.value?.id !== sharedMenu.id) {
+        serviceModelConfig.value = await api.getServiceModelConfigById(sharedMenu.id).catch(() => null);
+        serviceModelConfigError.value = !serviceModelConfig.value;
+      }
       const defaults = codexCatalog.value?.uiDefaults;
       const models = codexCatalog.value?.models || [];
       codexModel.value = models.find(model => model.id === defaults?.model)?.id
@@ -1031,7 +1059,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    catalog, codexCatalog, routerAiCatalog, apimartCatalog, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
+    catalog, codexCatalog, routerAiCatalog, apimartCatalog, serviceModelConfig, serviceModelConfigs, serviceModelChoices, serviceModelConfigLoading, serviceModelConfigError, selectServiceModelConfig, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, autoRouting, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setAutoProvider, setAutoModel, setSelectedModel, setModelAccess,
     codexModel, routerAiModel, routerAiModels, currentRouterAiModel, apimartModel, apimartModels, currentApimartModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,

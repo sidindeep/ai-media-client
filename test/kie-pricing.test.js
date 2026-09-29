@@ -9,6 +9,22 @@ const rows = [
   { modelDescription: 'Black Forest Labs flux-2 pro, image to image, 1.0s-2K', creditPrice: '7.0', creditUnit: 'per image', anchor: 'https://kie.ai/flux-2?model=flux-2%2Fpro-image-to-image' },
 ];
 
+test('pricing defaults apply across models without overriding explicit inputs or sequential counts', () => {
+  const { normalizePricingInput } = require('../src/billing/normalize-request');
+  const model = { fields: [{ key: 'resolution', schema: { default: '1K' } }, { key: 'audio', default: false }] };
+  assert.deepEqual(normalizePricingInput(model, {}), { resolution: '1K', audio: false });
+  assert.deepEqual(normalizePricingInput(model, { resolution: '2K', audio: true }), { resolution: '2K', audio: true });
+  assert.equal(normalizePricingInput({ apiModel: 'wan/2-7-image', fields: [{ key: 'n', default: 4 }] }, { enable_sequential: true }).n, 12);
+});
+
+test('Kie video audio switches select their published tariff for every model', () => {
+  const model = { id: 'kie:sample-video', apiModel: 'sample-video', providerId: 'kie' };
+  const rows = [false, true].map(audio => ({ modelDescription: `Video, 720p (${audio ? 'with' : 'no'} audio)`,
+    creditPrice: audio ? '10' : '7', creditUnit: 'per second', anchor: 'https://kie.ai/sample-video' }));
+  assert.equal(quoteKie(model, { duration: 5, generate_audio_switch: false }, { rows }).credits, 35);
+  assert.equal(quoteKie(model, { duration: 5, generate_audio_switch: true }, { rows }).credits, 50);
+});
+
 test('Kie dynamic pricing resolves exact anchor model and selected resolution', () => {
   const tariffData = { fetchedAt: '2026-09-20T00:00:00Z', rows };
   assert.equal(modelIdFromAnchor(rows[0].anchor), 'flux-2/pro-image-to-image');

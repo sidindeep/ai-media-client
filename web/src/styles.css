@@ -799,3 +799,17 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .schema-field textarea { min-height: 76px; font-size: 13px; line-height: 1.4; }
 .schema-field small, .task-reference-field small { color: #aaa6bc; font-size: 11px; }
 .schema-field button { justify-self: start; padding: 6px 10px; border: 1px solid #514b68; border-radius: 8px; color: #e8e3f5; background: #29283b; }
+
+/* Two service catalog menus inside the model picker. */
+.model-catalog-variants { display: grid; flex: 0 0 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px 10px; border-bottom: 1px solid #322d2d; background: #191515; }
+.model-catalog-variants button { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border: 1px solid #39313a; border-radius: 9px; color: #c5bcc9; background: #241f25; cursor: pointer; }
+.model-catalog-variants button:hover:not(:disabled), .model-catalog-variants button:focus-visible { border-color: #806be0; color: #fff; }
+.model-catalog-variants button.active { border-color: #806be0; color: #fff; background: #34294c; }
+.model-catalog-variants button:disabled { cursor: wait; opacity: .7; }
+.model-catalog-variants strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.model-catalog-variants small { font-size: 10px; opacity: .75; }
+.model-catalog-status { margin: 0; padding: 6px 12px; border-bottom: 1px solid #322d2d; color: #c8bed7; font-size: 11px; }
+:root[data-theme='light'] .model-catalog-variants { border-color: #ded9e1; background: #f7f4f5; }
+:root[data-theme='light'] .model-catalog-variants button { border-color: #d8d0df; color: #514958; background: #fff; }
+:root[data-theme='light'] .model-catalog-variants button.active { border-color: #806be0; color: #44326b; background: #eee7fa; }
+:root[data-theme='light'] .model-catalog-status { border-color: #ded9e1; color: #5c5268; }

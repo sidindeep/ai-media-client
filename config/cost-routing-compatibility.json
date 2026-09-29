@@ -21,6 +21,7 @@
     { "kie": "kie:seedream/4.5-edit", "apimart": "seedream-4-5", "kind": "image" },
     { "kie": "kie:seedream/5-lite-text-to-image", "apimart": "seedream-5-0-lite", "kind": "image" },
     { "kie": "kie:seedream/5-pro-text-to-image", "apimart": "seedream-5-0-pro", "kind": "image" },
+    { "kie": "kie:seedream/5-pro-layer-decomposition", "apimart": "seedream-5-0-pro", "kind": "image", "mapping": { "fields": { "image_url": "image_urls" }, "constants": { "layer_decomposition": true } } },
     { "kie": "kie:grok-imagine-image-2-0/text-to-image", "apimart": "grok-imagine-image-2.0", "kind": "image" },
     { "kie": "kie:wan/2-7-image", "apimart": "wan2.7-image", "kind": "image" },
     { "kie": "kie:wan/2-7-image-pro", "apimart": "wan2.7-image-pro", "kind": "image" },

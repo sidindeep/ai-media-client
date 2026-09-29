@@ -1,0 +1,857 @@
+{
+  "version": "2026-09-29T13:32:14.678Z",
+  "variant": "shared",
+  "title": "Наш сервис 2",
+  "baseVersion": "2026-09-29T13:32:14.678Z",
+  "priceSnapshotAt": "2026-09-29",
+  "models": [
+    {
+      "kind": "text",
+      "apimart": "claude-fable-5",
+      "kie": "kie:claude-fable-5",
+      "name": "Claude Fable 5",
+      "apimartPrice": "вход: $0.000008 / токен ($8 / 1 млн)\nвыход: $0.00004 / токен ($40 / 1 млн)\nкэшированный вход: $0.0000008 / токен ($0.8 / 1 млн)\nзапись кэша 5 мин: $0.00001 / токен ($10 / 1 млн)\nзапись кэша 1 ч: $0.000016 / токен ($16 / 1 млн)",
+      "kiePrice": "chat, Output: 0.004 кредита / токен (4000 / 1 млн)\nchat, Input: 0.0008 кредита / токен (800 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-opus-4-6",
+      "kie": "kie:claude-opus-4-6",
+      "name": "Claude Opus 4 6",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.000008 / токен ($8 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nзапись кэша 5 мин: $0.000005 / токен ($5 / 1 млн)",
+      "kiePrice": "chat, Output: 0.00143 кредита / токен (1430 / 1 млн)\nchat, Input: 0.000285 кредита / токен (285 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-opus-4-7",
+      "kie": "kie:claude-opus-4-7",
+      "name": "Claude Opus 4 7",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.00002 / токен ($20 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nзапись кэша 5 мин: $0.000005 / токен ($5 / 1 млн)\nзапись кэша 1 ч: $0.000008 / токен ($8 / 1 млн)",
+      "kiePrice": "chat, Input: 0.000285 кредита / токен (285 / 1 млн)\nchat, Output: 0.00143 кредита / токен (1430 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-opus-4-8",
+      "kie": "kie:claude-opus-4-8",
+      "name": "Claude Opus 4 8",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.00002 / токен ($20 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nзапись кэша 5 мин: $0.000005 / токен ($5 / 1 млн)\nзапись кэша 1 ч: $0.000008 / токен ($8 / 1 млн)",
+      "kiePrice": "chat, Output: 0.002 кредита / токен (2000 / 1 млн)\nchat, Input: 0.0004 кредита / токен (400 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-opus-5",
+      "kie": "kie:claude-opus-5",
+      "name": "Claude Opus 5",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.00002 / токен ($20 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nзапись кэша: $0 / токен ($0 / 1 млн)\nзапись кэша 5 мин: $0.000005 / токен ($5 / 1 млн)\nзапись кэша 1 ч: $0.000008 / токен ($8 / 1 млн)",
+      "kiePrice": "chat, Output: 0.002 кредита / токен (2000 / 1 млн)\nchat, Input: 0.0004 кредита / токен (400 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-opus-5-5",
+      "kie": "kie:claude-opus-5-5",
+      "name": "Claude Opus 5 5",
+      "apimartPrice": "вход: $0.0000032 / токен ($3.2 / 1 млн)\nвыход: $0.000016 / токен ($16 / 1 млн)\nкэшированный вход: $0.00000016 / токен ($0.16 / 1 млн)\nзапись кэша: $0 / токен ($0 / 1 млн)\nзапись кэша 5 мин: $0.000004 / токен ($4 / 1 млн)\nзапись кэша 1 ч: $0.0000064 / токен ($6.4 / 1 млн)",
+      "kiePrice": "chat, Input: 0.00032 кредита / токен (320 / 1 млн)\nchat, claude-opus-5: 0.0016 кредита / токен (1600 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-sonnet-4-6",
+      "kie": "kie:claude-sonnet-4-6",
+      "name": "Claude Sonnet 4 6",
+      "apimartPrice": "вход: $0.0000024 / токен ($2.4 / 1 млн)\nвыход: $0.000012 / токен ($12 / 1 млн)\nкэшированный вход: $0.00000024 / токен ($0.24 / 1 млн)\nзапись кэша 5 мин: $0.000003 / токен ($3 / 1 млн)\nзапись кэша 1 ч: $0.0000048 / токен ($4.8 / 1 млн)",
+      "kiePrice": "chat, Output: 0.000855 кредита / токен (855 / 1 млн)\nchat, Input: 0.00017 кредита / токен (170 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "claude-sonnet-5",
+      "kie": "kie:claude-sonnet-5",
+      "name": "Claude Sonnet 5",
+      "apimartPrice": "вход: $0.0000016 / токен ($1.6 / 1 млн)\nвыход: $0.000008 / токен ($8 / 1 млн)\nкэшированный вход: $0.00000016 / токен ($0.16 / 1 млн)\nзапись кэша 5 мин: $0.000002 / токен ($2 / 1 млн)\nзапись кэша 1 ч: $0.0000032 / токен ($3.2 / 1 млн)",
+      "kiePrice": "chat, Output: 0.000855 кредита / токен (855 / 1 млн)\nchat, Input: 0.00017 кредита / токен (170 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "deepseek-v4.1-flash",
+      "kie": "kie:deepseek-v4-1-flash",
+      "name": "DeepSeek V4.1 Flash",
+      "apimartPrice": "вход: $0.000000228571 / токен ($0.2285712 / 1 млн)\nвыход: $0.000000914286 / токен ($0.9142856 / 1 млн)\nкэшированный вход: $0.000000022857 / токен ($0.0228568 / 1 млн)",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "text",
+      "apimart": "gemini-2.5-flash",
+      "kie": "kie:gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "apimartPrice": "вход: $0.00000024 / токен ($0.24 / 1 млн)\nвыход: $0.00000199992 / токен ($1.99992 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.00015 кредита / токен (150 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gemini-2.5-pro",
+      "kie": "kie:gemini-2.5-pro",
+      "name": "Gemini 2.5 Pro",
+      "apimartPrice": "вход: $0.000001 / токен ($1 / 1 млн)\nвыход: $0.000008 / токен ($8 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.0006 кредита / токен (600 / 1 млн)\nChat, Input: 0.000076 кредита / токен (76 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gemini-3.5-flash",
+      "kie": "kie:gemini-3-5-flash",
+      "name": "Gemini 3.5 Flash",
+      "apimartPrice": "вход: $0.0000012 / токен ($1.2 / 1 млн)\nвыход: $0.0000072 / токен ($7.2 / 1 млн)",
+      "kiePrice": "chat, output: 0.00054 кредита / токен (540 / 1 млн)\nchat, input: 0.00009 кредита / токен (90 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gemini-3.6-flash",
+      "kie": "kie:gemini-3-6-flash",
+      "name": "Gemini 3.6 Flash",
+      "apimartPrice": "вход: $0.0000012 / токен ($1.2 / 1 млн)\nвыход: $0.000006 / токен ($6 / 1 млн)\nкэшированный вход: $0.00000012 / токен ($0.12 / 1 млн)",
+      "kiePrice": "chat, output: 0.000225 кредита / токен (225 / 1 млн)\nchat, input: 0.000045 кредита / токен (45 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gemini-3.7-flash",
+      "kie": "kie:gemini-3-7-flash",
+      "name": "Gemini 3.7 Flash",
+      "apimartPrice": "вход: $0.0000006 / токен ($0.6 / 1 млн)\nвыход: $0.000003 / токен ($3 / 1 млн)\nкэшированный вход: $0.00000006 / токен ($0.06 / 1 млн)",
+      "kiePrice": "chat, output: 0.000225 кредита / токен (225 / 1 млн)\nchat, input: 0.000045 кредита / токен (45 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gemini-3.8-flash",
+      "kie": "kie:gemini-3-8-flash",
+      "name": "Gemini 3.8 Flash",
+      "apimartPrice": "вход: $0.0000006 / токен ($0.6 / 1 млн)\nвыход: $0.000003 / токен ($3 / 1 млн)\nкэшированный вход: $0.00000006 / токен ($0.06 / 1 млн)",
+      "kiePrice": "chat, output: 0.000225 кредита / токен (225 / 1 млн)\nchat, input: 0.000045 кредита / токен (45 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5-codex",
+      "kie": "kie:gpt-5-codex",
+      "name": "GPT 5 Codex",
+      "apimartPrice": "вход: $0.000001 / токен ($1 / 1 млн)\nвыход: $0.000008 / токен ($8 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.0008 кредита / токен (800 / 1 млн)\nChat, Input: 0.0001 кредита / токен (100 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.1-codex",
+      "kie": "kie:gpt-5.1-codex",
+      "name": "GPT 5.1 Codex",
+      "apimartPrice": "вход: $0.000001 / токен ($1 / 1 млн)\nвыход: $0.000008 / токен ($8 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.0008 кредита / токен (800 / 1 млн)\nChat, Input: 0.0001 кредита / токен (100 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.2",
+      "kie": "kie:gpt-5-2",
+      "name": "GPT 5.2",
+      "apimartPrice": "вход: $0.0000014 / токен ($1.4 / 1 млн)\nвыход: $0.0000112 / токен ($11.2 / 1 млн)\nкэшированный вход: $0.00000014 / токен ($0.14 / 1 млн)",
+      "kiePrice": "Chat, Input: 0.0000875 кредита / токен (87.5 / 1 млн)\nChat, Output: 0.0007 кредита / токен (700 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.2-codex",
+      "kie": "kie:gpt-5.2-codex",
+      "name": "GPT 5.2 Codex",
+      "apimartPrice": "вход: $0.0000014 / токен ($1.4 / 1 млн)\nвыход: $0.0000112 / токен ($11.2 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.00112 кредита / токен (1120 / 1 млн)\nChat, Input: 0.00014 кредита / токен (140 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.3-codex",
+      "kie": "kie:gpt-5.3-codex",
+      "name": "GPT 5.3 Codex",
+      "apimartPrice": "вход: $0.0000014 / токен ($1.4 / 1 млн)\nвыход: $0.0000112 / токен ($11.2 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.00112 кредита / токен (1120 / 1 млн)\nChat, Input: 0.00014 кредита / токен (140 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.4",
+      "kie": "kie:gpt-5-4",
+      "name": "GPT 5.4",
+      "apimartPrice": "вход: $0.000002 / токен ($2 / 1 млн)\nвыход: $0.000012 / токен ($12 / 1 млн)\nкэшированный вход: $0.0000002 / токен ($0.2 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.000004 / токен ($4 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.000018 / токен ($18 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)",
+      "kiePrice": "Chat, Output: 0.00112 кредита / токен (1120 / 1 млн)\nChat, Input: 0.00014 кредита / токен (140 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.5",
+      "kie": "kie:gpt-5-5",
+      "name": "GPT 5.5",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.000024 / токен ($24 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.000008 / токен ($8 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.000036 / токен ($36 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.0000008 / токен ($0.8 / 1 млн)",
+      "kiePrice": "Chat, Cached Input: 0.000028 кредита / токен (28 / 1 млн)\nChat, Output: 0.00168 кредита / токен (1680 / 1 млн)\nChat, Input: 0.00028 кредита / токен (280 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.6-luna",
+      "kie": "kie:gpt-5-6-luna",
+      "name": "GPT 5.6 Luna",
+      "apimartPrice": "вход: $0.00000016 / токен ($0.16 / 1 млн)\nвыход: $0.00000096 / токен ($0.96 / 1 млн)\nкэшированный вход: $0.000000016 / токен ($0.016 / 1 млн)\nзапись кэша: $0.0000002 / токен ($0.2 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.00000032 / токен ($0.32 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.00000144 / токен ($1.44 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.000000032 / токен ($0.032 / 1 млн)",
+      "kiePrice": "chat, Cache Writes: 0.000014 кредита / токен (14 / 1 млн)\nchat, Output: 0.0000672 кредита / токен (67.2 / 1 млн)\nchat, Cached Input: 0.00000112 кредита / токен (1.12 / 1 млн)\nchat, Input: 0.0000112 кредита / токен (11.2 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.6-sol",
+      "kie": "kie:gpt-5-6-sol",
+      "name": "GPT 5.6 Sol",
+      "apimartPrice": "вход: $0.0000032 / токен ($3.2 / 1 млн)\nвыход: $0.000016 / токен ($16 / 1 млн)\nкэшированный вход: $0.00000032 / токен ($0.32 / 1 млн)\nзапись кэша: $0.000004 / токен ($4 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.0000064 / токен ($6.4 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.000024 / токен ($24 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.00000064 / токен ($0.64 / 1 млн)",
+      "kiePrice": "chat, Output: 0.00168 кредита / токен (1680 / 1 млн)\nchat,  Cache Writes: 0.00035 кредита / токен (350 / 1 млн)\nchat, Cached Input: 0.000028 кредита / токен (28 / 1 млн)\nchat, Input: 0.00028 кредита / токен (280 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-5.6-terra",
+      "kie": "kie:gpt-5-6-terra",
+      "name": "GPT 5.6 Terra",
+      "apimartPrice": "вход: $0.0000016 / токен ($1.6 / 1 млн)\nвыход: $0.0000096 / токен ($9.6 / 1 млн)\nкэшированный вход: $0.00000016 / токен ($0.16 / 1 млн)\nзапись кэша: $0.000002 / токен ($2 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.0000032 / токен ($3.2 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.0000144 / токен ($14.4 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.00000032 / токен ($0.32 / 1 млн)",
+      "kiePrice": "chat, Output: 0.000672 кредита / токен (672 / 1 млн)\nchat, Cache Writes: 0.00014 кредита / токен (140 / 1 млн)\nchat, Cached Input: 0.0000112 кредита / токен (11.2 / 1 млн)\nchat, Input: 0.000112 кредита / токен (112 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-6-astra",
+      "kie": "kie:gpt-6-astra",
+      "name": "GPT 6 Astra",
+      "apimartPrice": "вход: $0.000008 / токен ($8 / 1 млн)\nвыход: $0.00004 / токен ($40 / 1 млн)\nкэшированный вход: $0.0000008 / токен ($0.8 / 1 млн)\nзапись кэша: $0.00001 / токен ($10 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.000016 / токен ($16 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.00006 / токен ($60 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.0000016 / токен ($1.6 / 1 млн)",
+      "kiePrice": "chat, Input: 0.00056 кредита / токен (560 / 1 млн)\nchat, Cached Input: 0.000056 кредита / токен (56 / 1 млн)\nchat, Cache Writes: 0.0007 кредита / токен (700 / 1 млн)\nchat, Output: 0.0028 кредита / токен (2800 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-6-luna",
+      "kie": "kie:gpt-6-luna",
+      "name": "GPT 6 Luna",
+      "apimartPrice": "вход: $0.00000008 / токен ($0.08 / 1 млн)\nвыход: $0.0000004 / токен ($0.4 / 1 млн)\nкэшированный вход: $0.000000008 / токен ($0.008 / 1 млн)\nзапись кэша: $0.0000001 / токен ($0.1 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.00000016 / токен ($0.16 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.0000006 / токен ($0.6 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.000000016 / токен ($0.016 / 1 млн)",
+      "kiePrice": "chat, Input: 0.000006 кредита / токен (6 / 1 млн)\nchat, Output: 0.00003 кредита / токен (30 / 1 млн)\nchat, Cache Writes: 0.0000075 кредита / токен (7.5 / 1 млн)\nchat, Cached Input: 0.0000006 кредита / токен (0.6 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "gpt-6-sol",
+      "kie": "kie:gpt-6-sol",
+      "name": "GPT 6 Sol",
+      "apimartPrice": "вход: $0.0000016 / токен ($1.6 / 1 млн)\nвыход: $0.000008 / токен ($8 / 1 млн)\nкэшированный вход: $0.00000016 / токен ($0.16 / 1 млн)\nзапись кэша: $0.000002 / токен ($2 / 1 млн)\nсвыше 272000 входных токенов, вход: $0.0000032 / токен ($3.2 / 1 млн)\nсвыше 272000 входных токенов, выход: $0.000014 / токен ($14 / 1 млн)\nсвыше 272000 входных токенов, кэшированный вход: $0.00000032 / токен ($0.32 / 1 млн)",
+      "kiePrice": "chat, Input: 0.00012 кредита / токен (120 / 1 млн)\nchat, Output: 0.0006 кредита / токен (600 / 1 млн)\nchat, Cache Writes: 0.00015 кредита / токен (150 / 1 млн)\nchat, Cached Input: 0.000012 кредита / токен (12 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "grok-4.3",
+      "kie": "kie:grok-4-3",
+      "name": "Grok 4.3",
+      "apimartPrice": "вход: $0.000001 / токен ($1 / 1 млн)\nвыход: $0.000002 / токен ($2 / 1 млн)",
+      "kiePrice": "Chat, Cached Input: 0.000016 кредита / токен (16 / 1 млн)\nChat, Output: 0.0002 кредита / токен (200 / 1 млн)\nChat, Input: 0.0001 кредита / токен (100 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "grok-4.5",
+      "kie": "kie:grok-4-5",
+      "name": "Grok 4.5",
+      "apimartPrice": "вход: $0.0000016 / токен ($1.6 / 1 млн)\nвыход: $0.0000032 / токен ($3.2 / 1 млн)",
+      "kiePrice": "Chat, Cached Input: 24 кредитов / единицу тарифа\nChat, Output: 480 кредитов / единицу тарифа\nChat, Input: 160 кредитов / единицу тарифа"
+    },
+    {
+      "kind": "text",
+      "apimart": "grok-4.6",
+      "kie": "kie:grok-4-6",
+      "name": "Grok 4.6",
+      "apimartPrice": "вход: $0.0000016 / токен ($1.6 / 1 млн)\nвыход: $0.0000048 / токен ($4.8 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nсвыше 199999 входных токенов, вход: $0.0000032 / токен ($3.2 / 1 млн)\nсвыше 199999 входных токенов, выход: $0.0000096 / токен ($9.6 / 1 млн)\nсвыше 199999 входных токенов, кэшированный вход: $0.0000008 / токен ($0.8 / 1 млн)",
+      "kiePrice": "Chat, Input: 0.00016 кредита / токен (160 / 1 млн)\nChat, Output: 0.00048 кредита / токен (480 / 1 млн)\nChat, Cached Input: 0.00004 кредита / токен (40 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "grok-4.7",
+      "kie": "kie:grok-4-7",
+      "name": "Grok 4.7",
+      "apimartPrice": "вход: $0.0000016 / токен ($1.6 / 1 млн)\nвыход: $0.0000048 / токен ($4.8 / 1 млн)\nкэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)\nсвыше 199999 входных токенов, вход: $0.0000032 / токен ($3.2 / 1 млн)\nсвыше 199999 входных токенов, выход: $0.0000096 / токен ($9.6 / 1 млн)\nсвыше 199999 входных токенов, кэшированный вход: $0.0000008 / токен ($0.8 / 1 млн)",
+      "kiePrice": "Chat, Input: 0.00016 кредита / токен (160 / 1 млн)\nChat, Output: 0.00048 кредита / токен (480 / 1 млн)\nChat, Cached Input: 0.00004 кредита / токен (40 / 1 млн)"
+    },
+    {
+      "kind": "text",
+      "apimart": "kimi-k3",
+      "kie": "kie:kimi-k3",
+      "name": "Kimi K3",
+      "apimartPrice": "вход: $0.0000024 / токен ($2.4 / 1 млн)\nвыход: $0.000012 / токен ($12 / 1 млн)\nкэшированный вход: $0.00000024 / токен ($0.24 / 1 млн)",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "image",
+      "apimart": "flux-2-flex",
+      "kie": "kie:flux-2/flex-image-to-image",
+      "name": "FLUX 2 - Image to Image",
+      "apimartPrice": "input_image 1MP: $0.04 / запрос\ninput_image 2MP: $0.08 / запрос\ninput_image 3MP: $0.12 / запрос\ninput_image 4MP: $0.16 / запрос\nдоп. входное изображение: $0.04",
+      "kiePrice": "image to image, 1.0s-2K: 24 кредитов / изображение\nimage to image, 1.0s-1K: 14 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "flux-2-pro",
+      "kie": "kie:flux-2/pro-image-to-image",
+      "name": "FLUX 2 - Pro Image to Image",
+      "apimartPrice": "input_image 1MP: $0.012 / запрос\ninput_image 2MP: $0.024 / запрос\ninput_image 3MP: $0.036 / запрос\ninput_image 4MP: $0.048 / запрос\nдоп. входное изображение: $0.012",
+      "kiePrice": "image to image, 1.0s-2K: 7 кредитов / изображение\nimage to image, 1.0s-1K: 5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "flux-2-pro",
+      "kie": "kie:flux-2/pro-text-to-image",
+      "name": "FLUX 2 - Pro Text to Image",
+      "apimartPrice": "input_image 1MP: $0.012 / запрос\ninput_image 2MP: $0.024 / запрос\ninput_image 3MP: $0.036 / запрос\ninput_image 4MP: $0.048 / запрос\nдоп. входное изображение: $0.012",
+      "kiePrice": "text-to-image, 1.0s-2K: 7 кредитов / изображение\ntext-to-image, 1.0s-1K: 5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "flux-2-flex",
+      "kie": "kie:flux-2/flex-text-to-image",
+      "name": "FLUX 2 - Text to Image",
+      "apimartPrice": "input_image 1MP: $0.04 / запрос\ninput_image 2MP: $0.08 / запрос\ninput_image 3MP: $0.12 / запрос\ninput_image 4MP: $0.16 / запрос\nдоп. входное изображение: $0.04",
+      "kiePrice": "text to image, 1.0s-1K: 14 кредитов / изображение\ntext to image, 1.0s-2K: 24 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "flux-kontext-max",
+      "kie": "kie:flux-kontext-max",
+      "name": "Flux Kontext Max",
+      "apimartPrice": "$0.064 / изображение",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "image",
+      "apimart": "flux-kontext-pro",
+      "kie": "kie:flux-kontext-pro",
+      "name": "Flux Kontext Pro",
+      "apimartPrice": "$0.032 / изображение",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "image",
+      "apimart": "imagen-4.0-apimart",
+      "kie": "kie:google/imagen4",
+      "name": "Google - imagen4",
+      "apimartPrice": "$0.04 / изображение",
+      "kiePrice": "text-to-image, default: 8 кредитов / запрос"
+    },
+    {
+      "kind": "image",
+      "apimart": "gemini-2.5-flash-image-preview",
+      "kie": "kie:google/nano-banana",
+      "name": "Google - Nano Banana",
+      "apimartPrice": "$0.0125 / изображение",
+      "kiePrice": "text-to-image: 4 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gemini-3.1-flash-image-preview",
+      "kie": "kie:nano-banana-2",
+      "name": "Google - Nano Banana 2",
+      "apimartPrice": "0.5K: $0.015 / изображение\n1K: $0.015 / изображение\n2K: $0.02 / изображение\n4K: $0.025 / изображение",
+      "kiePrice": "4K: 18 кредитов / изображение\n2K: 12 кредитов / изображение\n1K: 8 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gemini-2.5-flash-image-preview",
+      "kie": "kie:google/nano-banana-edit",
+      "name": "Google - Nano Banana Edit",
+      "apimartPrice": "$0.0125 / изображение",
+      "kiePrice": "image-to-image: 4 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gemini-3-pro-image-preview",
+      "kie": "kie:nano-banana-pro",
+      "name": "Google - Nano Banana Pro",
+      "apimartPrice": "4K: $0.04 / изображение",
+      "kiePrice": "1/2K: 18 кредитов / изображение\n4K: 24 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-1.5",
+      "kie": "kie:gpt-image/1.5-image-to-image",
+      "name": "GPT Image 1.5 - Image to Image",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.0000256 / токен ($25.6 / 1 млн)",
+      "kiePrice": "image-to-image, high: 22 кредитов / изображение\nimage-to-image, medium: 4 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-1.5",
+      "kie": "kie:gpt-image/1.5-text-to-image",
+      "name": "GPT Image 1.5 - Text to Image",
+      "apimartPrice": "вход: $0.000004 / токен ($4 / 1 млн)\nвыход: $0.0000256 / токен ($25.6 / 1 млн)",
+      "kiePrice": "text-to-image, high: 22 кредитов / изображение\ntext-to-image, medium: 4 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-2",
+      "kie": "kie:gpt-image-2-image-to-image",
+      "name": "GPT Image 2 - Image To Image",
+      "apimartPrice": "1K: $0.0085 / изображение\n2K: $0.014 / изображение\n4K: $0.021 / изображение",
+      "kiePrice": "image-to-image, 4k: 16 кредитов / изображение\nimage-to-image, 2k: 10 кредитов / изображение\nimage-to-image, 1k: 6 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-2",
+      "kie": "kie:gpt-image-2-text-to-image",
+      "name": "GPT Image 2 - Text to Image",
+      "apimartPrice": "1K: $0.0085 / изображение\n2K: $0.014 / изображение\n4K: $0.021 / изображение",
+      "kiePrice": "text-to-image, 4k: 16 кредитов / изображение\ntext-to-image, 2k: 10 кредитов / изображение\ntext-to-image, 1k: 6 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-2.5-flare",
+      "kie": "kie:gpt-image-2-5-flare-image-to-image",
+      "name": "GPT Image 2.5 Flare - Image To Image",
+      "apimartPrice": "size_quality 16:9 / auto: $0.103488 / запрос\nsize_quality 16:9 / high: $0.025872 / запрос\nsize_quality 16:9 / low: $0.00288 / запрос\nsize_quality 16:9 / max: $0.103488 / запрос\nsize_quality 16:9 / medium: $0.00672 / запрос\nsize_quality 16:9 / xhigh: $0.046008 / запрос\nsize_quality 16:9@2k / auto: $0.1356 / запрос\nsize_quality 16:9@2k / high: $0.033912 / запрос\nsize_quality 16:9@2k / low: $0.003768 / запрос\nsize_quality 16:9@2k / max: $0.1356 / запрос\nsize_quality 16:9@2k / medium: $0.008808 / запрос\nsize_quality 16:9@2k / xhigh: $0.060264 / запрос\nsize_quality 16:9@4k / auto: $0.320208 / запрос\nsize_quality 16:9@4k / high: $0.080064 / запрос\nsize_quality 16:9@4k / low: $0.008904 / запрос\nsize_quality 16:9@4k / max: $0.320208 / запрос\nsize_quality 16:9@4k / medium: $0.02076 / запрос\nsize_quality 16:9@4k / xhigh: $0.14232 / запрос\nsize_quality 1:1 / auto: $0.168576 / запрос\nsize_quality 1:1 / high: $0.042144 / запрос\nsize_quality 1:1 / low: $0.004704 / запрос\nsize_quality 1:1 / max: $0.168576 / запрос\nsize_quality 1:1 / medium: $0.010536 / запрос\nsize_quality 1:1 / xhigh: $0.074928 / запрос\nsize_quality 1:1@2k / auto: $0.342528 / запрос\nsize_quality 1:1@2k / high: $0.085632 / запрос\nsize_quality 1:1@2k / low: $0.009528 / запрос\nsize_quality 1:1@2k / max: $0.342528 / запрос\nsize_quality 1:1@2k / medium: $0.021408 / запрос\nsize_quality 1:1@2k / xhigh: $0.152232 / запрос\nsize_quality 1:1@4k / auto: $0.569256 / запрос\nsize_quality 1:1@4k / high: $0.14232 / запрос\nsize_quality 1:1@4k / low: $0.015816 / запрос\nsize_quality 1:1@4k / max: $0.569256 / запрос\nsize_quality 1:1@4k / medium: $0.035592 / запрос\nsize_quality 1:1@4k / xhigh: $0.253008 / запрос\nsize_quality 1:2 / auto: $0.11328 / запрос\nsize_quality 1:2 / high: $0.02832 / запрос\nsize_quality 1:2 / low: $0.003168 / запрос\nsize_quality 1:2 / max: $0.11328 / запрос\nsize_quality 1:2 / medium: $0.00708 / запрос\nsize_quality 1:2 / xhigh: $0.050352 / запрос\nsize_quality 1:2@2k / auto: $0.155184 / запрос\nsize_quality 1:2@2k / high: $0.038808 / запрос\nsize_quality 1:2@2k / low: $0.00432 / запрос\nsize_quality 1:2@2k / max: $0.155184 / запрос\nsize_quality 1:2@2k / medium: $0.00972 / запрос\nsize_quality 1:2@2k / xhigh: $0.068976 / запрос\nsize_quality 1:2@4k / auto: $0.259152 / запрос\nsize_quality 1:2@4k / high: $0.0648 / запрос\nsize_quality 1:2@4k / low: $0.0072 / запрос\nsize_quality 1:2@4k / max: $0.259152 / запрос\nsize_quality 1:2@4k / medium: $0.0162 / запрос\nsize_quality 1:2@4k / xhigh: $0.115176 / запрос\nsize_quality 1:3 / auto: $0.05136 / запрос\nsize_quality 1:3 / high: $0.01284 / запрос\nsize_quality 1:3 / low: $0.001344 / запрос\nsize_quality 1:3 / max: $0.05136 / запрос\nsize_quality 1:3 / medium: $0.003216 / запрос\nsize_quality 1:3 / xhigh: $0.022488 / запрос\nsize_quality 1:3@2k / auto: $0.094848 / запрос\nsize_quality 1:3@2k / high: $0.023712 / запрос\nsize_quality 1:3@2k / low: $0.002472 / запрос\nsize_quality 1:3@2k / max: $0.094848 / запрос\nsize_quality 1:3@2k / medium: $0.005928 / запрос\nsize_quality 1:3@2k / xhigh: $0.041496 / запрос\nsize_quality 1:3@4k / auto: $0.127464 / запрос\nsize_quality 1:3@4k / high: $0.031872 / запрос\nsize_quality 1:3@4k / low: $0.003336 / запрос\nsize_quality 1:3@4k / max: $0.127464 / запрос\nsize_quality 1:3@4k / medium: $0.007968 / запрос\nsize_quality 1:3@4k / xhigh: $0.055776 / запрос\nsize_quality 21:9 / auto: $0.088368 / запрос\nsize_quality 21:9 / high: $0.022632 / запрос\nsize_quality 21:9 / low: $0.00252 / запрос\nsize_quality 21:9 / max: $0.088368 / запрос\nsize_quality 21:9 / medium: $0.0054 / запрос\nsize_quality 21:9 / xhigh: $0.038808 / запрос\nsize_quality 21:9@2k / auto: $0.120384 / запрос\nsize_quality 21:9@2k / high: $0.03084 / запрос\nsize_quality 21:9@2k / low: $0.003432 / запрос\nsize_quality 21:9@2k / max: $0.120384 / запрос\nsize_quality 21:9@2k / medium: $0.007344 / запрос\nsize_quality 21:9@2k / xhigh: $0.052848 / запрос\nsize_quality 21:9@4k / auto: $0.196704 / запрос\nsize_quality 21:9@4k / high: $0.050376 / запрос\nsize_quality 21:9@4k / low: $0.005616 / запрос\nsize_quality 21:9@4k / max: $0.196704 / запрос\nsize_quality 21:9@4k / medium: $0.012 / запрос\nsize_quality 21:9@4k / xhigh: $0.086352 / запрос\nsize_quality 2:1 / auto: $0.11328 / запрос\nsize_quality 2:1 / high: $0.02832 / запрос\nsize_quality 2:1 / low: $0.003168 / запрос\nsize_quality 2:1 / max: $0.11328 / запрос\nsize_quality 2:1 / medium: $0.00708 / запрос\nsize_quality 2:1 / xhigh: $0.050352 / запрос\nsize_quality 2:1@2k / auto: $0.155184 / запрос\nsize_quality 2:1@2k / high: $0.038808 / запрос\nsize_quality 2:1@2k / low: $0.00432 / запрос\nsize_quality 2:1@2k / max: $0.155184 / запрос\nsize_quality 2:1@2k / medium: $0.00972 / запрос\nsize_quality 2:1@2k / xhigh: $0.068976 / запрос\nsize_quality 2:1@4k / auto: $0.259152 / запрос\nsize_quality 2:1@4k / high: $0.0648 / запрос\nsize_quality 2:1@4k / low: $0.0072 / запрос\nsize_quality 2:1@4k / max: $0.259152 / запрос\nsize_quality 2:1@4k / medium: $0.0162 / запрос\nsize_quality 2:1@4k / xhigh: $0.115176 / запрос\nsize_quality 2:3 / auto: $0.131712 / запрос\nsize_quality 2:3 / high: $0.032928 / запрос\nsize_quality 2:3 / low: $0.003792 / запрос\nsize_quality 2:3 / max: $0.131712 / запрос\nsize_quality 2:3 / medium: $0.008232 / запрос\nsize_quality 2:3 / xhigh: $0.059016 / запрос\nsize_quality 2:3@2k / auto: $0.176424 / запрос\nsize_quality 2:3@2k / high: $0.044112 / запрос\nsize_quality 2:3@2k / low: $0.005064 / запрос\nsize_quality 2:3@2k / max: $0.176424 / запрос\nsize_quality 2:3@2k / medium: $0.01104 / запрос\nsize_quality 2:3@2k / xhigh: $0.077184 / запрос\nsize_quality 2:3@4k / auto: $0.376872 / запрос\nsize_quality 2:3@4k / high: $0.094224 / запрос\nsize_quality 2:3@4k / low: $0.0108 / запрос\nsize_quality 2:3@4k / max: $0.376872 / запрос\nsize_quality 2:3@4k / medium: $0.023568 / запрос\nsize_quality 2:3@4k / xhigh: $0.16488 / запрос\nsize_quality 3:1 / auto: $0.05136 / запрос\nsize_quality 3:1 / high: $0.01284 / запрос\nsize_quality 3:1 / low: $0.001344 / запрос\nsize_quality 3:1 / max: $0.05136 / запрос\nsize_quality 3:1 / medium: $0.003216 / запрос\nsize_quality 3:1 / xhigh: $0.022488 / запрос\nsize_quality 3:1@2k / auto: $0.094848 / запрос\nsize_quality 3:1@2k / high: $0.023712 / запрос\nsize_quality 3:1@2k / low: $0.002472 / запрос\nsize_quality 3:1@2k / max: $0.094848 / запрос\nsize_quality 3:1@2k / medium: $0.005928 / запрос\nsize_quality 3:1@2k / xhigh: $0.041496 / запрос\nsize_quality 3:1@4k / auto: $0.127464 / запрос\nsize_quality 3:1@4k / high: $0.031872 / запрос\nsize_quality 3:1@4k / low: $0.003336 / запрос\nsize_quality 3:1@4k / max: $0.127464 / запрос\nsize_quality 3:1@4k / medium: $0.007968 / запрос\nsize_quality 3:1@4k / xhigh: $0.055776 / запрос\nsize_quality 3:2 / auto: $0.131712 / запрос\nsize_quality 3:2 / high: $0.032928 / запрос\nsize_quality 3:2 / low: $0.003792 / запрос\nsize_quality 3:2 / max: $0.131712 / запрос\nsize_quality 3:2 / medium: $0.008232 / запрос\nsize_quality 3:2 / xhigh: $0.059016 / запрос\nsize_quality 3:2@2k / auto: $0.176424 / запрос\nsize_quality 3:2@2k / high: $0.044112 / запрос\nsize_quality 3:2@2k / low: $0.005064 / запрос\nsize_quality 3:2@2k / max: $0.176424 / запрос\nsize_quality 3:2@2k / medium: $0.01104 / запрос\nsize_quality 3:2@2k / xhigh: $0.077184 / запрос\nsize_quality 3:2@4k / auto: $0.376872 / запрос\nsize_quality 3:2@4k / high: $0.094224 / запрос\nsize_quality 3:2@4k / low: $0.0108 / запрос\nsize_quality 3:2@4k / max: $0.376872 / запрос\nsize_quality 3:2@4k / medium: $0.023568 / запрос\nsize_quality 3:2@4k / xhigh: $0.16488 / запрос\nsize_quality 3:4 / auto: $0.11556 / запрос\nsize_quality 3:4 / high: $0.028896 / запрос\nsize_quality 3:4 / low: $0.003216 / запрос\nsize_quality 3:4 / max: $0.11556 / запрос\nsize_quality 3:4 / medium: $0.007224 / запрос\nsize_quality 3:4 / xhigh: $0.05136 / запрос\nsize_quality 3:4@2k / auto: $0.213408 / запрос\nsize_quality 3:4@2k / high: $0.053352 / запрос\nsize_quality 3:4@2k / low: $0.005928 / запрос\nsize_quality 3:4@2k / max: $0.213408 / запрос\nsize_quality 3:4@2k / medium: $0.013344 / запрос\nsize_quality 3:4@2k / xhigh: $0.094848 / запрос\nsize_quality 3:4@4k / auto: $0.4236 / запрос\nsize_quality 3:4@4k / high: $0.105912 / запрос\nsize_quality 3:4@4k / low: $0.011784 / запрос\nsize_quality 3:4@4k / max: $0.4236 / запрос\nsize_quality 3:4@4k / medium: $0.026496 / запрос\nsize_quality 3:4@4k / xhigh: $0.18828 / запрос\nsize_quality 4:3 / auto: $0.11556 / запрос\nsize_quality 4:3 / high: $0.028896 / запрос\nsize_quality 4:3 / low: $0.003216 / запрос\nsize_quality 4:3 / max: $0.11556 / запрос\nsize_quality 4:3 / medium: $0.007224 / запрос\nsize_quality 4:3 / xhigh: $0.05136 / запрос\nsize_quality 4:3@2k / auto: $0.213408 / запрос\nsize_quality 4:3@2k / high: $0.053352 / запрос\nsize_quality 4:3@2k / low: $0.005928 / запрос\nsize_quality 4:3@2k / max: $0.213408 / запрос\nsize_quality 4:3@2k / medium: $0.013344 / запрос\nsize_quality 4:3@2k / xhigh: $0.094848 / запрос\nsize_quality 4:3@4k / auto: $0.4236 / запрос\nsize_quality 4:3@4k / high: $0.105912 / запрос\nsize_quality 4:3@4k / low: $0.011784 / запрос\nsize_quality 4:3@4k / max: $0.4236 / запрос\nsize_quality 4:3@4k / medium: $0.026496 / запрос\nsize_quality 4:3@4k / xhigh: $0.18828 / запрос\nsize_quality 4:5 / auto: $0.146856 / запрос\nsize_quality 4:5 / high: $0.03624 / запрос\nsize_quality 4:5 / low: $0.004152 / запрос\nsize_quality 4:5 / max: $0.146856 / запрос\nsize_quality 4:5 / medium: $0.009072 / запрос\nsize_quality 4:5 / xhigh: $0.064848 / запрос\nsize_quality 4:5@2k / auto: $0.32124 / запрос\nsize_quality 4:5@2k / high: $0.079272 / запрос\nsize_quality 4:5@2k / low: $0.009048 / запрос\nsize_quality 4:5@2k / max: $0.32124 / запрос\nsize_quality 4:5@2k / medium: $0.019824 / запрос\nsize_quality 4:5@2k / xhigh: $0.141864 / запрос\nsize_quality 4:5@4k / auto: $0.456144 / запрос\nsize_quality 4:5@4k / high: $0.11256 / запрос\nsize_quality 4:5@4k / low: $0.01284 / запрос\nsize_quality 4:5@4k / max: $0.456144 / запрос\nsize_quality 4:5@4k / medium: $0.028152 / запрос\nsize_quality 4:5@4k / xhigh: $0.201432 / запрос\nsize_quality 5:4 / auto: $0.146856 / запрос\nsize_quality 5:4 / high: $0.03624 / запрос\nsize_quality 5:4 / low: $0.004152 / запрос\nsize_quality 5:4 / max: $0.146856 / запрос\nsize_quality 5:4 / medium: $0.009072 / запрос\nsize_quality 5:4 / xhigh: $0.064848 / запрос\nsize_quality 5:4@2k / auto: $0.32124 / запрос\nsize_quality 5:4@2k / high: $0.079272 / запрос\nsize_quality 5:4@2k / low: $0.009048 / запрос\nsize_quality 5:4@2k / max: $0.32124 / запрос\nsize_quality 5:4@2k / medium: $0.019824 / запрос\nsize_quality 5:4@2k / xhigh: $0.141864 / запрос\nsize_quality 5:4@4k / auto: $0.456144 / запрос\nsize_quality 5:4@4k / high: $0.11256 / запрос\nsize_quality 5:4@4k / low: $0.01284 / запрос\nsize_quality 5:4@4k / max: $0.456144 / запрос\nsize_quality 5:4@4k / medium: $0.028152 / запрос\nsize_quality 5:4@4k / xhigh: $0.201432 / запрос\nsize_quality 9:16 / auto: $0.103488 / запрос\nsize_quality 9:16 / high: $0.025872 / запрос\nsize_quality 9:16 / low: $0.00288 / запрос\nsize_quality 9:16 / max: $0.103488 / запрос\nsize_quality 9:16 / medium: $0.00672 / запрос\nsize_quality 9:16 / xhigh: $0.046008 / запрос\nsize_quality 9:16@2k / auto: $0.1356 / запрос\nsize_quality 9:16@2k / high: $0.033912 / запрос\nsize_quality 9:16@2k / low: $0.003768 / запрос\nsize_quality 9:16@2k / max: $0.1356 / запрос\nsize_quality 9:16@2k / medium: $0.008808 / запрос\nsize_quality 9:16@2k / xhigh: $0.060264 / запрос\nsize_quality 9:16@4k / auto: $0.320208 / запрос\nsize_quality 9:16@4k / high: $0.080064 / запрос\nsize_quality 9:16@4k / low: $0.008904 / запрос\nsize_quality 9:16@4k / max: $0.320208 / запрос\nsize_quality 9:16@4k / medium: $0.02076 / запрос\nsize_quality 9:16@4k / xhigh: $0.14232 / запрос\nsize_quality 9:21 / auto: $0.088368 / запрос\nsize_quality 9:21 / high: $0.022632 / запрос\nsize_quality 9:21 / low: $0.00252 / запрос\nsize_quality 9:21 / max: $0.088368 / запрос\nsize_quality 9:21 / medium: $0.0054 / запрос\nsize_quality 9:21 / xhigh: $0.038808 / запрос\nsize_quality 9:21@2k / auto: $0.120384 / запрос\nsize_quality 9:21@2k / high: $0.03084 / запрос\nsize_quality 9:21@2k / low: $0.003432 / запрос\nsize_quality 9:21@2k / max: $0.120384 / запрос\nsize_quality 9:21@2k / medium: $0.007344 / запрос\nsize_quality 9:21@2k / xhigh: $0.052848 / запрос\nsize_quality 9:21@4k / auto: $0.196704 / запрос\nsize_quality 9:21@4k / high: $0.050376 / запрос\nsize_quality 9:21@4k / low: $0.005616 / запрос\nsize_quality 9:21@4k / max: $0.196704 / запрос\nsize_quality 9:21@4k / medium: $0.012 / запрос\nsize_quality 9:21@4k / xhigh: $0.086352 / запрос",
+      "kiePrice": "image-to-image, 4K: 16 кредитов / изображение\nimage-to-image, 2K: 10 кредитов / изображение\nimage-to-image, 1K: 6 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-2.5-flare",
+      "kie": "kie:gpt-image-2-5-flare-text-to-image",
+      "name": "GPT Image 2.5 Flare - Text to Image",
+      "apimartPrice": "size_quality 16:9 / auto: $0.103488 / запрос\nsize_quality 16:9 / high: $0.025872 / запрос\nsize_quality 16:9 / low: $0.00288 / запрос\nsize_quality 16:9 / max: $0.103488 / запрос\nsize_quality 16:9 / medium: $0.00672 / запрос\nsize_quality 16:9 / xhigh: $0.046008 / запрос\nsize_quality 16:9@2k / auto: $0.1356 / запрос\nsize_quality 16:9@2k / high: $0.033912 / запрос\nsize_quality 16:9@2k / low: $0.003768 / запрос\nsize_quality 16:9@2k / max: $0.1356 / запрос\nsize_quality 16:9@2k / medium: $0.008808 / запрос\nsize_quality 16:9@2k / xhigh: $0.060264 / запрос\nsize_quality 16:9@4k / auto: $0.320208 / запрос\nsize_quality 16:9@4k / high: $0.080064 / запрос\nsize_quality 16:9@4k / low: $0.008904 / запрос\nsize_quality 16:9@4k / max: $0.320208 / запрос\nsize_quality 16:9@4k / medium: $0.02076 / запрос\nsize_quality 16:9@4k / xhigh: $0.14232 / запрос\nsize_quality 1:1 / auto: $0.168576 / запрос\nsize_quality 1:1 / high: $0.042144 / запрос\nsize_quality 1:1 / low: $0.004704 / запрос\nsize_quality 1:1 / max: $0.168576 / запрос\nsize_quality 1:1 / medium: $0.010536 / запрос\nsize_quality 1:1 / xhigh: $0.074928 / запрос\nsize_quality 1:1@2k / auto: $0.342528 / запрос\nsize_quality 1:1@2k / high: $0.085632 / запрос\nsize_quality 1:1@2k / low: $0.009528 / запрос\nsize_quality 1:1@2k / max: $0.342528 / запрос\nsize_quality 1:1@2k / medium: $0.021408 / запрос\nsize_quality 1:1@2k / xhigh: $0.152232 / запрос\nsize_quality 1:1@4k / auto: $0.569256 / запрос\nsize_quality 1:1@4k / high: $0.14232 / запрос\nsize_quality 1:1@4k / low: $0.015816 / запрос\nsize_quality 1:1@4k / max: $0.569256 / запрос\nsize_quality 1:1@4k / medium: $0.035592 / запрос\nsize_quality 1:1@4k / xhigh: $0.253008 / запрос\nsize_quality 1:2 / auto: $0.11328 / запрос\nsize_quality 1:2 / high: $0.02832 / запрос\nsize_quality 1:2 / low: $0.003168 / запрос\nsize_quality 1:2 / max: $0.11328 / запрос\nsize_quality 1:2 / medium: $0.00708 / запрос\nsize_quality 1:2 / xhigh: $0.050352 / запрос\nsize_quality 1:2@2k / auto: $0.155184 / запрос\nsize_quality 1:2@2k / high: $0.038808 / запрос\nsize_quality 1:2@2k / low: $0.00432 / запрос\nsize_quality 1:2@2k / max: $0.155184 / запрос\nsize_quality 1:2@2k / medium: $0.00972 / запрос\nsize_quality 1:2@2k / xhigh: $0.068976 / запрос\nsize_quality 1:2@4k / auto: $0.259152 / запрос\nsize_quality 1:2@4k / high: $0.0648 / запрос\nsize_quality 1:2@4k / low: $0.0072 / запрос\nsize_quality 1:2@4k / max: $0.259152 / запрос\nsize_quality 1:2@4k / medium: $0.0162 / запрос\nsize_quality 1:2@4k / xhigh: $0.115176 / запрос\nsize_quality 1:3 / auto: $0.05136 / запрос\nsize_quality 1:3 / high: $0.01284 / запрос\nsize_quality 1:3 / low: $0.001344 / запрос\nsize_quality 1:3 / max: $0.05136 / запрос\nsize_quality 1:3 / medium: $0.003216 / запрос\nsize_quality 1:3 / xhigh: $0.022488 / запрос\nsize_quality 1:3@2k / auto: $0.094848 / запрос\nsize_quality 1:3@2k / high: $0.023712 / запрос\nsize_quality 1:3@2k / low: $0.002472 / запрос\nsize_quality 1:3@2k / max: $0.094848 / запрос\nsize_quality 1:3@2k / medium: $0.005928 / запрос\nsize_quality 1:3@2k / xhigh: $0.041496 / запрос\nsize_quality 1:3@4k / auto: $0.127464 / запрос\nsize_quality 1:3@4k / high: $0.031872 / запрос\nsize_quality 1:3@4k / low: $0.003336 / запрос\nsize_quality 1:3@4k / max: $0.127464 / запрос\nsize_quality 1:3@4k / medium: $0.007968 / запрос\nsize_quality 1:3@4k / xhigh: $0.055776 / запрос\nsize_quality 21:9 / auto: $0.088368 / запрос\nsize_quality 21:9 / high: $0.022632 / запрос\nsize_quality 21:9 / low: $0.00252 / запрос\nsize_quality 21:9 / max: $0.088368 / запрос\nsize_quality 21:9 / medium: $0.0054 / запрос\nsize_quality 21:9 / xhigh: $0.038808 / запрос\nsize_quality 21:9@2k / auto: $0.120384 / запрос\nsize_quality 21:9@2k / high: $0.03084 / запрос\nsize_quality 21:9@2k / low: $0.003432 / запрос\nsize_quality 21:9@2k / max: $0.120384 / запрос\nsize_quality 21:9@2k / medium: $0.007344 / запрос\nsize_quality 21:9@2k / xhigh: $0.052848 / запрос\nsize_quality 21:9@4k / auto: $0.196704 / запрос\nsize_quality 21:9@4k / high: $0.050376 / запрос\nsize_quality 21:9@4k / low: $0.005616 / запрос\nsize_quality 21:9@4k / max: $0.196704 / запрос\nsize_quality 21:9@4k / medium: $0.012 / запрос\nsize_quality 21:9@4k / xhigh: $0.086352 / запрос\nsize_quality 2:1 / auto: $0.11328 / запрос\nsize_quality 2:1 / high: $0.02832 / запрос\nsize_quality 2:1 / low: $0.003168 / запрос\nsize_quality 2:1 / max: $0.11328 / запрос\nsize_quality 2:1 / medium: $0.00708 / запрос\nsize_quality 2:1 / xhigh: $0.050352 / запрос\nsize_quality 2:1@2k / auto: $0.155184 / запрос\nsize_quality 2:1@2k / high: $0.038808 / запрос\nsize_quality 2:1@2k / low: $0.00432 / запрос\nsize_quality 2:1@2k / max: $0.155184 / запрос\nsize_quality 2:1@2k / medium: $0.00972 / запрос\nsize_quality 2:1@2k / xhigh: $0.068976 / запрос\nsize_quality 2:1@4k / auto: $0.259152 / запрос\nsize_quality 2:1@4k / high: $0.0648 / запрос\nsize_quality 2:1@4k / low: $0.0072 / запрос\nsize_quality 2:1@4k / max: $0.259152 / запрос\nsize_quality 2:1@4k / medium: $0.0162 / запрос\nsize_quality 2:1@4k / xhigh: $0.115176 / запрос\nsize_quality 2:3 / auto: $0.131712 / запрос\nsize_quality 2:3 / high: $0.032928 / запрос\nsize_quality 2:3 / low: $0.003792 / запрос\nsize_quality 2:3 / max: $0.131712 / запрос\nsize_quality 2:3 / medium: $0.008232 / запрос\nsize_quality 2:3 / xhigh: $0.059016 / запрос\nsize_quality 2:3@2k / auto: $0.176424 / запрос\nsize_quality 2:3@2k / high: $0.044112 / запрос\nsize_quality 2:3@2k / low: $0.005064 / запрос\nsize_quality 2:3@2k / max: $0.176424 / запрос\nsize_quality 2:3@2k / medium: $0.01104 / запрос\nsize_quality 2:3@2k / xhigh: $0.077184 / запрос\nsize_quality 2:3@4k / auto: $0.376872 / запрос\nsize_quality 2:3@4k / high: $0.094224 / запрос\nsize_quality 2:3@4k / low: $0.0108 / запрос\nsize_quality 2:3@4k / max: $0.376872 / запрос\nsize_quality 2:3@4k / medium: $0.023568 / запрос\nsize_quality 2:3@4k / xhigh: $0.16488 / запрос\nsize_quality 3:1 / auto: $0.05136 / запрос\nsize_quality 3:1 / high: $0.01284 / запрос\nsize_quality 3:1 / low: $0.001344 / запрос\nsize_quality 3:1 / max: $0.05136 / запрос\nsize_quality 3:1 / medium: $0.003216 / запрос\nsize_quality 3:1 / xhigh: $0.022488 / запрос\nsize_quality 3:1@2k / auto: $0.094848 / запрос\nsize_quality 3:1@2k / high: $0.023712 / запрос\nsize_quality 3:1@2k / low: $0.002472 / запрос\nsize_quality 3:1@2k / max: $0.094848 / запрос\nsize_quality 3:1@2k / medium: $0.005928 / запрос\nsize_quality 3:1@2k / xhigh: $0.041496 / запрос\nsize_quality 3:1@4k / auto: $0.127464 / запрос\nsize_quality 3:1@4k / high: $0.031872 / запрос\nsize_quality 3:1@4k / low: $0.003336 / запрос\nsize_quality 3:1@4k / max: $0.127464 / запрос\nsize_quality 3:1@4k / medium: $0.007968 / запрос\nsize_quality 3:1@4k / xhigh: $0.055776 / запрос\nsize_quality 3:2 / auto: $0.131712 / запрос\nsize_quality 3:2 / high: $0.032928 / запрос\nsize_quality 3:2 / low: $0.003792 / запрос\nsize_quality 3:2 / max: $0.131712 / запрос\nsize_quality 3:2 / medium: $0.008232 / запрос\nsize_quality 3:2 / xhigh: $0.059016 / запрос\nsize_quality 3:2@2k / auto: $0.176424 / запрос\nsize_quality 3:2@2k / high: $0.044112 / запрос\nsize_quality 3:2@2k / low: $0.005064 / запрос\nsize_quality 3:2@2k / max: $0.176424 / запрос\nsize_quality 3:2@2k / medium: $0.01104 / запрос\nsize_quality 3:2@2k / xhigh: $0.077184 / запрос\nsize_quality 3:2@4k / auto: $0.376872 / запрос\nsize_quality 3:2@4k / high: $0.094224 / запрос\nsize_quality 3:2@4k / low: $0.0108 / запрос\nsize_quality 3:2@4k / max: $0.376872 / запрос\nsize_quality 3:2@4k / medium: $0.023568 / запрос\nsize_quality 3:2@4k / xhigh: $0.16488 / запрос\nsize_quality 3:4 / auto: $0.11556 / запрос\nsize_quality 3:4 / high: $0.028896 / запрос\nsize_quality 3:4 / low: $0.003216 / запрос\nsize_quality 3:4 / max: $0.11556 / запрос\nsize_quality 3:4 / medium: $0.007224 / запрос\nsize_quality 3:4 / xhigh: $0.05136 / запрос\nsize_quality 3:4@2k / auto: $0.213408 / запрос\nsize_quality 3:4@2k / high: $0.053352 / запрос\nsize_quality 3:4@2k / low: $0.005928 / запрос\nsize_quality 3:4@2k / max: $0.213408 / запрос\nsize_quality 3:4@2k / medium: $0.013344 / запрос\nsize_quality 3:4@2k / xhigh: $0.094848 / запрос\nsize_quality 3:4@4k / auto: $0.4236 / запрос\nsize_quality 3:4@4k / high: $0.105912 / запрос\nsize_quality 3:4@4k / low: $0.011784 / запрос\nsize_quality 3:4@4k / max: $0.4236 / запрос\nsize_quality 3:4@4k / medium: $0.026496 / запрос\nsize_quality 3:4@4k / xhigh: $0.18828 / запрос\nsize_quality 4:3 / auto: $0.11556 / запрос\nsize_quality 4:3 / high: $0.028896 / запрос\nsize_quality 4:3 / low: $0.003216 / запрос\nsize_quality 4:3 / max: $0.11556 / запрос\nsize_quality 4:3 / medium: $0.007224 / запрос\nsize_quality 4:3 / xhigh: $0.05136 / запрос\nsize_quality 4:3@2k / auto: $0.213408 / запрос\nsize_quality 4:3@2k / high: $0.053352 / запрос\nsize_quality 4:3@2k / low: $0.005928 / запрос\nsize_quality 4:3@2k / max: $0.213408 / запрос\nsize_quality 4:3@2k / medium: $0.013344 / запрос\nsize_quality 4:3@2k / xhigh: $0.094848 / запрос\nsize_quality 4:3@4k / auto: $0.4236 / запрос\nsize_quality 4:3@4k / high: $0.105912 / запрос\nsize_quality 4:3@4k / low: $0.011784 / запрос\nsize_quality 4:3@4k / max: $0.4236 / запрос\nsize_quality 4:3@4k / medium: $0.026496 / запрос\nsize_quality 4:3@4k / xhigh: $0.18828 / запрос\nsize_quality 4:5 / auto: $0.146856 / запрос\nsize_quality 4:5 / high: $0.03624 / запрос\nsize_quality 4:5 / low: $0.004152 / запрос\nsize_quality 4:5 / max: $0.146856 / запрос\nsize_quality 4:5 / medium: $0.009072 / запрос\nsize_quality 4:5 / xhigh: $0.064848 / запрос\nsize_quality 4:5@2k / auto: $0.32124 / запрос\nsize_quality 4:5@2k / high: $0.079272 / запрос\nsize_quality 4:5@2k / low: $0.009048 / запрос\nsize_quality 4:5@2k / max: $0.32124 / запрос\nsize_quality 4:5@2k / medium: $0.019824 / запрос\nsize_quality 4:5@2k / xhigh: $0.141864 / запрос\nsize_quality 4:5@4k / auto: $0.456144 / запрос\nsize_quality 4:5@4k / high: $0.11256 / запрос\nsize_quality 4:5@4k / low: $0.01284 / запрос\nsize_quality 4:5@4k / max: $0.456144 / запрос\nsize_quality 4:5@4k / medium: $0.028152 / запрос\nsize_quality 4:5@4k / xhigh: $0.201432 / запрос\nsize_quality 5:4 / auto: $0.146856 / запрос\nsize_quality 5:4 / high: $0.03624 / запрос\nsize_quality 5:4 / low: $0.004152 / запрос\nsize_quality 5:4 / max: $0.146856 / запрос\nsize_quality 5:4 / medium: $0.009072 / запрос\nsize_quality 5:4 / xhigh: $0.064848 / запрос\nsize_quality 5:4@2k / auto: $0.32124 / запрос\nsize_quality 5:4@2k / high: $0.079272 / запрос\nsize_quality 5:4@2k / low: $0.009048 / запрос\nsize_quality 5:4@2k / max: $0.32124 / запрос\nsize_quality 5:4@2k / medium: $0.019824 / запрос\nsize_quality 5:4@2k / xhigh: $0.141864 / запрос\nsize_quality 5:4@4k / auto: $0.456144 / запрос\nsize_quality 5:4@4k / high: $0.11256 / запрос\nsize_quality 5:4@4k / low: $0.01284 / запрос\nsize_quality 5:4@4k / max: $0.456144 / запрос\nsize_quality 5:4@4k / medium: $0.028152 / запрос\nsize_quality 5:4@4k / xhigh: $0.201432 / запрос\nsize_quality 9:16 / auto: $0.103488 / запрос\nsize_quality 9:16 / high: $0.025872 / запрос\nsize_quality 9:16 / low: $0.00288 / запрос\nsize_quality 9:16 / max: $0.103488 / запрос\nsize_quality 9:16 / medium: $0.00672 / запрос\nsize_quality 9:16 / xhigh: $0.046008 / запрос\nsize_quality 9:16@2k / auto: $0.1356 / запрос\nsize_quality 9:16@2k / high: $0.033912 / запрос\nsize_quality 9:16@2k / low: $0.003768 / запрос\nsize_quality 9:16@2k / max: $0.1356 / запрос\nsize_quality 9:16@2k / medium: $0.008808 / запрос\nsize_quality 9:16@2k / xhigh: $0.060264 / запрос\nsize_quality 9:16@4k / auto: $0.320208 / запрос\nsize_quality 9:16@4k / high: $0.080064 / запрос\nsize_quality 9:16@4k / low: $0.008904 / запрос\nsize_quality 9:16@4k / max: $0.320208 / запрос\nsize_quality 9:16@4k / medium: $0.02076 / запрос\nsize_quality 9:16@4k / xhigh: $0.14232 / запрос\nsize_quality 9:21 / auto: $0.088368 / запрос\nsize_quality 9:21 / high: $0.022632 / запрос\nsize_quality 9:21 / low: $0.00252 / запрос\nsize_quality 9:21 / max: $0.088368 / запрос\nsize_quality 9:21 / medium: $0.0054 / запрос\nsize_quality 9:21 / xhigh: $0.038808 / запрос\nsize_quality 9:21@2k / auto: $0.120384 / запрос\nsize_quality 9:21@2k / high: $0.03084 / запрос\nsize_quality 9:21@2k / low: $0.003432 / запрос\nsize_quality 9:21@2k / max: $0.120384 / запрос\nsize_quality 9:21@2k / medium: $0.007344 / запрос\nsize_quality 9:21@2k / xhigh: $0.052848 / запрос\nsize_quality 9:21@4k / auto: $0.196704 / запрос\nsize_quality 9:21@4k / high: $0.050376 / запрос\nsize_quality 9:21@4k / low: $0.005616 / запрос\nsize_quality 9:21@4k / max: $0.196704 / запрос\nsize_quality 9:21@4k / medium: $0.012 / запрос\nsize_quality 9:21@4k / xhigh: $0.086352 / запрос",
+      "kiePrice": "text-to-image, 4K: 16 кредитов / изображение\ntext-to-image, 2K: 10 кредитов / изображение\ntext-to-image, 1K: 6 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-2.5-sunburst",
+      "kie": "kie:gpt-image-2-5-sunburst-image-to-image",
+      "name": "GPT Image 2.5 Sunburst - Image To Image",
+      "apimartPrice": "size_quality 16:9 / auto: $0.103488 / запрос\nsize_quality 16:9 / high: $0.025872 / запрос\nsize_quality 16:9 / low: $0.00288 / запрос\nsize_quality 16:9 / max: $0.103488 / запрос\nsize_quality 16:9 / medium: $0.00672 / запрос\nsize_quality 16:9 / xhigh: $0.046008 / запрос\nsize_quality 16:9@2k / auto: $0.1356 / запрос\nsize_quality 16:9@2k / high: $0.033912 / запрос\nsize_quality 16:9@2k / low: $0.003768 / запрос\nsize_quality 16:9@2k / max: $0.1356 / запрос\nsize_quality 16:9@2k / medium: $0.008808 / запрос\nsize_quality 16:9@2k / xhigh: $0.060264 / запрос\nsize_quality 16:9@4k / auto: $0.320208 / запрос\nsize_quality 16:9@4k / high: $0.080064 / запрос\nsize_quality 16:9@4k / low: $0.008904 / запрос\nsize_quality 16:9@4k / max: $0.320208 / запрос\nsize_quality 16:9@4k / medium: $0.02076 / запрос\nsize_quality 16:9@4k / xhigh: $0.14232 / запрос\nsize_quality 1:1 / auto: $0.168576 / запрос\nsize_quality 1:1 / high: $0.042144 / запрос\nsize_quality 1:1 / low: $0.004704 / запрос\nsize_quality 1:1 / max: $0.168576 / запрос\nsize_quality 1:1 / medium: $0.010536 / запрос\nsize_quality 1:1 / xhigh: $0.074928 / запрос\nsize_quality 1:1@2k / auto: $0.342528 / запрос\nsize_quality 1:1@2k / high: $0.085632 / запрос\nsize_quality 1:1@2k / low: $0.009528 / запрос\nsize_quality 1:1@2k / max: $0.342528 / запрос\nsize_quality 1:1@2k / medium: $0.021408 / запрос\nsize_quality 1:1@2k / xhigh: $0.152232 / запрос\nsize_quality 1:1@4k / auto: $0.569256 / запрос\nsize_quality 1:1@4k / high: $0.14232 / запрос\nsize_quality 1:1@4k / low: $0.015816 / запрос\nsize_quality 1:1@4k / max: $0.569256 / запрос\nsize_quality 1:1@4k / medium: $0.035592 / запрос\nsize_quality 1:1@4k / xhigh: $0.253008 / запрос\nsize_quality 1:2 / auto: $0.11328 / запрос\nsize_quality 1:2 / high: $0.02832 / запрос\nsize_quality 1:2 / low: $0.003168 / запрос\nsize_quality 1:2 / max: $0.11328 / запрос\nsize_quality 1:2 / medium: $0.00708 / запрос\nsize_quality 1:2 / xhigh: $0.050352 / запрос\nsize_quality 1:2@2k / auto: $0.155184 / запрос\nsize_quality 1:2@2k / high: $0.038808 / запрос\nsize_quality 1:2@2k / low: $0.00432 / запрос\nsize_quality 1:2@2k / max: $0.155184 / запрос\nsize_quality 1:2@2k / medium: $0.00972 / запрос\nsize_quality 1:2@2k / xhigh: $0.068976 / запрос\nsize_quality 1:2@4k / auto: $0.259152 / запрос\nsize_quality 1:2@4k / high: $0.0648 / запрос\nsize_quality 1:2@4k / low: $0.0072 / запрос\nsize_quality 1:2@4k / max: $0.259152 / запрос\nsize_quality 1:2@4k / medium: $0.0162 / запрос\nsize_quality 1:2@4k / xhigh: $0.115176 / запрос\nsize_quality 1:3 / auto: $0.05136 / запрос\nsize_quality 1:3 / high: $0.01284 / запрос\nsize_quality 1:3 / low: $0.001344 / запрос\nsize_quality 1:3 / max: $0.05136 / запрос\nsize_quality 1:3 / medium: $0.003216 / запрос\nsize_quality 1:3 / xhigh: $0.022488 / запрос\nsize_quality 1:3@2k / auto: $0.094848 / запрос\nsize_quality 1:3@2k / high: $0.023712 / запрос\nsize_quality 1:3@2k / low: $0.002472 / запрос\nsize_quality 1:3@2k / max: $0.094848 / запрос\nsize_quality 1:3@2k / medium: $0.005928 / запрос\nsize_quality 1:3@2k / xhigh: $0.041496 / запрос\nsize_quality 1:3@4k / auto: $0.127464 / запрос\nsize_quality 1:3@4k / high: $0.031872 / запрос\nsize_quality 1:3@4k / low: $0.003336 / запрос\nsize_quality 1:3@4k / max: $0.127464 / запрос\nsize_quality 1:3@4k / medium: $0.007968 / запрос\nsize_quality 1:3@4k / xhigh: $0.055776 / запрос\nsize_quality 21:9 / auto: $0.088368 / запрос\nsize_quality 21:9 / high: $0.022632 / запрос\nsize_quality 21:9 / low: $0.00252 / запрос\nsize_quality 21:9 / max: $0.088368 / запрос\nsize_quality 21:9 / medium: $0.0054 / запрос\nsize_quality 21:9 / xhigh: $0.038808 / запрос\nsize_quality 21:9@2k / auto: $0.120384 / запрос\nsize_quality 21:9@2k / high: $0.03084 / запрос\nsize_quality 21:9@2k / low: $0.003432 / запрос\nsize_quality 21:9@2k / max: $0.120384 / запрос\nsize_quality 21:9@2k / medium: $0.007344 / запрос\nsize_quality 21:9@2k / xhigh: $0.052848 / запрос\nsize_quality 21:9@4k / auto: $0.196704 / запрос\nsize_quality 21:9@4k / high: $0.050376 / запрос\nsize_quality 21:9@4k / low: $0.005616 / запрос\nsize_quality 21:9@4k / max: $0.196704 / запрос\nsize_quality 21:9@4k / medium: $0.012 / запрос\nsize_quality 21:9@4k / xhigh: $0.086352 / запрос\nsize_quality 2:1 / auto: $0.11328 / запрос\nsize_quality 2:1 / high: $0.02832 / запрос\nsize_quality 2:1 / low: $0.003168 / запрос\nsize_quality 2:1 / max: $0.11328 / запрос\nsize_quality 2:1 / medium: $0.00708 / запрос\nsize_quality 2:1 / xhigh: $0.050352 / запрос\nsize_quality 2:1@2k / auto: $0.155184 / запрос\nsize_quality 2:1@2k / high: $0.038808 / запрос\nsize_quality 2:1@2k / low: $0.00432 / запрос\nsize_quality 2:1@2k / max: $0.155184 / запрос\nsize_quality 2:1@2k / medium: $0.00972 / запрос\nsize_quality 2:1@2k / xhigh: $0.068976 / запрос\nsize_quality 2:1@4k / auto: $0.259152 / запрос\nsize_quality 2:1@4k / high: $0.0648 / запрос\nsize_quality 2:1@4k / low: $0.0072 / запрос\nsize_quality 2:1@4k / max: $0.259152 / запрос\nsize_quality 2:1@4k / medium: $0.0162 / запрос\nsize_quality 2:1@4k / xhigh: $0.115176 / запрос\nsize_quality 2:3 / auto: $0.131712 / запрос\nsize_quality 2:3 / high: $0.032928 / запрос\nsize_quality 2:3 / low: $0.003792 / запрос\nsize_quality 2:3 / max: $0.131712 / запрос\nsize_quality 2:3 / medium: $0.008232 / запрос\nsize_quality 2:3 / xhigh: $0.059016 / запрос\nsize_quality 2:3@2k / auto: $0.176424 / запрос\nsize_quality 2:3@2k / high: $0.044112 / запрос\nsize_quality 2:3@2k / low: $0.005064 / запрос\nsize_quality 2:3@2k / max: $0.176424 / запрос\nsize_quality 2:3@2k / medium: $0.01104 / запрос\nsize_quality 2:3@2k / xhigh: $0.077184 / запрос\nsize_quality 2:3@4k / auto: $0.376872 / запрос\nsize_quality 2:3@4k / high: $0.094224 / запрос\nsize_quality 2:3@4k / low: $0.0108 / запрос\nsize_quality 2:3@4k / max: $0.376872 / запрос\nsize_quality 2:3@4k / medium: $0.023568 / запрос\nsize_quality 2:3@4k / xhigh: $0.16488 / запрос\nsize_quality 3:1 / auto: $0.05136 / запрос\nsize_quality 3:1 / high: $0.01284 / запрос\nsize_quality 3:1 / low: $0.001344 / запрос\nsize_quality 3:1 / max: $0.05136 / запрос\nsize_quality 3:1 / medium: $0.003216 / запрос\nsize_quality 3:1 / xhigh: $0.022488 / запрос\nsize_quality 3:1@2k / auto: $0.094848 / запрос\nsize_quality 3:1@2k / high: $0.023712 / запрос\nsize_quality 3:1@2k / low: $0.002472 / запрос\nsize_quality 3:1@2k / max: $0.094848 / запрос\nsize_quality 3:1@2k / medium: $0.005928 / запрос\nsize_quality 3:1@2k / xhigh: $0.041496 / запрос\nsize_quality 3:1@4k / auto: $0.127464 / запрос\nsize_quality 3:1@4k / high: $0.031872 / запрос\nsize_quality 3:1@4k / low: $0.003336 / запрос\nsize_quality 3:1@4k / max: $0.127464 / запрос\nsize_quality 3:1@4k / medium: $0.007968 / запрос\nsize_quality 3:1@4k / xhigh: $0.055776 / запрос\nsize_quality 3:2 / auto: $0.131712 / запрос\nsize_quality 3:2 / high: $0.032928 / запрос\nsize_quality 3:2 / low: $0.003792 / запрос\nsize_quality 3:2 / max: $0.131712 / запрос\nsize_quality 3:2 / medium: $0.008232 / запрос\nsize_quality 3:2 / xhigh: $0.059016 / запрос\nsize_quality 3:2@2k / auto: $0.176424 / запрос\nsize_quality 3:2@2k / high: $0.044112 / запрос\nsize_quality 3:2@2k / low: $0.005064 / запрос\nsize_quality 3:2@2k / max: $0.176424 / запрос\nsize_quality 3:2@2k / medium: $0.01104 / запрос\nsize_quality 3:2@2k / xhigh: $0.077184 / запрос\nsize_quality 3:2@4k / auto: $0.376872 / запрос\nsize_quality 3:2@4k / high: $0.094224 / запрос\nsize_quality 3:2@4k / low: $0.0108 / запрос\nsize_quality 3:2@4k / max: $0.376872 / запрос\nsize_quality 3:2@4k / medium: $0.023568 / запрос\nsize_quality 3:2@4k / xhigh: $0.16488 / запрос\nsize_quality 3:4 / auto: $0.11556 / запрос\nsize_quality 3:4 / high: $0.028896 / запрос\nsize_quality 3:4 / low: $0.003216 / запрос\nsize_quality 3:4 / max: $0.11556 / запрос\nsize_quality 3:4 / medium: $0.007224 / запрос\nsize_quality 3:4 / xhigh: $0.05136 / запрос\nsize_quality 3:4@2k / auto: $0.213408 / запрос\nsize_quality 3:4@2k / high: $0.053352 / запрос\nsize_quality 3:4@2k / low: $0.005928 / запрос\nsize_quality 3:4@2k / max: $0.213408 / запрос\nsize_quality 3:4@2k / medium: $0.013344 / запрос\nsize_quality 3:4@2k / xhigh: $0.094848 / запрос\nsize_quality 3:4@4k / auto: $0.4236 / запрос\nsize_quality 3:4@4k / high: $0.105912 / запрос\nsize_quality 3:4@4k / low: $0.011784 / запрос\nsize_quality 3:4@4k / max: $0.4236 / запрос\nsize_quality 3:4@4k / medium: $0.026496 / запрос\nsize_quality 3:4@4k / xhigh: $0.18828 / запрос\nsize_quality 4:3 / auto: $0.11556 / запрос\nsize_quality 4:3 / high: $0.028896 / запрос\nsize_quality 4:3 / low: $0.003216 / запрос\nsize_quality 4:3 / max: $0.11556 / запрос\nsize_quality 4:3 / medium: $0.007224 / запрос\nsize_quality 4:3 / xhigh: $0.05136 / запрос\nsize_quality 4:3@2k / auto: $0.213408 / запрос\nsize_quality 4:3@2k / high: $0.053352 / запрос\nsize_quality 4:3@2k / low: $0.005928 / запрос\nsize_quality 4:3@2k / max: $0.213408 / запрос\nsize_quality 4:3@2k / medium: $0.013344 / запрос\nsize_quality 4:3@2k / xhigh: $0.094848 / запрос\nsize_quality 4:3@4k / auto: $0.4236 / запрос\nsize_quality 4:3@4k / high: $0.105912 / запрос\nsize_quality 4:3@4k / low: $0.011784 / запрос\nsize_quality 4:3@4k / max: $0.4236 / запрос\nsize_quality 4:3@4k / medium: $0.026496 / запрос\nsize_quality 4:3@4k / xhigh: $0.18828 / запрос\nsize_quality 4:5 / auto: $0.146856 / запрос\nsize_quality 4:5 / high: $0.03624 / запрос\nsize_quality 4:5 / low: $0.004152 / запрос\nsize_quality 4:5 / max: $0.146856 / запрос\nsize_quality 4:5 / medium: $0.009072 / запрос\nsize_quality 4:5 / xhigh: $0.064848 / запрос\nsize_quality 4:5@2k / auto: $0.32124 / запрос\nsize_quality 4:5@2k / high: $0.079272 / запрос\nsize_quality 4:5@2k / low: $0.009048 / запрос\nsize_quality 4:5@2k / max: $0.32124 / запрос\nsize_quality 4:5@2k / medium: $0.019824 / запрос\nsize_quality 4:5@2k / xhigh: $0.141864 / запрос\nsize_quality 4:5@4k / auto: $0.456144 / запрос\nsize_quality 4:5@4k / high: $0.11256 / запрос\nsize_quality 4:5@4k / low: $0.01284 / запрос\nsize_quality 4:5@4k / max: $0.456144 / запрос\nsize_quality 4:5@4k / medium: $0.028152 / запрос\nsize_quality 4:5@4k / xhigh: $0.201432 / запрос\nsize_quality 5:4 / auto: $0.146856 / запрос\nsize_quality 5:4 / high: $0.03624 / запрос\nsize_quality 5:4 / low: $0.004152 / запрос\nsize_quality 5:4 / max: $0.146856 / запрос\nsize_quality 5:4 / medium: $0.009072 / запрос\nsize_quality 5:4 / xhigh: $0.064848 / запрос\nsize_quality 5:4@2k / auto: $0.32124 / запрос\nsize_quality 5:4@2k / high: $0.079272 / запрос\nsize_quality 5:4@2k / low: $0.009048 / запрос\nsize_quality 5:4@2k / max: $0.32124 / запрос\nsize_quality 5:4@2k / medium: $0.019824 / запрос\nsize_quality 5:4@2k / xhigh: $0.141864 / запрос\nsize_quality 5:4@4k / auto: $0.456144 / запрос\nsize_quality 5:4@4k / high: $0.11256 / запрос\nsize_quality 5:4@4k / low: $0.01284 / запрос\nsize_quality 5:4@4k / max: $0.456144 / запрос\nsize_quality 5:4@4k / medium: $0.028152 / запрос\nsize_quality 5:4@4k / xhigh: $0.201432 / запрос\nsize_quality 9:16 / auto: $0.103488 / запрос\nsize_quality 9:16 / high: $0.025872 / запрос\nsize_quality 9:16 / low: $0.00288 / запрос\nsize_quality 9:16 / max: $0.103488 / запрос\nsize_quality 9:16 / medium: $0.00672 / запрос\nsize_quality 9:16 / xhigh: $0.046008 / запрос\nsize_quality 9:16@2k / auto: $0.1356 / запрос\nsize_quality 9:16@2k / high: $0.033912 / запрос\nsize_quality 9:16@2k / low: $0.003768 / запрос\nsize_quality 9:16@2k / max: $0.1356 / запрос\nsize_quality 9:16@2k / medium: $0.008808 / запрос\nsize_quality 9:16@2k / xhigh: $0.060264 / запрос\nsize_quality 9:16@4k / auto: $0.320208 / запрос\nsize_quality 9:16@4k / high: $0.080064 / запрос\nsize_quality 9:16@4k / low: $0.008904 / запрос\nsize_quality 9:16@4k / max: $0.320208 / запрос\nsize_quality 9:16@4k / medium: $0.02076 / запрос\nsize_quality 9:16@4k / xhigh: $0.14232 / запрос\nsize_quality 9:21 / auto: $0.088368 / запрос\nsize_quality 9:21 / high: $0.022632 / запрос\nsize_quality 9:21 / low: $0.00252 / запрос\nsize_quality 9:21 / max: $0.088368 / запрос\nsize_quality 9:21 / medium: $0.0054 / запрос\nsize_quality 9:21 / xhigh: $0.038808 / запрос\nsize_quality 9:21@2k / auto: $0.120384 / запрос\nsize_quality 9:21@2k / high: $0.03084 / запрос\nsize_quality 9:21@2k / low: $0.003432 / запрос\nsize_quality 9:21@2k / max: $0.120384 / запрос\nsize_quality 9:21@2k / medium: $0.007344 / запрос\nsize_quality 9:21@2k / xhigh: $0.052848 / запрос\nsize_quality 9:21@4k / auto: $0.196704 / запрос\nsize_quality 9:21@4k / high: $0.050376 / запрос\nsize_quality 9:21@4k / low: $0.005616 / запрос\nsize_quality 9:21@4k / max: $0.196704 / запрос\nsize_quality 9:21@4k / medium: $0.012 / запрос\nsize_quality 9:21@4k / xhigh: $0.086352 / запрос",
+      "kiePrice": "image-to-image, 4K: 16 кредитов / изображение\nimage-to-image, 2K: 10 кредитов / изображение\nimage-to-image, 1K: 6 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "gpt-image-2.5-sunburst",
+      "kie": "kie:gpt-image-2-5-sunburst-text-to-image",
+      "name": "GPT Image 2.5 Sunburst - Text to Image",
+      "apimartPrice": "size_quality 16:9 / auto: $0.103488 / запрос\nsize_quality 16:9 / high: $0.025872 / запрос\nsize_quality 16:9 / low: $0.00288 / запрос\nsize_quality 16:9 / max: $0.103488 / запрос\nsize_quality 16:9 / medium: $0.00672 / запрос\nsize_quality 16:9 / xhigh: $0.046008 / запрос\nsize_quality 16:9@2k / auto: $0.1356 / запрос\nsize_quality 16:9@2k / high: $0.033912 / запрос\nsize_quality 16:9@2k / low: $0.003768 / запрос\nsize_quality 16:9@2k / max: $0.1356 / запрос\nsize_quality 16:9@2k / medium: $0.008808 / запрос\nsize_quality 16:9@2k / xhigh: $0.060264 / запрос\nsize_quality 16:9@4k / auto: $0.320208 / запрос\nsize_quality 16:9@4k / high: $0.080064 / запрос\nsize_quality 16:9@4k / low: $0.008904 / запрос\nsize_quality 16:9@4k / max: $0.320208 / запрос\nsize_quality 16:9@4k / medium: $0.02076 / запрос\nsize_quality 16:9@4k / xhigh: $0.14232 / запрос\nsize_quality 1:1 / auto: $0.168576 / запрос\nsize_quality 1:1 / high: $0.042144 / запрос\nsize_quality 1:1 / low: $0.004704 / запрос\nsize_quality 1:1 / max: $0.168576 / запрос\nsize_quality 1:1 / medium: $0.010536 / запрос\nsize_quality 1:1 / xhigh: $0.074928 / запрос\nsize_quality 1:1@2k / auto: $0.342528 / запрос\nsize_quality 1:1@2k / high: $0.085632 / запрос\nsize_quality 1:1@2k / low: $0.009528 / запрос\nsize_quality 1:1@2k / max: $0.342528 / запрос\nsize_quality 1:1@2k / medium: $0.021408 / запрос\nsize_quality 1:1@2k / xhigh: $0.152232 / запрос\nsize_quality 1:1@4k / auto: $0.569256 / запрос\nsize_quality 1:1@4k / high: $0.14232 / запрос\nsize_quality 1:1@4k / low: $0.015816 / запрос\nsize_quality 1:1@4k / max: $0.569256 / запрос\nsize_quality 1:1@4k / medium: $0.035592 / запрос\nsize_quality 1:1@4k / xhigh: $0.253008 / запрос\nsize_quality 1:2 / auto: $0.11328 / запрос\nsize_quality 1:2 / high: $0.02832 / запрос\nsize_quality 1:2 / low: $0.003168 / запрос\nsize_quality 1:2 / max: $0.11328 / запрос\nsize_quality 1:2 / medium: $0.00708 / запрос\nsize_quality 1:2 / xhigh: $0.050352 / запрос\nsize_quality 1:2@2k / auto: $0.155184 / запрос\nsize_quality 1:2@2k / high: $0.038808 / запрос\nsize_quality 1:2@2k / low: $0.00432 / запрос\nsize_quality 1:2@2k / max: $0.155184 / запрос\nsize_quality 1:2@2k / medium: $0.00972 / запрос\nsize_quality 1:2@2k / xhigh: $0.068976 / запрос\nsize_quality 1:2@4k / auto: $0.259152 / запрос\nsize_quality 1:2@4k / high: $0.0648 / запрос\nsize_quality 1:2@4k / low: $0.0072 / запрос\nsize_quality 1:2@4k / max: $0.259152 / запрос\nsize_quality 1:2@4k / medium: $0.0162 / запрос\nsize_quality 1:2@4k / xhigh: $0.115176 / запрос\nsize_quality 1:3 / auto: $0.05136 / запрос\nsize_quality 1:3 / high: $0.01284 / запрос\nsize_quality 1:3 / low: $0.001344 / запрос\nsize_quality 1:3 / max: $0.05136 / запрос\nsize_quality 1:3 / medium: $0.003216 / запрос\nsize_quality 1:3 / xhigh: $0.022488 / запрос\nsize_quality 1:3@2k / auto: $0.094848 / запрос\nsize_quality 1:3@2k / high: $0.023712 / запрос\nsize_quality 1:3@2k / low: $0.002472 / запрос\nsize_quality 1:3@2k / max: $0.094848 / запрос\nsize_quality 1:3@2k / medium: $0.005928 / запрос\nsize_quality 1:3@2k / xhigh: $0.041496 / запрос\nsize_quality 1:3@4k / auto: $0.127464 / запрос\nsize_quality 1:3@4k / high: $0.031872 / запрос\nsize_quality 1:3@4k / low: $0.003336 / запрос\nsize_quality 1:3@4k / max: $0.127464 / запрос\nsize_quality 1:3@4k / medium: $0.007968 / запрос\nsize_quality 1:3@4k / xhigh: $0.055776 / запрос\nsize_quality 21:9 / auto: $0.088368 / запрос\nsize_quality 21:9 / high: $0.022632 / запрос\nsize_quality 21:9 / low: $0.00252 / запрос\nsize_quality 21:9 / max: $0.088368 / запрос\nsize_quality 21:9 / medium: $0.0054 / запрос\nsize_quality 21:9 / xhigh: $0.038808 / запрос\nsize_quality 21:9@2k / auto: $0.120384 / запрос\nsize_quality 21:9@2k / high: $0.03084 / запрос\nsize_quality 21:9@2k / low: $0.003432 / запрос\nsize_quality 21:9@2k / max: $0.120384 / запрос\nsize_quality 21:9@2k / medium: $0.007344 / запрос\nsize_quality 21:9@2k / xhigh: $0.052848 / запрос\nsize_quality 21:9@4k / auto: $0.196704 / запрос\nsize_quality 21:9@4k / high: $0.050376 / запрос\nsize_quality 21:9@4k / low: $0.005616 / запрос\nsize_quality 21:9@4k / max: $0.196704 / запрос\nsize_quality 21:9@4k / medium: $0.012 / запрос\nsize_quality 21:9@4k / xhigh: $0.086352 / запрос\nsize_quality 2:1 / auto: $0.11328 / запрос\nsize_quality 2:1 / high: $0.02832 / запрос\nsize_quality 2:1 / low: $0.003168 / запрос\nsize_quality 2:1 / max: $0.11328 / запрос\nsize_quality 2:1 / medium: $0.00708 / запрос\nsize_quality 2:1 / xhigh: $0.050352 / запрос\nsize_quality 2:1@2k / auto: $0.155184 / запрос\nsize_quality 2:1@2k / high: $0.038808 / запрос\nsize_quality 2:1@2k / low: $0.00432 / запрос\nsize_quality 2:1@2k / max: $0.155184 / запрос\nsize_quality 2:1@2k / medium: $0.00972 / запрос\nsize_quality 2:1@2k / xhigh: $0.068976 / запрос\nsize_quality 2:1@4k / auto: $0.259152 / запрос\nsize_quality 2:1@4k / high: $0.0648 / запрос\nsize_quality 2:1@4k / low: $0.0072 / запрос\nsize_quality 2:1@4k / max: $0.259152 / запрос\nsize_quality 2:1@4k / medium: $0.0162 / запрос\nsize_quality 2:1@4k / xhigh: $0.115176 / запрос\nsize_quality 2:3 / auto: $0.131712 / запрос\nsize_quality 2:3 / high: $0.032928 / запрос\nsize_quality 2:3 / low: $0.003792 / запрос\nsize_quality 2:3 / max: $0.131712 / запрос\nsize_quality 2:3 / medium: $0.008232 / запрос\nsize_quality 2:3 / xhigh: $0.059016 / запрос\nsize_quality 2:3@2k / auto: $0.176424 / запрос\nsize_quality 2:3@2k / high: $0.044112 / запрос\nsize_quality 2:3@2k / low: $0.005064 / запрос\nsize_quality 2:3@2k / max: $0.176424 / запрос\nsize_quality 2:3@2k / medium: $0.01104 / запрос\nsize_quality 2:3@2k / xhigh: $0.077184 / запрос\nsize_quality 2:3@4k / auto: $0.376872 / запрос\nsize_quality 2:3@4k / high: $0.094224 / запрос\nsize_quality 2:3@4k / low: $0.0108 / запрос\nsize_quality 2:3@4k / max: $0.376872 / запрос\nsize_quality 2:3@4k / medium: $0.023568 / запрос\nsize_quality 2:3@4k / xhigh: $0.16488 / запрос\nsize_quality 3:1 / auto: $0.05136 / запрос\nsize_quality 3:1 / high: $0.01284 / запрос\nsize_quality 3:1 / low: $0.001344 / запрос\nsize_quality 3:1 / max: $0.05136 / запрос\nsize_quality 3:1 / medium: $0.003216 / запрос\nsize_quality 3:1 / xhigh: $0.022488 / запрос\nsize_quality 3:1@2k / auto: $0.094848 / запрос\nsize_quality 3:1@2k / high: $0.023712 / запрос\nsize_quality 3:1@2k / low: $0.002472 / запрос\nsize_quality 3:1@2k / max: $0.094848 / запрос\nsize_quality 3:1@2k / medium: $0.005928 / запрос\nsize_quality 3:1@2k / xhigh: $0.041496 / запрос\nsize_quality 3:1@4k / auto: $0.127464 / запрос\nsize_quality 3:1@4k / high: $0.031872 / запрос\nsize_quality 3:1@4k / low: $0.003336 / запрос\nsize_quality 3:1@4k / max: $0.127464 / запрос\nsize_quality 3:1@4k / medium: $0.007968 / запрос\nsize_quality 3:1@4k / xhigh: $0.055776 / запрос\nsize_quality 3:2 / auto: $0.131712 / запрос\nsize_quality 3:2 / high: $0.032928 / запрос\nsize_quality 3:2 / low: $0.003792 / запрос\nsize_quality 3:2 / max: $0.131712 / запрос\nsize_quality 3:2 / medium: $0.008232 / запрос\nsize_quality 3:2 / xhigh: $0.059016 / запрос\nsize_quality 3:2@2k / auto: $0.176424 / запрос\nsize_quality 3:2@2k / high: $0.044112 / запрос\nsize_quality 3:2@2k / low: $0.005064 / запрос\nsize_quality 3:2@2k / max: $0.176424 / запрос\nsize_quality 3:2@2k / medium: $0.01104 / запрос\nsize_quality 3:2@2k / xhigh: $0.077184 / запрос\nsize_quality 3:2@4k / auto: $0.376872 / запрос\nsize_quality 3:2@4k / high: $0.094224 / запрос\nsize_quality 3:2@4k / low: $0.0108 / запрос\nsize_quality 3:2@4k / max: $0.376872 / запрос\nsize_quality 3:2@4k / medium: $0.023568 / запрос\nsize_quality 3:2@4k / xhigh: $0.16488 / запрос\nsize_quality 3:4 / auto: $0.11556 / запрос\nsize_quality 3:4 / high: $0.028896 / запрос\nsize_quality 3:4 / low: $0.003216 / запрос\nsize_quality 3:4 / max: $0.11556 / запрос\nsize_quality 3:4 / medium: $0.007224 / запрос\nsize_quality 3:4 / xhigh: $0.05136 / запрос\nsize_quality 3:4@2k / auto: $0.213408 / запрос\nsize_quality 3:4@2k / high: $0.053352 / запрос\nsize_quality 3:4@2k / low: $0.005928 / запрос\nsize_quality 3:4@2k / max: $0.213408 / запрос\nsize_quality 3:4@2k / medium: $0.013344 / запрос\nsize_quality 3:4@2k / xhigh: $0.094848 / запрос\nsize_quality 3:4@4k / auto: $0.4236 / запрос\nsize_quality 3:4@4k / high: $0.105912 / запрос\nsize_quality 3:4@4k / low: $0.011784 / запрос\nsize_quality 3:4@4k / max: $0.4236 / запрос\nsize_quality 3:4@4k / medium: $0.026496 / запрос\nsize_quality 3:4@4k / xhigh: $0.18828 / запрос\nsize_quality 4:3 / auto: $0.11556 / запрос\nsize_quality 4:3 / high: $0.028896 / запрос\nsize_quality 4:3 / low: $0.003216 / запрос\nsize_quality 4:3 / max: $0.11556 / запрос\nsize_quality 4:3 / medium: $0.007224 / запрос\nsize_quality 4:3 / xhigh: $0.05136 / запрос\nsize_quality 4:3@2k / auto: $0.213408 / запрос\nsize_quality 4:3@2k / high: $0.053352 / запрос\nsize_quality 4:3@2k / low: $0.005928 / запрос\nsize_quality 4:3@2k / max: $0.213408 / запрос\nsize_quality 4:3@2k / medium: $0.013344 / запрос\nsize_quality 4:3@2k / xhigh: $0.094848 / запрос\nsize_quality 4:3@4k / auto: $0.4236 / запрос\nsize_quality 4:3@4k / high: $0.105912 / запрос\nsize_quality 4:3@4k / low: $0.011784 / запрос\nsize_quality 4:3@4k / max: $0.4236 / запрос\nsize_quality 4:3@4k / medium: $0.026496 / запрос\nsize_quality 4:3@4k / xhigh: $0.18828 / запрос\nsize_quality 4:5 / auto: $0.146856 / запрос\nsize_quality 4:5 / high: $0.03624 / запрос\nsize_quality 4:5 / low: $0.004152 / запрос\nsize_quality 4:5 / max: $0.146856 / запрос\nsize_quality 4:5 / medium: $0.009072 / запрос\nsize_quality 4:5 / xhigh: $0.064848 / запрос\nsize_quality 4:5@2k / auto: $0.32124 / запрос\nsize_quality 4:5@2k / high: $0.079272 / запрос\nsize_quality 4:5@2k / low: $0.009048 / запрос\nsize_quality 4:5@2k / max: $0.32124 / запрос\nsize_quality 4:5@2k / medium: $0.019824 / запрос\nsize_quality 4:5@2k / xhigh: $0.141864 / запрос\nsize_quality 4:5@4k / auto: $0.456144 / запрос\nsize_quality 4:5@4k / high: $0.11256 / запрос\nsize_quality 4:5@4k / low: $0.01284 / запрос\nsize_quality 4:5@4k / max: $0.456144 / запрос\nsize_quality 4:5@4k / medium: $0.028152 / запрос\nsize_quality 4:5@4k / xhigh: $0.201432 / запрос\nsize_quality 5:4 / auto: $0.146856 / запрос\nsize_quality 5:4 / high: $0.03624 / запрос\nsize_quality 5:4 / low: $0.004152 / запрос\nsize_quality 5:4 / max: $0.146856 / запрос\nsize_quality 5:4 / medium: $0.009072 / запрос\nsize_quality 5:4 / xhigh: $0.064848 / запрос\nsize_quality 5:4@2k / auto: $0.32124 / запрос\nsize_quality 5:4@2k / high: $0.079272 / запрос\nsize_quality 5:4@2k / low: $0.009048 / запрос\nsize_quality 5:4@2k / max: $0.32124 / запрос\nsize_quality 5:4@2k / medium: $0.019824 / запрос\nsize_quality 5:4@2k / xhigh: $0.141864 / запрос\nsize_quality 5:4@4k / auto: $0.456144 / запрос\nsize_quality 5:4@4k / high: $0.11256 / запрос\nsize_quality 5:4@4k / low: $0.01284 / запрос\nsize_quality 5:4@4k / max: $0.456144 / запрос\nsize_quality 5:4@4k / medium: $0.028152 / запрос\nsize_quality 5:4@4k / xhigh: $0.201432 / запрос\nsize_quality 9:16 / auto: $0.103488 / запрос\nsize_quality 9:16 / high: $0.025872 / запрос\nsize_quality 9:16 / low: $0.00288 / запрос\nsize_quality 9:16 / max: $0.103488 / запрос\nsize_quality 9:16 / medium: $0.00672 / запрос\nsize_quality 9:16 / xhigh: $0.046008 / запрос\nsize_quality 9:16@2k / auto: $0.1356 / запрос\nsize_quality 9:16@2k / high: $0.033912 / запрос\nsize_quality 9:16@2k / low: $0.003768 / запрос\nsize_quality 9:16@2k / max: $0.1356 / запрос\nsize_quality 9:16@2k / medium: $0.008808 / запрос\nsize_quality 9:16@2k / xhigh: $0.060264 / запрос\nsize_quality 9:16@4k / auto: $0.320208 / запрос\nsize_quality 9:16@4k / high: $0.080064 / запрос\nsize_quality 9:16@4k / low: $0.008904 / запрос\nsize_quality 9:16@4k / max: $0.320208 / запрос\nsize_quality 9:16@4k / medium: $0.02076 / запрос\nsize_quality 9:16@4k / xhigh: $0.14232 / запрос\nsize_quality 9:21 / auto: $0.088368 / запрос\nsize_quality 9:21 / high: $0.022632 / запрос\nsize_quality 9:21 / low: $0.00252 / запрос\nsize_quality 9:21 / max: $0.088368 / запрос\nsize_quality 9:21 / medium: $0.0054 / запрос\nsize_quality 9:21 / xhigh: $0.038808 / запрос\nsize_quality 9:21@2k / auto: $0.120384 / запрос\nsize_quality 9:21@2k / high: $0.03084 / запрос\nsize_quality 9:21@2k / low: $0.003432 / запрос\nsize_quality 9:21@2k / max: $0.120384 / запрос\nsize_quality 9:21@2k / medium: $0.007344 / запрос\nsize_quality 9:21@2k / xhigh: $0.052848 / запрос\nsize_quality 9:21@4k / auto: $0.196704 / запрос\nsize_quality 9:21@4k / high: $0.050376 / запрос\nsize_quality 9:21@4k / low: $0.005616 / запрос\nsize_quality 9:21@4k / max: $0.196704 / запрос\nsize_quality 9:21@4k / medium: $0.012 / запрос\nsize_quality 9:21@4k / xhigh: $0.086352 / запрос",
+      "kiePrice": "text-to-image, 4K: 16 кредитов / изображение\ntext-to-image, 2K: 10 кредитов / изображение\ntext-to-image, 1K: 6 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "grok-imagine-image-2.0",
+      "kie": "kie:grok-imagine-image-2-0/text-to-image",
+      "name": "Grok Imagine Image 2.0 Text To Image",
+      "apimartPrice": "size_quality 1K / low: $0.032 / запрос\nsize_quality 1K / medium: $0.048 / запрос\nsize_quality 2K / low: $0.048 / запрос\nsize_quality 2K / medium: $0.064 / запрос\nдоп. входное изображение: $0.008",
+      "kiePrice": "Text to Image: 4 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "qwen-image-3.0",
+      "kie": "kie:qwen3/image-to-image",
+      "name": "Qwen3 Image to Image",
+      "apimartPrice": "1K: $0.0205712 / изображение\n2K: $0.0205712 / изображение\nдоп. входное изображение: $0.0022856",
+      "kiePrice": "output, 2K: 4.8 кредитов / изображение\noutput, 1K: 4.8 кредитов / изображение\ninput, 2K: 0.5 кредитов / изображение\ninput, 1K: 0.5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "qwen-image-3.0-pro",
+      "kie": "kie:qwen3/pro-image-to-image",
+      "name": "Qwen3 Pro Image to Image",
+      "apimartPrice": "1K: $0.0285712 / изображение\n2K: $0.0571432 / изображение\nдоп. входное изображение: $0.0022856",
+      "kiePrice": "output, 2K: 12 кредитов / изображение\noutput, 1K: 6.4 кредитов / изображение\ninput, 2K: 0.5 кредитов / изображение\ninput, 1K: 0.5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "qwen-image-3.0-pro",
+      "kie": "kie:qwen3/pro-text-to-image",
+      "name": "Qwen3 Pro Text to Image",
+      "apimartPrice": "1K: $0.0285712 / изображение\n2K: $0.0571432 / изображение\nдоп. входное изображение: $0.0022856",
+      "kiePrice": "text to image, 2K: 12 кредитов / изображение\ntext to image, 1K: 6.4 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "qwen-image-3.0",
+      "kie": "kie:qwen3/text-to-image",
+      "name": "Qwen3 Text to Image",
+      "apimartPrice": "1K: $0.0205712 / изображение\n2K: $0.0205712 / изображение\nдоп. входное изображение: $0.0022856",
+      "kiePrice": "text to image, 2K: 4.8 кредитов / изображение\ntext to image, 1K: 4.8 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-4-0",
+      "kie": "kie:bytedance/seedream-v4-edit",
+      "name": "Seedream 4.0 - Edit",
+      "apimartPrice": "$0.0195 / изображение",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-4-0",
+      "kie": "kie:bytedance/seedream-v4-text-to-image",
+      "name": "Seedream 4.0 - Text to Image",
+      "apimartPrice": "$0.0195 / изображение",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-4-5",
+      "kie": "kie:seedream/4.5-edit",
+      "name": "Seedream 4.5 - Edit",
+      "apimartPrice": "$0.026 / изображение",
+      "kiePrice": "image-to-image: 6.5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-4-5",
+      "kie": "kie:seedream/4.5-text-to-image",
+      "name": "Seedream 4.5 - Text to Image",
+      "apimartPrice": "$0.026 / изображение",
+      "kiePrice": "text-to-image: 6.5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-5-0-lite",
+      "kie": "kie:seedream/5-lite-image-to-image",
+      "name": "Seedream 5.0 Lite - Image to Image",
+      "apimartPrice": "$0.028 / изображение",
+      "kiePrice": "image-to-image: 5.5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-5-0-lite",
+      "kie": "kie:seedream/5-lite-text-to-image",
+      "name": "Seedream 5.0 Lite - Text to Image",
+      "apimartPrice": "$0.028 / изображение",
+      "kiePrice": "text-to-image: 5.5 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-5-0-pro",
+      "kie": "kie:seedream/5-pro-image-to-image",
+      "name": "Seedream 5.0 Pro - Image to Image",
+      "apimartPrice": "layer_decomposition 1K: $0.014625 / запрос\nlayer_decomposition 2K: $0.02925 / запрос\nдоп. входное изображение: $0.00195",
+      "kiePrice": "Image to image, 2K: 3.24 кредитов / единицу тарифа"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-5-0-pro",
+      "kie": "kie:seedream/5-pro-text-to-image",
+      "name": "Seedream 5.0 Pro - Text to Image",
+      "apimartPrice": "layer_decomposition 1K: $0.014625 / запрос\nlayer_decomposition 2K: $0.02925 / запрос\nдоп. входное изображение: $0.00195",
+      "kiePrice": "Text to image , 1K: 3.24 кредитов / изображение\nText to image, 2K: 3.24 кредитов / изображение\nImage to image, 1K: 3.24 кредитов / изображение\ntext-to-image, 2K: 14 кредитов / изображение\ntext-to-image, 1K: 7 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "seedream-5-0-pro",
+      "kie": "kie:seedream/5-pro-layer-decomposition",
+      "name": "Seedream 5.0 Pro — Layer Decomposition",
+      "apimartPrice": "layer_decomposition 1K: $0.014625 / запрос\nlayer_decomposition 2K: $0.02925 / запрос\nдоп. входное изображение: $0.00195",
+      "kiePrice": "Layer Decomposition, 2K: 14 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "wan2.7-image",
+      "kie": "kie:wan/2-7-image",
+      "name": "Wan 2.7 Image",
+      "apimartPrice": "$0.0216 / изображение",
+      "kiePrice": "wan 2.7 image: 4.8 кредитов / изображение"
+    },
+    {
+      "kind": "image",
+      "apimart": "wan2.7-image-pro",
+      "kie": "kie:wan/2-7-image-pro",
+      "name": "Wan 2.7 Image Pro",
+      "apimartPrice": "$0.0544 / изображение",
+      "kiePrice": "wan 2.7 image pro: 12 кредитов / изображение"
+    },
+    {
+      "kind": "video",
+      "apimart": "Omni-Flash-Ext",
+      "kie": "kie:google/gemini-omni-flash-1-1",
+      "name": "Gemini Omni 1.1 Flash",
+      "apimartPrice": "resolution_duration 360P-4s: $0.15 / запрос\nresolution_duration 360P-6s: $0.175 / запрос\nresolution_duration 360P-8s: $0.2 / запрос\nresolution_duration 360P-10s: $0.225 / запрос\nresolution_duration 720P-4s: $0.25 / запрос\nresolution_duration 720P-6s: $0.3 / запрос\nresolution_duration 720P-8s: $0.35 / запрос\nresolution_duration 720P-10s: $0.4 / запрос\nresolution_duration 1080P-4s: $0.25 / запрос\nresolution_duration 1080P-6s: $0.3 / запрос\nresolution_duration 1080P-8s: $0.35 / запрос\nresolution_duration 1080P-10s: $0.4 / запрос\nresolution_duration 4K-4s: $0.75 / запрос\nresolution_duration 4K-6s: $0.8 / запрос\nresolution_duration 4K-8s: $0.85 / запрос\nresolution_duration 4K-10s: $0.9 / запрос\nvideo_ref 1080P: $0.08 / запрос\nvideo_ref 360P: $0.04 / запрос\nvideo_ref 4K: $0.24 / запрос\nvideo_ref 720P: $0.08 / запрос",
+      "kiePrice": "video, 360p with video input: 168 кредитов / видео\nvideo, 720p with video input: 168 кредитов / видео\nvideo, 1080p with video input: 168 кредитов / видео\nvideo, 10s 360p no video input: 126 кредитов / видео\nvideo, 10s 720p no video input: 126 кредитов / видео\nvideo, 10s 1080p no video input: 126 кредитов / видео\nvideo, 4k with video input: 252 кредитов / видео\nvideo, 10s 4k no video input: 210 кредитов / видео\nvideo, 8s 360p no video input: 105 кредитов / видео\nvideo, 8s 720p no video input: 105 кредитов / видео\nvideo, 8s 1080p no video input: 105 кредитов / видео\nvideo, 8s 4k no video input: 189 кредитов / видео\nvideo, 6s 360p no video input: 84 кредитов / видео\nvideo, 6s 720p no video input: 84 кредитов / видео\nvideo, 6s 1080p no video input: 84 кредитов / видео\nvideo, 6s 4k no video input: 168 кредитов / видео\nvideo, 4s 360p no video input: 63 кредитов / видео\nvideo, 4s 720p no video input: 63 кредитов / видео\nvideo, 4s 1080p no video input: 63 кредитов / видео\nvideo, 4s 4k no video input: 147 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "grok-imagine-video-1.5",
+      "kie": "kie:grok-imagine-video-1-5-preview",
+      "name": "Grok Imagine Video 1.5 Preview",
+      "apimartPrice": "480P: $0.064 / с\n720P: $0.112 / с\n1080P: $0.2 / с\nдоп. входное изображение: $0.008",
+      "kiePrice": "image-to-video, 720p: 4.5 кредитов / с\nimage-to-video, 480p: 2.4 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "happyhorse-1.1",
+      "kie": "kie:happyhorse-1-1/image-to-video",
+      "name": "HappyHorse 1.1 — Image To Video",
+      "apimartPrice": "720P: $0.13 / с\n1080P: $0.172 / с",
+      "kiePrice": "image-to-video, 1080p: 29 кредитов / с\nimage-to-video, 720p: 22.5 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "happyhorse-1.1",
+      "kie": "kie:happyhorse-1-1/reference-to-video",
+      "name": "HappyHorse 1.1 — Reference To Video",
+      "apimartPrice": "720P: $0.13 / с\n1080P: $0.172 / с",
+      "kiePrice": "reference-to-video, 1080p: 29 кредитов / с\nreference-to-video, 720p: 22.5 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "happyhorse-1.1",
+      "kie": "kie:happyhorse-1-1/text-to-video",
+      "name": "HappyHorse 1.1 — Text To Video",
+      "apimartPrice": "720P: $0.13 / с\n1080P: $0.172 / с",
+      "kiePrice": "text-to-video, 1080p: 29 кредитов / с\ntext-to-video, 720p: 22.5 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "kling-3.0-turbo",
+      "kie": "kie:kling/v3-turbo-text-to-video",
+      "name": "Kling - V3 Turbo Text to Video",
+      "apimartPrice": "720P: $0.1144 / с\n1080P: $0.1432 / с",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "video",
+      "apimart": "kling-v2-6",
+      "kie": "kie:kling-2.6/image-to-video",
+      "name": "Kling 2.6 Image to Video",
+      "apimartPrice": "billing_tier pro: $0.0625 / с\nbilling_tier pro-sound: $0.125 / с\nbilling_tier pro-sound-voice: $0.15 / с",
+      "kiePrice": "image-to-video, without audio-10.0s: 110 кредитов / видео\nimage-to-video, with audio-10.0s: 220 кредитов / видео\nimage-to-video, with audio-5.0s: 110 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "kling-v2-6-motion-control",
+      "kie": "kie:kling-2.6/motion-control",
+      "name": "Kling 2.6 motion-control",
+      "apimartPrice": "billing_tier pro: $0.09144 / с",
+      "kiePrice": "video to video, 1080P: 18 кредитов / с\nvideo-to-video, 720P: 11 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "kling-v2-6",
+      "kie": "kie:kling-2.6/text-to-video",
+      "name": "Kling 2.6 Text to Video",
+      "apimartPrice": "billing_tier pro: $0.0625 / с\nbilling_tier pro-sound: $0.125 / с\nbilling_tier pro-sound-voice: $0.15 / с",
+      "kiePrice": "text-to-video, with audio-10.0s: 220 кредитов / видео\ntext-to-video, without audio-10.0s: 110 кредитов / видео\ntext-to-video, without audio-5.0s: 55 кредитов / видео\ntext-to-video, with audio-5.0s: 110 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "kling-v3-omni",
+      "kie": "kie:kling-3.0-omni/text-to-video",
+      "name": "Kling 3.0 Omni Text to Video",
+      "apimartPrice": "billing_tier 4k: $0.42856 / с\nbilling_tier 4k-sound: $0.42856 / с\nbilling_tier pro: $0.0896 / с\nbilling_tier pro-sound: $0.112 / с\nbilling_tier pro-video: $0.1344 / с\nbilling_tier sound: $0.0896 / с\nbilling_tier video: $0.1008 / с",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "video",
+      "apimart": "kling-v3-motion-control",
+      "kie": "kie:kling-3.0/motion-control",
+      "name": "Kling-3.0 motion-control",
+      "apimartPrice": "billing_tier pro: $0.13712 / с",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "video",
+      "apimart": "MiniMax-H3",
+      "kie": "kie:minimax-h3/image-to-video",
+      "name": "MiniMax H3 Image-to-Video",
+      "apimartPrice": "video_ref 2K: $0.09144 / с\nvideo_ref 768P: $0.05712 / с\nдоп. входное изображение: $0.02288",
+      "kiePrice": "image to video, 768p: 8 кредитов / с\nimage to video, 2K: 13 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "MiniMax-H3",
+      "kie": "kie:minimax-h3/reference-to-video",
+      "name": "MiniMax H3 Reference-to-Video",
+      "apimartPrice": "video_ref 2K: $0.09144 / с\nvideo_ref 768P: $0.05712 / с\nдоп. входное изображение: $0.02288",
+      "kiePrice": "reference to video, 768p: 8 кредитов / с\nreference to video, 2K: 13 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "MiniMax-H3",
+      "kie": "kie:minimax-h3/text-to-video",
+      "name": "MiniMax H3 Text-to-Video",
+      "apimartPrice": "video_ref 2K: $0.09144 / с\nvideo_ref 768P: $0.05712 / с\nдоп. входное изображение: $0.02288",
+      "kiePrice": "text to video, 768p: 8 кредитов / с\ntext to video, 2K: 13 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "pixverse-v6",
+      "kie": "kie:pixverse-v6/transition",
+      "name": "PixVerse V6 First & Last Frame Transition",
+      "apimartPrice": "billing_tier 1080P-audio: $0.08 / с\nbilling_tier 360P-audio: $0.024 / с\nbilling_tier 540P-audio: $0.032 / с\nbilling_tier 720P-audio: $0.04 / с",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "video",
+      "apimart": "pixverse-v6",
+      "kie": "kie:pixverse-v6/image-to-video",
+      "name": "PixVerse V6 Image-to-Video",
+      "apimartPrice": "billing_tier 1080P-audio: $0.08 / с\nbilling_tier 360P-audio: $0.024 / с\nbilling_tier 540P-audio: $0.032 / с\nbilling_tier 720P-audio: $0.04 / с",
+      "kiePrice": "Text /Image to Video, 1080p (with audio): 18.4 кредитов / с\nText /Image to Video, 1080p (no audio): 14.4 кредитов / с\nText /Image to Video, 720p (with audio): 9.6 кредитов / с\nText /Image to Video, 720p (no audio): 7.2 кредитов / с\nText /Image to Video, 540p (with audio): 7.2 кредитов / с\nText /Image to Video, 540p (no audio): 5.6 кредитов / с\nText /Image to Video, 360p (with audio): 5.6 кредитов / с\nText /Image to Video, 360p（no audio）: 4 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "pixverse-v6",
+      "kie": "kie:pixverse-v6/reference-to-video",
+      "name": "PixVerse V6 Reference-to-video/参考图生成",
+      "apimartPrice": "billing_tier 1080P-audio: $0.08 / с\nbilling_tier 360P-audio: $0.024 / с\nbilling_tier 540P-audio: $0.032 / с\nbilling_tier 720P-audio: $0.04 / с",
+      "kiePrice": "Reference To Video, 1080p(with audio): 20.7 кредитов / с\nReference To Video, 1080p(no audio): 16.2 кредитов / с\nReference To Video, 720p(with audio): 10.8 кредитов / с\nReference To Video, 720p(no audio): 8.1 кредитов / с\nReference To Video, 540p(with audio): 8.1 кредитов / с\nReference To Video, 540p(no audio): 6.3 кредитов / с\nReference To Video, 360p(with audio): 6.3 кредитов / с\nReference To Video, 360p(no audio): 4.5 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "pixverse-v6",
+      "kie": "kie:pixverse-v6/text-to-video",
+      "name": "PixVerse V6 Text-to-Video",
+      "apimartPrice": "billing_tier 1080P-audio: $0.08 / с\nbilling_tier 360P-audio: $0.024 / с\nbilling_tier 540P-audio: $0.032 / с\nbilling_tier 720P-audio: $0.04 / с",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "video",
+      "apimart": "pixverse-v6",
+      "kie": "kie:pixverse-v6/extend",
+      "name": "PixVerse V6 Video Extension",
+      "apimartPrice": "billing_tier 1080P-audio: $0.08 / с\nbilling_tier 360P-audio: $0.024 / с\nbilling_tier 540P-audio: $0.032 / с\nbilling_tier 720P-audio: $0.04 / с",
+      "kiePrice": "Extend, 1080p(with aiduo): 18.4 кредитов / с\nExtend, 1080p(no aiduo): 14.4 кредитов / с\nExtend, 720p(with aiduo): 9.6 кредитов / с\nExtend, 720p(no aiduo): 7.2 кредитов / с\nExtend, 540p(with aiduo): 7.2 кредитов / с\nExtend, 540p(no aiduo): 5.6 кредитов / с\nExtend, 360p(with aiduo): 5.6 кредитов / с\nExtend, 360p(no aiduo): 4 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "seedance-1-5-pro",
+      "kie": "kie:bytedance/seedance-1.5-pro",
+      "name": "Seedance 1.5 Pro",
+      "apimartPrice": "480P: $0.0204 / с\n720P: $0.044 / с\n1080P: $0.108 / с",
+      "kiePrice": "without audio-720p: 3.5 кредитов / с\nwith audio-1080p: 15 кредитов / с\nwithout audio-1080p: 7.5 кредитов / с\nwith audio-720p: 7 кредитов / с\nwith audio-480p: 3.5 кредитов / с\nwithout audio-480p: 1.75 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "seedance-2.0",
+      "kie": "kie:bytedance/seedance-2",
+      "name": "Seedance 2.0",
+      "apimartPrice": "480P: $0.066 / с\n720P: $0.142 / с\n1080P: $0.3544 / с\n4K: $0.722 / с\n1080P-input: $0.21568 / с\n480P-input: $0.04 / с\n4K-input: $0.44432 / с\n720P-input: $0.08584 / с",
+      "kiePrice": "4K no video input: 208 кредитов / с\n4K with video input: 128 кредитов / с\n1080p with video input: 62 кредитов / с\n1080p no video input: 102 кредитов / с\n720p no video input: 41 кредитов / с\n720p with video input: 25 кредитов / с\n480p no video input: 19 кредитов / с\n480p with video input: 11.5 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "seedance-2.0-fast",
+      "kie": "kie:bytedance/seedance-2-fast",
+      "name": "Seedance 2.0 Fast",
+      "apimartPrice": "480P: $0.03984 / с\n720P: $0.0856 / с\n480P-input: $0.02368 / с\n720P-input: $0.05128 / с",
+      "kiePrice": "720p no video input: 24.8 кредитов / с\n720p with video input: 15 кредитов / с\n480p no video input: 11.7 кредитов / с\n480p with video input: 6.8 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "seedance-2.0-mini",
+      "kie": "kie:bytedance/seedance-2-mini",
+      "name": "Seedance 2.0 Mini",
+      "apimartPrice": "480P: $0.01056 / с\n720P: $0.02288 / с\n480P-input: $0.0064 / с\n720P-input: $0.01384 / с",
+      "kiePrice": "720P no video: 8.2 кредитов / с\n720P with video: 5 кредитов / с\n480P no video: 3.8 кредитов / с\n480P with video: 2.4 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "seedance-2.5",
+      "kie": "kie:bytedance/seedance-2-5",
+      "name": "Seedance 2.5",
+      "apimartPrice": "billing_tier token: $10 / с\nbilling_tier token-1080P: $11 / с\nbilling_tier token-1080P-input: $6.568 / с\nbilling_tier token-input: $6 / с",
+      "kiePrice": "1080p with video: 95 кредитов / с\n1080p no video: 158 кредитов / с\n720p with video: 38 кредитов / с\n720p no video: 63 кредитов / с\n480p with video: 17 кредитов / с\n480p no video: 28 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-fast",
+      "kie": "kie:veo3_fast:FIRST_AND_LAST_FRAMES_2_VIDEO",
+      "name": "Veo 3.1 Fast · Начальный / конечный кадр",
+      "apimartPrice": "4K: $0.64 / запрос",
+      "kiePrice": "image-to-video, Fast-4K: 180 кредитов / видео\nimage-to-video, Fast-1080p: 65 кредитов / видео\nimage-to-video, Fast-720p: 60 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-fast",
+      "kie": "kie:veo3_fast:REFERENCE_2_VIDEO",
+      "name": "Veo 3.1 Fast · Референсы → видео",
+      "apimartPrice": "4K: $0.64 / запрос",
+      "kiePrice": "reference-to-video, Fast-4k: 180 кредитов / видео\nreference-to-video, Fast-1080p: 65 кредитов / видео\nreference-to-video, Fast-720p: 60 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-fast",
+      "kie": "kie:veo3_fast:TEXT_2_VIDEO",
+      "name": "Veo 3.1 Fast · Текст → видео",
+      "apimartPrice": "4K: $0.64 / запрос",
+      "kiePrice": "text-to-video, Fast-4K: 180 кредитов / видео\ntext-to-video, Fast-1080p: 65 кредитов / видео\ntext-to-video, Fast-720p: 60 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-lite",
+      "kie": "kie:veo3_lite:FIRST_AND_LAST_FRAMES_2_VIDEO",
+      "name": "Veo 3.1 Lite · Начальный / конечный кадр",
+      "apimartPrice": "4K: $0.57 / запрос",
+      "kiePrice": "image-to-video, Lite-4K: 150 кредитов / видео\nimage-to-video, Lite-1080p: 35 кредитов / видео\nimage-to-video, Lite-720p: 30 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-lite",
+      "kie": "kie:veo3_lite:REFERENCE_2_VIDEO",
+      "name": "Veo 3.1 Lite · Референсы → видео",
+      "apimartPrice": "4K: $0.57 / запрос",
+      "kiePrice": "reference-to-video, Lite-4k: 150 кредитов / видео\nreference-to-video, Lite-1080p: 35 кредитов / видео\nreference-to-video, Lite-720p: 30 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-lite",
+      "kie": "kie:veo3_lite:TEXT_2_VIDEO",
+      "name": "Veo 3.1 Lite · Текст → видео",
+      "apimartPrice": "4K: $0.57 / запрос",
+      "kiePrice": "text-to-video, Lite-4K: 150 кредитов / видео\ntext-to-video, Lite-1080p: 35 кредитов / видео\ntext-to-video, Lite-720p: 30 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-quality",
+      "kie": "kie:veo3:FIRST_AND_LAST_FRAMES_2_VIDEO",
+      "name": "Veo 3.1 Quality · Начальный / конечный кадр",
+      "apimartPrice": "4K: $1.5 / запрос",
+      "kiePrice": "image-to-video, Quality-4K: 370 кредитов / видео\nimage-to-video, Quality-1080p: 255 кредитов / видео\nimage-to-video, Quality-720p: 250 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "veo3.1-quality",
+      "kie": "kie:veo3:TEXT_2_VIDEO",
+      "name": "Veo 3.1 Quality · Текст → видео",
+      "apimartPrice": "4K: $1.5 / запрос",
+      "kiePrice": "text-to-video, Quality-4K: 380 кредитов / видео\ntext-to-video, Quality-1080p: 255 кредитов / видео\ntext-to-video, Quality-720p: 250 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "wan2.6",
+      "kie": "kie:wan/2-6-text-to-video",
+      "name": "Wan 2.6 - Text to Video",
+      "apimartPrice": "1080P: $0.084 / с",
+      "kiePrice": "text to video, 5.0s-1080p: 104.5 кредитов / видео\ntext to video, 10.0s-1080p: 209.5 кредитов / видео\ntext to video, 15.0s-1080p: 315 кредитов / видео\ntext to video, 15.0s-720p: 210 кредитов / видео\ntext to video, 10.0s-720p: 140 кредитов / видео\ntext to video, 5.0s-720p: 70 кредитов / видео"
+    },
+    {
+      "kind": "video",
+      "apimart": "wan2.7-r2v",
+      "kie": "kie:wan/2-7-r2v",
+      "name": "Wan 2.7 - Reference to Video",
+      "apimartPrice": "1080P: $0.1096 / с",
+      "kiePrice": "r2v, 1080p: 24 кредитов / с\nr2v, 720p: 16 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "wan2.7",
+      "kie": "kie:wan/2-7-text-to-video",
+      "name": "Wan 2.7 - Text to Video",
+      "apimartPrice": "1080P: $0.1096 / с",
+      "kiePrice": "text-to-video, 1080p: 24 кредитов / с\ntext-to-video, 720p: 16 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "wan2.7-videoedit",
+      "kie": "kie:wan/2-7-videoedit",
+      "name": "Wan 2.7 - Video Edit",
+      "apimartPrice": "1080P: $0.1096 / с",
+      "kiePrice": "videoedit, 1080p: 24 кредитов / с\nvideoedit, 720p: 16 кредитов / с"
+    },
+    {
+      "kind": "video",
+      "apimart": "wan3.0-video",
+      "kie": "kie:wan/3-0-video",
+      "name": "Wan 3.0 - Video",
+      "apimartPrice": "480P: $0.03288 / с\n720P: $0.065752 / с\n1080P: $0.131504 / с",
+      "kiePrice": "—"
+    },
+    {
+      "kind": "video",
+      "apimart": "wan3.0-video-prime",
+      "kie": "kie:wan/3-0-video-prime",
+      "name": "Wan 3.0 - Video Prime",
+      "apimartPrice": "480P: $0.0514288 / с\n720P: $0.1028568 / с\n1080P: $0.2057144 / с",
+      "kiePrice": "—"
+    }
+  ]
+}

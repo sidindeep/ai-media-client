@@ -4,7 +4,7 @@ RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-workspace
 COPY web ./web
-COPY config/cost-routing-compatibility.json ./config/
+COPY config/cost-routing-compatibility.json config/service-models.json ./config/
 COPY public ./public
 RUN pnpm check:web:vue && pnpm build:web
 
@@ -24,6 +24,8 @@ COPY --from=frontend /app/public/vue ./public/vue
 COPY --from=frontend /app/public/vue /opt/media-vue
 COPY config ./config
 COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/migrate-schema.cjs scripts/grant-runtime-role.cjs scripts/database-preflight.cjs scripts/read-system-errors.cjs scripts/check-operations-alerts.cjs scripts/resolve-git-commit.cjs ./scripts/
+COPY scripts/audit-provider-quotes.cjs ./scripts/
+COPY scripts/import-service-model-config.cjs ./scripts/
 COPY .git /tmp/media-git
 RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 RUN node src/server/build-info.js /opt/media-build.json /opt/media-commit

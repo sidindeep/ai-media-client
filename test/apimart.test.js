@@ -220,12 +220,35 @@ test('APIMart estimates only supported media tariff shapes', () => {
     { resolution: '2k', n: 2 }), { status: 'estimated', credits: null, amountUsd: 0.04, nativeCredits: 0.4 });
   assert.equal(mediaEstimate({ data: { billing_type: 'per_second' } }, model), null);
   assert.equal(mediaEstimate({ data: { billing_type: 'tiered_token', paid_price: 0.032 } }, model), null);
+  const lite = { id: 'gemini-3.1-flash-lite-image', kind: 'image',
+    fields: [{ key: 'resolution', apiDefault: '1K' }] };
+  const liteTariff = { data: { billing_type: 'tiered_token', paid_price: 0.032,
+    pricing: { unit: 'usd_per_million_tokens', pricing_mode: 'image_modalities' } } };
+  assert.deepEqual(mediaEstimate(liteTariff, lite, { resolution: '1K', n: 2 }),
+    { status: 'estimated', credits: null, amountUsd: 0.064, nativeCredits: 0.64 });
+  assert.equal(mediaEstimate(liteTariff, { id: 'future-image-model', kind: 'image' }).amountUsd, 0.032);
+  assert.equal(mediaEstimate({ data: { billing_type: 'tiered_token', paid_price: 0.032 } }, lite), null);
   const nano = { id: 'gemini-3-pro-image-preview', kind: 'image' };
   const nanoTariff = { data: { paid_price: 0.03, resolution_paid_prices: { '4K': 0.04 } } };
   assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '1K', n: 1 }).amountUsd, 0.03);
   assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '2K', n: 1 }).amountUsd, 0.03);
   assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '4K', n: 1 }).amountUsd, 0.04);
   assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '8K', n: 1 }), null);
+});
+
+test('published image tariffs account for references and layer preauthorization independent of model ID', () => {
+  const tariff = { data: { paid_price: 0.036, resolution_paid_prices: { '1K': 0.02925, '2K': 0.0585 },
+    input_image_first_free: true, input_image_paid_price: 0.00195,
+    layer_decomposition_paid_prices: { '1K': 0.014625, '2K': 0.02925 }, layer_decomposition_max_images: 17 } };
+  const model = { id: 'future-layer-model', kind: 'image' };
+  for (const [size, perImage] of [['auto', 0.02925], ['1K', 0.014625], ['1.5K', 0.014625], ['2K', 0.02925]]) {
+    const priced = mediaEstimate(tariff, model, { size, image_urls: ['content:one'], layer_decomposition: true });
+    assert.equal(priced.amountUsd, perImage * 17);
+    assert.match(priced.warning, /17/);
+  }
+  assert.equal(mediaEstimate(tariff, model, { resolution: '1K', image_urls: ['one', 'two', 'three'] }).amountUsd, 0.02925 + 0.00195 * 2);
+  assert.equal(mediaEstimate(tariff, model, { layer_decomposition: true, size: 'unknown', image_urls: ['one'] }), null);
+  assert.equal(mediaEstimate({ data: { paid_price: 0.03 } }, model, { layer_decomposition: true, image_urls: ['one'] }), null);
 });
 
 test('APIMart Seedance 2.5 quote follows resolution prices despite token billing tiers', () => {
@@ -329,4 +352,46 @@ test('APIMart reserves app credits before POST and settles the confirmed provide
   assert.deepEqual(shortJob.resultUrls, ['https://example.com/billed.png']);
   assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [emptyAccount])).rows[0],
     { balance: 100, held: 100 });
+});
+
+
+test('standard token quotes accept cache tariff dimensions without assuming cache hits', () => {
+  const rates = simpleRates({ data: { pricing: { unit: 'usd_per_million_tokens', tier_count: 1,
+    effective_rates: { input: 2.4, cached_input: 0.24, cache_write_5m: 3, cache_write_1h: 4.8, output: 12 } } } });
+  assert.deepEqual(rates, { input: 2.4, output: 12 });
+  assert.ok(estimate(rates, 'A tree').amountUsd > 0);
+  assert.equal(usedCost(rates, { input_tokens: 10, output_tokens: 2, input_tokens_details: { cached_tokens: 8 } }), null);
+});
+
+test('fresh quotes bypass the APIMart pricing cache before dispatch', async () => {
+  let calls = 0;
+  const service = createApimartJobs({ pool: null, apiKey: 'test', fetchImpl: async url => ({ ok: true,
+    json: async () => url.includes('/models?') ? { data: [{ id: 'gpt-image-2', category: 'image' }] }
+      : { data: { paid_price: ++calls / 100 } } }) });
+  const input = { model: 'gpt-image-2', prompt: 'A tree' };
+  assert.equal((await service.quote(input)).amountUsd, 0.01);
+  assert.equal((await service.quote(input)).amountUsd, 0.01);
+  assert.equal((await service.quote(input, { fresh: true })).amountUsd, 0.02);
+});
+
+test('image quotes resolve compound aspect/resolution/quality tariffs and conservative auto size', () => {
+  const tariff = { data: { billing_type: 'tiered_token',
+    resolution_paid_prices: { '1:1': 0.1, '16:9': 0.08, '1:1@2k': 0.2, '16:9@2k': 0.15 },
+    size_quality_paid_prices: { '1:1': { auto: 0.1, high: 0.3 }, '16:9': { auto: 0.08, high: 0.2 },
+      '1:1@2k': { auto: 0.2, high: 0.6 }, '16:9@2k': { auto: 0.15, high: 0.4 } } } };
+  const model = { id: 'any-image-model', kind: 'image' };
+  assert.equal(mediaEstimate(tariff, model, { size: '16:9', resolution: '2K', quality: 'high', n: 2 }).amountUsd, 0.8);
+  const auto = mediaEstimate(tariff, model, { size: 'auto', resolution: '1K', quality: 'high' });
+  assert.equal(auto.amountUsd, 0.3);
+  assert.match(auto.warning, /автоматического/);
+  assert.equal(mediaEstimate(tariff, model, { size: '16:9', resolution: '4K' }), null);
+  assert.equal(mediaEstimate(tariff, model, { size: '1:1', quality: 'unknown' }), null);
+});
+
+test('sparse video tariff uses the documented default and never substitutes unknown variants', () => {
+  const model = { id: 'any-video', kind: 'video', fields: [{ key: 'resolution', apiDefault: '720p' }, { key: 'duration', apiDefault: 5 }] };
+  const tariff = { data: { billing_type: 'per_second', paid_price: 0.05, resolution_paid_prices: { '1080P': 0.08 } } };
+  assert.equal(mediaEstimate(tariff, model).amountUsd, 0.25);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '1080p' }).amountUsd, 0.4);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '4K' }), null);
 });

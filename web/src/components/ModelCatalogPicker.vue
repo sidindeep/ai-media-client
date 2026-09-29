@@ -2,13 +2,18 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { MODEL_BRANDS, modelBrand, modelSummary, type ModelPickerOption } from '../domain/model-catalog';
 import { useI18n } from '../i18n';
+import type { ServiceModelConfigSummary } from '../types';
 
 const props = defineProps<{
   modelValue: string;
   models: ModelPickerOption[];
   price?: string;
+  catalogs?: ServiceModelConfigSummary[];
+  catalogId?: string;
+  catalogLoading?: boolean;
+  catalogError?: boolean;
 }>();
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+const emit = defineEmits<{ 'update:modelValue': [value: string]; 'select-catalog': [id: string] }>();
 const { locale, t } = useI18n();
 
 const root = ref<HTMLElement | null>(null);
@@ -21,6 +26,7 @@ const activeGroup = ref('');
 const panelStyle = ref<Record<string, string>>({});
 
 const selected = computed(() => props.models.find(model => model.value === props.modelValue) || props.models[0]);
+const selectedCatalog = computed(() => props.catalogs?.find(catalog => catalog.id === props.catalogId));
 const selectedBrand = computed(() => modelBrand(selected.value?.groupId || 'other'));
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
 const matchingModels = computed(() => {
@@ -60,7 +66,7 @@ function updatePosition() {
 }
 
 async function show() {
-  if (!props.models.length) return;
+  if (!props.models.length && !props.catalogs?.length) return;
   setInitialGroup();
   search.value = '';
   open.value = true;
@@ -87,6 +93,12 @@ function chooseGroup(id: string) {
   nextTick(() => panel.value?.querySelector<HTMLButtonElement>('.model-catalog-item')?.focus());
 }
 
+function chooseCatalog(id: string) {
+  if (id === props.catalogId || props.catalogLoading) return;
+  search.value = '';
+  emit('select-catalog', id);
+}
+
 function nativeChange(event: Event) {
   emit('update:modelValue', (event.target as HTMLSelectElement).value);
 }
@@ -103,6 +115,10 @@ function onKeydown(event: KeyboardEvent) {
 watch(() => props.models, () => {
   if (!groups.value.some(group => group.id === activeGroup.value)) setInitialGroup();
 }, { deep: true });
+watch(() => props.catalogId, () => {
+  search.value = '';
+  setInitialGroup();
+});
 watch(open, value => {
   if (value) {
     document.addEventListener('pointerdown', onPointerDown);
@@ -126,8 +142,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" class="model-picker model-pill">
-    <button ref="trigger" type="button" class="model-picker-trigger select-pill" aria-haspopup="listbox" :aria-expanded="open" :disabled="!models.length" @click="open ? close() : show()">
-      <span class="model-picker-label">{{ t('model.label') }}</span>
+    <button ref="trigger" type="button" class="model-picker-trigger select-pill" aria-haspopup="dialog" :aria-expanded="open" :disabled="!models.length && !catalogs?.length" @click="open ? close() : show()">
+      <span class="model-picker-label">{{ selectedCatalog?.title || t('model.label') }}</span>
       <span class="model-brand-icon compact" :style="{ '--brand-accent': selectedBrand.accent }">
         <img v-if="selectedBrand.icon" :src="selectedBrand.icon" alt="" :class="{ monochrome: selectedBrand.monochrome }">
         <span v-else>{{ selectedBrand.label.slice(0, 1) }}</span>
@@ -139,7 +155,16 @@ onBeforeUnmount(() => {
       <option v-for="model in models" :key="model.value" :value="model.value">{{ model.label }}</option>
     </select>
     <Teleport to="body">
-      <section v-if="open" ref="panel" class="model-catalog-popover" :style="panelStyle" :aria-label="t('model.select')">
+      <section v-if="open" ref="panel" class="model-catalog-popover" role="dialog" :style="panelStyle" :aria-label="t('model.select')">
+        <nav v-if="catalogs && catalogs.length > 1" class="model-catalog-variants" :aria-label="t('composer.serviceCatalog')">
+          <button v-for="catalog in catalogs" :key="catalog.id" type="button"
+            :class="{ active: catalog.id === catalogId }" :aria-current="catalog.id === catalogId ? 'true' : undefined"
+            :disabled="catalogLoading" @click="chooseCatalog(catalog.id)">
+            <strong>{{ catalog.title }}</strong><small>{{ catalog.modelCount }}</small>
+          </button>
+        </nav>
+        <p v-if="catalogError" class="model-catalog-status" role="alert">{{ t('model.catalogSwitchFailed') }}</p>
+        <p v-else-if="catalogLoading" class="model-catalog-status" role="status">{{ t('model.catalogLoading') }}</p>
         <label class="model-catalog-search">
           <span aria-hidden="true">⌕</span>
           <input ref="searchInput" v-model="search" type="search" :placeholder="t('model.search')" autocomplete="off">

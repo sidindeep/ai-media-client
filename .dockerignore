@@ -22,6 +22,7 @@
 !scripts/
 !scripts/migrate-content-assets.cjs
 !scripts/audit-content.cjs
+!scripts/audit-provider-quotes.cjs
 !scripts/resolve-git-commit.cjs
 !test/
 !test/**

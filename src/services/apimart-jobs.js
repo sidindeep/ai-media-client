@@ -4,7 +4,7 @@ const { appendGenerationEvent } = require('./generation-journal');
 const { transaction } = require('../database/database');
 const wallet = require('../billing/wallet');
 const { defineProvider } = require('../providers/contract');
-const { simpleRates, estimate, usedCost, mediaEstimate } = require('../providers/apimart/pricing');
+const { simpleRates, estimate, usedCost, mediaEstimate, unavailableMediaReason } = require('../providers/apimart/pricing');
 const { describeModel, MUSIC_MODELS, SPEECH_MODELS, MODEL_ID } = require('../providers/apimart/catalog');
 const { isDeepStrictEqual } = require('node:util');
 
@@ -45,15 +45,15 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
   let expiresAt = 0;
   let pending = null;
   const pricingCache = new Map();
-  async function tariff(model) {
+  async function tariff(model, fresh = false) {
     const cached = pricingCache.get(model);
-    if (cached && cached.expiresAt > now()) return cached.value;
+    if (!fresh && cached && cached.expiresAt > now()) return cached.value;
     const value = await client.pricing(model);
     pricingCache.set(model, { value, expiresAt: now() + MODEL_TTL_MS });
     return value;
   }
-  const rates = async model => simpleRates(await tariff(model));
-  async function quote(raw) {
+  const rates = async (model, fresh = false) => simpleRates(await tariff(model, fresh));
+  async function quote(raw, { fresh = false } = {}) {
     if (!raw || typeof raw.model !== 'string' || !MODEL_ID.test(raw.model)
       || typeof raw.prompt !== 'string' || raw.prompt.length > 20000) {
       throw Object.assign(new Error('Некорректный запрос APIMart'), { status: 400 });
@@ -62,14 +62,16 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
     if (!model) throw Object.assign(new Error('Модель APIMart недоступна'), { status: 403 });
     const options = parameters(raw);
     if (model.kind === 'text') {
-      const tariff = await rates(raw.model);
-      if (!tariff) return { status: 'unavailable', credits: null, reason: 'unsupported_tariff' };
+      const tariff = await rates(raw.model, fresh);
+      if (!tariff) return { status: 'unavailable', credits: null, reason: 'unsupported_tariff',
+        message: 'Провайдер не вернул поддерживаемый текстовый тариф для этого запроса' };
       const priced = estimate(tariff, raw.prompt);
       return { status: 'estimated', ...priced, credits: creditUnits(priced.nativeCredits) / 1000 };
     }
-    const mediaQuote = mediaEstimate(await tariff(raw.model), model, options);
+    const published = await tariff(raw.model, fresh);
+    const mediaQuote = mediaEstimate(published, model, options);
     return mediaQuote ? { ...mediaQuote, credits: creditUnits(mediaQuote.nativeCredits) / 1000 }
-      : { status: 'unavailable', credits: null, reason: 'unsupported_tariff' };
+      : { status: 'unavailable', credits: null, reason: 'unsupported_tariff', message: unavailableMediaReason(published, model, options) };
   }
   async function status() {
     const result = await client.balance();
@@ -318,7 +320,8 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
     }
     const model = (await models()).find(item => item.id === raw.model);
     if (!model) throw Object.assign(new Error('Модель APIMart недоступна'), { status: 403 });
-    if (model.promptRequired && !raw.prompt.trim()) throw Object.assign(new Error('Введите промпт'), { status: 400 });
+    if (model.promptRequired && !(options.layer_decomposition === true && model.fields.some(field => field.key === 'layer_decomposition'))
+      && !raw.prompt.trim()) throw Object.assign(new Error('Введите промпт'), { status: 400 });
     for (const field of model.fields) {
       const value = options[field.key];
       if (field.required && (value == null || value === '' || Array.isArray(value) && !value.length)) {
@@ -334,7 +337,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
         || field.maxFiles && Array.isArray(value) && value.length > field.maxFiles;
       if (invalid) throw Object.assign(new Error(`Некорректное значение: ${field.label || field.key}`), { status: 400 });
     }
-    const priced = await quote({ model: raw.model, prompt: raw.prompt, parameters: options });
+    const priced = await quote({ model: raw.model, prompt: raw.prompt, parameters: options }, { fresh: true });
     if (priced.status !== 'estimated' || !(priced.nativeCredits > 0)) {
       throw Object.assign(new Error('Цена APIMart недоступна'), { status: 503 });
     }

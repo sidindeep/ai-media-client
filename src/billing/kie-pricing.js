@@ -84,7 +84,7 @@ function candidateScore(row, input, model) {
         : containsValue(description, value);
     if (value !== undefined && value !== null && value !== '' && matches) score += 4;
   }
-  const audio = input?.generate_audio ?? input?.sound ?? input?.audio;
+  const audio = input?.generate_audio ?? input?.generate_audio_switch ?? input?.sound ?? input?.audio;
   if (typeof audio === 'boolean' && /audio|aiduo|sound/i.test(description)) {
     const without = /(?:without|no)\s*(?:audio|aiduo|sound)/i.test(description);
     score += without === !audio ? 5 : -20;

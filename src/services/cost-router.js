@@ -39,9 +39,8 @@ function normalizedRequest(raw, routingPolicy = policy) {
   if (!kieSelected && !martSelected) throw Object.assign(new Error('Автоматический выбор для модели ещё недоступен'), { status: 400 });
   const model = { id: raw.modelId, routes: kieSelected
     ? [{ providerId: 'kie', modelId: raw.modelId }, pair
-      ? { providerId: 'apimart', modelId: pair.apimart, profile: pair.profile,
-        ...((pair.profile === 'gpt-image-2' && !gptPair || pair.profile === 'nano-banana-pro' && !nanoPair)
-          ? { unavailableReason: 'Параметры этой пары несовместимы' } : {}) }
+      ? { providerId: 'apimart', modelId: pair.apimart,
+        profile: gptPair || nanoPair ? pair.profile : undefined, mapping: pair.mapping }
       : { providerId: 'apimart', modelId: '', unavailableReason: 'В таблице совместимости нет модели APIMart' }]
     : [{ providerId: 'apimart', modelId: raw.modelId.slice(8) }, { providerId: 'kie', modelId: pair?.kie || '',
       unavailableReason: pair ? 'Для этого варианта APIMart не подтверждён перевод параметров в Kie' : 'В таблице совместимости нет модели Kie' }] };
@@ -56,27 +55,37 @@ function normalizedRequest(raw, routingPolicy = policy) {
     sourceFiles: raw.sourceFiles || [], projectId, chatId, requestId: raw.requestId };
 }
 
-function mappedParameters(request, model) {
-  if (request.sourceFiles.length) throw new Error('Для этого маршрута не подтверждён перенос исходных файлов');
-  if (model.promptRequired && (typeof request.input.prompt !== 'string' || !request.input.prompt.trim()))
+function mappedParameters(request, model, mapping = {}) {
+  if (model.promptRequired && !mapping.constants?.layer_decomposition && (typeof request.input.prompt !== 'string' || !request.input.prompt.trim()))
     throw new Error('Для APIMart нужен текстовый запрос');
   const fields = new Map((model.fields || []).map(field => [field.key, field]));
-  const result = {};
+  const result = { ...mapping.constants };
   for (const [key, value] of Object.entries(request.input)) {
     if (key === 'prompt' || value == null) continue;
-    if (['image_input', 'input_urls', 'image_urls'].includes(key)) {
-      if (Array.isArray(value) && !value.length) continue;
-      throw new Error('Для этого маршрута не подтверждён перенос исходных изображений');
-    }
+    if (Array.isArray(value) && !value.length) continue;
     if (key === 'output_format' && value === 'png' && !fields.has(key)
       || key === 'background' && value === 'opaque' && !fields.has(key)) continue;
-    const target = key === 'aspect_ratio' && fields.has('size') ? 'size' : key;
+    const target = mapping.fields?.[key] || (key === 'aspect_ratio' && fields.has('size') ? 'size'
+      : ['image_input', 'input_urls', 'image_url'].includes(key) && fields.has('image_urls') ? 'image_urls' : key);
     const field = fields.get(target);
     if (!field) throw new Error(`Параметр ${key} не поддерживается APIMart`);
+    if (field.type === 'files') {
+      if (!field.uploadToApimart && !field.acceptsBase64) throw new Error(`Перенос исходников ${key} в APIMart не поддерживается`);
+      const values = Array.isArray(value) ? value : [value];
+      if (values.some(ref => typeof ref !== 'string' || !/^content:[a-f0-9-]{36}$/.test(ref)))
+        throw new Error('Для APIMart загрузите исходники в хранилище сервиса');
+      if (field.maxFiles && values.length > field.maxFiles || field.scalar && values.length !== 1)
+        throw new Error(`Слишком много исходников для ${target}`);
+      result[target] = field.scalar ? values[0] : values;
+      continue;
+    }
     const option = field.options?.find(item => String(item).toLowerCase() === String(value).toLowerCase());
     if (field.options?.length && option === undefined) throw new Error(`Значение ${key} не поддерживается APIMart`);
     result[target] = option ?? value;
   }
+  const mappedRefs = new Set(Object.values(result).flat());
+  if (request.sourceFiles.some(file => !mappedRefs.has(file.ref)))
+    throw new Error('Не все исходники удалось перенести в APIMart');
   if (fields.has('n') && result.n === undefined) result.n = 1;
   for (const field of fields.values()) {
     if (field.required && result[field.key] == null && field.apiDefault == null && field.key !== 'prompt')
@@ -88,8 +97,7 @@ function mappedParameters(request, model) {
 function choose(offers) {
   const valid = offers.filter(offer => !offer.unavailable && Number.isFinite(offer.costUsd) && offer.costUsd > 0)
     .sort((a, b) => a.costUsd - b.costUsd || a.priority - b.priority);
-  if (!valid.length) throw Object.assign(new Error('Нет совместимого провайдера с известной ценой'), { status: 503 });
-  return valid[0];
+  return valid[0] || null;
 }
 
 function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.kieUsdPerCredit,
@@ -102,15 +110,16 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
     ? apimartOptions(request.input) : route.profile === 'nano-banana-pro'
       ? nanoApimartOptions(request.input) : route.providerId === 'apimart' && request.model.id.startsWith('apimart:')
         ? Object.fromEntries(Object.entries(request.input).filter(([key]) => key !== 'prompt'))
-        : mappedParameters(request, model);
+        : mappedParameters(request, model, route.mapping);
   async function quote(user, raw, { fresh = false } = {}) {
     const request = normalizedRequest(raw, routingPolicy);
-    const scoped = await accounts.scope(user, user.id);
     const wallet = await accounts.wallet.get(user.id);
     const attempts = await Promise.all(request.model.routes.map(async (route, priority) => {
+      let offer;
       try {
         if (route.unavailableReason) throw new Error(route.unavailableReason);
         if (route.providerId === 'kie') {
+          const scoped = await accounts.scope(user, user.id);
           if (!scoped.configured()) throw new Error('Kie не настроен');
           if (!(await scoped.catalog()).models.some(model => model.id === route.modelId))
             throw new Error('Модель Kie недоступна');
@@ -118,7 +127,7 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
           if (!Number.isSafeInteger(cost.amountUnits) || cost.amountUnits <= 0) throw new Error('Цена Kie неизвестна');
           if (!Number.isFinite(cost.productCredits) || cost.productCredits <= 0) throw new Error('Цена в кредитах приложения неизвестна');
           const providerCredits = cost.amountUnits / 1000;
-          const offer = { providerId: 'kie', modelId: route.modelId, priority,
+          offer = { providerId: 'kie', modelId: route.modelId, priority,
             costUsd: providerCredits * kieUsdPerCredit, providerCredits, usdPerProviderCredit: kieUsdPerCredit,
             credits: cost.productCredits,
             source: cost.source, tariffVersion: cost.version, costVersion: routingPolicy.version };
@@ -133,15 +142,16 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
           if (!model) throw new Error('Модель APIMart недоступна');
           const parameters = apimartParameters(request, route, model);
           const cost = await apimart.quote({ model: route.modelId, prompt: request.input.prompt || '',
-            parameters });
+            parameters }, { fresh });
           if (cost.status !== 'estimated' || !Number.isFinite(cost.amountUsd) || cost.amountUsd <= 0) {
-            throw new Error('Цена APIMart неизвестна');
+            throw new Error(cost.message || `Цена APIMart недоступна: ${cost.reason || 'провайдер не вернул тариф'}`);
           }
           if (!Number.isFinite(cost.nativeCredits) || cost.nativeCredits <= 0) throw new Error('Цена в кредитах APIMart неизвестна');
-          const offer = { providerId: 'apimart', modelId: route.modelId, priority,
+          if (!Number.isFinite(cost.credits) || cost.credits <= 0) throw new Error('Цена в кредитах приложения неизвестна');
+          offer = { providerId: 'apimart', modelId: route.modelId, priority,
             costUsd: cost.amountUsd, nativeCredits: cost.nativeCredits,
             providerCredits: cost.nativeCredits, usdPerProviderCredit: cost.amountUsd / cost.nativeCredits,
-            credits: cost.credits,
+            credits: cost.credits, warning: cost.warning,
             parameters, source: 'apimart-pricing', tariffVersion: 'live', costVersion: routingPolicy.version };
           if (wallet.balance < cost.credits) return { ...offer, unavailable: true, reason: 'Недостаточно кредитов сервиса' };
           const status = await apimart.status();
@@ -152,7 +162,7 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
         }
         throw new Error('Провайдер не подключён к выбору');
       } catch (error) {
-        return { providerId: route.providerId, modelId: route.modelId, priority,
+        return { ...offer, providerId: route.providerId, modelId: route.modelId, priority,
           unavailable: true, reason: error.message || 'Цена недоступна' };
       }
     }));
@@ -174,6 +184,8 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
     if (!decision) {
       await accounts.workspaces.assertBinding(user.id, request.projectId, request.chatId);
       const priced = await quote(user, raw, { fresh: true });
+      if (!priced.selected) throw Object.assign(new Error(priced.offers.map(offer =>
+        `${offer.providerId === 'kie' ? 'Kie' : 'APIMart'}: ${offer.reason}`).join('; ')), { status: 503 });
       const candidate = { requestId: request.requestId, digest, modelId: request.model.id,
         selected: priced.selected, offers: priced.offers, createdAt: new Date().toISOString() };
       await pool.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'auto-route',$2,$3) ON CONFLICT DO NOTHING",

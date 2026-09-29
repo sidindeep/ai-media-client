@@ -1,4 +1,4 @@
-import type { Account, ApimartCatalog, Catalog, Chat, CodexCatalog, GenerationJournalPage, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
+import type { Account, ApimartCatalog, Catalog, Chat, CodexCatalog, GenerationJournalPage, GenerationPreset, GenerationRecord, Project, QueueStatus, ReleaseInfo, RouterAiCatalog, ServiceModelConfig, ServiceModelConfigSummary, SpendingCategory, SpendingPageData, WorkspaceSync } from '../types';
 import { t } from '../i18n';
 
 type RpcResult<T> = { result: T };
@@ -36,6 +36,18 @@ export async function rpc<T>(method: string, args: unknown[] = []): Promise<T> {
 
 export async function getCatalog(): Promise<Catalog> {
   return rpc<Catalog>('getCatalog');
+}
+export async function getServiceModelConfig(): Promise<ServiceModelConfig | null> {
+  const response = await fetch('/api/service-model-config/current', { cache: 'no-store' });
+  return (await parse<RpcResult<ServiceModelConfig | null>>(response)).result;
+}
+export async function listServiceModelConfigs(): Promise<ServiceModelConfigSummary[]> {
+  const response = await fetch('/api/service-model-configs', { cache: 'no-store' });
+  return (await parse<RpcResult<ServiceModelConfigSummary[]>>(response)).result;
+}
+export async function getServiceModelConfigById(id: string): Promise<ServiceModelConfig> {
+  const response = await fetch(`/api/service-model-config?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+  return (await parse<RpcResult<ServiceModelConfig>>(response)).result;
 }
 
 export async function getRelease(): Promise<ReleaseInfo> {
@@ -119,7 +131,7 @@ export const getCommerceOrder = (orderId: string) => workspaceRequest<CommerceOr
 export async function getMediaQuote(modelId: string, input: Record<string, unknown>, sourceFiles: Array<Record<string, unknown>> = []): Promise<{ credits: number | null; amountUnits: number | null; status?: string; reason?: string; warning?: string }> {
   return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }
-export type AutoRouteQuote = { selected: { providerId: string; costUsd: number; credits?: number; nativeCredits?: number; providerCredits?: number; usdPerProviderCredit?: number }; offers: Array<{ providerId: string; modelId: string; costUsd?: number; credits?: number; providerCredits?: number; usdPerProviderCredit?: number; unavailable?: boolean; reason?: string }> };
+export type AutoRouteQuote = { selected: { providerId: string; costUsd: number; credits?: number; nativeCredits?: number; providerCredits?: number; usdPerProviderCredit?: number; warning?: string } | null; offers: Array<{ providerId: string; modelId: string; costUsd?: number; credits?: number; providerCredits?: number; usdPerProviderCredit?: number; unavailable?: boolean; reason?: string; warning?: string }> };
 export async function getAutoRouteQuote(input: { modelId: string; input: Record<string, unknown>; sourceFiles?: Array<{ ref: string; [key: string]: unknown }> }): Promise<AutoRouteQuote> {
   return parse(await fetch('/api/auto/quote', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
 }

@@ -181,6 +181,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' });
     if (config.auth.enabled && suppliedPool) {
       pool = await databaseOpener(config.database, suppliedPool);
+      await require('./src/services/service-model-configs').ensureCurrentModelConfig(pool);
       systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });
       await acquireOwnership(pool);
       content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
@@ -221,6 +222,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
           let nextPool, nextAccounts, nextContent;
           try {
             nextPool = await databaseOpener(config.database);
+            await require('./src/services/service-model-configs').ensureCurrentModelConfig(nextPool);
             await acquireOwnership(nextPool);
             nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });

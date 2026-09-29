@@ -5,6 +5,10 @@ function normalizePricingInput(model, input = {}) {
     && ['num_images', 'number_of_images', 'output_count', 'image_count', 'n'].every(key => result[key] == null)) {
     result.n = result.enable_sequential === true ? 12 : 4;
   }
+  for (const field of model?.fields || []) {
+    const value = field.default ?? field.schema?.default;
+    if (result[field.key] == null && value !== undefined) result[field.key] = structuredClone(value);
+  }
   return result;
 }
 

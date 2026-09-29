@@ -381,6 +381,21 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 401, { error: 'Необходим вход в аккаунт' });
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
+      if (accounts && req.method === 'GET' && url.pathname === '/api/service-model-config/current') {
+        const { currentModelConfig } = require('../services/service-model-configs');
+        return json(res, 200, { result: await currentModelConfig(accounts.pool) });
+      }
+      if (accounts && req.method === 'GET' && url.pathname === '/api/service-model-configs') {
+        const { listModelConfigs } = require('../services/service-model-configs');
+        return json(res, 200, { result: await listModelConfigs(accounts.pool) });
+      }
+      if (accounts && req.method === 'GET' && url.pathname === '/api/service-model-config') {
+        const { modelConfigById } = require('../services/service-model-configs');
+        const id = url.searchParams.get('id');
+        if (!id) return json(res, 400, { error: 'Не указана версия каталога моделей' });
+        const modelConfig = await modelConfigById(accounts.pool, id);
+        return modelConfig ? json(res, 200, { result: modelConfig }) : json(res, 404, { error: 'Версия каталога моделей не найдена' });
+      }
       if (url.pathname === '/api/account/telegram') {
         if (!config.auth.enabled || !telegram || req.method !== 'GET') return json(res, 404, { error: 'Метод не найден' });
         return json(res, 200, { result: await telegram.linkStatus(user.id) });

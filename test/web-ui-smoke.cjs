@@ -690,7 +690,7 @@ app.whenReady().then(async () => {
     assert.match(await evaluate("document.querySelector('.result-route').textContent"), /Codex CLI.*GPT-5\.6-Sol.*Ультра.*Fast/);
     assert.match(await evaluate("document.querySelector('.result-receipt').textContent"), /Ответ получен от Codex CLI.*Списано: 4 кредитов.*Токены: 321/);
     assert.match(await evaluate("document.querySelector('.token-breakdown').textContent"), /Всего токенов\s*321.*Входные\s*300.*Выходные\s*21/);
-    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.sidebar-provider-option strong'), item=>item.textContent)"), ['Codex CLI', 'Kie.ai']);
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.sidebar-provider-option strong'), item=>item.textContent)"), ['Автомат', 'Codex CLI', 'Kie.ai']);
     assert.equal(await evaluate("document.querySelector('.sidebar-provider-check').textContent"), 'Проверить Kie');
     await evaluate("document.querySelector('.account-trigger').click();void 0");
     await until("document.querySelector('.account-admin-link')?.textContent.includes('Админка')");

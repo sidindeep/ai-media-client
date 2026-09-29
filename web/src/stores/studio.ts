@@ -6,6 +6,7 @@ import { mediaFileValue, normalizeMediaInput } from '../domain/media-fields';
 import { t } from '../i18n';
 
 type GenerationMode = 'text' | 'image' | 'video' | 'audio';
+export const AUTO_ROUTE_MODEL_ID = 'kie:gpt-image-2-text-to-image';
 type SourceAttachment = { ref: string; name: string; type: string; fieldKey?: string; [key: string]: unknown };
 type SelectionSnapshot = { sourceFiles: SourceAttachment[]; mediaInput: Record<string, unknown> };
 const ACTIVE_STATES = ['queued', 'preparing', 'submitting', 'waiting', 'queuing', 'generating', 'running'] as const;
@@ -56,6 +57,7 @@ export const useStudioStore = defineStore('studio', () => {
   const readyElapsedMs = ref<number | null>(null);
   const prompt = ref('');
   const provider = ref<'codex' | 'media' | 'routerai' | 'apimart'>('codex');
+  const autoRouting = ref(false);
   const kieAccountId = ref<'primary' | 'secondary'>('primary');
   const mode = ref<GenerationMode>('image');
   const mediaModelId = ref('');
@@ -126,6 +128,10 @@ export const useStudioStore = defineStore('studio', () => {
   const currentApimartModel = computed(() => apimartModels.value.find(model => model.id === apimartModel.value) || apimartModels.value[0]);
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
+  watch([provider, mode, mediaModelId, kieAccountId, isAdmin], () => {
+    if (autoRouting.value && (!isAdmin.value || !['media', 'apimart'].includes(provider.value)
+      || provider.value === 'media' && kieAccountId.value !== 'primary')) autoRouting.value = false;
+  });
 
   function mediaModelsFor(value: GenerationMode) {
     return (catalog.value?.models || []).filter(model => (model.kind || 'image') === value);
@@ -426,6 +432,7 @@ export const useStudioStore = defineStore('studio', () => {
     draftReady.value = false;
     const draft = await api.loadDraft(activeChatId.value === 'system:recent' ? null : activeChatId.value).catch(() => null);
     const tab = Array.isArray(draft?.tabs) ? draft.tabs[Number(draft.active) || 0] : null;
+    if (!tab) { mode.value = 'image'; provider.value = 'codex'; }
     kieAccountId.value = isAdmin.value && tab?.kieAccountId === 'secondary' ? 'secondary' : 'primary';
     prompt.value = tab && typeof tab === 'object' && typeof tab.prompt === 'string' ? tab.prompt : '';
     mediaInput.value = {};
@@ -433,6 +440,7 @@ export const useStudioStore = defineStore('studio', () => {
     selectionCache.value = {};
     modelByContext.value = {};
     providerByMode.value = {};
+    autoRouting.value = false;
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
       if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai' || tab.provider === 'apimart' && isAdmin.value) provider.value = tab.provider;
@@ -469,6 +477,9 @@ export const useStudioStore = defineStore('studio', () => {
     normalizeApimartControls();
     normalizeMediaControls();
     normalizeCurrentMediaInput();
+    autoRouting.value = Boolean(isAdmin.value && tab?.autoRouting === true
+      && (provider.value === 'apimart' || provider.value === 'media' && kieAccountId.value === 'primary'));
+    if (!tab && isAdmin.value && (mediaModels.value.length || apimartModels.value.length)) setAutoProvider();
     if (!prompt.value && typeof mediaInput.value.text === 'string') prompt.value = mediaInput.value.text;
     // The active fields in older drafts remain authoritative for the active selection.
     rememberSelection();
@@ -501,7 +512,7 @@ export const useStudioStore = defineStore('studio', () => {
     if (!draftReady.value) return;
     rememberSelection();
     const chatId = activeChatId.value === 'system:recent' ? null : activeChatId.value;
-    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, selectionCache: selectionCache.value, modelByContext: modelByContext.value, providerByMode: providerByMode.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, apimartModel: apimartModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
+    await api.saveDraft({ version: 1, active: 0, tabs: [{ prompt: prompt.value, mode: mode.value, provider: provider.value, autoRouting: autoRouting.value, kieAccountId: kieAccountId.value, mediaModelId: mediaModelId.value, mediaInput: mediaInput.value, sourceFiles: sourceFiles.value, selectionCache: selectionCache.value, modelByContext: modelByContext.value, providerByMode: providerByMode.value, codexModel: codexModel.value, routerAiModel: routerAiModel.value, apimartModel: apimartModel.value, codexEffort: codexEffort.value, codexSpeed: codexSpeed.value, codexAspectRatio: codexAspectRatio.value }] }, chatId).catch(() => {});
   }
 
   async function createProject(name: string) { const project = await api.createProject(name); projects.value = mergeById(projects.value, [project]); recomputeWorkspaceCounts(); return project; }
@@ -517,6 +528,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   function setMode(value: GenerationMode) {
     if (!fullModelAccess.value && ['video', 'audio'].includes(value)) throw new Error(t('studio.mediaLocked'));
+    const wasAuto = autoRouting.value;
     rememberSelection();
     mode.value = value;
     const rememberedProvider = providerByMode.value[value];
@@ -532,12 +544,18 @@ export const useStudioStore = defineStore('studio', () => {
     normalizeApimartControls();
     if (provider.value === 'codex') normalizeCodexControls();
     restoreSelection();
+    if (wasAuto) {
+      if (provider.value !== 'media' && provider.value !== 'apimart') setProvider('apimart');
+      if (provider.value === 'media' && !mediaModels.value.length) setProvider('apimart');
+      autoRouting.value = true;
+    }
   }
 
   function setProvider(value: 'codex' | 'media' | 'routerai' | 'apimart') {
     if (value !== 'codex' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
     if (value === 'apimart' && !isAdmin.value) throw new Error(t('studio.mediaLocked'));
     rememberSelection();
+    autoRouting.value = false;
     provider.value = value;
     if (value === 'codex') {
       if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
@@ -557,6 +575,33 @@ export const useStudioStore = defineStore('studio', () => {
       normalizeMediaControls();
     }
     restoreSelection();
+  }
+
+  function setAutoProvider() {
+    if (!isAdmin.value || !(catalog.value?.models.length || apimartCatalog.value?.models.length))
+      throw new Error(t('studio.catalogUnavailable'));
+    kieAccountId.value = 'primary';
+    if (provider.value !== 'media' && provider.value !== 'apimart') {
+      if (mode.value === 'text' || !mediaModels.value.length) setProvider('apimart');
+      else {
+        setProvider('media');
+        if (mode.value === 'image' && catalog.value?.models.some(model => model.id === AUTO_ROUTE_MODEL_ID)) {
+          setSelectedModel(AUTO_ROUTE_MODEL_ID);
+          mediaInput.value = { ...mediaInput.value, resolution: '1K', background: 'opaque' };
+        }
+      }
+    }
+    autoRouting.value = true;
+  }
+
+  function setAutoModel(value: string) {
+    if (!autoRouting.value) return;
+    const target = value.startsWith('apimart:') ? 'apimart' : 'media';
+    const modelId = target === 'apimart' ? value.slice('apimart:'.length) : value;
+    if (target !== provider.value) setProvider(target);
+    if (target === 'media') kieAccountId.value = 'primary';
+    setSelectedModel(modelId);
+    autoRouting.value = true;
   }
 
   function setSelectedModel(value: string) {
@@ -687,7 +732,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   watch(codexModel, normalizeCodexControls, { flush: 'sync' });
-  watch([prompt, mode, provider, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, routerAiModel, apimartModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
+  watch([prompt, mode, provider, autoRouting, kieAccountId, mediaModelId, mediaInput, sourceFiles, codexModel, routerAiModel, apimartModel, codexEffort, codexSpeed, codexAspectRatio], () => { if (!accountReady.value) return; if (draftTimer) clearTimeout(draftTimer); draftTimer = setTimeout(() => { void saveCurrentDraft(); }, 500); }, { deep: true });
   watch([activeChatId, activeProjectId], () => localStorage.setItem('media-studio-workspace', JSON.stringify({ chatId: activeChatId.value, projectId: activeProjectId.value })));
 
   function restoreWorkspaceSelection() {
@@ -865,8 +910,11 @@ export const useStudioStore = defineStore('studio', () => {
       pendingSubmissions.value.unshift(optimistic);
       selectedId.value = optimisticId;
       try {
-        const job = await api.submitApimart({ requestId, model: model.id, prompt: submittedPrompt,
-          parameters: submittedProvider === 'apimart' && model.kind !== 'text' ? submittedMediaInput : {}, ...context });
+        const job = autoRoute
+          ? await api.submitAutoRoute({ requestId, modelId: `apimart:${model.id}`,
+            input: { prompt: submittedPrompt, ...(model.kind !== 'text' ? submittedMediaInput : {}) }, ...context })
+          : await api.submitApimart({ requestId, model: model.id, prompt: submittedPrompt,
+            parameters: model.kind !== 'text' ? submittedMediaInput : {}, ...context });
         await refresh().catch(() => {});
         return job;
       } catch (error) {
@@ -913,7 +961,7 @@ export const useStudioStore = defineStore('studio', () => {
     selectedId.value = optimisticId;
     try {
       const task = autoRoute
-        ? await api.submitAutoRoute({ modelId: model.id, input, ...context, requestId })
+        ? await api.submitAutoRoute({ modelId: model.id, input, sourceFiles: submittedSourceFiles, ...context, requestId })
         : await api.createTask({ modelId: model.id, input, sourceFiles: submittedSourceFiles, ...context, requestId, kieAccountId: submittedKieAccount });
       if (!autoRoute) acceptServerRecord(optimisticId, task);
       await refresh().catch(() => {});
@@ -985,7 +1033,7 @@ export const useStudioStore = defineStore('studio', () => {
   return {
     catalog, codexCatalog, routerAiCatalog, apimartCatalog, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
-    prompt, provider, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setSelectedModel, setModelAccess,
+    prompt, provider, autoRouting, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setAutoProvider, setAutoModel, setSelectedModel, setModelAccess,
     codexModel, routerAiModel, routerAiModels, currentRouterAiModel, apimartModel, apimartModels, currentApimartModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,
     createProject, createChat, renameProject, renameChat, moveChat, archiveChat, archiveProject, selectChat, selectProject, selectStandalone,

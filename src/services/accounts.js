@@ -7,7 +7,7 @@ const { createPricing } = require('../billing/pricing');
 const { createCreditConversion } = require('../billing/conversion');
 const { createProviderRouter } = require('./provider-router');
 const { transaction } = require('../database/database');
-const { lockWallet, settle } = require('../billing/wallet');
+const { lockWallet, increaseReservation, settle } = require('../billing/wallet');
 const { generationHistory, generationHistorySince, generationHistoryPage, generationActive, countUnassignedGenerations } = require('./generation-history');
 const { spendingHistory } = require('./spending-history');
 const { generationJournal } = require('./generation-journal');
@@ -277,17 +277,29 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
       if (!['success', 'fail'].includes(outcome) || typeof evidence !== 'string' || !evidence.trim() || evidence.length > 2000) throw new Error('Укажите исход и основание сверки');
       return transaction(pool, async client => {
         await assertAdminAccount(client, actorId);
-        await lockWallet(client, accountId);
+        const lockedWallet = await lockWallet(client, accountId);
         const prior = (await client.query('SELECT * FROM media_reconciliations WHERE job_id=$1', [jobId])).rows[0];
         if (prior) {
           if (prior.account_id !== accountId || prior.outcome !== outcome || prior.evidence !== evidence) throw new Error('Результат сверки уже зафиксирован иначе');
           return true;
         }
-        const row = (await client.query("SELECT namespace,data FROM media_records WHERE account_id=$1 AND namespace IN ('history','codex') AND id=$2 FOR UPDATE", [accountId, jobId])).rows[0];
+        const row = (await client.query("SELECT namespace,data FROM media_records WHERE account_id=$1 AND namespace IN ('history','codex','apimart') AND id=$2 FOR UPDATE", [accountId, jobId])).rows[0];
         if (!['unknown', 'unconfirmed'].includes(row?.data.state)) throw new Error('Задача не требует ручной сверки');
-        await settle(client, accountId, jobId, outcome, row.data);
+        const actualCredits = row.namespace === 'apimart' ? row.data.apimartTariffCost?.nativeCredits : null;
+        const actualUnits = outcome === 'success' && Number.isFinite(actualCredits) && actualCredits >= 0
+          ? Math.ceil(actualCredits * 1000 - 1e-9) : undefined;
+        if (actualUnits !== undefined && actualUnits > row.data.nativeQuote?.amountUnits) {
+          await increaseReservation(client, accountId, jobId, actualUnits - row.data.nativeQuote.amountUnits, lockedWallet);
+        }
+        await settle(client, accountId, jobId, outcome, row.data, actualUnits);
         await client.query('INSERT INTO media_reconciliations(job_id,account_id,actor_id,outcome,evidence) VALUES($1,$2,$3,$4,$5)', [jobId, accountId, actorId, outcome, evidence]);
-        const record = { ...row.data, state: outcome, error: null, errorInfo: null, reconciled: true, generationCompletedAt: new Date().toISOString(), revision: Number(row.data.revision || 0) + 1, updatedAt: new Date().toISOString() };
+        const record = { ...row.data, state: outcome, error: null, errorInfo: null, billingPending: false,
+          reconciled: true, generationCompletedAt: new Date().toISOString(),
+          ...(row.namespace === 'apimart' ? { completedAt: new Date().toISOString() } : {}),
+          ...(row.namespace === 'apimart' && actualUnits !== undefined ? { nativeQuote: {
+            ...row.data.nativeQuote, amountUnits: actualUnits, credits: actualUnits / 1000,
+            estimatedCredits: row.data.nativeQuote?.credits, status: 'actual' } } : {}),
+          revision: Number(row.data.revision || 0) + 1, updatedAt: new Date().toISOString() };
         await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace=$4 AND id=$2", [accountId, jobId, JSON.stringify(record), row.namespace]);
         return true;
       });

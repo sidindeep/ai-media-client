@@ -6,6 +6,12 @@ const { defineProvider } = require('../src/providers/contract');
 const { simpleRates, estimate, usedCost, mediaEstimate } = require('../src/providers/apimart/pricing');
 const { readProviderStatus } = require('../src/services/provider-status');
 const { describeModel } = require('../src/providers/apimart/catalog');
+const { openDatabase } = require('../src/database/database');
+const { testPool } = require('./helpers/pg-pool');
+const { randomUUID } = require('node:crypto');
+
+const billingStub = { lockWallet: async () => ({ balance: 100000, held: 0 }), reserve: async () => {},
+  increaseReservation: async () => {}, settle: async () => {} };
 
 test('APIMart provider status reports account credits rather than token quota', async () => {
   const pool = {};
@@ -21,7 +27,7 @@ test('APIMart provider status reports account credits rather than token quota', 
   assert.equal('unlimited' in status, false);
 });
 
-test('APIMart quote uses only simple effective token rates and keeps external credits separate', () => {
+test('APIMart quote keeps provider credits and USD separate', () => {
   const rates = simpleRates({ data: { pricing: { unit: 'usd_per_million_tokens', tier_count: 1,
     effective_rates: { input: 0.12, output: 0.48 } } } });
   assert.deepEqual(rates, { input: 0.12, output: 0.48 });
@@ -73,11 +79,11 @@ test('APIMart groups catalog models and never sends the same accepted request tw
       { id: 'gpt-4o', category: 'chat' }, { id: 'gpt-image-2', category: 'image' },
     ] } : { choices: [{ message: { content: 'Готово' } }], usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } } };
   };
-  const jobsService = createApimartJobs({ pool, apiKey: 'private-test-key', fetchImpl });
-  assert.equal(jobsService.provider.billing.mode, 'external');
+  const jobsService = createApimartJobs({ pool, apiKey: 'private-test-key', fetchImpl, billing: billingStub });
+  assert.equal(jobsService.provider.billing.mode, 'wallet');
   const quoted = await jobsService.provider.quote({ model: 'gpt-4o', prompt: 'Привет' });
   assert.equal(quoted.status, 'estimated');
-  assert.equal(quoted.credits, null);
+  assert.equal(quoted.credits, Math.ceil(quoted.nativeCredits * 1000 - 1e-9) / 1000);
   assert.equal(quoted.nativeCredits, quoted.amountUsd * 10);
   assert.deepEqual((await jobsService.models()).map(({ id, kind, endpoint }) => ({ id, kind, endpoint })), [
     { id: 'babbage-002', kind: 'text', endpoint: '/v1/completions' },
@@ -111,12 +117,13 @@ test('APIMart image task uses image endpoint, polls, and reports task credits', 
   const pool = { query, connect: async () => ({ query, release() {} }) };
   const fetchImpl = async (url, init) => {
     requests.push({ url, body: init?.body });
-    return { ok: true, json: async () => url.includes('/models?') ? { data: [{ id: 'gpt-image-2', category: 'image', capability_tags: ['Text to Image'] }] }
+    return { ok: true, json: async () => url.includes('/pricing/model?') ? { data: { paid_price: 0.15 } }
+      : url.includes('/models?') ? { data: [{ id: 'gpt-image-2', category: 'image', capability_tags: ['Text to Image'] }] }
       : url.endsWith('/images/generations') ? { data: [{ task_id: 'task_example' }] }
         : { data: { status: 'completed', cost: 0.15, credits_cost: 1.5,
           result: { images: [{ url: ['https://example.com/result.png'] }] } } } };
   };
-  const service = createApimartJobs({ pool, apiKey: 'private-test-key', fetchImpl });
+  const service = createApimartJobs({ pool, apiKey: 'private-test-key', fetchImpl, billing: billingStub });
   const input = { requestId, model: 'gpt-image-2', prompt: 'кот', parameters: { resolution: '2k' } };
   await service.submit(account, input);
   for (let i = 0; i < 100 && (await service.get(account, requestId))?.state !== 'success'; i++) await new Promise(resolve => setTimeout(resolve, 5));
@@ -150,7 +157,8 @@ test('APIMart uploads a selected Seedance image and sends its URL to generation'
   };
   const fetchImpl = async (url, init) => {
     requests.push({ url, init });
-    const data = url.includes('/models?') ? [{ id: 'seedance-1-5-pro', category: 'video' }]
+    const data = url.includes('/pricing/model?') ? { paid_price: 0.22 }
+      : url.includes('/models?') ? [{ id: 'seedance-1-5-pro', category: 'video' }]
       : url.endsWith('/uploads/images') ? { url: 'https://upload.apimart.ai/f/image/reference.png' }
         : url.endsWith('/videos/generations') ? [{ task_id: 'video_task' }]
           : { status: 'completed', cost: 0.22, credits_cost: 2.2,
@@ -158,7 +166,7 @@ test('APIMart uploads a selected Seedance image and sends its URL to generation'
     return { ok: true, json: async () => url.endsWith('/uploads/images') ? data : { data } };
   };
   const service = createApimartJobs({ pool: { query, connect: async () => ({ query, release() {} }) },
-    content, apiKey: 'private-test-key', fetchImpl });
+    content, apiKey: 'private-test-key', fetchImpl, billing: billingStub });
   const field = describeModel({ id: 'seedance-1-5-pro', category: 'video' }).fields.find(item => item.key === 'image_urls');
   assert.equal(field.type, 'files');
   assert.equal(field.uploadToApimart, true);
@@ -212,6 +220,12 @@ test('APIMart estimates only supported media tariff shapes', () => {
     { resolution: '2k', n: 2 }), { status: 'estimated', credits: null, amountUsd: 0.04, nativeCredits: 0.4 });
   assert.equal(mediaEstimate({ data: { billing_type: 'per_second' } }, model), null);
   assert.equal(mediaEstimate({ data: { billing_type: 'tiered_token', paid_price: 0.032 } }, model), null);
+  const nano = { id: 'gemini-3-pro-image-preview', kind: 'image' };
+  const nanoTariff = { data: { paid_price: 0.03, resolution_paid_prices: { '4K': 0.04 } } };
+  assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '1K', n: 1 }).amountUsd, 0.03);
+  assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '2K', n: 1 }).amountUsd, 0.03);
+  assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '4K', n: 1 }).amountUsd, 0.04);
+  assert.equal(mediaEstimate(nanoTariff, nano, { resolution: '8K', n: 1 }), null);
 });
 
 test('APIMart Seedance 2.5 quote follows resolution prices despite token billing tiers', () => {
@@ -236,6 +250,7 @@ test('APIMart recovers a persisted media task by polling without another paid PO
     providerTaskId: 'task_saved', revision: 2, createdAt: new Date().toISOString() };
   const query = async (sql, params = []) => {
     if (sql.startsWith('SELECT account_id')) return { rows: [{ account_id: account, data: saved }] };
+    if (sql.startsWith('SELECT data FROM media_records')) return { rows: [{ data: saved }] };
     if (sql.startsWith('UPDATE media_records')) saved = JSON.parse(params[2]);
     return { rows: [] };
   };
@@ -263,4 +278,55 @@ test('APIMart catalogue rejects insufficient balance without sending a generatio
   await assert.rejects(() => client.models(), { status: 402 });
   assert.equal(requests.length, 1);
   assert.match(requests[0], /\/models\?expand=category$/);
+});
+
+test('APIMart reserves app credits before POST and settles the confirmed provider credits 1:1', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), emptyAccount = randomUUID();
+  for (const id of [account, emptyAccount]) {
+    await pool.query('INSERT INTO media_accounts(id,display_name,role) VALUES($1,$2,$3)', [id, 'APIMart billing test', 'admin']);
+    await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,$2)', [id, id === account ? 1000 : 0]);
+  }
+  let paidPosts = 0;
+  const service = createApimartJobs({ pool, apiKey: 'test', fetchImpl: async url => {
+    if (url.includes('/models?')) return { ok: true, json: async () => ({ data: [{ id: 'gpt-image-2', category: 'image' }] }) };
+    if (url.includes('/pricing/model?')) return { ok: true, json: async () => ({ data: { paid_price: 0.01 } }) };
+    if (url.endsWith('/images/generations')) { paidPosts++; return { ok: true, json: async () => ({ data: { task_id: 'bill-task' } }) }; }
+    if (url.endsWith('/tasks/bill-task')) return { ok: true, json: async () => ({ data: { status: 'completed', cost: 0.015,
+      credits_cost: 0.15, result: { images: [{ url: 'https://example.com/billed.png' }] } } }) };
+    throw new Error(`Unexpected APIMart request: ${url}`);
+  } });
+  const request = { requestId: randomUUID(), model: 'gpt-image-2', prompt: 'Test image' };
+  const quote = await service.quote(request);
+  assert.equal(quote.credits, 0.1);
+  await assert.rejects(service.submit(emptyAccount, { ...request, requestId: randomUUID() }), /Недостаточно кредитов/);
+  assert.equal(paidPosts, 0);
+  const started = await service.submit(account, request);
+  assert.equal(started.nativeQuote.amountUnits, 100);
+  for (let i = 0; i < 100 && (await service.get(account, request.requestId))?.state === 'running'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  const finished = await service.get(account, request.requestId);
+  assert.equal(finished.state, 'success');
+  assert.equal(paidPosts, 1);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0],
+    { balance: 850, held: 0 });
+  const reservation = (await pool.query('SELECT amount,state FROM media_reservations WHERE job_id=$1',
+    [`apimart:${account}:${request.requestId}`])).rows[0];
+  assert.deepEqual(reservation, { amount: 150, state: 'captured' });
+  assert.equal((await service.submit(account, request)).state, 'success');
+  assert.equal(paidPosts, 1);
+  await pool.query('UPDATE media_wallets SET balance=100 WHERE account_id=$1', [emptyAccount]);
+  const shortRequest = { ...request, requestId: randomUUID() };
+  await service.submit(emptyAccount, shortRequest);
+  for (let i = 0; i < 100 && (await service.get(emptyAccount, shortRequest.requestId))?.state === 'running'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  const shortJob = await service.get(emptyAccount, shortRequest.requestId);
+  assert.equal(shortJob.state, 'unknown');
+  assert.equal(shortJob.billingPending, true);
+  assert.deepEqual(shortJob.resultUrls, ['https://example.com/billed.png']);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [emptyAccount])).rows[0],
+    { balance: 100, held: 100 });
 });

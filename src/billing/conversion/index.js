@@ -72,7 +72,7 @@ function createCreditConversion({ offersFile, kieRubPerCredit, policy = defaultP
       kieRubPerCredit,
       offers: offered,
       providers: [
-        { id: 'kie', sourceUnit: 'Кредит Kie', mode: 'provider-cost',
+        { id: 'kie', sourceUnit: 'Кредит Kie', mode: 'native-credit-parity',
           exampleInput: 1, exampleCredits: quote('kie', { amountUnits: SCALE, version: 'example' }).credits },
         { id: 'routerai', sourceUnit: '₽', mode: 'provider-cost',
           exampleInput: 1, exampleCredits: quote('routerai', { amount: 1, currency: 'RUB', version: 'example' }).credits },

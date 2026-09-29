@@ -1,14 +1,4 @@
 {
-  "version": "2026-09-29-pilot-1",
-  "kieUsdPerCredit": 0.005,
-  "models": [
-    {
-      "id": "kie:gpt-image-2-text-to-image",
-      "kind": "image",
-      "routes": [
-        { "providerId": "kie", "modelId": "kie:gpt-image-2-text-to-image" },
-        { "providerId": "apimart", "modelId": "gpt-image-2" }
-      ]
-    }
-  ]
+  "version": "2026-09-29-catalog-1",
+  "kieUsdPerCredit": 0.005
 }

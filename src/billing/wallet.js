@@ -11,7 +11,8 @@ function spendingDetails(jobId, record) {
   if (!record) return {};
   const rawKind = record.modelKind || record.kind;
   const category = ['image', 'video', 'text', 'audio'].includes(rawKind) ? rawKind : 'other';
-  const provider = jobId.startsWith('codex:') ? 'codex' : jobId.startsWith('routerai:') ? 'routerai' : 'media';
+  const provider = jobId.startsWith('codex:') ? 'codex' : jobId.startsWith('routerai:') ? 'routerai'
+    : jobId.startsWith('apimart:') ? 'apimart' : 'media';
   return {
     category,
     modelName: String(record.modelName || record.model || record.modelId || '').slice(0, 200),
@@ -47,6 +48,19 @@ async function reserve(client, accountId, jobId, quote, lockedWallet = null) {
     SELECT $5,account_id,'reserve',$3,$2 FROM reservation RETURNING id`,
   [accountId, amount, jobId, quote.version, randomUUID()]);
   if (!stored.rowCount) throw new Error('Недостаточно кредитов на счёте');
+}
+async function increaseReservation(client, accountId, jobId, extraAmount, lockedWallet = null) {
+  units(extraAmount);
+  if (!extraAmount) return;
+  const wallet = lockedWallet || await lockWallet(client, accountId);
+  const row = (await client.query('SELECT amount,state FROM media_reservations WHERE job_id=$1 AND account_id=$2 FOR UPDATE',
+    [jobId, accountId])).rows[0];
+  if (!row || row.state !== 'held') throw new Error('Резерв задачи не найден');
+  if (wallet.balance - wallet.held < extraAmount) throw new Error('Недостаточно кредитов для окончательного расчёта');
+  units(Number(row.amount) + extraAmount);
+  await client.query('UPDATE media_wallets SET held=held+$2 WHERE account_id=$1', [accountId, extraAmount]);
+  await client.query('UPDATE media_reservations SET amount=amount+$2 WHERE job_id=$1', [jobId, extraAmount]);
+  await entry(client, accountId, 'reserve', `${jobId}:extra:${randomUUID()}`, extraAmount);
 }
 // Called in the SAME transaction that persists the terminal job state.
 async function settle(client, accountId, jobId, state, record, actualAmountUnits) {
@@ -113,4 +127,4 @@ async function purchaseInTransaction(client, accountId, amount, reference, note 
   await entry(client, accountId, 'purchase', reference, amount, null, note);
   return true;
 }
-module.exports = { createWallet, reserve, settle, lockWallet, purchaseInTransaction };
+module.exports = { createWallet, reserve, increaseReservation, settle, lockWallet, purchaseInTransaction };

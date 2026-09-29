@@ -251,7 +251,7 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal((await request('/api/admin/credit-conversion')).status, 401);
   assert.equal((await request('/api/admin/credit-conversion', { headers: { Cookie: alice.cookie } })).status, 403);
   const conversionSnapshot = await result(request('/api/admin/credit-conversion', { headers: { Cookie: owner.cookie } }));
-  assert.equal(conversionSnapshot.version, '2026-09-23-1');
+  assert.equal(conversionSnapshot.version, '2026-09-29-1');
   assert.equal(conversionSnapshot.providers.find(row => row.id === 'kie').sourceUnit, 'Кредит Kie');
   assert.equal((await request('/api/admin/codex/status')).status, 401);
   assert.equal((await request('/api/admin/codex/status', { headers: { Cookie: alice.cookie } })).status, 403);

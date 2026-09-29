@@ -56,7 +56,9 @@ function mediaEstimate(payload, model, options = {}) {
     const resolutionPrices = data.resolution_paid_prices;
     const hasResolutionPrices = resolutionPrices && Object.keys(resolutionPrices).length > 0;
     if (data.billing_type === 'tiered_token' && !hasResolutionPrices) return null;
-    const perImage = hasResolutionPrices ? resolutionPrices[resolution] : data.paid_price;
+    const perImage = hasResolutionPrices ? resolutionPrices[resolution]
+      ?? (model.id === 'gemini-3-pro-image-preview' && ['1K', '2K'].includes(resolution) ? data.paid_price : null)
+      : data.paid_price;
     const count = Number(selected('n', options.num_images || 1));
     if (Number.isFinite(perImage) && Number.isInteger(count) && count >= 1 && count <= 12) amountUsd = perImage * count;
   } else if (model.kind === 'video' && data.billing_type === 'per_second') {

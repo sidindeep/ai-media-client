@@ -265,7 +265,68 @@ async function main() {
     await client.command('Page.navigate', { url: `${origin}/app?order=${orderId}` });
     await client.until("location.pathname==='/app/plans' && !new URL(location.href).searchParams.has('order') && document.querySelector('.commerce-feedback[role=status]')?.textContent.length > 0");
     assert.equal(await client.evaluate("document.querySelector('.subscription-dialog') === null"), true);
-    console.log('Browser E2E passed: authenticated studio, selection cache and draft reload, older history page, rejected submit and retry, checkout return');
+    const adminId = randomUUID(), adminToken = randomBytes(32).toString('base64url');
+    await pool.query("INSERT INTO media_accounts(id,display_name,role) VALUES($1,'Auto route admin','admin')", [adminId]);
+    await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,5000)', [adminId]);
+    await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(adminToken), adminId]);
+    assert.equal((await client.command('Network.setCookie', { name: 'media-session', value: adminToken, url: origin, httpOnly: true, sameSite: 'Lax' })).success, true);
+    await client.command('Page.addScriptToEvaluateOnNewDocument', { source: `
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = (input, init) => new URL(typeof input === 'string' ? input : input.url, location.origin).pathname === '/api/apimart/models'
+        ? Promise.resolve(new Response(JSON.stringify({ models: [{ id: 'gemini-3-pro-image-preview', name: 'gemini-3-pro-image-preview',
+          kind: 'image', fields: [], promptRequired: true }, { id: 'apimart-only-test', name: 'APIMart only test',
+          kind: 'image', fields: [], promptRequired: true }, { id: 'gpt-image-2', name: 'GPT Image 2',
+          kind: 'image', fields: [], promptRequired: true }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+        : originalFetch(input, init);
+    ` });
+    await client.command('Page.navigate', { url: origin + '/app' });
+    await client.until("document.querySelector('.sidebar-provider-option[data-provider=auto]')?.disabled===false");
+    assert.equal(await client.evaluate("document.querySelector('.sidebar-provider-option[data-provider=auto]')?.classList.contains('active')"), true);
+    await client.evaluate("document.querySelector('.sidebar-provider-option[data-provider=codex]').click();void 0");
+    await client.until("document.querySelector('.sidebar-provider-option[data-provider=codex]')?.classList.contains('active')");
+    await sleep(1200);
+    await client.command('Page.reload');
+    await client.until("document.querySelector('.sidebar-provider-option[data-provider=codex]')?.classList.contains('active')");
+    await client.evaluate("window.__autoQuoteFetch=window.fetch.bind(window);window.fetch=(input,init)=>{if(new URL(typeof input==='string'?input:input.url,location.origin).pathname!=='/api/auto/quote')return window.__autoQuoteFetch(input,init);const nano=JSON.parse(init.body).modelId==='kie:nano-banana-pro';return Promise.resolve(new Response(JSON.stringify(nano?{selected:{providerId:'apimart',costUsd:0.03,nativeCredits:0.3,credits:0.3},offers:[{providerId:'kie',modelId:'kie:nano-banana-pro',costUsd:0.09,credits:18},{providerId:'apimart',modelId:'gemini-3-pro-image-preview',costUsd:0.03,credits:0.3}]}:{selected:{providerId:'apimart',costUsd:0.012,nativeCredits:0.12,credits:0.12},offers:[{providerId:'kie',modelId:'kie:gpt-image-2-text-to-image',costUsd:0.02,credits:20},{providerId:'apimart',modelId:'gpt-image-2',costUsd:0.012,credits:0.12}]}),{status:200,headers:{'Content-Type':'application/json'}}))};document.querySelector('.sidebar-provider-option[data-provider=auto]').click();void 0");
+    await client.until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='auto' && document.querySelector('.model-native-select')?.value==='kie:gpt-image-2-text-to-image'");
+    const autoOptions = await client.evaluate("Array.from(document.querySelectorAll('.model-native-select option'), option=>({value:option.value,label:option.textContent.trim()}))");
+    assert.ok(autoOptions.length > 1);
+    assert.ok(autoOptions.some(option => option.value.startsWith('kie:')));
+    assert.ok(autoOptions.some(option => option.value.startsWith('apimart:')));
+    assert.equal(new Set(autoOptions.map(option => option.label.toLowerCase())).size, autoOptions.length);
+    assert.equal(autoOptions.filter(option => option.value === 'apimart:gpt-image-2').length, 0);
+    assert.equal(autoOptions.filter(option => option.value === 'apimart:gemini-3-pro-image-preview').length, 0);
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='apimart:apimart-only-test';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='auto' && document.querySelector('.model-native-select')?.value==='apimart:apimart-only-test'");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:gpt-image-2-text-to-image';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.model-native-select')?.value==='kie:gpt-image-2-text-to-image'");
+    await client.evaluate("const prompt=document.querySelector('.composer-body textarea');prompt.value='UI auto route';prompt.dispatchEvent(new Event('input',{bubbles:true}));void 0");
+    await client.until("document.querySelector('.auto-route-note')?.textContent.includes('APIMart')");
+    assert.match(await client.evaluate("document.querySelector('.auto-route-note').textContent"), /(?:Автомат предварительно выбрал|Automatic preliminary selection): APIMart.*\$0[,.]012/);
+    assert.match(await client.evaluate("document.querySelector('.generate-button').textContent"), /0[,.]12.*0[,.]012/);
+    await client.evaluate("document.querySelector('.auto-route-details-button').click();void 0");
+    await client.until("document.querySelectorAll('.auto-route-table tbody tr').length===2");
+    assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.auto-route-table tbody tr'), row=>row.classList.contains('selected'))"), [false, true]);
+    assert.match(await client.evaluate("document.querySelectorAll('.auto-route-table tbody tr')[0].textContent"), /Kie\.ai.*20.*\$0[,.]02/s);
+    assert.match(await client.evaluate("document.querySelectorAll('.auto-route-table tbody tr')[1].textContent"), /APIMart.*0[,.]12.*\$0[,.]012/s);
+    await client.evaluate("document.querySelector('.auto-route-dialog .dialog-close').click();void 0");
+    await client.until("!document.querySelector('.auto-route-dialog')");
+    await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:nano-banana-pro';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.model-native-select')?.value==='kie:nano-banana-pro' && /0[,.]03/.test(document.querySelector('.auto-route-note')?.textContent||'') && document.querySelector('.auto-route-details-button')");
+    await client.evaluate("document.querySelector('.auto-route-details-button').click();void 0");
+    await client.until("document.querySelectorAll('.auto-route-table tbody tr').length===2");
+    assert.match(await client.evaluate("document.querySelector('.auto-route-dialog-model').textContent"), /Nano Banana Pro/);
+    assert.match(await client.evaluate("document.querySelectorAll('.auto-route-table tbody tr')[0].textContent"), /Nano Banana Pro.*18.*\$0[,.]09/s);
+    assert.match(await client.evaluate("document.querySelectorAll('.auto-route-table tbody tr')[1].textContent"), /Nano Banana Pro.*gemini-3-pro-image-preview.*0[,.]3.*\$0[,.]03/s);
+    await client.evaluate("document.querySelector('.auto-route-dialog .dialog-close').click();const select=document.querySelector('.model-native-select');select.value='kie:gpt-image-2-text-to-image';select.dispatchEvent(new Event('change',{bubbles:true}));void 0");
+    await client.evaluate("{window.fetch=(input,init)=>new URL(typeof input==='string'?input:input.url,location.origin).pathname==='/api/auto/quote'?Promise.resolve(new Response(JSON.stringify({selected:{providerId:'kie',costUsd:0.005,credits:19.244},offers:[{providerId:'kie',modelId:'kie:gpt-image-2-text-to-image',costUsd:0.005,credits:19.244}]}),{status:200,headers:{'Content-Type':'application/json'}})):window.__autoQuoteFetch(input,init);const prompt=document.querySelector('.composer-body textarea');prompt.value='UI auto route Kie';prompt.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+    await client.until("document.querySelector('.auto-route-note')?.textContent.includes('Kie') && /19[,.]244/.test(document.querySelector('.generate-button')?.textContent||'')");
+    await sleep(1000);
+    await client.command('Page.reload');
+    await client.until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='auto'");
+    await client.evaluate("document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
+    await client.until("document.querySelector('.sidebar-provider-option.active')?.dataset.provider==='media' && !document.querySelector('.auto-route-note')");
+    console.log('Browser E2E passed: authenticated studio, draft reload, checkout return and automatic provider selection');
   } finally {
     client?.close();
     if (browser && browser.exitCode === null && browser.signalCode === null) {

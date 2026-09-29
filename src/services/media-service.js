@@ -222,7 +222,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
     },
     async providerCostQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
       const resolved = await resolveNativeProviderQuote(modelId, input, sourceFiles, forceRefresh);
-      return { ...resolved.quote, source: resolved.source };
+      return { ...resolved.quote, source: resolved.source, productCredits: resolved.value.credits };
     },
     async nativeQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
       const started = Date.now();

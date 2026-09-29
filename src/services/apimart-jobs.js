@@ -2,6 +2,7 @@ const { createApimartClient } = require('../providers/apimart/client');
 const { safeMessage } = require('../provider-diagnostics');
 const { appendGenerationEvent } = require('./generation-journal');
 const { transaction } = require('../database/database');
+const wallet = require('../billing/wallet');
 const { defineProvider } = require('../providers/contract');
 const { simpleRates, estimate, usedCost, mediaEstimate } = require('../providers/apimart/pricing');
 const { describeModel, MUSIC_MODELS, SPEECH_MODELS, MODEL_ID } = require('../providers/apimart/catalog');
@@ -32,7 +33,13 @@ function taskUrls(task) {
   return [...new Set(urls.filter(url => typeof url === 'string' && /^https:\/\//.test(url)))];
 }
 
-function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now }) {
+function creditUnits(credits) {
+  if (!Number.isFinite(credits) || credits < 0) throw new Error('Цена APIMart в кредитах неизвестна');
+  const amountUnits = Math.ceil(credits * 1000 - 1e-9);
+  if (!Number.isSafeInteger(amountUnits)) throw new Error('Цена APIMart слишком велика');
+  return amountUnits;
+}
+function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, billing = wallet }) {
   const client = createApimartClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
   let cachedModels = null;
   let expiresAt = 0;
@@ -56,11 +63,13 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
     const options = parameters(raw);
     if (model.kind === 'text') {
       const tariff = await rates(raw.model);
-      return tariff ? { status: 'estimated', credits: null, ...estimate(tariff, raw.prompt) }
-        : { status: 'unavailable', credits: null, reason: 'unsupported_tariff' };
+      if (!tariff) return { status: 'unavailable', credits: null, reason: 'unsupported_tariff' };
+      const priced = estimate(tariff, raw.prompt);
+      return { status: 'estimated', ...priced, credits: creditUnits(priced.nativeCredits) / 1000 };
     }
-    return mediaEstimate(await tariff(raw.model), model, options)
-      || { status: 'unavailable', credits: null, reason: 'unsupported_tariff' };
+    const mediaQuote = mediaEstimate(await tariff(raw.model), model, options);
+    return mediaQuote ? { ...mediaQuote, credits: creditUnits(mediaQuote.nativeCredits) / 1000 }
+      : { status: 'unavailable', credits: null, reason: 'unsupported_tariff' };
   }
   async function status() {
     const result = await client.balance();
@@ -88,14 +97,43 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
   }
   async function finish(account, job, state, patch) {
     const completedAt = new Date().toISOString();
-    const next = { ...job, ...patch, state, revision: job.revision + 1, updatedAt: completedAt, completedAt,
-      durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(job.createdAt)) };
-    await transaction(pool, async db => {
+    return transaction(pool, async db => {
+      const lockedWallet = job.nativeQuote ? await billing.lockWallet(db, account) : null;
+      const stored = (await db.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='apimart' AND id=$2 FOR UPDATE",
+        [account, recordId(account, job.id)])).rows[0]?.data;
+      if (!stored) throw new Error('Задача APIMart не найдена');
+      if (['success', 'fail', 'unknown'].includes(stored.state)) return stored;
+      const next = { ...stored, ...patch, state, revision: stored.revision + 1, updatedAt: completedAt, completedAt,
+        durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(stored.createdAt)) };
+      if (stored.nativeQuote) {
+        const actual = next.apimartTariffCost?.nativeCredits;
+        const actualUnits = Number.isFinite(actual) && actual >= 0 ? creditUnits(actual) : undefined;
+        const reservationId = recordId(account, job.id);
+        if (actualUnits !== undefined && (state === 'success' || state === 'fail') && actualUnits > stored.nativeQuote.amountUnits) {
+          try {
+            await billing.increaseReservation(db, account, reservationId,
+              actualUnits - stored.nativeQuote.amountUnits, lockedWallet);
+          } catch (error) {
+            if (!/Недостаточно кредитов/.test(error.message)) throw error;
+            next.state = 'unknown';
+            next.billingPending = true;
+            next.error = 'Расход APIMart превысил резерв. Требуется сверка кредитов.';
+          }
+        }
+        if (!next.billingPending) {
+          await billing.settle(db, account, reservationId,
+            state === 'fail' && actualUnits > 0 ? 'provider_charged' : state, next, actualUnits);
+          if (actualUnits !== undefined && (state === 'success' || actualUnits > 0)) {
+            next.nativeQuote = { ...stored.nativeQuote, amountUnits: actualUnits, credits: actualUnits / 1000,
+              estimatedCredits: stored.nativeQuote.credits, status: 'actual' };
+          } else if (state === 'success') next.billingEstimated = true;
+        }
+      }
       await db.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='apimart' AND id=$2",
         [account, recordId(account, job.id), JSON.stringify(next)]);
-      await appendGenerationEvent(db, account, NAMESPACE, next, state, { error: next.error });
+      await appendGenerationEvent(db, account, NAMESPACE, next, next.state, { error: next.error });
+      return next;
     });
-    return next;
   }
   async function progress(account, job, patch) {
     const next = { ...job, ...patch, revision: job.revision + 1, updatedAt: new Date().toISOString() };
@@ -175,7 +213,9 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
           apimartTariffCost: usd != null ? { amountUsd: usd, nativeCredits: credits ?? usd * 10, confirmed: true } : null });
       }
       if (['failed', 'failure', 'canceled', 'cancelled'].includes(state)) {
-        return finish(account, current, 'fail', { error: safeMessage(task.error?.message || task.error || 'Генерация APIMart завершилась ошибкой') });
+        const credits = Number.isFinite(task.credits_cost) && task.credits_cost > 0 ? task.credits_cost : null;
+        return finish(account, current, 'fail', { error: safeMessage(task.error?.message || task.error || 'Генерация APIMart завершилась ошибкой'),
+          ...(credits ? { apimartTariffCost: { nativeCredits: credits, amountUsd: Number(task.cost) || credits / 10, confirmed: true } } : {}) });
       }
       if (Number.isFinite(task.progress) && task.progress !== current.progress) current = await progress(account, current, { progress: task.progress });
       await new Promise(resolve => setTimeout(resolve, POLL_MS));
@@ -294,14 +334,29 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
         || field.maxFiles && Array.isArray(value) && value.length > field.maxFiles;
       if (invalid) throw Object.assign(new Error(`Некорректное значение: ${field.label || field.key}`), { status: 400 });
     }
+    const priced = await quote({ model: raw.model, prompt: raw.prompt, parameters: options });
+    if (priced.status !== 'estimated' || !(priced.nativeCredits > 0)) {
+      throw Object.assign(new Error('Цена APIMart недоступна'), { status: 503 });
+    }
+    const amountUnits = creditUnits(priced.nativeCredits);
+    const nativeQuote = { amountUnits, credits: amountUnits / 1000, scale: 1000, currency: 'credits',
+      status: 'estimated', version: `apimart:1to1:${raw.model}:2026-09-29-1` };
     const createdAt = new Date().toISOString();
     const job = { id: raw.requestId, requestId: raw.requestId, model: raw.model, prompt: raw.prompt.trim(), kind: model.kind,
-      parameters: options, endpoint: model.endpoint,
+      parameters: options, endpoint: model.endpoint, nativeQuote,
       imageUploadFields: model.fields.filter(field => field.uploadToApimart || field.acceptsBase64).map(field => field.key),
       state: 'running', revision: 1, createdAt, updatedAt: createdAt,
       projectId: raw.projectId || null, chatId: raw.chatId || null };
     try {
       await transaction(pool, async db => {
+        const lockedWallet = await billing.lockWallet(db, account);
+        const previous = (await db.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='apimart' AND id=$2",
+          [account, recordId(account, raw.requestId)])).rows[0]?.data;
+        if (previous) {
+          if (!matches(previous)) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
+          return;
+        }
+        await billing.reserve(db, account, recordId(account, raw.requestId), nativeQuote, lockedWallet);
         await db.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'apimart',$2,$3)",
           [account, recordId(account, raw.requestId), JSON.stringify(job)]);
         await appendGenerationEvent(db, account, NAMESPACE, job, 'created');
@@ -314,6 +369,8 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
       }
       throw error;
     }
+    const accepted = await get(account, raw.requestId);
+    if (accepted?.revision !== 1 || accepted?.createdAt !== createdAt) return accepted;
     void process(account, job).catch(() => {});
     return job;
   }
@@ -327,7 +384,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
     }
   }
   const provider = defineProvider({
-    id: 'apimart', name: 'APIMart', kinds: ['text', 'image', 'video', 'audio'], billing: { mode: 'external', unit: null },
+    id: 'apimart', name: 'APIMart', kinds: ['text', 'image', 'video', 'audio'], billing: { mode: 'wallet', unit: 'credits' },
     listModels: models,
     quote,
     submit, getTask: get,

@@ -17,9 +17,12 @@ test('cost floor protects the cheapest credit package after deductions', () => {
   assert.match(quote.version, /provider-v1.*test-policy/);
 });
 
-test('Kie native tariff remains a nominal price floor and Codex stays fixed', () => {
+test('Kie credits map 1:1 to app credits and Codex stays fixed', () => {
   const conversion = createCreditConversion({ offers, policy, kieRubPerCredit: 0.51 });
   assert.equal(conversion.quote('kie', { amountUnits: 5000, version: 'kie-v1' }).amountUnits, 5000);
+  assert.equal(conversion.quote('kie', { amountUnits: 25750, version: 'kie-v1' }).credits, 25.75);
+  assert.equal(createCreditConversion({ offers, policy, kieRubPerCredit: 2 }).quote('kie',
+    { amountUnits: 5000, version: 'kie-v1' }).credits, 5);
   assert.equal(conversion.quote('codex', { amountUnits: 4000, version: 'codex-v1' }).amountUnits, 4000);
   assert.throws(() => conversion.quote('new-router', { amount: 1, currency: 'RUB' }), /не подключён/);
 });

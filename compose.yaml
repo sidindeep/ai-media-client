@@ -18,6 +18,9 @@ services:
       MEDIA_CODEX_URL: http://codex:3210
       MEDIA_CODEX_EMBEDDED: 'false'
       MEDIA_KIE_BROWSER_CDP: http://127.0.0.1:9222
+      AI_LOGGER_SERVER_URL: ${AI_LOGGER_SERVER_URL-https://ailogger.bothost.tech/ingest}
+      AI_LOGGER_ENVIRONMENT: ${AI_LOGGER_ENVIRONMENT-local}
+      AI_LOGGER_ALLOW_PRIVATE_HTTP: ${AI_LOGGER_ALLOW_PRIVATE_HTTP-1}
       MEDIA_KIE_BROWSER_LOGIN_URL: ''
       MEDIA_KIE_BROWSER_EMBEDDED: 'true'
     ports:
@@ -53,6 +56,9 @@ services:
       MEDIA_DB_POOL_MAX: ${MEDIA_WEB_DB_POOL_MAX:-2}
       MEDIA_CODEX_EMBEDDED: 'false'
       MEDIA_KIE_BROWSER_EMBEDDED: 'false'
+      AI_LOGGER_SERVER_URL: ${AI_LOGGER_SERVER_URL-https://ailogger.bothost.tech/ingest}
+      AI_LOGGER_ENVIRONMENT: ${AI_LOGGER_ENVIRONMENT-local}
+      AI_LOGGER_ALLOW_PRIVATE_HTTP: ${AI_LOGGER_ALLOW_PRIVATE_HTTP-1}
     ports:
       - "127.0.0.1:3002:3000"
     volumes:

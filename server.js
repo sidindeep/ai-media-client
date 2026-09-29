@@ -23,6 +23,7 @@ const { createProductCatalog } = require('./src/commerce/catalog');
 const { createCommerce } = require('./src/commerce/service');
 const trace = require('./src/generation-log');
 const systemErrors = require('./src/system-errors');
+const aiLogger = require('./src/ai-logger');
 const { listenForAccountChanges } = require('./src/database/change-events');
 
 function startupDiagnosticRequest(service) {
@@ -169,6 +170,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await changeListener?.close();
     await trace.flush();
     await systemErrors.flush();
+    await aiLogger.flush();
     systemErrors.setPool(null);
     await releaseOwnership();
     await pool?.end();

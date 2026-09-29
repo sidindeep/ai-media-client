@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { randomUUID } = require('node:crypto');
+const aiLogger = require('./ai-logger');
 const context = new AsyncLocalStorage();
 const secrets = new Set();
 let directory, sessionId, sequence = 0, warned = false;
@@ -98,6 +99,7 @@ function write(event, details = {}) {
     }
     pending.push({ folder: directory, row, bytes }); pendingBytes += bytes;
     void drain();
+    aiLogger.reportLifecycle(event);
   } catch { if (!warned) { warned = true; console.error('Не удалось записать журнал генерации. Проверьте доступ к каталогу логов.'); } }
 }
 function timing(event, details) {

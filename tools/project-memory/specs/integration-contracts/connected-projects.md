@@ -37,6 +37,7 @@ sendMessage/answerCallbackQuery; серверный токен, private allowlis
 | Kie account pricing | /api/v1/playground/getConsumeCredits | Авторизованная отдельная browser partition; не тот же секрет, что API-ключ |
 | Kie browser login (локальный Compose) | Chromium запускается по запросу внутри `media`; профиль остаётся в томе `ai-media-kie-session` | Админка показывает статус и встроенный экран браузера; cookie не пересылается в веб-сервис |
 | GI — https://github.com/Dimosfil/general-instructions.git | Источник скопированных инструкций | Не dependency/submodule/runtime приложения |
+| ai_logger — `https://ailogger.bothost.tech/` | HTTP `/ingest` для обезличенных системных событий; переносимый клиент взят из `D:/AI/ai_logger/clients/node/` | Compose использует публичный HTTPS по умолчанию, явный URL из окружения имеет приоритет; исходящие записи не содержат промптов, сообщений ошибок и данных аккаунтов; проект не зависит от схемы БД ai_logger |
 
 Специальные пути Veo/Runway/Flux/4o берутся из модели (kie-special.json) и нормализуются adapters.js. Источник истины по актуальному провайдерскому контракту — документация Kie; локальные импорты являются снимками. Обновление каталога ручное через scripts/import-*.js, не автоматически при старте.
 

@@ -5,6 +5,7 @@ COPY --chown=node:node src/services/codex-images.js src/services/codex-login.js 
 COPY --chown=node:node src/services/codex-usage.js ./src/services/
 COPY --chown=node:node src/services/codex-errors.js ./src/services/
 COPY --chown=node:node src/generation-log.js ./src/
+COPY --chown=node:node src/ai-logger ./src/ai-logger/
 COPY --chown=node:node src/provider-diagnostics.js ./src/
 COPY --chown=node:node src/services/codex-exec.js src/services/codex-app-server.js src/services/codex-runtime.js ./src/services/
 COPY --chown=node:node src/services/codex-app-server-pool.js ./src/services/

@@ -1,4 +1,5 @@
 const { clean } = require('./generation-log');
+const aiLogger = require('./ai-logger');
 
 const maxPending = 500;
 let pool = null;
@@ -22,7 +23,9 @@ function normalize(source, event, error, details = {}) {
 function record(source, event, error, details) {
   try {
     if (pending.length >= maxPending) pending.shift();
-    pending.push(normalize(source, event, error, details));
+    const row = normalize(source, event, error, details);
+    pending.push(row);
+    aiLogger.reportSystemError(row);
     void flush();
   } catch { /* Error recording must never interrupt the original operation. */ }
 }

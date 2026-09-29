@@ -6,6 +6,7 @@ const apimartModels = require('../../config/apimart-schemas.json').models;
 const { transaction } = require('../database/database');
 
 const configId = `routes-${seed.version}`;
+const parameterConversionLock = 18274694;
 
 function buildSeedDocument() {
   const canonical = seed.canonical;
@@ -74,7 +75,7 @@ async function ensureCurrentParameterConversionConfig(pool) {
   const document = buildSeedDocument();
   validateDocument(document);
   return transaction(pool, async client => {
-    await client.query('SELECT pg_advisory_xact_lock(18274693)');
+    await client.query(`SELECT pg_advisory_xact_lock(${parameterConversionLock})`);
     const current = await client.query('SELECT id FROM media_parameter_conversion_configs WHERE is_current');
     await client.query(`INSERT INTO media_parameter_conversion_configs(id,source_version,document)
       VALUES($1,$2,$3::jsonb) ON CONFLICT(id) DO NOTHING`, [configId, seed.version, JSON.stringify(document)]);
@@ -109,7 +110,7 @@ async function saveParameterConversionConfig(pool, version, document) {
 
 async function activateParameterConversionConfig(pool, id) {
   return transaction(pool, async client => {
-    await client.query('SELECT pg_advisory_xact_lock(18274693)');
+    await client.query(`SELECT pg_advisory_xact_lock(${parameterConversionLock})`);
     const target = await client.query('SELECT id FROM media_parameter_conversion_configs WHERE id=$1', [id]);
     if (!target.rows.length) throw new Error('Конфигурация преобразования параметров не найдена');
     await client.query('UPDATE media_parameter_conversion_configs SET is_current=false WHERE is_current');

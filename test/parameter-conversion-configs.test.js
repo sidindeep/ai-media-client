@@ -1,6 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildSeedDocument, ensureCurrentParameterConversionConfig } = require('../src/services/parameter-conversion-configs');
+const { Pool } = require('pg');
+const { openDatabase } = require('../src/database/database');
+const { buildSeedDocument, ensureCurrentParameterConversionConfig,
+  activateParameterConversionConfig } = require('../src/services/parameter-conversion-configs');
 
 function poolWithCurrent(active) {
   const rows = new Map([[active, { id: active, isCurrent: true }]]);
@@ -33,6 +36,24 @@ test('new built-in conversion version preserves a custom active configuration', 
   assert.equal([...pool.rows.values()].find(row => row.isCurrent).id, 'routes-user-config');
   assert.ok(pool.rows.has('routes-2026-09-29-3'));
 });
+
+test('parameter conversion setup and activation do not wait for executor ownership',
+  { skip: !process.env.TEST_DATABASE_URL }, async () => {
+    const ownerPool = await openDatabase({}, new Pool({ connectionString: process.env.TEST_DATABASE_URL }));
+    const owner = await ownerPool.connect();
+    const configPool = new Pool({ connectionString: process.env.TEST_DATABASE_URL, max: 1,
+      onConnect: client => client.query('SET statement_timeout = 1000') });
+    try {
+      await owner.query('SELECT pg_advisory_lock(18274693)');
+      const id = await ensureCurrentParameterConversionConfig(configPool);
+      assert.ok(id.startsWith('routes-'));
+      await activateParameterConversionConfig(configPool, id);
+    } finally {
+      await owner.query('SELECT pg_advisory_unlock(18274693)').catch(() => {});
+      owner.release();
+      await Promise.all([configPool.end(), ownerPool.end()]);
+    }
+  });
 
 test('shared media roles map by provider capability across paired models', () => {
   const document = buildSeedDocument();

@@ -1,5 +1,7 @@
 {
   "version": "2026-09-29T13:32:14.678Z",
+  "variant": "all",
+  "title": "Все модели с ценой",
   "priceSnapshotAt": "2026-09-29",
   "models": [
     {

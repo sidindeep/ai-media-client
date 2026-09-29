@@ -1,15 +1,15 @@
 # Соответствие моделей APIMart, Kie и нашего сервиса
 
 Снимок каталога APIMart: 2026-09-29T13:32:14.678Z. Модели без пары сохраняются отдельными строками.
-«Наш сервис 1» содержит модели с ценой хотя бы одного провайдера; «Наш сервис 2» — модели с ID обоих провайдеров и ценой хотя бы одного. Наличие пары не означает, что оба маршрута уже подключены для запуска.
+«Все модели с ценой» содержит модели с ценой хотя бы одного провайдера; «Модели с ID Kie и APIMart» — строки с обоими ID и ценой хотя бы одного. Наличие пары не означает, что оба маршрута уже подключены для запуска.
 Снимок цен: 2026-09-29. «—» означает, что цена в снимке не опубликована.
 Совпадение модели в этой таблице не подтверждает совместимость параметров для автоматической маршрутизации; её задаёт `config/cost-routing-compatibility.json`.
 
-## Наш сервис 1 — модели с ценой
+## Все модели с ценой
 
 ### text
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 1 | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Все модели с ценой | Модели с ID Kie и APIMart |
 |---|---|---|---|---|---|
 | babbage-002 | вход: $0.00000032 / токен ($0.32 / 1 млн)<br>выход: $0.00000032 / токен ($0.32 / 1 млн) | — | — | Babbage 002 | — |
 | chatgpt-4o-latest | вход: $0.000004 / токен ($4 / 1 млн)<br>выход: $0.000012 / токен ($12 / 1 млн) | — | — | ChatGPT 4o Latest | — |
@@ -209,7 +209,7 @@
 
 ### image
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 1 | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Все модели с ценой | Модели с ID Kie и APIMart |
 |---|---|---|---|---|---|
 | — | — | kie:4o-image-api | text-to-image: 6 кредитов / изображение | 4o Image Api | — |
 | dall-e-3 | $0.032 / изображение | — | — | Dall E 3 | — |
@@ -292,7 +292,7 @@
 
 ### video
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 1 | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Все модели с ценой | Модели с ID Kie и APIMart |
 |---|---|---|---|---|---|
 | flux-3-video | DRAFT: $0.048 / с<br>FHD: $0.232 / с<br>HD: $0.136 / с<br>V2V-DRAFT: $0.096 / с<br>V2V-FHD: $0.424 / с<br>V2V-HD: $0.328 / с | — | — | FLUX 3 Video | — |
 | Omni-Flash-Ext | resolution_duration 360P-4s: $0.15 / запрос<br>resolution_duration 360P-6s: $0.175 / запрос<br>resolution_duration 360P-8s: $0.2 / запрос<br>resolution_duration 360P-10s: $0.225 / запрос<br>resolution_duration 720P-4s: $0.25 / запрос<br>resolution_duration 720P-6s: $0.3 / запрос<br>resolution_duration 720P-8s: $0.35 / запрос<br>resolution_duration 720P-10s: $0.4 / запрос<br>resolution_duration 1080P-4s: $0.25 / запрос<br>resolution_duration 1080P-6s: $0.3 / запрос<br>resolution_duration 1080P-8s: $0.35 / запрос<br>resolution_duration 1080P-10s: $0.4 / запрос<br>resolution_duration 4K-4s: $0.75 / запрос<br>resolution_duration 4K-6s: $0.8 / запрос<br>resolution_duration 4K-8s: $0.85 / запрос<br>resolution_duration 4K-10s: $0.9 / запрос<br>video_ref 1080P: $0.08 / запрос<br>video_ref 360P: $0.04 / запрос<br>video_ref 4K: $0.24 / запрос<br>video_ref 720P: $0.08 / запрос | kie:google/gemini-omni-flash-1-1 | video, 360p with video input: 168 кредитов / видео<br>video, 720p with video input: 168 кредитов / видео<br>video, 1080p with video input: 168 кредитов / видео<br>video, 10s 360p no video input: 126 кредитов / видео<br>video, 10s 720p no video input: 126 кредитов / видео<br>video, 10s 1080p no video input: 126 кредитов / видео<br>video, 4k with video input: 252 кредитов / видео<br>video, 10s 4k no video input: 210 кредитов / видео<br>video, 8s 360p no video input: 105 кредитов / видео<br>video, 8s 720p no video input: 105 кредитов / видео<br>video, 8s 1080p no video input: 105 кредитов / видео<br>video, 8s 4k no video input: 189 кредитов / видео<br>video, 6s 360p no video input: 84 кредитов / видео<br>video, 6s 720p no video input: 84 кредитов / видео<br>video, 6s 1080p no video input: 84 кредитов / видео<br>video, 6s 4k no video input: 168 кредитов / видео<br>video, 4s 360p no video input: 63 кредитов / видео<br>video, 4s 720p no video input: 63 кредитов / видео<br>video, 4s 1080p no video input: 63 кредитов / видео<br>video, 4s 4k no video input: 147 кредитов / видео | Gemini Omni 1.1 Flash | Gemini Omni 1.1 Flash |
@@ -400,7 +400,7 @@
 
 ### audio
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 1 | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Все модели с ценой | Модели с ID Kie и APIMart |
 |---|---|---|---|---|---|
 | — | — | kie:ai-music-api/add-instrumental | add-instrumental: 12 кредитов / запрос | Add Instrumental to Music | — |
 | — | — | kie:ai-music-api/generate-persona | Generate Persona: 0 кредитов / запрос | Ai Music Api Generate Persona | — |
@@ -435,11 +435,11 @@
 | — | — | kie:ai-music-api/separate-vocals | Advanced Split: 20 кредитов / запрос<br>Multi-Stem Separation, without stemName: 50 кредитов / запрос<br>Vocal  Separate: 10 кредитов / запрос | Vocal & Instrument Stem Separation | — |
 | whisper-1 | вход: $0.000024 / токен ($24 / 1 млн)<br>выход: $0.000024 / токен ($24 / 1 млн) | — | — | Whisper 1 | — |
 
-## Наш сервис 2 — модели обоих провайдеров
+## Модели с ID Kie и APIMart
 
 ### text
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Модели с ID Kie и APIMart |
 |---|---|---|---|---|
 | claude-fable-5 | вход: $0.000008 / токен ($8 / 1 млн)<br>выход: $0.00004 / токен ($40 / 1 млн)<br>кэшированный вход: $0.0000008 / токен ($0.8 / 1 млн)<br>запись кэша 5 мин: $0.00001 / токен ($10 / 1 млн)<br>запись кэша 1 ч: $0.000016 / токен ($16 / 1 млн) | kie:claude-fable-5 | chat, Output: 0.004 кредита / токен (4000 / 1 млн)<br>chat, Input: 0.0008 кредита / токен (800 / 1 млн) | Claude Fable 5 |
 | claude-opus-4-6 | вход: $0.000004 / токен ($4 / 1 млн)<br>выход: $0.000008 / токен ($8 / 1 млн)<br>кэшированный вход: $0.0000004 / токен ($0.4 / 1 млн)<br>запись кэша 5 мин: $0.000005 / токен ($5 / 1 млн) | kie:claude-opus-4-6 | chat, Output: 0.00143 кредита / токен (1430 / 1 млн)<br>chat, Input: 0.000285 кредита / токен (285 / 1 млн) | Claude Opus 4 6 |
@@ -477,7 +477,7 @@
 
 ### image
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Модели с ID Kie и APIMart |
 |---|---|---|---|---|
 | flux-2-flex | input_image 1MP: $0.04 / запрос<br>input_image 2MP: $0.08 / запрос<br>input_image 3MP: $0.12 / запрос<br>input_image 4MP: $0.16 / запрос<br>доп. входное изображение: $0.04 | kie:flux-2/flex-image-to-image | image to image, 1.0s-2K: 24 кредитов / изображение<br>image to image, 1.0s-1K: 14 кредитов / изображение | FLUX 2 - Image to Image |
 | flux-2-pro | input_image 1MP: $0.012 / запрос<br>input_image 2MP: $0.024 / запрос<br>input_image 3MP: $0.036 / запрос<br>input_image 4MP: $0.048 / запрос<br>доп. входное изображение: $0.012 | kie:flux-2/pro-image-to-image | image to image, 1.0s-2K: 7 кредитов / изображение<br>image to image, 1.0s-1K: 5 кредитов / изображение | FLUX 2 - Pro Image to Image |
@@ -517,7 +517,7 @@
 
 ### video
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Модели с ID Kie и APIMart |
 |---|---|---|---|---|
 | Omni-Flash-Ext | resolution_duration 360P-4s: $0.15 / запрос<br>resolution_duration 360P-6s: $0.175 / запрос<br>resolution_duration 360P-8s: $0.2 / запрос<br>resolution_duration 360P-10s: $0.225 / запрос<br>resolution_duration 720P-4s: $0.25 / запрос<br>resolution_duration 720P-6s: $0.3 / запрос<br>resolution_duration 720P-8s: $0.35 / запрос<br>resolution_duration 720P-10s: $0.4 / запрос<br>resolution_duration 1080P-4s: $0.25 / запрос<br>resolution_duration 1080P-6s: $0.3 / запрос<br>resolution_duration 1080P-8s: $0.35 / запрос<br>resolution_duration 1080P-10s: $0.4 / запрос<br>resolution_duration 4K-4s: $0.75 / запрос<br>resolution_duration 4K-6s: $0.8 / запрос<br>resolution_duration 4K-8s: $0.85 / запрос<br>resolution_duration 4K-10s: $0.9 / запрос<br>video_ref 1080P: $0.08 / запрос<br>video_ref 360P: $0.04 / запрос<br>video_ref 4K: $0.24 / запрос<br>video_ref 720P: $0.08 / запрос | kie:google/gemini-omni-flash-1-1 | video, 360p with video input: 168 кредитов / видео<br>video, 720p with video input: 168 кредитов / видео<br>video, 1080p with video input: 168 кредитов / видео<br>video, 10s 360p no video input: 126 кредитов / видео<br>video, 10s 720p no video input: 126 кредитов / видео<br>video, 10s 1080p no video input: 126 кредитов / видео<br>video, 4k with video input: 252 кредитов / видео<br>video, 10s 4k no video input: 210 кредитов / видео<br>video, 8s 360p no video input: 105 кредитов / видео<br>video, 8s 720p no video input: 105 кредитов / видео<br>video, 8s 1080p no video input: 105 кредитов / видео<br>video, 8s 4k no video input: 189 кредитов / видео<br>video, 6s 360p no video input: 84 кредитов / видео<br>video, 6s 720p no video input: 84 кредитов / видео<br>video, 6s 1080p no video input: 84 кредитов / видео<br>video, 6s 4k no video input: 168 кредитов / видео<br>video, 4s 360p no video input: 63 кредитов / видео<br>video, 4s 720p no video input: 63 кредитов / видео<br>video, 4s 1080p no video input: 63 кредитов / видео<br>video, 4s 4k no video input: 147 кредитов / видео | Gemini Omni 1.1 Flash |
 | grok-imagine-video-1.5 | 480P: $0.064 / с<br>720P: $0.112 / с<br>1080P: $0.2 / с<br>доп. входное изображение: $0.008 | kie:grok-imagine-video-1-5-preview | image-to-video, 720p: 4.5 кредитов / с<br>image-to-video, 480p: 2.4 кредитов / с | Grok Imagine Video 1.5 Preview |
@@ -560,5 +560,5 @@
 
 ### audio
 
-| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 2 |
+| APIMart | Цена APIMart | Kie | Цена Kie | Модели с ID Kie и APIMart |
 |---|---|---|---|---|

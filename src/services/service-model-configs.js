@@ -3,6 +3,7 @@ const shared = require('../../config/service-models-v2.json');
 const { transaction } = require('../database/database');
 
 const initialId = `initial-${initial.version}`;
+const titles = { all: initial.title, shared: shared.title };
 
 async function ensureCurrentModelConfig(pool) {
   return transaction(pool, async client => {
@@ -13,8 +14,12 @@ async function ensureCurrentModelConfig(pool) {
     [initialId, initial.version, JSON.stringify(initial.models)]);
     await client.query(`INSERT INTO media_service_model_configs
       (id,source_version,models,variant,title,base_version)
-      VALUES($1,$2,$3::jsonb,'shared','Наш сервис 2',$4) ON CONFLICT(id) DO NOTHING`,
-    [`shared-${shared.version}`, shared.version, JSON.stringify(shared.models), shared.baseVersion]);
+      VALUES($1,$2,$3::jsonb,'shared',$4,$5) ON CONFLICT(id) DO NOTHING`,
+    [`shared-${shared.version}`, shared.version, JSON.stringify(shared.models), titles.shared, shared.baseVersion]);
+    await client.query(`UPDATE media_service_model_configs SET title=CASE variant
+      WHEN 'shared' THEN $1 ELSE $2 END
+      WHERE (variant='shared' AND title='Наш сервис 2')
+         OR (variant='all' AND title='Наш сервис 1')`, [titles.shared, titles.all]);
     if (!current.rows.length) await client.query(`UPDATE media_service_model_configs
       SET is_current=true,activated_at=now() WHERE id=$1`, [`shared-${shared.version}`]);
     return current.rows[0]?.id || `shared-${shared.version}`;
@@ -42,8 +47,8 @@ async function saveModelConfig(pool, config) {
   const variant = config.variant || 'all';
   if (!['all', 'shared'].includes(variant)) throw new Error('Неизвестная версия списка моделей');
   if (variant === 'shared' && config.models.some(row => !row.kie || !row.apimart))
-    throw new Error('В версии «Наш сервис 2» допустимы только модели обоих провайдеров');
-  const title = variant === 'shared' ? 'Наш сервис 2' : 'Наш сервис 1';
+    throw new Error(`В версии «${titles.shared}» допустимы только модели обоих провайдеров`);
+  const title = titles[variant];
   const id = `${variant === 'shared' ? 'shared' : 'snapshot'}-${config.version}`;
   const models = JSON.stringify(config.models);
   const existing = await pool.query('SELECT models=$2::jsonb AND variant=$3 AS same FROM media_service_model_configs WHERE id=$1', [id, models, variant]);

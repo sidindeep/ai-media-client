@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 const ts = require('typescript');
-const table = require('../config/service-models.json').models;
+const full = require('../config/service-models.json');
+const table = full.models;
 const candidates = require('../config/service-model-candidates.json').models;
 const shared = require('../config/service-models-v2.json');
 const kie = require('../src/catalog').models;
@@ -34,6 +35,8 @@ function loadAutoModels() {
 }
 
 test('priced service correspondence derives from the full provider candidates', () => {
+  assert.equal(full.title, 'Все модели с ценой');
+  assert.equal(full.variant, 'all');
   const kieRows = candidates.filter(row => row.kie);
   assert.ok(kieRows.length >= kie.length);
   for (const model of kie) assert.ok(kieRows.some(row => row.kie === model.id), model.id);
@@ -74,6 +77,7 @@ test('automatic picker uses priced service rows and keeps unmatched priced APIMa
 
 test('second service catalog contains exactly the models available in both provider catalogs', () => {
   assert.equal(shared.variant, 'shared');
+  assert.equal(shared.title, 'Модели с ID Kie и APIMart');
   assert.equal(shared.baseVersion, require('../config/service-models.json').version);
   assert.deepEqual(shared.models, table.filter(row => row.apimart && row.kie));
   const { autoModelOptions } = loadAutoModels();
@@ -92,9 +96,12 @@ test('model correspondence configurations persist with one active version', asyn
   const first = await currentModelConfig(pool);
   assert.equal(first.id, firstId);
   assert.deepEqual(first.models, shared.models);
+  assert.equal(first.title, shared.title);
   const seededShared = (await listModelConfigs(pool)).find(item => item.variant === 'shared');
   assert.equal(seededShared?.modelCount, shared.models.length);
   assert.equal(seededShared?.isCurrent, true);
+  assert.equal(seededShared?.title, shared.title);
+  assert.equal((await listModelConfigs(pool)).find(item => item.variant === 'all')?.title, full.title);
   assert.equal((await listModelConfigs(pool)).find(item => item.variant === 'all')?.isCurrent, false);
   await pool.query('INSERT INTO media_service_model_configs(id,source_version,models) VALUES($1,$2,$3::jsonb)',
     ['alternate', 'test', JSON.stringify([{ kind: 'image', apimart: null, kie: 'test', name: 'Test model' }])]);
@@ -105,12 +112,15 @@ test('model correspondence configurations persist with one active version', asyn
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM media_service_model_configs WHERE is_current')).rows[0].count, 1);
   await ensureCurrentModelConfig(pool);
   assert.equal((await currentModelConfig(pool)).id, 'alternate');
+  assert.equal((await currentModelConfig(pool)).title, full.title);
   const snapshotId = await saveModelConfig(pool, { version: 'test-snapshot', models: table });
   await activateModelConfig(pool, snapshotId);
   assert.deepEqual((await currentModelConfig(pool)).models, table);
   const sharedId = await saveModelConfig(pool, shared);
   assert.equal((await currentModelConfig(pool)).id, snapshotId, 'saving the second version does not change the current version');
   const configs = await listModelConfigs(pool);
+  assert.equal(configs.find(item => item.id === snapshotId)?.title, full.title);
+  assert.equal(configs.find(item => item.id === sharedId)?.title, shared.title);
   assert.equal(configs.find(item => item.id === sharedId)?.modelCount, shared.models.length);
   assert.equal(configs.find(item => item.id === sharedId)?.isCurrent, false);
   await activateModelConfig(pool, sharedId);

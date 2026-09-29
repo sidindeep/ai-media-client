@@ -151,9 +151,9 @@ for (const row of rows) {
 const version = new Date().toISOString();
 const hasPrice = value => Boolean(value && value !== '—');
 const pricedRows = rows.filter(row => hasPrice(row.apimartPrice) || hasPrice(row.kiePrice));
-const table = { version, priceSnapshotAt: previous.priceSnapshotAt || null, models: pricedRows };
+const table = { version, variant: 'all', title: 'Все модели с ценой', priceSnapshotAt: previous.priceSnapshotAt || null, models: pricedRows };
 const sharedRows = pricedRows.filter(row => row.apimart && row.kie);
-const sharedTable = { version: table.version, variant: 'shared', title: 'Наш сервис 2',
+const sharedTable = { version: table.version, variant: 'shared', title: 'Модели с ID Kie и APIMart',
   baseVersion: table.version, priceSnapshotAt: table.priceSnapshotAt, models: sharedRows };
 fs.writeFileSync(candidatePath, `${JSON.stringify({ version, priceSnapshotAt: table.priceSnapshotAt, models: rows }, null, 2)}\n`, 'utf8');
 fs.writeFileSync(tablePath, `${JSON.stringify(table, null, 2)}\n`, 'utf8');
@@ -164,20 +164,20 @@ const markdown = [
   '# Соответствие моделей APIMart, Kie и нашего сервиса',
   '',
   `Снимок каталога APIMart: ${table.version}. Модели без пары сохраняются отдельными строками.`,
-  '«Наш сервис 1» содержит модели с ценой хотя бы одного провайдера; «Наш сервис 2» — модели с ID обоих провайдеров и ценой хотя бы одного. Наличие пары не означает, что оба маршрута уже подключены для запуска.',
+  '«Все модели с ценой» содержит модели с ценой хотя бы одного провайдера; «Модели с ID Kie и APIMart» — строки с обоими ID и ценой хотя бы одного. Наличие пары не означает, что оба маршрута уже подключены для запуска.',
   `Снимок цен: ${table.priceSnapshotAt || 'не указан'}. «—» означает, что цена в снимке не опубликована.`,
   'Совпадение модели в этой таблице не подтверждает совместимость параметров для автоматической маршрутизации; её задаёт `config/cost-routing-compatibility.json`.',
   '',
 ];
 for (const [title, modelRows, sharedOnly] of [
-  ['Наш сервис 1 — модели с ценой', pricedRows, false],
-  ['Наш сервис 2 — модели обоих провайдеров', sharedRows, true],
+  ['Все модели с ценой', pricedRows, false],
+  ['Модели с ID Kie и APIMart', sharedRows, true],
 ]) {
   markdown.push(`## ${title}`, '');
   for (const kind of ['text', 'image', 'video', 'audio']) {
-    if (sharedOnly) markdown.push(`### ${kind}`, '', '| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 2 |', '|---|---|---|---|---|',
+    if (sharedOnly) markdown.push(`### ${kind}`, '', '| APIMart | Цена APIMart | Kie | Цена Kie | Модели с ID Kie и APIMart |', '|---|---|---|---|---|',
       ...modelRows.filter(row => row.kind === kind).map(row => `| ${escape(row.apimart)} | ${escape(row.apimartPrice).replaceAll('\n', '<br>')} | ${escape(row.kie)} | ${escape(row.kiePrice).replaceAll('\n', '<br>')} | ${escape(row.name)} |`), '');
-    else markdown.push(`### ${kind}`, '', '| APIMart | Цена APIMart | Kie | Цена Kie | Наш сервис 1 | Наш сервис 2 |', '|---|---|---|---|---|---|',
+    else markdown.push(`### ${kind}`, '', '| APIMart | Цена APIMart | Kie | Цена Kie | Все модели с ценой | Модели с ID Kie и APIMart |', '|---|---|---|---|---|---|',
       ...modelRows.filter(row => row.kind === kind).map(row => `| ${escape(row.apimart)} | ${escape(row.apimartPrice).replaceAll('\n', '<br>')} | ${escape(row.kie)} | ${escape(row.kiePrice).replaceAll('\n', '<br>')} | ${escape(row.name)} | ${row.apimart && row.kie ? escape(row.name) : '—'} |`), '');
   }
 }

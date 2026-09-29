@@ -47,6 +47,7 @@ export const en = {
   'common.yes': 'Yes',
   'common.no': 'No',
   'apimart.admin.generationTotal': '≈ {credits} credits (${usd})',
+  'composer.estimatedTotal': '≈ {credits} credits (${usd})',
   'apimart.admin.priceBreakdown': '{inputTokens} input × ${inputRate} + {outputTokens} output × ${outputRate} = ${totalUsd} for the whole request. APIMart credits = USD × 10.',
   'apimart.admin.tariffCost': 'At listed rate',
   'apimart.admin.actualCost': 'Charged by APIMart',

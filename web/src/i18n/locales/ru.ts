@@ -45,6 +45,7 @@ export const ru = {
   'common.yes': 'Да',
   'common.no': 'Нет',
   'apimart.admin.generationTotal': '≈ {credits} кр. ({usd}$)',
+  'composer.estimatedTotal': '≈ {credits} кр. ({usd}$)',
   'apimart.admin.priceBreakdown': '{inputTokens} входных × {inputRate}$ + {outputTokens} выходных × {outputRate}$ = {totalUsd}$ за весь запрос. Кредиты APIMart = доллары × 10.',
   'apimart.admin.tariffCost': 'По тарифу',
   'apimart.admin.actualCost': 'Списано APIMart',

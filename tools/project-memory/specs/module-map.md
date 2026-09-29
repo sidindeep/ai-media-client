@@ -23,6 +23,11 @@ ContentService/S3 → UI. Неизвестный исход сохраняет �
 `src/services/content-service.js`, `test/web-service.test.js`,
 `test/content-service.test.js`. Полный живой путь через Kie в этой проверке не запускался.
 
+Пилот автоматического выбора добавляет перед существующими генерациями
+`src/services/cost-router.js`: он владеет сравнением себестоимости и записью
+решения по `requestId`, а затем вызывает прежний обработчик Kie либо APIMart.
+Граница и текущие ограничения: [автовыбор](features/cost-routing.md).
+
 ```mermaid
 flowchart LR
   UI[Vue / legacy / Telegram] --> HTTP[HTTP и transport]

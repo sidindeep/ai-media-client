@@ -333,7 +333,8 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now })
     submit, getTask: get,
     getStatus: status,
   });
-  return { models: provider.listModels, quote: provider.quote, get: provider.getTask, submit: provider.submit, recover, provider };
+  return { models: provider.listModels, quote: provider.quote, status: provider.getStatus,
+    get: provider.getTask, submit: provider.submit, recover, provider };
 }
 
 module.exports = { createApimartJobs };

@@ -4,6 +4,7 @@ const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { createApimartJobs } = require('../services/apimart-jobs');
 const { createCodexApplicationProvider } = require('../providers/codex/application');
+const { createCostRouter } = require('../services/cost-router');
 
 function createGenerationSupport(config) {
   return {
@@ -23,7 +24,9 @@ function createGenerationServices({ config, accounts, storage, support }) {
     apimart: accounts && config.apimart?.apiKey ? createApimartJobs({ pool: accounts.pool,
       content: accounts.content, apiKey: config.apimart.apiKey }) : null,
   };
-  return { ...services, codexProvider: services.codex ? createCodexApplicationProvider(services.codex) : null };
+  return { ...services,
+    costRouter: accounts ? createCostRouter({ accounts, apimart: services.apimart, pool: accounts.pool }) : null,
+    codexProvider: services.codex ? createCodexApplicationProvider(services.codex) : null };
 }
 
 async function recoverGenerationServices(services) {

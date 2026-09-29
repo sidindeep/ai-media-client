@@ -803,7 +803,7 @@ export const useStudioStore = defineStore('studio', () => {
     startupPollTimer = undefined;
   }
 
-  async function submit(routerAiPayload?: Record<string, unknown>, quotedAmountUnits?: number) {
+  async function submit(routerAiPayload?: Record<string, unknown>, quotedAmountUnits?: number, autoRoute = false) {
     const submittedProvider = provider.value;
     const submittedKieAccount = isAdmin.value ? kieAccountId.value : 'primary';
     const submittedCodexModel = codexModel.value;
@@ -912,8 +912,10 @@ export const useStudioStore = defineStore('studio', () => {
     pendingSubmissions.value.unshift(optimistic);
     selectedId.value = optimisticId;
     try {
-      const task = await api.createTask({ modelId: model.id, input, sourceFiles: submittedSourceFiles, ...context, requestId, kieAccountId: submittedKieAccount });
-      acceptServerRecord(optimisticId, task);
+      const task = autoRoute
+        ? await api.submitAutoRoute({ modelId: model.id, input, ...context, requestId })
+        : await api.createTask({ modelId: model.id, input, sourceFiles: submittedSourceFiles, ...context, requestId, kieAccountId: submittedKieAccount });
+      if (!autoRoute) acceptServerRecord(optimisticId, task);
       await refresh().catch(() => {});
       return task;
     } catch (error) {

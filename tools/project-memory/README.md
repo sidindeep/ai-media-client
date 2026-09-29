@@ -13,6 +13,7 @@
 - [Веб и Telegram](specs/features/web-telegram.md) — сервер, общий workspace, бот и проверки.
 
 - [Граница медиа и провайдеров](specs/features/media-provider-boundary.md) — контракт приложения и клиенты провайдеров.
+- [Автовыбор провайдера](specs/features/cost-routing.md) — сравнение закупочных цен и закрепление маршрута.
 - [APIMart](specs/features/apimart.md) — полный каталог, текст/медиа, параметры, история и внешняя оплата.
 - [Общий контракт провайдера](specs/integration-contracts/provider-core.md) — каталог, параметры, запуск, чтение, цена и баланс.
 

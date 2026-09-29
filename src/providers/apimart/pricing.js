@@ -53,15 +53,21 @@ function mediaEstimate(payload, model, options = {}) {
     }
   } else if (model.kind === 'image' && data.billing_type !== 'per_second') {
     const resolution = String(selected('resolution', '')).toUpperCase();
-    const perImage = data.resolution_paid_prices?.[resolution] ?? data.paid_price;
+    const resolutionPrices = data.resolution_paid_prices;
+    const hasResolutionPrices = resolutionPrices && Object.keys(resolutionPrices).length > 0;
+    if (data.billing_type === 'tiered_token' && !hasResolutionPrices) return null;
+    const perImage = hasResolutionPrices ? resolutionPrices[resolution] : data.paid_price;
     const count = Number(selected('n', options.num_images || 1));
     if (Number.isFinite(perImage) && Number.isInteger(count) && count >= 1 && count <= 12) amountUsd = perImage * count;
   } else if (model.kind === 'video' && data.billing_type === 'per_second') {
     const resolution = String(selected('resolution', '')).toUpperCase();
     const referenceVideo = Array.isArray(options.video_urls) && options.video_urls.length > 0;
+    // APIMart bills reference duration plus output duration. URL count alone
+    // cannot establish the length, so this request has no reliable estimate.
+    if (referenceVideo) return null;
     const resolutionPrices = data.resolution_paid_prices;
     let perSecond = resolutionPrices && Object.keys(resolutionPrices).length
-      ? resolutionPrices[referenceVideo ? `${resolution}-input` : resolution] : data.paid_price;
+      ? resolutionPrices[resolution] : data.paid_price;
     const tierPrices = data.billing_tier_paid_prices;
     if (tierPrices && Object.keys(tierPrices).some(key => !/^token(?:-|$)/i.test(key))) {
       const mode = String(selected('mode', 'std'));

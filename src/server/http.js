@@ -195,6 +195,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   let codexProvider = generationServices?.codexProvider || null;
   let routerAi = generationServices?.routerAi || null;
   let apimart = generationServices?.apimart || null;
+  let costRouter = generationServices?.costRouter || null;
   let routerAiModels = generationServices?.routerAiModels || null;
   let routerAiStatus = generationServices?.routerAiStatus || null;
   const connections = new Set();
@@ -240,7 +241,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         || (maxStart && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document');
       if (!allowedTopLevelNavigation && !oauthCallback && !emailVerify && (!sameOrigin || req.headers['sec-fetch-site'] === 'cross-site')) return json(res, 403, { error: 'Запрос с другого сайта запрещён' });
       if (config.replicaRole === 'web' && (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
-        || /^\/api\/(?:codex|routerai|apimart|admin)\//.test(url.pathname)
+        || /^\/api\/(?:codex|routerai|apimart|auto|admin)\//.test(url.pathname)
         || url.pathname === '/api/startup' || url.pathname === '/api/account/telegram')) {
         return forwardToExecutor(req, res, config.executorUrl, config.executorPublicOrigin, config.publicOrigin);
       }
@@ -392,8 +393,8 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (!config.auth.enabled || !telegram || req.method !== 'POST' || req.headers['x-media-client'] !== 'web') return json(res, 404, { error: 'Метод не найден' });
         return json(res, 200, { result: await telegram.unlink(user.id) });
       }
-      if (/^\/api\/(?:codex|apimart|routerai)\//.test(url.pathname)) {
-        return await handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, routerAiModels, headers,
+      if (/^\/api\/(?:codex|apimart|routerai|auto)\//.test(url.pathname)) {
+        return await handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, costRouter, routerAiModels, headers,
           send: (status, body) => json(res, status, body), readBody: limit => readBody(req, limit),
           sendMedia: fn => sendMedia(req, res, fn),
           sendStored: (file, attachment) => sendStored(req, res, storage, file, attachment),
@@ -537,6 +538,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     codexProvider = nextGenerationServices?.codexProvider || null;
     routerAi = nextGenerationServices?.routerAi || null;
     apimart = nextGenerationServices?.apimart || null;
+    costRouter = nextGenerationServices?.costRouter || null;
     routerAiModels = nextGenerationServices?.routerAiModels || null;
     routerAiStatus = nextGenerationServices?.routerAiStatus || null;
   };

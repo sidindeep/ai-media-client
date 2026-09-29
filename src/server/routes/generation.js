@@ -2,8 +2,16 @@ const { validateCodexRequest } = require('../../services/codex-request');
 const { validateRouterAiRequest } = require('../../services/routerai-billing');
 const { isAdminRole, assertAdminRole } = require('../../auth/roles');
 
-async function handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, routerAiModels,
+async function handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, costRouter, routerAiModels,
   send, readBody, sendMedia, sendStored, sendFile, headers }) {
+  if (url.pathname.startsWith('/api/auto/')) {
+    assertAdminRole(user.role);
+    if (!costRouter) return send(503, { error: 'Автоматический выбор не настроен' });
+    if (req.method !== 'POST' || !['/api/auto/quote', '/api/auto/jobs'].includes(url.pathname)) return send(404, { error: 'Не найдено' });
+    if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
+    const raw = JSON.parse((await readBody(50000)).toString('utf8'));
+    return send(200, url.pathname.endsWith('/quote') ? await costRouter.quote(user, raw) : await costRouter.submit(user, raw));
+  }
   if (url.pathname.startsWith('/api/codex/')) {
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
     if (req.method === 'GET' && url.pathname === '/api/codex/status') return send(200, { enabled: Boolean(codexProvider), allowed: Boolean(accounts) });

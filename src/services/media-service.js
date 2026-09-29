@@ -189,37 +189,46 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
   async function listHistorySince(since, before, activeIds = []) {
     return typeof history.listSince === 'function' ? presentHistory(await history.listSince(since, before, activeIds)) : listHistory();
   }
+  async function resolveNativeProviderQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
+    const model = findModel(modelId);
+    const pricingContext = { sourceFiles: await trustedSourceFiles(sourceFiles) };
+    const validateQuote = raw => creditConversion.quote('kie', raw);
+    let resolved = await resolvePriceSources([
+      { id: 'account', quote: accountQuote && (() => accountQuote(model, input, pricingContext)) },
+    ], validateQuote);
+    if (!resolved.quote) {
+      let tariffData = await tariffs.get(forceRefresh);
+      const resolve = data => resolvePriceSources([
+        { id: 'public', quote: () => quoteKiePublic(model, input, data, pricingContext) },
+        { id: 'documented', quote: () => quoteKieDocumented(model, input, data) },
+      ], validateQuote);
+      resolved = await resolve(tariffData);
+      if (!resolved.quote) {
+        const error = resolved.attempts.find(item => item.source === 'public')?.error;
+        if (forceRefresh || !/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error || new Error('Цена Kie недоступна');
+        tariffData = await tariffs.get(true);
+        resolved = await resolve(tariffData);
+        if (!resolved.quote) throw resolved.attempts.find(item => item.source === 'public')?.error || new Error('Цена Kie недоступна');
+      }
+    }
+    return resolved;
+  }
   const service = {
     events, queue, history, preferences, templates, presets, findModel, validate, costSettings, storageSettings, saveResults, presentHistory, listHistory, listHistorySince, resultUrls: urls,
     catalog: () => ({ providers: providers.filter(item => item.id === provider.id).map(({ id, name }) => ({ id, name })), models: models.filter(item => item.providerId === provider.id), kieAccounts: provider.listAccounts?.() || [{ id: 'primary', name: 'Kie.ai · 1', configured: provider.isConfigured() }] }),
     configured: () => provider.isConfigured(),
+    async providerBalance(kieAccountId = 'primary') {
+      return costs.amount(await accountProvider(kieAccountId).balance());
+    },
+    async providerCostQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
+      const resolved = await resolveNativeProviderQuote(modelId, input, sourceFiles, forceRefresh);
+      return { ...resolved.quote, source: resolved.source };
+    },
     async nativeQuote(modelId, input = {}, sourceFiles = [], forceRefresh = false) {
       const started = Date.now();
       const model = findModel(modelId);
-      const pricingContext = { sourceFiles: await trustedSourceFiles(sourceFiles) };
       try {
-        const validateQuote = raw => creditConversion.quote('kie', raw);
-        let resolved = await resolvePriceSources([
-          { id: 'account', quote: accountQuote && (() => accountQuote(model, input, pricingContext)) },
-        ], validateQuote);
-        if (!resolved.quote) {
-          let tariffData = await tariffs.get(forceRefresh);
-          const resolve = data => resolvePriceSources([
-            { id: 'public', quote: () => quoteKiePublic(model, input, data, pricingContext) },
-            { id: 'documented', quote: () => quoteKieDocumented(model, input, data) },
-          ], validateQuote);
-          resolved = await resolve(tariffData);
-          if (!resolved.quote) {
-            const error = resolved.attempts.find(item => item.source === 'public')?.error;
-            // A newly published model or price variant may not be present in the
-            // 24-hour account cache. Refresh the official Kie list once before
-            // rejecting the paid request.
-            if (forceRefresh || !/Цена (?:этой модели Kie ещё не опубликована|выбранных параметров Kie ещё не определена)/i.test(diagnosticMessage(error))) throw error || new Error('Цена Kie недоступна');
-            tariffData = await tariffs.get(true);
-            resolved = await resolve(tariffData);
-            if (!resolved.quote) throw resolved.attempts.find(item => item.source === 'public')?.error || new Error('Цена Kie недоступна');
-          }
-        }
+        const resolved = await resolveNativeProviderQuote(modelId, input, sourceFiles, forceRefresh);
         const productQuote = { ...resolved.value, source: resolved.source };
         addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${productQuote.credits} кредитов`, Date.now() - started);
         return productQuote;

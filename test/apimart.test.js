@@ -211,6 +211,7 @@ test('APIMart estimates only supported media tariff shapes', () => {
   assert.deepEqual(mediaEstimate({ data: { paid_price: 0.01, resolution_paid_prices: { '2K': 0.02 } } }, model,
     { resolution: '2k', n: 2 }), { status: 'estimated', credits: null, amountUsd: 0.04, nativeCredits: 0.4 });
   assert.equal(mediaEstimate({ data: { billing_type: 'per_second' } }, model), null);
+  assert.equal(mediaEstimate({ data: { billing_type: 'tiered_token', paid_price: 0.032 } }, model), null);
 });
 
 test('APIMart Seedance 2.5 quote follows resolution prices despite token billing tiers', () => {
@@ -225,6 +226,8 @@ test('APIMart Seedance 2.5 quote follows resolution prices despite token billing
   }
   assert.ok(Math.abs(mediaEstimate(tariff, model, { resolution: '1080p', duration: 5, generate_audio: true }).amountUsd - 1.9244) < 1e-10);
   assert.equal(mediaEstimate(tariff, model, { resolution: '4k', duration: 5 }), null);
+  assert.equal(mediaEstimate(tariff, model, { resolution: '720p', duration: 5,
+    video_urls: ['https://example.com/reference.mp4'] }), null);
 });
 
 test('APIMart recovers a persisted media task by polling without another paid POST', async () => {

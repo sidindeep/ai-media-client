@@ -262,7 +262,14 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
   .mobile-nav { background: rgba(12, 13, 21, .97); backdrop-filter: blur(16px); }
   .mobile-view-results .studio-right { padding: 2px; }
   .model-picker { flex: 1 1 100%; }.model-picker-trigger strong { max-width: min(58vw, 310px); }.model-catalog-body { grid-template-columns: 1fr; grid-template-rows: 58px minmax(0, 1fr); }.model-brand-list { display: flex; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid #322d2d; padding: 6px 8px; }.model-brand-list button { width: auto; min-width: max-content; min-height: 44px; grid-template-columns: 24px auto auto; border-radius: 9px; padding: 5px 9px; }.model-brand-list button::before { inset: auto 8px 0; width: auto; height: 2px; border-radius: 2px 2px 0 0; }.model-brand-list small { min-width: auto; }.model-catalog-item { min-height: 72px; padding-inline: 7px; }.model-catalog-copy > strong { white-space: normal; }
-  .studio-header > div:first-child { min-width: 0; }.studio-header .eyebrow { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.header-actions { display: flex; margin-left: auto; }.header-actions > .balance-badge, .header-actions > .results-toggle { display: none; }.account-trigger { min-width: 0; padding: 5px; }.account-trigger-copy, .account-chevron { display: none; }.account-popover { position: fixed; top: 62px; right: 10px; width: min(300px, calc(100vw - 20px)); }.account-modal { padding: 17px; }
+  .studio-header { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .studio-header > div:first-child { min-width: 0; }.studio-header .eyebrow { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .studio-header .header-actions { display: flex; width: 100%; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-left: 0; }
+  .header-actions > .balance-badge, .header-actions > .results-toggle { display: none; }
+  .studio-header .header-account-actions { gap: 4px; }
+  .studio-header .header-account-actions .subscription-button { padding-inline: 9px; }
+  .studio-header .header-account-actions .header-credit-balance { padding-inline: 7px; }
+  .account-trigger { min-width: 0; padding: 5px; }.account-trigger-copy, .account-chevron { display: none; }.account-popover { width: min(300px, calc(100vw - 20px)); }.account-modal { padding: 17px; }
 }
 
 @media (max-height: 820px) and (min-width: 721px) {

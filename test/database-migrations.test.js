@@ -10,8 +10,8 @@ test('schema migrates once and a runtime connection needs no DDL', async t => {
   const pool = await openDatabase({}, testPool());
   t.after(() => pool.end());
   const versions = (await pool.query('SELECT version FROM media_schema_versions ORDER BY version')).rows.map(row => row.version);
-  assert.equal(versions.at(-1), 18);
-  assert.equal((await pool.query('SELECT count(*)::int AS count FROM media_schema_migrations')).rows[0].count, 9);
+  assert.equal(versions.at(-1), 20);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM media_schema_migrations')).rows[0].count, 11);
   const baseline = await fs.readFile(path.join(__dirname, '../src/database/schema.sql'), 'utf8');
   const canonicalHash = createHash('sha256').update(baseline.replace(/\r\n?/g, '\n')).digest('hex');
   assert.equal(canonicalHash, '0c2ffc1f6a780051be243168cb3d145de02ff355c54ea6d2af82e9ab49069cb6');

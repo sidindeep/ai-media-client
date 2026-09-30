@@ -2844,7 +2844,8 @@
           "uploadToApimart": true,
           "accept": "image/png,image/jpeg,image/webp,image/gif",
           "maxSizeMb": 20,
-          "scalar": false
+          "scalar": false,
+          "maxFiles": 9
         },
         {
           "key": "resolution",
@@ -2895,7 +2896,21 @@
           "type": "number",
           "required": false
         }
-      ]
+      ],
+      "taskActions": {
+        "text-to-video": {},
+        "image-to-video": {
+          "fields": {
+            "source_images": "first_frame_image",
+            "first_frame": "first_frame_image"
+          }
+        },
+        "reference-to-video": {
+          "fields": {
+            "reference_images": "image_urls"
+          }
+        }
+      }
     },
     "imagen-4.0-apimart": {
       "endpoint": "/v1/images/generations",
@@ -3809,7 +3824,21 @@
             "type": "object"
           }
         }
-      ]
+      ],
+      "taskActions": {
+        "text-to-video": {},
+        "image-to-video": {
+          "fields": {
+            "source_images": "first_frame_image",
+            "first_frame": "first_frame_image"
+          }
+        },
+        "reference-to-video": {
+          "fields": {
+            "reference_images": "image_urls"
+          }
+        }
+      }
     },
     "MiniMax-H3-Context-IR": {
       "endpoint": "/v1/videos/generations",
@@ -4998,7 +5027,8 @@
           "uploadToApimart": true,
           "accept": "image/png,image/jpeg,image/webp,image/gif",
           "maxSizeMb": 20,
-          "scalar": false
+          "scalar": false,
+          "maxFiles": 1
         },
         {
           "key": "first_frame_image",
@@ -5023,14 +5053,19 @@
         {
           "key": "img_references",
           "label": "img_references",
-          "type": "json",
+          "type": "files",
           "required": false,
           "schema": {
             "type": "array",
             "items": {
               "type": "string"
             }
-          }
+          },
+          "uploadToApimart": true,
+          "accept": "image/png,image/jpeg,image/webp,image/gif",
+          "maxFiles": 7,
+          "maxSizeMb": 20,
+          "scalar": false
         },
         {
           "key": "extend_from_task_id",
@@ -5038,7 +5073,24 @@
           "type": "string",
           "required": false
         }
-      ]
+      ],
+      "taskActions": {
+        "text-to-video": {},
+        "image-to-video": {},
+        "first-last-frame-to-video": {
+          "requireLast": true
+        },
+        "reference-to-video": {
+          "fields": {
+            "reference_images": "img_references"
+          }
+        },
+        "video-extension": {
+          "fields": {
+            "source_task_id": "extend_from_task_id"
+          }
+        }
+      }
     },
     "qwen-image-2.0": {
       "endpoint": "/v1/images/generations",
@@ -7611,7 +7663,31 @@
           "hint": "По умолчанию: false",
           "apiDefault": false
         }
-      ]
+      ],
+      "taskActions": {
+        "text-to-video": {
+          "forbidden": [
+            "generation_type"
+          ]
+        },
+        "first-last-frame-to-video": {
+          "frames": "image_urls",
+          "fields": {
+            "source_images": "image_urls"
+          },
+          "parameters": {
+            "generation_type": "frame"
+          }
+        },
+        "reference-to-video": {
+          "fields": {
+            "reference_images": "image_urls"
+          },
+          "parameters": {
+            "generation_type": "reference"
+          }
+        }
+      }
     },
     "veo3.1-fast-ext": {
       "endpoint": "/v1/videos/generations",
@@ -7855,7 +7931,14 @@
           "type": "boolean",
           "required": false
         }
-      ]
+      ],
+      "taskActions": {
+        "text-to-video": {
+          "forbidden": [
+            "generation_type"
+          ]
+        }
+      }
     },
     "veo3.1-lite-ext": {
       "endpoint": "/v1/videos/generations",
@@ -7976,7 +8059,23 @@
           "hint": "По умолчанию: false",
           "apiDefault": false
         }
-      ]
+      ],
+      "taskActions": {
+        "text-to-video": {
+          "forbidden": [
+            "generation_type"
+          ]
+        },
+        "first-last-frame-to-video": {
+          "frames": "image_urls",
+          "fields": {
+            "source_images": "image_urls"
+          },
+          "parameters": {
+            "generation_type": "frame"
+          }
+        }
+      }
     },
     "veo3.1-quality-ext": {
       "endpoint": "/v1/videos/generations",

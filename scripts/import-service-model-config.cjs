@@ -7,8 +7,9 @@ const { saveModelConfig, activateModelConfig, currentModelConfig, listModelConfi
 async function main() {
   const config = loadConfig(process.env);
   const fileArg = process.argv.slice(2).find(arg => !arg.startsWith('--'));
-  const inactive = process.argv.includes('--inactive');
-  const source = path.resolve(fileArg || path.join(config.root, 'config/service-models.json'));
+  if (process.argv.includes('--inactive')) throw new Error('Единая таблица не имеет неактивных версий');
+  const inactive = false;
+  const source = path.resolve(fileArg || path.join(config.root, 'config/model-routes.json'));
   const models = JSON.parse(fs.readFileSync(source, 'utf8'));
   const pool = await openDatabase({ ...config.database, migrate: false });
   try {
@@ -16,7 +17,7 @@ async function main() {
     if (!inactive) await activateModelConfig(pool, id);
     const current = await currentModelConfig(pool);
     const saved = (await listModelConfigs(pool)).find(item => item.id === id);
-    if (!saved || saved.modelCount !== models.models.length || (!inactive && current?.id !== id))
+    if (!saved || (!inactive && current?.id !== id))
       throw new Error('Конфигурация моделей не подтверждена');
     process.stdout.write(JSON.stringify({ id, rows: saved.modelCount, isCurrent: saved.isCurrent,
       currentId: current?.id || null }) + '\n');

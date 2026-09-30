@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createCostRouter, normalizedRequest } = require('../src/services/cost-router');
 const compatibility = require('../config/cost-routing-compatibility.json');
-const { buildSeedDocument } = require('../src/services/parameter-conversion-configs');
+const routeDocument = require('../config/model-routes.json');
 const sharedModels = require('../config/service-models-v2.json').models;
 const kieCatalog = require('../src/catalog').models;
 
@@ -12,11 +12,11 @@ const request = { requestId, modelId: 'kie:gpt-image-2-text-to-image',
   input: { prompt: 'A red apple', aspect_ratio: '1:1', resolution: '1K', background: 'opaque' }, projectId: null, chatId: null };
 
 function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
-  conversions = buildSeedDocument(), apimartPublishedTariff = null } = {}) {
+  conversions = null, apimartPublishedTariff = null } = {}) {
   const rows = new Map(), sent = [], balanceAccounts = [];
   const scoped = {
     configured: () => true,
-    catalog: () => ({ models: [{ id: 'kie:gpt-image-2-text-to-image' }, { id: 'kie:nano-banana-pro' },
+    catalog: () => ({ models: [{ id: 'kie:gpt-image-2-text-to-image' }, { id: 'kie:gpt-image-2-image-to-image' }, { id: 'kie:grok-imagine/image-to-image' }, { id: 'kie:nano-banana-pro' },
       { id: 'kie:flux-2/pro-text-to-image' }, { id: 'kie:seedance-2.5' },
       { id: 'kie:bytedance/seedance-2-5' },
       { id: 'kie:veo3_lite:TEXT_2_VIDEO' }] }),
@@ -33,6 +33,7 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
     models: async () => [require('../src/providers/apimart/catalog').describeModel({ id: 'gpt-image-2', category: 'image' }),
       require('../src/providers/apimart/catalog').describeModel({ id: 'gemini-3-pro-image-preview', category: 'image' }),
       { id: 'gemini-3.1-flash-lite-image' },
+      require('../src/providers/apimart/catalog').describeModel({ id: 'grok-imagine-1.0-edit-apimart', category: 'image' }),
       { id: 'flux-2-pro', fields: [{ key: 'size', options: ['1:1'] }, { key: 'resolution', options: ['1K'] }, { key: 'n' }] },
       require('../src/providers/apimart/catalog').describeModel({ id: 'seedance-2.5', category: 'video' }),
       require('../src/providers/apimart/catalog').describeModel({ id: 'seedream-5-0-pro', category: 'image' }),
@@ -50,25 +51,18 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
     return { rowCount: 1 };
   } };
   return { accounts, apimart, scoped, router: createCostRouter({ accounts, apimart, pool,
-    loadConversions: async () => conversions }), rows, sent, balanceAccounts };
+    loadModelRoutes: async () => routeDocument }), rows, sent, balanceAccounts };
 }
 
-test('DB conversion document covers both provider catalogs and every priced shared media model', () => {
-  const document = buildSeedDocument();
-  assert.equal(Object.keys(document.providers.kie).length, kieCatalog.length);
-  assert.equal(Object.keys(document.providers.apimart).length >= 110, true);
-  const mapped = new Set(document.pairs.map(pair => pair.kie));
-  for (const row of sharedModels.filter(row => ['image', 'video'].includes(row.kind)
-    && kieCatalog.some(model => model.id === row.kie))) assert.ok(mapped.has(row.kie), row.kie);
-});
-
-test('active conversion document controls the parameters used for APIMart pricing', async () => {
-  const conversions = structuredClone(buildSeedDocument());
-  conversions.version = 'db-updated';
-  conversions.pairs.find(pair => pair.kie === request.modelId).mapping.values.resolution['1K'] = '2k';
-  const priced = await fixture({ conversions }).router.quote(user, request);
-  assert.equal(priced.offers[1].parameters.resolution, '2k');
-  assert.equal(priced.offers[1].conversionVersion, 'db-updated');
+test('unified model IDs route without reading retired conversion tables', async () => {
+  const env = fixture();
+  const priced = await env.router.quote(user, { ...request, modelId: 'gpt-image-2.text-to-image', originModelId: request.modelId });
+  assert.equal(priced.offers[1].parameters.resolution, '1k');
+  assert.equal(priced.offers[1].conversionVersion, undefined);
+  assert.equal(priced.offers[1].adapterVersion, 'raw-task-v1');
+  await env.router.submit(user, { ...request, modelId: 'gpt-image-2.text-to-image', originModelId: request.modelId });
+  assert.equal(env.rows.size, 1);
+  assert.throws(() => normalizedRequest({ ...request, modelId: 'gpt-image-2.text-to-image', originModelId: 'kie:nano-banana-pro' }), /не принадлежит/);
 });
 
 test('auto route retains reference images and frame roles for both provider quotes', async () => {
@@ -93,7 +87,7 @@ test('auto route retains reference images and frame roles for both provider quot
     ...base, input: { ...base.input, reference_video_urls: [first] }, sourceFiles: [{ ref: first, type: 'video/mp4' }],
   });
   assert.equal(unsafe.offers[1].unavailable, true);
-  assert.match(unsafe.offers[1].reason, /Перенос исходников/);
+  assert.match(unsafe.offers[1].reason, /Перенос исходников|Параметр reference_videos/);
 });
 
 test('full Kie catalog routes through provider schema constraints', async () => {
@@ -111,7 +105,7 @@ test('full Kie catalog routes through provider schema constraints', async () => 
   const source = await fixture().router.quote(user, { ...base, modelId: 'kie:veo3_lite:REFERENCE_2_VIDEO',
     input: { ...base.input, imageUrls: ['content:55555555-5555-4555-8555-555555555555'] } });
   assert.equal(source.offers[1].unavailable, true);
-  assert.match(source.offers[1].reason, /imageUrls/);
+  assert.match(source.offers[1].reason, /reference_images/);
 });
 
 test('auto route compares the whole Kie cost with APIMart USD and chooses the cheaper route', async () => {
@@ -221,7 +215,7 @@ test('single-provider catalog entries quote and dispatch through their selected 
   assert.equal(kie.sent[0].args[0].kieAccountId, 'primary');
   assert.deepEqual(kie.sent[0].args[0].sourceFiles, kieRequest.sourceFiles);
   const apimartRequest = { ...request, modelId: 'apimart:seedance-2.5', input: { prompt: 'A sea', duration: 5 } };
-  const apimart = fixture();
+  const apimart = fixture({ apimartUsd: 0.01 });
   assert.equal((await apimart.router.quote(user, apimartRequest)).selected.providerId, 'apimart');
   await apimart.router.submit(user, apimartRequest);
   assert.equal(apimart.sent[0].args.parameters.duration, 5);
@@ -251,7 +245,8 @@ test('all catalog routes retain independent provider results, including a broken
     require('../src/providers/apimart/catalog').describeModel({ id, category: 'image' }));
   for (const id of Object.keys(models)) {
     const result = await env.router.quote(user, { modelId: `apimart:${id}`, input: { prompt: 'A tree' } });
-    assert.equal(result.selected?.providerId, 'apimart', id);
+    assert.equal(result.offers[0].providerId, 'apimart', id);
+    assert.match(result.offers[1].reason, /Kie account|нет модели Kie/);
     assert.equal(result.offers.length, 2, id);
   }
   const result = await env.router.quote(user, request);
@@ -293,4 +288,84 @@ test('image sources use the shared mapper even for routes with old text-only pil
     assert.equal(result.selected?.providerId, 'apimart', JSON.stringify(result.offers));
     assert.deepEqual(result.selected.parameters.image_urls, [ref]);
   }
+});
+
+test('APIMart raw settings are prepared by Kie for both quote and submit', async () => {
+  const env = fixture();
+  const raw = { ...request, modelId: 'apimart:gpt-image-2',
+    input: { prompt: 'A pear', size: '16:9', resolution: '2k', n: 1 } };
+  let quoted;
+  env.scoped.providerCostQuote = async (modelId, input, sourceFiles) => {
+    quoted = { modelId, input, sourceFiles };
+    return { amountUnits: 5000, productCredits: 5, source: 'test', version: 'test' };
+  };
+  const result = await env.router.quote(user, raw);
+  assert.equal(result.selected.providerId, 'kie');
+  assert.deepEqual(quoted.input, { prompt: 'A pear', aspect_ratio: '16:9', resolution: '2K' });
+  await env.router.submit(user, raw);
+  assert.deepEqual(env.sent[0].args[0].input, quoted.input);
+  assert.deepEqual(raw.input, { prompt: 'A pear', size: '16:9', resolution: '2k', n: 1 });
+  const count = await env.router.quote(user, { ...raw, input: { ...raw.input, n: 2 } });
+  assert.equal(count.offers[1].unavailable, true);
+  assert.match(count.offers[1].reason, /count/);
+});
+
+test('Kie adapter selects the image edit variant without losing APIMart source files', async () => {
+  const env = fixture();
+  const ref = 'content:55555555-5555-4555-8555-555555555555';
+  const raw = { ...request, modelId: 'apimart:gpt-image-2',
+    input: { prompt: 'Make it blue', size: '1:1', resolution: '1k', image_urls: [ref], n: 1 },
+    sourceFiles: [{ ref, type: 'image/png' }] };
+  const result = await env.router.quote(user, raw);
+  assert.equal(result.selected.modelId, 'kie:gpt-image-2-image-to-image');
+  assert.deepEqual(result.selected.prepared.input.input_urls, [ref]);
+  await env.router.submit(user, raw);
+  assert.deepEqual(env.sent[0].args[0].sourceFiles, raw.sourceFiles);
+  assert.deepEqual(env.sent[0].args[0].input.input_urls, [ref]);
+});
+
+test('unknown settings exclude only the other provider and legacy saved decisions still replay', async () => {
+  const env = fixture({ apimartUsd: 0.01 });
+  const raw = { ...request, input: { ...request.input, imaginary_option: true } };
+  const result = await env.router.quote(user, raw);
+  assert.equal(result.selected.providerId, 'kie');
+  assert.match(result.offers[1].reason, /imaginary_option/);
+  await env.router.submit(user, request);
+  const decision = [...env.rows.values()][0];
+  delete decision.selected.prepared;
+  await env.router.submit(user, request);
+  assert.deepEqual(env.sent[0].args, env.sent[1].args);
+});
+
+test('task normalization rejects conflicting aliases and reserved property names', () => {
+  assert.throws(() => normalizedRequest({ ...request, input: { prompt: 'x', size: '16:9', aspect_ratio: '1:1' } }), /Конфликт/);
+  assert.throws(() => normalizedRequest({ ...request, input: JSON.parse('{"prompt":"x","__proto__":{}}') }), /имя параметра/);
+  assert.equal(normalizedRequest({ ...request, input: { prompt: 'x', toString: 'unrecognized' } }).task.parameters.toString, 'unrecognized');
+});
+
+test('Grok edit project ID reaches APIMart adapter with all image sources', async () => {
+  const env = fixture({ apimartUsd: 0.01 });
+  const ref = 'content:55555555-5555-4555-8555-555555555555';
+  const raw = { ...request, modelId: 'grok-imagine.image-to-image', originModelId: 'kie:grok-imagine/image-to-image',
+    input: { prompt: 'Change the background', image_urls: [ref], nsfw_checker: false }, sourceFiles: [{ ref }] };
+  const result = await env.router.quote(user, raw);
+  assert.equal(result.selected.providerId, 'apimart');
+  assert.equal(result.selected.modelId, 'grok-imagine-1.0-edit-apimart');
+  await env.router.submit(user, raw);
+  assert.equal(env.sent[0].args.parameters.image_urls, ref);
+});
+
+test('project image edit action cannot silently become text to image on either route', async () => {
+  const env = fixture();
+  const result = await env.router.quote(user, { ...request, modelId: 'gpt-image-2.image-to-image', originModelId: 'apimart:gpt-image-2',
+    input: { prompt: 'Make it blue' } });
+  assert.equal(result.selected, null);
+  assert.ok(result.offers.every(offer => /исходник/.test(offer.reason)));
+});
+
+test('Kie adapter rejects a wire request that discards input images', () => {
+  const { readTask, prepareTask } = require('../src/providers/kie/task-adapter');
+  const model = { id: 'kie:veo:test', apiModel: 'veo', adapter: 'veo', mode: 'TEXT_2_VIDEO' };
+  const task = readTask({ modelId: model.id, input: { prompt: 'Animate', imageUrls: ['https://example.com/image.png'] }, sourceFiles: [] });
+  assert.throws(() => prepareTask(task, model), /не сохраняет все исходники/);
 });

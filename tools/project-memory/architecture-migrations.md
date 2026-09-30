@@ -85,3 +85,15 @@ legacy-ссылок. Миграция зарегистрировала 25 дос
 specs/features/content-module-plan.md и specs/features/media-storage.md.
 
 2026-09-17: по запросу владельца веб/Telegram перемещены из web-tg/ в корень, Electron — в desktop/ вместе с исходниками, тестами, инструментами и единственным dist/queue-header. Причина: стандартный деплой корня репозитория без Electron. Форматы данных и Electron app name не менялись; data/service и локальные .env перенесены, userData сохранён. Проверено: 18 web-тестов, 50 desktop-тестов, UI smoke исходников и app.asar, pack, Docker build и health на 3000. Образ не содержит desktop/Electron. Откат структуры требует остановки сервиса и обратного переноса data/service вместе с Compose bind mount; не запускать две копии бота.
+
+2026-09-30: автовыбор Kie/APIMart перестал читать активную конфигурацию
+media_parameter_conversion_configs. Таблицы и записи сохранены. Общая raw task
+принадлежит src/media/generation-task.js; чтение исходного ввода и подготовка
+параметров принадлежат провайдерным task-adapter.js. Сопоставления моделей
+отделены от правил параметров в src/services/auto-model-routes.js. Выбранный
+prepared сохраняется вместе с решением и повторно используется при отправке;
+старые решения остаются совместимы. Внешний API и схемы БД не менялись.
+Откат — вернуть предыдущий код; данные конвертации остаются доступными.
+Контракт: specs/features/cost-routing.md.
+
+2026-09-30: завершён переход к стабильным ID проекта и единой таблице media_model_routes. Миграция 0020 переносит полный снимок и удаляет media_service_model_configs и media_parameter_conversion_configs. Старые данные сохранены перед локальной миграцией в data/service/exports/model-routing-backup-2026-09-30.json. Все/shared — фильтры единого документа; UI отправляет собственный modelId и originModelId формы. Старые provider-ID запросы и решения совместимы. Откат требует восстановить две удалённые таблицы из резервной копии и вернуть прежний код; одного отката кода недостаточно. Контракт: specs/features/cost-routing.md.

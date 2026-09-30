@@ -50,6 +50,7 @@ function describeModel(item) {
   // These variants explicitly require a reference input.
   if (item.id.includes('-edit-apimart') || item.id === 'wan2.6-i2v') fields = fields.map(field => field.key === 'image_urls' ? { ...field, required: true } : field);
   return { id: item.id, name: item.id, kind, endpoint, fields, promptRequired,
+    ...(metadata?.taskActions ? { taskActions: metadata.taskActions } : {}),
     capabilities: Array.isArray(item.capability_tags) ? item.capability_tags.filter(value => typeof value === 'string') : [],
     ...(metadata?.source ? { documentation: metadata.source } : {}) };
 }

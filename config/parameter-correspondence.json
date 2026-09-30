@@ -1,0 +1,2611 @@
+{
+  "version": "catalog-parameter-vocabulary-1",
+  "purpose": "Reference vocabulary; adapters own contextual validation and conversion. Not loaded by runtime.",
+  "sourceCounts": {
+    "kie": {
+      "fields": 173,
+      "nested": 32
+    },
+    "apimart": {
+      "fields": 124,
+      "nested": 0
+    }
+  },
+  "parameters": [
+    {
+      "id": "acceleration",
+      "providers": {
+        "kie": [
+          "acceleration"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "align_audio",
+      "providers": {
+        "kie": [
+          "align_audio"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "align_audio_reverse",
+      "providers": {
+        "kie": [
+          "align_audio_reverse"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "aspect_ratio",
+      "providers": {
+        "kie": [
+          "aspectRatio",
+          "aspect_ratio",
+          "image_size",
+          "ratio",
+          "size"
+        ],
+        "apimart": [
+          "aspect_ratio",
+          "size"
+        ]
+      },
+      "notes": [
+        "В одних схемах разрешение, в других соотношение сторон. Контекст обязателен.",
+        "Соотношение сторон, пиксельный размер или специальный размер операции. Нельзя безусловно переводить в aspect_ratio."
+      ]
+    },
+    {
+      "id": "audio_file",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "audio_file"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "audio_format",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "audio_format"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "audio_id",
+      "providers": {
+        "kie": [
+          "audio_id"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "audio_ids",
+      "providers": {
+        "kie": [
+          "audio_ids"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "audio_setting",
+      "providers": {
+        "kie": [
+          "audio_setting"
+        ],
+        "apimart": [
+          "audio_setting"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "audio_url",
+      "providers": {
+        "kie": [
+          "audio_url"
+        ],
+        "apimart": [
+          "audio_url"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "audio_weight",
+      "providers": {
+        "kie": [
+          "audio_weight"
+        ],
+        "apimart": [
+          "audio_weight"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "author",
+      "providers": {
+        "kie": [
+          "author"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "auto_lyrics",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "auto_lyrics"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "background",
+      "providers": {
+        "kie": [
+          "background"
+        ],
+        "apimart": [
+          "background"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "background_source",
+      "providers": {
+        "kie": [
+          "background_source"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "bbox_list",
+      "providers": {
+        "kie": [
+          "bbox_list"
+        ],
+        "apimart": [
+          "bbox_list"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "bpm",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "bpm"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "callBackUrl",
+      "providers": {
+        "kie": [
+          "callBackUrl"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "camera_fixed",
+      "providers": {
+        "kie": [
+          "camera_fixed",
+          "fixed_lens"
+        ],
+        "apimart": [
+          "camerafixed"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "cfg_scale",
+      "providers": {
+        "kie": [
+          "cfg_scale"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "chaos",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "chaos"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "character_ids",
+      "providers": {
+        "kie": [
+          "character_ids"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "character_orientation",
+      "providers": {
+        "kie": [
+          "character_orientation"
+        ],
+        "apimart": [
+          "character_orientation"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "color_palette",
+      "providers": {
+        "kie": [
+          "color_palette"
+        ],
+        "apimart": [
+          "color_palette"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "content",
+      "providers": {
+        "kie": [
+          "content"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "continue_at",
+      "providers": {
+        "kie": [
+          "continue_at"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "count",
+      "providers": {
+        "kie": [
+          "n"
+        ],
+        "apimart": [
+          "n"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "cref",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "cref"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "custom",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "custom"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "custom_mode",
+      "providers": {
+        "kie": [
+          "custom_mode"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "custom_model_id",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "custom_model_id"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "cw",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "cw"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "default_param_flag",
+      "providers": {
+        "kie": [
+          "default_param_flag"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "description",
+      "providers": {
+        "kie": [
+          "description"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "dialogue",
+      "providers": {
+        "kie": [
+          "dialogue"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "dialogue_turns",
+      "providers": {
+        "kie": [
+          "dialogue_turns"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "domain_name",
+      "providers": {
+        "kie": [
+          "domain_name"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "draft",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "draft"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "draft_from_task_id",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "draft_from_task_id"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "dref",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "dref"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "driving_audio_url",
+      "providers": {
+        "kie": [
+          "driving_audio_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "duration",
+      "providers": {
+        "kie": [
+          "duration"
+        ],
+        "apimart": [
+          "duration"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "dw",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "dw"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "element_list",
+      "providers": {
+        "kie": [
+          "elements"
+        ],
+        "apimart": [
+          "element_list"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "enable_gif",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "enable_gif"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "enable_pro",
+      "providers": {
+        "kie": [
+          "enable_pro"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "enable_prompt_expansion",
+      "providers": {
+        "kie": [
+          "enable_prompt_expansion"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "enable_safety_checker",
+      "providers": {
+        "kie": [
+          "enable_safety_checker"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "enable_sequential",
+      "providers": {
+        "kie": [
+          "enable_sequential"
+        ],
+        "apimart": [
+          "enable_sequential"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "enableTranslation",
+      "providers": {
+        "kie": [
+          "enableTranslation"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "end_image_url",
+      "providers": {
+        "kie": [
+          "end_image_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "enhance_prompt",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "enhance_prompt"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "expand_prompt",
+      "providers": {
+        "kie": [
+          "expand_prompt"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "extend_at",
+      "providers": {
+        "kie": [
+          "extend_at"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "extend_times",
+      "providers": {
+        "kie": [
+          "extend_times"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "extra",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "extra"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "fast_pretreatment",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "fast_pretreatment"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "file_url",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "file_url"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "first_clip_url",
+      "providers": {
+        "kie": [
+          "first_clip_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "first_frame",
+      "providers": {
+        "kie": [
+          "firstFrame",
+          "first_frame",
+          "first_frame_image_url",
+          "first_frame_url"
+        ],
+        "apimart": [
+          "first_frame_image"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "frames_per_second",
+      "providers": {
+        "kie": [
+          "frames_per_second"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "full_lyrics",
+      "providers": {
+        "kie": [
+          "full_lyrics"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "generate_audio",
+      "providers": {
+        "kie": [
+          "audio",
+          "generate_audio",
+          "generate_audio_switch",
+          "sound"
+        ],
+        "apimart": [
+          "audio",
+          "generate_audio"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "generate_multi_clip_switch",
+      "providers": {
+        "kie": [
+          "generate_multi_clip_switch"
+        ],
+        "apimart": [
+          "generate_multi_clip_switch"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "generation_type",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "generation_type"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "google_image_search",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "google_image_search"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "google_search",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "google_search"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "grab_lyrics",
+      "providers": {
+        "kie": [
+          "grab_lyrics"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "guidance",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "guidance"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "guidance_scale",
+      "providers": {
+        "kie": [
+          "guidance_scale"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "hd",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "hd"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "height",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "height"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "image",
+      "providers": {
+        "kie": [
+          "image"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "image_resolution",
+      "providers": {
+        "kie": [
+          "image_resolution"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "image_with_roles",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "image_with_roles"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "index",
+      "providers": {
+        "kie": [
+          "index"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "infill_end_s",
+      "providers": {
+        "kie": [
+          "infill_end_s"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "infill_start_s",
+      "providers": {
+        "kie": [
+          "infill_start_s"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "instrumental",
+      "providers": {
+        "kie": [
+          "instrumental"
+        ],
+        "apimart": [
+          "instrumental"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "iw",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "iw"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "keep_original_sound",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "keep_original_sound"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "kling_elements",
+      "providers": {
+        "kie": [
+          "kling_elements"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "language",
+      "providers": {
+        "kie": [
+          "language"
+        ],
+        "apimart": [
+          "language"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "language_code",
+      "providers": {
+        "kie": [
+          "language_code"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "last_frame",
+      "providers": {
+        "kie": [
+          "lastFrame",
+          "last_frame_image_url",
+          "last_frame_url"
+        ],
+        "apimart": [
+          "end_frame_image",
+          "last_frame_image"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "layer_decomposition",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "layer_decomposition"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "length",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "length"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "link_url",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "link_url"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "lyrics",
+      "providers": {
+        "kie": [
+          "lyrics"
+        ],
+        "apimart": [
+          "lyrics"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "mask_indexs",
+      "providers": {
+        "kie": [
+          "mask_indexs"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "mask_url",
+      "providers": {
+        "kie": [
+          "mask_url"
+        ],
+        "apimart": [
+          "mask_url"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "max_images",
+      "providers": {
+        "kie": [
+          "max_images"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "max_mode",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "max_mode"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "metadata",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "metadata"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "mid_frame_images",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "mid_frame_images"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "mode",
+      "providers": {
+        "kie": [
+          "mode"
+        ],
+        "apimart": [
+          "mode"
+        ]
+      },
+      "notes": [
+        "Может означать режим/уровень качества. Как resolution — только при подтверждённом соответствии адаптера (например, Kling 4k). Значения std/pro требуют отдельной проверки."
+      ]
+    },
+    {
+      "id": "model",
+      "providers": {
+        "kie": [
+          "model"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "moderation",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "moderation"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "motion_mode",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "motion_mode"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "multi_prompt",
+      "providers": {
+        "kie": [
+          "multi_prompt"
+        ],
+        "apimart": [
+          "multi_prompt"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "multi_shot",
+      "providers": {
+        "kie": [
+          "customize_multi_shots"
+        ],
+        "apimart": [
+          "multi_shot"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "multi_shots",
+      "providers": {
+        "kie": [
+          "multi_shots"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "negative_prompt",
+      "providers": {
+        "kie": [
+          "negative_prompt"
+        ],
+        "apimart": [
+          "negative_prompt"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "negative_tags",
+      "providers": {
+        "kie": [
+          "negative_tags"
+        ],
+        "apimart": [
+          "negative_tags"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "next_text",
+      "providers": {
+        "kie": [
+          "next_text"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "niji",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "niji"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "nsfw_checker",
+      "providers": {
+        "kie": [
+          "nsfw_checker"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "num_frames",
+      "providers": {
+        "kie": [
+          "num_frames"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "num_images",
+      "providers": {
+        "kie": [
+          "num_images"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "num_inference_steps",
+      "providers": {
+        "kie": [
+          "num_inference_steps"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "official_fallback",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "official_fallback"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "omni_reference_task_type",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "omni_reference_task_type"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "open_scenedet",
+      "providers": {
+        "kie": [
+          "open_scenedet"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "optimize_prompt_options",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "optimize_prompt_options"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "output_compression",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "output_compression"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "output_format",
+      "providers": {
+        "kie": [
+          "outputFormat",
+          "output_format"
+        ],
+        "apimart": [
+          "output_format"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "output_resolution",
+      "providers": {
+        "kie": [
+          "output_resolution"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "pe_fast_mode",
+      "providers": {
+        "kie": [
+          "pe_fast_mode"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "person_generation",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "person_generation"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "persona_id",
+      "providers": {
+        "kie": [
+          "persona_id"
+        ],
+        "apimart": [
+          "persona_id"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "persona_model",
+      "providers": {
+        "kie": [
+          "persona_model"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "prefer_multi_shots",
+      "providers": {
+        "kie": [
+          "prefer_multi_shots"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "previous_text",
+      "providers": {
+        "kie": [
+          "previous_text"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "prompt",
+      "providers": {
+        "kie": [
+          "prompt"
+        ],
+        "apimart": [
+          "prompt"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "prompt_extend",
+      "providers": {
+        "kie": [
+          "prompt_extend"
+        ],
+        "apimart": [
+          "prompt_extend"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "prompt_extend_mode",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "prompt_extend_mode"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "prompt_optimizer",
+      "providers": {
+        "kie": [
+          "prompt_optimizer"
+        ],
+        "apimart": [
+          "prompt_optimizer"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "prompt_upsampling",
+      "providers": {
+        "kie": [
+          "promptUpsampling"
+        ],
+        "apimart": [
+          "prompt_upsampling"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "quality",
+      "providers": {
+        "kie": [
+          "quality"
+        ],
+        "apimart": [
+          "quality"
+        ]
+      },
+      "notes": [
+        "Качество изображения и разрешение видео — разные значения. Выбор смысла и допустимых значений делает адаптер."
+      ]
+    },
+    {
+      "id": "raw",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "raw"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "ref_images",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "ref_images"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "ref_videos",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "ref_videos"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "reference_audio",
+      "providers": {
+        "kie": [
+          "audio_urls",
+          "reference_audio_urls"
+        ],
+        "apimart": [
+          "audio_urls"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "reference_file_urls",
+      "providers": {
+        "kie": [
+          "reference_file_urls"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "reference_images",
+      "providers": {
+        "kie": [
+          "imageUrls",
+          "image_references",
+          "image_urls",
+          "reference_image",
+          "reference_image_urls"
+        ],
+        "apimart": [
+          "image_urls",
+          "img_references"
+        ]
+      },
+      "notes": [
+        "Исходное изображение, референсы или упорядоченные кадры. Роль определяется выбранным действием и адаптером."
+      ]
+    },
+    {
+      "id": "reference_link_urls",
+      "providers": {
+        "kie": [
+          "reference_link_urls"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "reference_mask_urls",
+      "providers": {
+        "kie": [
+          "reference_mask_urls"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "reference_video",
+      "providers": {
+        "kie": [
+          "reference_video"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "reference_videos",
+      "providers": {
+        "kie": [
+          "reference_video_urls",
+          "video_list",
+          "video_urls"
+        ],
+        "apimart": [
+          "video_list",
+          "video_urls"
+        ]
+      },
+      "notes": [
+        "Может быть структурированным списком. Нельзя сводить к массиву URL с потерей ролей и метаданных.",
+        "Исходное видео и видео-референс различаются по роли; названия недостаточно для выбора."
+      ]
+    },
+    {
+      "id": "reference_voice",
+      "providers": {
+        "kie": [
+          "reference_voice"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "rendering_speed",
+      "providers": {
+        "kie": [
+          "rendering_speed"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "repeat",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "repeat"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "resize_mode",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "resize_mode"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "resolution",
+      "providers": {
+        "kie": [
+          "image_size",
+          "mode",
+          "quality",
+          "resolution"
+        ],
+        "apimart": [
+          "mode",
+          "quality",
+          "resolution"
+        ]
+      },
+      "notes": [
+        "В одних схемах разрешение, в других соотношение сторон. Контекст обязателен.",
+        "Качество изображения и разрешение видео — разные значения. Выбор смысла и допустимых значений делает адаптер.",
+        "Может означать режим/уровень качества. Как resolution — только при подтверждённом соответствии адаптера (например, Kling 4k). Значения std/pro требуют отдельной проверки."
+      ]
+    },
+    {
+      "id": "response_format",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "response_format"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "return_last_frame",
+      "providers": {
+        "kie": [
+          "return_last_frame"
+        ],
+        "apimart": [
+          "return_last_frame"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "safety_tolerance",
+      "providers": {
+        "kie": [
+          "safetyTolerance"
+        ],
+        "apimart": [
+          "safety_tolerance"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "sample_context",
+      "providers": {
+        "kie": [
+          "sample_context"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "sample_count",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "sample_count"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "scene",
+      "providers": {
+        "kie": [
+          "scene"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "seed",
+      "providers": {
+        "kie": [
+          "seed"
+        ],
+        "apimart": [
+          "seed"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "separate_vocal",
+      "providers": {
+        "kie": [
+          "separate_vocal"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "sequential_image_generation",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "sequential_image_generation"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "sequential_image_generation_options",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "sequential_image_generation_options"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "shift",
+      "providers": {
+        "kie": [
+          "shift"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "shot_type",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "shot_type"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "similarity_boost",
+      "providers": {
+        "kie": [
+          "similarity_boost"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "singer_skill_level",
+      "providers": {
+        "kie": [
+          "singer_skill_level"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "size",
+      "providers": {
+        "kie": [
+          "size"
+        ],
+        "apimart": [
+          "size"
+        ]
+      },
+      "notes": [
+        "Соотношение сторон, пиксельный размер или специальный размер операции. Нельзя безусловно переводить в aspect_ratio."
+      ]
+    },
+    {
+      "id": "sound_key",
+      "providers": {
+        "kie": [
+          "sound_key"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "sound_loop",
+      "providers": {
+        "kie": [
+          "sound_loop"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "sound_tempo",
+      "providers": {
+        "kie": [
+          "sound_tempo"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "source_images",
+      "providers": {
+        "kie": [
+          "filesUrl",
+          "imageUrl",
+          "image_input",
+          "image_url",
+          "image_urls",
+          "inputImage",
+          "input_urls"
+        ],
+        "apimart": [
+          "image_url",
+          "image_urls"
+        ]
+      },
+      "notes": [
+        "Исходное изображение, референсы или упорядоченные кадры. Роль определяется выбранным действием и адаптером."
+      ]
+    },
+    {
+      "id": "source_task_id",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "extend_from_task_id",
+          "source_task_id"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "source_videos",
+      "providers": {
+        "kie": [
+          "video_url",
+          "video_urls"
+        ],
+        "apimart": [
+          "video_url",
+          "video_urls"
+        ]
+      },
+      "notes": [
+        "Исходное видео и видео-референс различаются по роли; названия недостаточно для выбора."
+      ]
+    },
+    {
+      "id": "speakers",
+      "providers": {
+        "kie": [
+          "speakers"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "speed",
+      "providers": {
+        "kie": [
+          "speed"
+        ],
+        "apimart": [
+          "speed"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "sref",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "sref"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "stability",
+      "providers": {
+        "kie": [
+          "stability"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "stem_name",
+      "providers": {
+        "kie": [
+          "stem_name"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "steps",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "steps"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "stop",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "stop"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "strength",
+      "providers": {
+        "kie": [
+          "strength"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "style",
+      "providers": {
+        "kie": [
+          "style"
+        ],
+        "apimart": [
+          "style"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "style_weight",
+      "providers": {
+        "kie": [
+          "style_weight"
+        ],
+        "apimart": [
+          "style_weight"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "stylize",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "stylize"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "sw",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "sw"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "sync_mode",
+      "providers": {
+        "kie": [
+          "sync_mode"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "tags",
+      "providers": {
+        "kie": [
+          "tags"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "tail_image_url",
+      "providers": {
+        "kie": [
+          "tail_image_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "task_id",
+      "providers": {
+        "kie": [
+          "taskId",
+          "task_id"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "temperature",
+      "providers": {
+        "kie": [
+          "temperature"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "templ_start_seconds",
+      "providers": {
+        "kie": [
+          "templ_start_seconds"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "template",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "template"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "template_id",
+      "providers": {
+        "kie": [
+          "template_id"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "text",
+      "providers": {
+        "kie": [
+          "text"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "thinking_mode",
+      "providers": {
+        "kie": [
+          "thinking_mode"
+        ],
+        "apimart": [
+          "thinking_mode"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "tile",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "tile"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "timestamps",
+      "providers": {
+        "kie": [
+          "timestamps"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "title",
+      "providers": {
+        "kie": [
+          "title"
+        ],
+        "apimart": [
+          "title"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "tools",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "tools"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "type",
+      "providers": {
+        "kie": [
+          "type"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "upload_url",
+      "providers": {
+        "kie": [
+          "upload_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "upload_url_list",
+      "providers": {
+        "kie": [
+          "upload_url_list"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "uploadCn",
+      "providers": {
+        "kie": [
+          "uploadCn"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "upscale_factor",
+      "providers": {
+        "kie": [
+          "upscale_factor"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "variety",
+      "providers": {
+        "kie": [
+          "variety"
+        ],
+        "apimart": [
+          "variety"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "verify_url",
+      "providers": {
+        "kie": [
+          "verify_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "version",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "version"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "video",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "video"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "video_list",
+      "providers": {
+        "kie": [
+          "video_list"
+        ],
+        "apimart": [
+          "video_list"
+        ]
+      },
+      "notes": [
+        "Может быть структурированным списком. Нельзя сводить к массиву URL с потерей ролей и метаданных."
+      ]
+    },
+    {
+      "id": "vocal_end_s",
+      "providers": {
+        "kie": [
+          "vocal_end_s"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "vocal_gender",
+      "providers": {
+        "kie": [
+          "vocal_gender"
+        ],
+        "apimart": [
+          "vocal_gender"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "vocal_start_s",
+      "providers": {
+        "kie": [
+          "vocal_start_s"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "voice",
+      "providers": {
+        "kie": [
+          "voice"
+        ],
+        "apimart": [
+          "voice"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "voice_name",
+      "providers": {
+        "kie": [
+          "voice_name"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "voice_url",
+      "providers": {
+        "kie": [
+          "voice_url"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "watermark",
+      "providers": {
+        "kie": [
+          "waterMark",
+          "watermark"
+        ],
+        "apimart": [
+          "watermark"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "watermark_info",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "watermark_info"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "web_search",
+      "providers": {
+        "kie": [
+          "web_search"
+        ],
+        "apimart": []
+      },
+      "notes": []
+    },
+    {
+      "id": "weird",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "weird"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "weirdness_constraint",
+      "providers": {
+        "kie": [
+          "weirdness_constraint"
+        ],
+        "apimart": [
+          "weirdness_constraint"
+        ]
+      },
+      "notes": []
+    },
+    {
+      "id": "width",
+      "providers": {
+        "kie": [],
+        "apimart": [
+          "width"
+        ]
+      },
+      "notes": []
+    }
+  ],
+  "nestedParameters": [
+    {
+      "id": "color_palette[].hex",
+      "providers": {
+        "kie": [
+          "color_palette[].hex"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "color_palette[].ratio",
+      "providers": {
+        "kie": [
+          "color_palette[].ratio"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "dialogue_turns[].speaker_id",
+      "providers": {
+        "kie": [
+          "dialogue_turns[].speaker_id"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "dialogue_turns[].text",
+      "providers": {
+        "kie": [
+          "dialogue_turns[].text"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "dialogue[].text",
+      "providers": {
+        "kie": [
+          "dialogue[].text"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "dialogue[].voice",
+      "providers": {
+        "kie": [
+          "dialogue[].voice"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "element_list[].description",
+      "providers": {
+        "kie": [
+          "elements[].description"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "element_list[].element_input_audio_urls",
+      "providers": {
+        "kie": [
+          "elements[].element_input_audio_urls"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "element_list[].element_input_urls",
+      "providers": {
+        "kie": [
+          "elements[].element_input_urls"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "element_list[].end_time",
+      "providers": {
+        "kie": [
+          "elements[].end_time"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "element_list[].name",
+      "providers": {
+        "kie": [
+          "elements[].name"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "element_list[].start_time",
+      "providers": {
+        "kie": [
+          "elements[].start_time"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "kling_elements[].description",
+      "providers": {
+        "kie": [
+          "kling_elements[].description"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "kling_elements[].element_input_audio_urls",
+      "providers": {
+        "kie": [
+          "kling_elements[].element_input_audio_urls"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "kling_elements[].element_input_urls",
+      "providers": {
+        "kie": [
+          "kling_elements[].element_input_urls"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "kling_elements[].end_time",
+      "providers": {
+        "kie": [
+          "kling_elements[].end_time"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "kling_elements[].name",
+      "providers": {
+        "kie": [
+          "kling_elements[].name"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "kling_elements[].start_time",
+      "providers": {
+        "kie": [
+          "kling_elements[].start_time"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "multi_prompt[].duration",
+      "providers": {
+        "kie": [
+          "multi_prompt[].duration"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "multi_prompt[].prompt",
+      "providers": {
+        "kie": [
+          "multi_prompt[].prompt"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "reference_images[].image_url",
+      "providers": {
+        "kie": [
+          "image_references[].image_url"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "reference_images[].ref_name",
+      "providers": {
+        "kie": [
+          "image_references[].ref_name"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "reference_images[].type",
+      "providers": {
+        "kie": [
+          "image_references[].type"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "speakers[].accent",
+      "providers": {
+        "kie": [
+          "speakers[].accent"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "speakers[].audio_profile",
+      "providers": {
+        "kie": [
+          "speakers[].audio_profile"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "speakers[].pace",
+      "providers": {
+        "kie": [
+          "speakers[].pace"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "speakers[].speaker_id",
+      "providers": {
+        "kie": [
+          "speakers[].speaker_id"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "speakers[].style",
+      "providers": {
+        "kie": [
+          "speakers[].style"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "speakers[].voice_name",
+      "providers": {
+        "kie": [
+          "speakers[].voice_name"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "video_list[].ends",
+      "providers": {
+        "kie": [
+          "video_list[].ends"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "video_list[].start",
+      "providers": {
+        "kie": [
+          "video_list[].start"
+        ],
+        "apimart": []
+      }
+    },
+    {
+      "id": "video_list[].url",
+      "providers": {
+        "kie": [
+          "video_list[].url"
+        ],
+        "apimart": []
+      }
+    }
+  ]
+}

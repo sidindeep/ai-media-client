@@ -18,7 +18,7 @@ export function serviceNameForApimart(id: string, rows: ServiceModelRow[]): stri
 
 export function publishedTariffForRoute(selectedModelId: string, providerId: string, routeModelId: string,
   rows: ServiceModelRow[]): string {
-  const selected = rows.find(row => row.kie === selectedModelId || `apimart:${row.apimart}` === selectedModelId);
+  const selected = rows.find(row => row.id === selectedModelId || row.kie === selectedModelId || `apimart:${row.apimart}` === selectedModelId);
   const route = selected && (!routeModelId || (providerId === 'kie' ? selected.kie === routeModelId : selected.apimart === routeModelId))
     ? selected : rows.find(row => providerId === 'kie' ? row.kie === routeModelId : row.apimart === routeModelId);
   const price = providerId === 'kie' ? route?.kiePrice : route?.apimartPrice;
@@ -41,16 +41,16 @@ export function autoModelOptions(kie: Catalog['models'], apimart: ApimartCatalog
     const publishedPrice = [apimartPrice && `APIMart: ${apimartPrice.split('\n').slice(0, 2).join(' · ')}`,
       kiePrice && `Kie: ${kiePrice.split('\n').slice(0, 2).join(' · ')}`].filter(Boolean).join(' | ');
     if (kieModel && kiePrice) {
-      options.push({ value: kieModel.id, label: row.name, description: kieModel.description, price: publishedPrice,
+      options.push({ value: row.id || kieModel.id, label: row.name, description: kieModel.description, price: publishedPrice,
         groupId: mediaModelBrandId(kieModel.id, row.name) });
       usedKie.add(kieModel.id);
       if (apimartModel) usedApimart.add(apimartModel.id);
-    } else if (apimartModel && apimartPrice && !usedApimart.has(apimartModel.id)) {
-      options.push({ value: `apimart:${apimartModel.id}`, label: row.name, description: 'APIMart', price: publishedPrice,
+    } else if (apimartModel && apimartPrice && (row.id || !usedApimart.has(apimartModel.id))) {
+      options.push({ value: row.id || `apimart:${apimartModel.id}`, label: row.name, description: 'APIMart', price: publishedPrice,
         groupId: apimartModelBrandId(apimartModel.id) });
       usedApimart.add(apimartModel.id);
-    } else if (publishedPrice && (row.kie || !row.apimart || !usedApimart.has(row.apimart))) {
-      const value = row.kie || `apimart:${row.apimart}`;
+    } else if (publishedPrice && (row.id || row.kie || !row.apimart || !usedApimart.has(row.apimart))) {
+      const value = row.id || row.kie || `apimart:${row.apimart}`;
       options.push({ value, label: row.name, price: publishedPrice, disabled: true,
         disabledReason: 'Нет в подключённом каталоге провайдера',
         groupId: row.kie ? mediaModelBrandId(row.kie, row.name) : apimartModelBrandId(row.apimart || '') });

@@ -20,9 +20,12 @@
 | Папка Windows x64 | pnpm pack:desktop |
 | Установщик NSIS | pnpm dist:desktop |
 | Docker сборка и запуск | docker compose up -d --build |
+| Общий словарь всех параметров Kie/APIMart | node scripts/sync-parameter-correspondence.cjs |
 | Подготовить новую заливку | pnpm release:bump |
 | Docker состояние | docker compose ps |
 | Миграции БД отдельной ролью | docker compose run --rm media node scripts/migrate-schema.cjs |
+| Синхронизировать единую таблицу и Markdown | node scripts/sync-model-routes.cjs |
+| Импортировать единую таблицу моделей в БД | docker compose exec -T media node scripts/import-service-model-config.cjs |
 | Read-only проверка данных перед DDL | docker compose exec -T media node scripts/database-preflight.cjs |
 | Выдать права ограниченной роли | docker compose run --rm media node scripts/grant-runtime-role.cjs |
 | Нагрузка на один отдельный Compose без генераций | [tools/load-test/README.md](load-test/README.md) |

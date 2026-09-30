@@ -132,10 +132,10 @@ export async function getMediaQuote(modelId: string, input: Record<string, unkno
   return rpc('nativeQuote', [{ modelId, input, sourceFiles }]);
 }
 export type AutoRouteQuote = { selected: { providerId: string; costUsd: number; credits?: number; nativeCredits?: number; providerCredits?: number; usdPerProviderCredit?: number; warning?: string } | null; offers: Array<{ providerId: string; modelId: string; costUsd?: number; credits?: number; providerCredits?: number; usdPerProviderCredit?: number; unavailable?: boolean; reason?: string; warning?: string; publishedTariff?: string | null }> };
-export async function getAutoRouteQuote(input: { modelId: string; input: Record<string, unknown>; sourceFiles?: Array<{ ref: string; [key: string]: unknown }> }): Promise<AutoRouteQuote> {
+export async function getAutoRouteQuote(input: { modelId: string; originModelId?: string; input: Record<string, unknown>; sourceFiles?: Array<{ ref: string; [key: string]: unknown }> }): Promise<AutoRouteQuote> {
   return parse(await fetch('/api/auto/quote', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
 }
-export async function submitAutoRoute(input: { requestId: string; modelId: string; input: Record<string, unknown>; sourceFiles?: Array<{ ref: string; [key: string]: unknown }>; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
+export async function submitAutoRoute(input: { requestId: string; modelId: string; originModelId?: string; input: Record<string, unknown>; sourceFiles?: Array<{ ref: string; [key: string]: unknown }>; projectId?: string | null; chatId?: string | null }): Promise<GenerationRecord> {
   return parse(await fetch('/api/auto/jobs', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
 }
 

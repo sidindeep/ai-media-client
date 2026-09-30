@@ -189,7 +189,7 @@ const quoteErrorMessage = computed(() => {
   return studio.provider === 'media' && !autoRouting.value ? t('composer.quoteRetryKie', { error: quoteError.value }) : quoteError.value;
 });
 const modelChoice = computed({
-  get: () => studio.autoRouting && studio.provider === 'apimart' ? `apimart:${studio.apimartModel}`
+  get: () => studio.autoRouting ? studio.autoModelId
     : studio.provider === 'codex' ? studio.codexModel : studio.provider === 'routerai' ? studio.routerAiModel
     : studio.provider === 'apimart' ? studio.apimartModel : studio.mediaModelId,
   set: value => {
@@ -428,7 +428,7 @@ function quoteRequestReady() {
 
 async function requestQuote(revision: number, isCurrent: (revision: number) => boolean): Promise<{ quote: ComposerQuote | null; error?: string }> {
   if (autoRouting.value && autoEligible.value) {
-    const result = await getAutoRouteQuote({ modelId: modelChoice.value,
+    const result = await getAutoRouteQuote({ modelId: modelChoice.value, originModelId: studio.autoOriginModelId,
       input: studio.provider === 'apimart' ? { prompt: studio.prompt.trim(),
         ...(studio.mode === 'text' ? {} : studio.mediaInput) } : mediaRequestInput(),
       sourceFiles: studio.provider === 'media' ? studio.sourceFiles : [] });

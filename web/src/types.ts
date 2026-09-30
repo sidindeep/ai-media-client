@@ -67,8 +67,8 @@ export type Catalog = {
   models: MediaModel[];
 };
 
-export type ServiceModelRow = { kind: 'text' | 'image' | 'video' | 'audio'; apimart: string | null; kie: string | null; name: string;
-  apimartPrice?: string; kiePrice?: string };
+export type ServiceModelRow = { id?: string; providers?: Record<string, string>; kind: 'text' | 'image' | 'video' | 'audio'; apimart: string | null; kie: string | null; name: string;
+  action?: string; apimartPrice?: string; kiePrice?: string };
 export type ServiceModelConfig = { id: string; version: string; variant: 'all' | 'shared'; title: string;
   baseVersion: string | null; models: ServiceModelRow[] };
 export type ServiceModelConfigSummary = { id: string; version: string; variant: 'all' | 'shared'; title: string;

@@ -8,18 +8,19 @@
 
 ```dotenv
 AI_LOGGER_SERVER_URL=https://ailogger.bothost.tech/ingest
-AI_LOGGER_PROJECT=ai-media-client
-AI_LOGGER_INSTANCE_ID=permanent-machine-label
 AI_LOGGER_SERVICE=executor
 AI_LOGGER_ENVIRONMENT=production
 AI_LOGGER_ALLOW_PRIVATE_HTTP=0
 ```
 
-Compose читает постоянный `AI_LOGGER_INSTANCE_ID` из проектного `.env` и передаёт
-одинаковый ID в executor и web. Роль задаётся отдельно: `AI_LOGGER_SERVICE=executor`
-или `web`. ID не генерируется при старте контейнера: сохраните его при
-пересоздании и переносе конфигурации этой машины. Эти переменные также нужны
-на хостинге. `.env` не коммитится и не входит в образ.
+Проект определяется автоматически как `ai-media-client`, экземпляр — по
+фактическим hostname и PID процесса (в Docker это hostname контейнера). Эти поля
+не нужно задавать на хостинге или локально. Пересозданный контейнер может иметь
+новый instance_id; executor и web различаются фактическим hostname/PID и ролью
+`AI_LOGGER_SERVICE`. Старые `AI_LOGGER_PROJECT` и `AI_LOGGER_INSTANCE_ID` из
+окружения игнорируются: все реплики сами сообщают фактическую идентичность. Отправка,
+HTTP-reader и проверка доставки используют единый resolver идентификаторов.
+`.env` не коммитится и не входит в образ.
 
 HTTP отправляет имя события и error_code без изменения, а также очищенные
 `exception: { type, message, stack_trace }` и выбранные context-поля

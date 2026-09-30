@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { createSanitizer } from './sanitize.mjs';
+import identity from './identity.js';
 const { text } = createSanitizer();
 
 const LEVELS = new Set(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']);
@@ -60,10 +61,9 @@ export class AiLoggerClient {
   static fromEnv(env = process.env) {
     return new AiLoggerClient({
       serverUrl: env.AI_LOGGER_SERVER_URL,
-      project: env.AI_LOGGER_PROJECT,
+      ...identity.resolveIdentity(),
       service: env.AI_LOGGER_SERVICE || 'app',
       environment: env.AI_LOGGER_ENVIRONMENT || 'production',
-      instanceId: env.AI_LOGGER_INSTANCE_ID,
       fallbackJsonlPath: env.AI_LOGGER_FALLBACK_JSONL_PATH || null,
       allowPrivateHttp: env.AI_LOGGER_ALLOW_PRIVATE_HTTP === '1',
     });

@@ -15,7 +15,6 @@ services:
       MEDIA_PORT: 3000
       MEDIA_REPLICA_ROLE: executor
       AI_LOGGER_SERVICE: executor
-      AI_LOGGER_INSTANCE_ID: ${AI_LOGGER_INSTANCE_ID:?Set permanent machine ID in .env}
       MEDIA_DATA_DIR: data/service
       MEDIA_CODEX_URL: http://codex:3210
       MEDIA_CODEX_EMBEDDED: 'false'
@@ -49,7 +48,6 @@ services:
       MEDIA_PORT: 3000
       MEDIA_REPLICA_ROLE: web
       AI_LOGGER_SERVICE: web
-      AI_LOGGER_INSTANCE_ID: ${AI_LOGGER_INSTANCE_ID:?Set permanent machine ID in .env}
       MEDIA_EXECUTOR_URL: http://media:3000
       MEDIA_PUBLIC_ORIGIN: ${MEDIA_WEB_PUBLIC_ORIGIN:-http://127.0.0.1:3002}
       MEDIA_EXECUTOR_PUBLIC_ORIGIN: ${MEDIA_PUBLIC_ORIGIN:-http://127.0.0.1:3000}

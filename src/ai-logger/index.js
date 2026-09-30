@@ -1,4 +1,5 @@
 const { sanitizer } = require('./diagnostics');
+const { resolveIdentity } = require('./identity');
 const { AiLoggerClient } = require('./client.mjs');
 const { createSystemErrorRecorder, createHttpSystemErrorSink } = require('./system-errors.mjs');
 function createForwarder({ env = process.env, fetchImpl = fetch, retryMs = 5000, maxPending = 100 } = {}) {
@@ -6,15 +7,14 @@ function createForwarder({ env = process.env, fetchImpl = fetch, retryMs = 5000,
   let client;
   try {
     client = new AiLoggerClient({
-      serverUrl: env.AI_LOGGER_SERVER_URL, project: env.AI_LOGGER_PROJECT,
+      serverUrl: env.AI_LOGGER_SERVER_URL, ...resolveIdentity(),
       service: env.AI_LOGGER_SERVICE || env.MEDIA_REPLICA_ROLE || 'web',
       environment: env.AI_LOGGER_ENVIRONMENT || 'production',
-      instanceId: env.AI_LOGGER_INSTANCE_ID,
       fallbackJsonlPath: env.AI_LOGGER_FALLBACK_JSONL_PATH || null,
       timeoutMs: 1500, allowPrivateHttp: env.AI_LOGGER_ALLOW_PRIVATE_HTTP === '1', fetchImpl,
     });
   } catch {
-    console.warn('ai_logger: check AI_LOGGER_SERVER_URL and AI_LOGGER_PROJECT');
+    console.warn('ai_logger: check AI_LOGGER_SERVER_URL');
     return null;
   }
   const errorSink = createHttpSystemErrorSink(client);

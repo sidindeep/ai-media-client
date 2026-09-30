@@ -70,8 +70,43 @@ test('central recorder bounds outage queues, retries and stops after close', asy
   assert.equal(records.length, 2);
 });
 
-test('missing project configuration disables only central forwarding', () => {
-  assert.equal(createForwarder({ env: { AI_LOGGER_SERVER_URL: 'https://logger.example/ingest' } }), null);
+test('project and instance are automatic without manual identity configuration', async () => {
+  const { hostname } = require('node:os');
+  const { resolveIdentity } = require('../src/ai-logger/identity');
+  const { AiLoggerClient } = await import('../src/ai-logger/client.mjs');
+  const records = [];
+  const env = { AI_LOGGER_SERVER_URL: 'https://logger.example/ingest' };
+  const forwarder = createForwarder({ env, fetchImpl: async (_, options) => {
+    records.push(JSON.parse(options.body)); return { ok: true };
+  } });
+  forwarder.systemError({ source: 'startup', event: 'startup.error', error: new Error('Startup failed') });
+  await forwarder.flush(); await forwarder.close();
+  assert.equal(records[0].context.project, 'ai-media-client');
+  assert.equal(records[0].context.instance_id, `${hostname()}:${process.pid}`);
+  assert.deepEqual(resolveIdentity({ AI_LOGGER_PROJECT: ' ', AI_LOGGER_INSTANCE_ID: '' }),
+    { project: 'ai-media-client', instanceId: `${hostname()}:${process.pid}` });
+  assert.deepEqual(resolveIdentity({ AI_LOGGER_PROJECT: 'legacy-project', AI_LOGGER_INSTANCE_ID: 'shared-machine' }),
+    resolveIdentity());
+  const client = AiLoggerClient.fromEnv(env);
+  assert.equal(client.project, records[0].context.project);
+  assert.equal(client.instanceId, records[0].context.instance_id);
+  assert.equal(createForwarder({ env: {} }), null);
+});
+
+test('separate replica processes automatically have distinct instance identities', () => {
+  const { spawnSync } = require('node:child_process');
+  const modulePath = require.resolve('../src/ai-logger/identity');
+  const code = `process.stdout.write(JSON.stringify(require(${JSON.stringify(modulePath)}).resolveIdentity()))`;
+  const identities = Array.from({ length: 2 }, () => {
+    const child = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8',
+      env: { ...process.env, AI_LOGGER_INSTANCE_ID: 'same-legacy-id', AI_LOGGER_PROJECT: 'legacy-project' } });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout);
+  });
+  assert.equal(identities[0].project, 'ai-media-client');
+  assert.equal(identities[1].project, 'ai-media-client');
+  assert.notEqual(identities[0].instanceId, identities[1].instanceId);
+  assert.notEqual(identities[0].instanceId, 'same-legacy-id');
 });
 
 test('private LAN HTTP requires an explicit opt-in', async () => {
@@ -120,14 +155,14 @@ test('original Error reaches HTTP with diagnostics, machine ID and secret exclus
   assert.ok(Number(row.context.line) > 0);
   assert.match(row.exception.stack_trace, /ai-logger.test.js:\d+:\d+/);
   assert.equal(row.exception.type, 'TypeError');
-  assert.equal(row.context.instance_id, 'persistent-machine');
+  assert.equal(row.context.instance_id, require('../src/ai-logger/identity').resolveIdentity().instanceId);
   assert.equal(row.context.service, 'executor');
   for (const forbidden of ['token-fixture', 'session-fixture', 'prompt fixture', 'account-fixture', 'user@example.test',
     'registered-private-key', 'query-fixture', 'user:pass', 'arbitrary prompt', 'private payload', 'owner-private'])
     assert.ok(!JSON.stringify(row).includes(forbidden), forbidden);
 });
 
-test('batch rows retain selected exception and diagnostic; machine identity survives process roles', async () => {
+test('batch rows retain selected exception and diagnostic; process identity survives role changes', async () => {
   const records = [];
   for (const service of ['web', 'executor', 'web']) {
     const forwarder = createForwarder({ env: { AI_LOGGER_PROJECT: 'ai-media-client',
@@ -139,7 +174,7 @@ test('batch rows retain selected exception and diagnostic; machine identity surv
       details: { token: 'excluded' } });
     await forwarder.flush(); await forwarder.close();
   }
-  assert.deepEqual(records.map(row => row.context.instance_id), ['same-machine', 'same-machine', 'same-machine']);
+  assert.deepEqual(records.map(row => row.context.instance_id), Array(3).fill(require('../src/ai-logger/identity').resolveIdentity().instanceId));
   assert.deepEqual(records.map(row => row.context.service), ['web', 'executor', 'web']);
   assert.equal(records[0].context.function, 'execute');
   assert.equal(records[0].context.line, '42');
@@ -186,7 +221,7 @@ test('console capture delivers string diagnostics and original errors without co
   assert.equal(failure.stack, stack);
   assert.equal(records[0].context.error_code, 'ECONNRESET');
   assert.equal(records[0].context.description, 'Service unavailable:');
-  assert.equal(records[0].context.instance_id, 'console-machine');
+  assert.equal(records[0].context.instance_id, require('../src/ai-logger/identity').resolveIdentity().instanceId);
   assert.equal(records[0].exception.type, 'TypeError');
   assert.match(records[0].exception.stack_trace, /ai-logger.test.js:\d+:\d+/);
   assert.match(records[0].context.file, /ai-logger.test.js$/);

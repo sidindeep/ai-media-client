@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto');
 const logger = require('../src/ai-logger');
 const errors = require('../src/system-errors');
 async function main() {
-  assert.ok(process.env.AI_LOGGER_INSTANCE_ID, 'Permanent machine ID is required');
+  const { project, instanceId } = require('../src/ai-logger/identity').resolveIdentity();
   const marker = 'diagnostic-check-' + randomUUID();
   function safeDiagnosticFailure() { throw Object.assign(new Error('Safe diagnostic test ' + marker), { code: 'DIAGNOSTIC_TEST' }); }
   let failure;
@@ -22,10 +22,12 @@ async function main() {
   await logger.flush();
   assert.equal(failure.stack, originalStack);
   const url = new URL(process.env.AI_LOGGER_READ_URL || '/api/agent/logs', process.env.AI_LOGGER_SERVER_URL);
-  url.searchParams.set('project', process.env.AI_LOGGER_PROJECT); url.searchParams.set('limit', '200');
+  url.searchParams.set('project', project); url.searchParams.set('limit', '200');
   const headers = process.env.AI_LOGGER_READ_TOKEN ? { Authorization: 'Bearer ' + process.env.AI_LOGGER_READ_TOKEN } : {};
   let saved, consoleSaved, stringSaved;
-  for (let attempt = 0; attempt < 10 && !(saved && consoleSaved && stringSaved); attempt++) {
+  for (let attempt = 0; attempt < 30 && !(saved && consoleSaved && stringSaved); attempt++) {
+    // Startup traffic and bounded drains can defer later records to retry.
+    await logger.flush();
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
     assert.ok(response.ok, 'Logger reader HTTP ' + response.status);
     const data = await response.json();
@@ -39,7 +41,8 @@ async function main() {
   assert.equal(saved.context.error_code, 'DIAGNOSTIC_TEST');
   assert.equal(saved.context.description, 'Безопасная проверка диагностики ' + marker);
   assert.equal(saved.context.entity, 'diagnostic-test');
-  assert.equal(saved.context.instance_id, process.env.AI_LOGGER_INSTANCE_ID);
+  assert.equal(saved.context.project, project);
+  assert.equal(saved.context.instance_id, instanceId);
   assert.equal(saved.context.service, process.env.AI_LOGGER_SERVICE || process.env.MEDIA_REPLICA_ROLE || 'web');
   assert.equal(saved.exception.type, 'Error');
   assert.equal(saved.exception.message, failure.message);
@@ -52,7 +55,7 @@ async function main() {
   assert.equal(consoleSaved.message, 'console.error');
   assert.equal(consoleSaved.context.error_code, 'DIAGNOSTIC_TEST');
   assert.equal(consoleSaved.exception.stack_trace, originalStack.slice(0, 4000));
-  assert.equal(consoleSaved.context.instance_id, process.env.AI_LOGGER_INSTANCE_ID);
+  assert.equal(consoleSaved.context.instance_id, instanceId);
   assert.equal(consoleSaved.context.function, 'safeDiagnosticFailure');
   assert.equal(stringSaved.message, 'console.error');
   assert.ok(!stringSaved.exception);

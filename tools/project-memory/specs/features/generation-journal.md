@@ -29,7 +29,7 @@ media_system_errors со всеми строками. Исторические �
 в задачах и бизнес-журнал остаются данными продукта.
 
 Единственный технический sink — HTTP ingest из AI_LOGGER_SERVER_URL с проектом
-AI_LOGGER_PROJECT и ролью процесса. Общий recorder имеет ограниченную очередь,
+автоматическим project=ai-media-client и ролью процесса. Общий recorder имеет ограниченную очередь,
 защиту in-flight, retry, bounded drain и close. Локальный fallback отключён.
 Приватные сообщения и details не передаются в открытый API. Центр хранит записи
 в ai_logger_records; чтение /api/agent/logs через scripts/read-central-errors.cjs.
@@ -78,8 +78,13 @@ stack_trace и description/file/line/function/entity. Код и событие �
 стека. Очищаются секреты, cookie, prompt/account/email, URL credentials/query
 и JSON payload в текстах. Произвольные details остаются вне HTTP.
 
-AI_LOGGER_INSTANCE_ID сохраняется в ручном .env одной машины, одинаков для
-Compose media и media-web; AI_LOGGER_SERVICE задан отдельно executor/web.
+Проект и instance_id автоматически определяются единым resolver
+`src/ai-logger/identity.js`: project=ai-media-client, instance_id=hostname:PID.
+Каждая реплика сообщает собственную фактическую идентичность без ручной
+конфигурации. Старые AI_LOGGER_PROJECT/AI_LOGGER_INSTANCE_ID игнорируются;
+Compose не требует их. AI_LOGGER_SERVICE задан отдельно executor/web.
+Reader и проверка доставки используют тот же resolver; при пересоздании
+контейнера hostname и instance_id могут измениться.
 Новые миграции, удаление таблиц/журналов и подмена DATABASE_URL не требуются.
 Существующие bounded drain/retry/in-flight/close и локальные продуктовые записи
 сохраняются. Перехваты RouterAI/APIMart/Codex пишут Error до его преобразования
@@ -87,7 +92,7 @@ Compose media и media-web; AI_LOGGER_SERVICE задан отдельно execut
 
 Контейнерная доставка проверяется scripts/verify-central-diagnostics.cjs по
 уникальному маркеру через /api/agent/logs; тесты ai-logger/system-errors/
-startup-logging защищают исходный стек, фильтрацию и устойчивый ID/роли.
+startup-logging защищают исходный стек, фильтрацию и автоматическую идентичность/роли.
 
 ## Совместимость других ПК при общей БД
 

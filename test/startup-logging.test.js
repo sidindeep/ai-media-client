@@ -16,7 +16,7 @@ test('configuration failure before database startup is delivered to ai_logger be
   const child = spawn(process.execPath, ['server.js'], { cwd: path.resolve(__dirname, '..'),
     env: { ...process.env, MEDIA_PORT: 'invalid-port',
       AI_LOGGER_SERVER_URL: `http://127.0.0.1:${logger.address().port}/ingest`,
-      AI_LOGGER_PROJECT: 'ai-media-client', AI_LOGGER_SERVICE: 'startup-test', AI_LOGGER_INSTANCE_ID: 'startup-machine',
+      AI_LOGGER_PROJECT: '', AI_LOGGER_SERVICE: 'startup-test', AI_LOGGER_INSTANCE_ID: '',
     }, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });
   const timer = setTimeout(() => child.kill(), 15000); t.after(() => clearTimeout(timer));
@@ -31,6 +31,7 @@ test('configuration failure before database startup is delivered to ai_logger be
   assert.ok(configError.context.description);
   assert.ok(configError.context.file);
   assert.ok(Number(configError.context.line) > 0);
-  assert.ok(records.every(row => row.context.project === 'ai-media-client' && row.context.instance_id === 'startup-machine'));
+  assert.ok(records.every(row => row.context.project === 'ai-media-client'
+    && row.context.instance_id === `${require('node:os').hostname()}:${child.pid}`));
   assert.ok(!JSON.stringify(records).includes('invalid-port'));
 });

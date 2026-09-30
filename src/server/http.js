@@ -518,7 +518,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
       if (temporaryConnectionFailure(error)) {
-        console.error('Service connection unavailable:', error.code || 'CONNECTION_TIMEOUT');
+        console.error('Service connection unavailable:', error);
         const requestPath = req.url?.split('?')[0] || '';
         if (req.method === 'GET' && (requestPath === '/' || requestPath === '/index.html' || requestPath === '/app' || requestPath === '/app/' || (requestPath.startsWith('/app/') && !path.extname(requestPath)))) {
           let html = await fs.readFile(path.join(vueRoot, 'index.html'), 'utf8');
@@ -539,7 +539,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         const requestPath = req.url?.split('?')[0] || '';
         const rpc = /^\/api\/rpc\/([a-zA-Z]+)$/.exec(requestPath)?.[1];
         trace.write('service.request.error', { method: req.method, path: requestPath, rpc, error });
-        console.error('Service request failed:', error.code || error.name || 'UNEXPECTED');
+        console.error('Service request failed:', error);
       }
       const status = error.status || (knownMessage ? 400 : 500);
       json(res, status, { error: hiddenUnexpectedError ? 'Не удалось выполнить запрос' : message,

@@ -95,7 +95,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     })();
     try { await sweeping; } finally { sweeping = null; }
   }
-  const sweepTimer = setInterval(() => { void sweepIdle().catch(error => console.error('Account service cleanup:', error.code || error.message)); },
+  const sweepTimer = setInterval(() => { void sweepIdle().catch(error => console.error('Account service cleanup:', error)); },
     Math.min(5 * 60 * 1000, Math.max(1000, Math.floor(idleServiceMs / 2))));
   sweepTimer.unref?.();
   return {

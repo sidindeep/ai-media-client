@@ -1,5 +1,5 @@
 const aiLogger = require('./ai-logger');
-const { sanitizer: { clean }, diagnostic } = require('./ai-logger/diagnostics');
+const { sanitizer: { clean, text }, diagnostic } = require('./ai-logger/diagnostics');
 function record(source, event, error, details = {}) {
   try { return aiLogger.reportSystemError({ source: clean(String(source)), event: clean(String(event)), code: clean(error)?.code ?? clean(error?.providerCode) ?? clean(error?.status),
     error, diagnostic: diagnostic(source, event, error, details.diagnostic) }); }
@@ -10,7 +10,11 @@ function captureConsole(target = console) {
   function captured(...args) {
     original.apply(target, args);
     const error = args.find(value => value instanceof Error);
-    record('server', 'console.error', error);
+    // Only textual diagnostics cross the boundary; never serialize console payloads.
+    const description = args.filter(value => typeof value === 'string').map(value => text(value)).join(' ').slice(0, 1000);
+    record('server', 'console.error', error, {
+      diagnostic: description ? { description } : undefined,
+    });
   }
   target.error = captured;
   return () => { if (target.error === captured) target.error = original; };

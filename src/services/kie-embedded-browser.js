@@ -45,7 +45,7 @@ function createKieEmbeddedBrowser({ dataDirectory, cdpUrl, idleMs = 5 * 60 * 100
         const profile = path.resolve(dataDirectory, '..', 'kie-browser');
         await fs.mkdir(profile, { recursive: true, mode: 0o700 });
         display = spawnImpl('/usr/bin/Xvfb', [':99', '-screen', '0', '1280x900x24', '-nolisten', 'tcp'], { stdio: 'ignore' });
-        display.on('error', error => console.error('Kie display failed:', error.message));
+        display.on('error', error => console.error('Kie display failed:', error));
         await pause(500);
         browser = spawnImpl('/usr/bin/chromium', [
           '--no-sandbox', '--disable-dev-shm-usage', '--disable-extensions',
@@ -53,7 +53,7 @@ function createKieEmbeddedBrowser({ dataDirectory, cdpUrl, idleMs = 5 * 60 * 100
           '--remote-debugging-port=9222', `--user-data-dir=${profile}`, '--window-size=1280,900',
           'https://kie.ai/api-key',
         ], { stdio: 'ignore', env: { ...process.env, DISPLAY: ':99' } });
-        browser.on('error', error => console.error('Kie browser failed:', error.message));
+        browser.on('error', error => console.error('Kie browser failed:', error));
         for (let attempt = 0; attempt < 60; attempt++) {
           if (!running()) break;
           try {

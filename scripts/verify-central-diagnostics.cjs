@@ -12,18 +12,27 @@ async function main() {
   errors.record('diagnostic-test', 'integration.error', failure,
     { diagnostic: { description: 'Безопасная проверка диагностики ' + marker, entity: 'diagnostic-test' },
       prompt: 'DO_NOT_SEND_PROMPT', cookies: 'DO_NOT_SEND_COOKIE', accountId: 'DO_NOT_SEND_ACCOUNT' });
+  // Capture on a private console surface to avoid altering the running service.
+  const target = { error() {} };
+  const restoreConsole = errors.captureConsole(target);
+  try {
+    target.error('Console diagnostic ' + marker, failure, { prompt: 'DO_NOT_SEND_CONSOLE_PAYLOAD' });
+    target.error('String diagnostic ' + marker, 'token=DO_NOT_SEND_CONSOLE_TOKEN');
+  } finally { restoreConsole(); }
   await logger.flush();
   assert.equal(failure.stack, originalStack);
   const url = new URL(process.env.AI_LOGGER_READ_URL || '/api/agent/logs', process.env.AI_LOGGER_SERVER_URL);
   url.searchParams.set('project', process.env.AI_LOGGER_PROJECT); url.searchParams.set('limit', '200');
   const headers = process.env.AI_LOGGER_READ_TOKEN ? { Authorization: 'Bearer ' + process.env.AI_LOGGER_READ_TOKEN } : {};
-  let saved;
-  for (let attempt = 0; attempt < 10 && !saved; attempt++) {
+  let saved, consoleSaved, stringSaved;
+  for (let attempt = 0; attempt < 10 && !(saved && consoleSaved && stringSaved); attempt++) {
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
     assert.ok(response.ok, 'Logger reader HTTP ' + response.status);
     const data = await response.json();
-    saved = data.records?.find(row => row.context?.description?.includes(marker));
-    if (!saved) await new Promise(resolve => setTimeout(resolve, 1000));
+    saved = data.records?.find(row => row.message === 'integration.error' && row.context?.description?.includes(marker));
+    consoleSaved = data.records?.find(row => row.context?.description === 'Console diagnostic ' + marker);
+    stringSaved = data.records?.find(row => row.context?.description?.startsWith('String diagnostic ' + marker));
+    if (!(saved && consoleSaved && stringSaved)) await new Promise(resolve => setTimeout(resolve, 1000));
   }
   assert.ok(saved, 'Test error was not read back from /api/agent/logs: ' + marker);
   assert.equal(saved.message, 'integration.error');
@@ -39,9 +48,20 @@ async function main() {
   assert.ok(Number(saved.context.line) > 0);
   assert.equal(saved.context.function, 'safeDiagnosticFailure');
   assert.ok(!JSON.stringify(saved).includes('DO_NOT_SEND_'));
+  assert.ok(consoleSaved && stringSaved, 'Console diagnostics were not read back');
+  assert.equal(consoleSaved.message, 'console.error');
+  assert.equal(consoleSaved.context.error_code, 'DIAGNOSTIC_TEST');
+  assert.equal(consoleSaved.exception.stack_trace, originalStack.slice(0, 4000));
+  assert.equal(consoleSaved.context.instance_id, process.env.AI_LOGGER_INSTANCE_ID);
+  assert.equal(consoleSaved.context.function, 'safeDiagnosticFailure');
+  assert.equal(stringSaved.message, 'console.error');
+  assert.ok(!stringSaved.exception);
+  assert.equal(stringSaved.context.file, undefined);
+  assert.ok(!JSON.stringify([consoleSaved, stringSaved]).includes('DO_NOT_SEND_'));
   console.log(JSON.stringify({ marker, delivered: true, instance_id: saved.context.instance_id,
     service: saved.context.service, file: saved.context.file, line: saved.context.line,
     function: saved.context.function, entity: saved.context.entity, description: saved.context.description,
-    exception_verified: true, sensitive_data_excluded: true }, null, 2));
+    exception_verified: true, console_verified: true, string_diagnostic_verified: true,
+    sensitive_data_excluded: true }, null, 2));
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => logger.close());

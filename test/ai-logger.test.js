@@ -158,6 +158,46 @@ test('missing stack never produces an invented location or exception', async () 
   for (const key of ['file', 'line', 'function']) assert.equal(records[0].context[key], undefined);
 });
 
+test('console capture delivers string diagnostics and original errors without console payloads', async t => {
+  const errors = require('../src/system-errors');
+  const logger = require('../src/ai-logger');
+  const { sanitizer } = require('../src/ai-logger/diagnostics');
+  sanitizer.secret('console-private-secret');
+  const records = [], calls = [];
+  const forwarder = createForwarder({ env: { AI_LOGGER_PROJECT: 'ai-media-client',
+    AI_LOGGER_SERVER_URL: 'https://logger.example/ingest', AI_LOGGER_INSTANCE_ID: 'console-machine' },
+    fetchImpl: async (_, options) => { records.push(JSON.parse(options.body)); return { ok: true }; } });
+  const original = logger.reportSystemError;
+  logger.reportSystemError = row => forwarder.systemError(row);
+  const target = { error(...args) { calls.push(args); } };
+  const restore = errors.captureConsole(target);
+  t.after(async () => { restore(); logger.reportSystemError = original; await forwarder.close(); });
+  const payload = { rawResponse: 'DO_NOT_SEND_RESPONSE', prompt: 'DO_NOT_SEND_PROMPT' };
+  payload.self = payload;
+  const failure = Object.assign(new TypeError('Connection failed console-private-secret'), { code: 'ECONNRESET' });
+  const stack = failure.stack;
+  target.error('Service unavailable:', payload, failure);
+  target.error('Cleanup failed:', 'console-private-secret', 'token=console-token-fixture');
+  target.error('{"rawResponse":"DO_NOT_SEND_JSON"}', payload);
+  await forwarder.flush();
+  assert.equal(records.length, 3);
+  assert.equal(calls[0][1], payload);
+  assert.equal(calls[0][2], failure);
+  assert.equal(failure.stack, stack);
+  assert.equal(records[0].context.error_code, 'ECONNRESET');
+  assert.equal(records[0].context.description, 'Service unavailable:');
+  assert.equal(records[0].context.instance_id, 'console-machine');
+  assert.equal(records[0].exception.type, 'TypeError');
+  assert.match(records[0].exception.stack_trace, /ai-logger.test.js:\d+:\d+/);
+  assert.match(records[0].context.file, /ai-logger.test.js$/);
+  assert.match(records[1].context.description, /Cleanup failed:/);
+  assert.equal(records[1].exception, undefined);
+  assert.equal(records[1].context.file, undefined);
+  assert.equal(records[2].context.description, '[REDACTED PAYLOAD]');
+  for (const forbidden of ['console-private-secret', 'console-token-fixture', 'DO_NOT_SEND_'])
+    assert.ok(!JSON.stringify(records).includes(forbidden), forbidden);
+});
+
 
 test('provider connection capture receives the original failure before user-facing conversion', async t => {
   const errors = require('../src/system-errors');

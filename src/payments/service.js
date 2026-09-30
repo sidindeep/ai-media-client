@@ -99,7 +99,7 @@ function createPayments({ pool, provider, onEvent }) {
       } catch (error) { systemErrors.record('payments', 'operation.error', error);
         await pool.query(`UPDATE payment_commands SET lease_token=NULL,leased_until=NULL,next_attempt_at=now()+interval '5 minutes'
           WHERE id=$1 AND lease_token=$2`, [row.id, token]);
-        console.error('Payment command recovery failed:', error.code || error.message);
+        console.error('Payment command recovery failed:', error);
       }
     }
   }

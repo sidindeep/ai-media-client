@@ -27,7 +27,7 @@ function createRetryScheduler(run, { now = Date.now } = {}) {
     const timer = setTimeout(() => {
       timers.delete(key);
       if (!closed) Promise.resolve().then(() => run(key)).catch(error => {
-        console.error('Delayed submission failed:', error.code || error.message);
+        console.error('Delayed submission failed:', error);
         if (!closed) schedule(key, new Date(now() + 10_000).toISOString());
       });
     }, delay);

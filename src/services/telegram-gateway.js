@@ -19,10 +19,12 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
       if (method === 'getUpdates' && response.status === 409) {
         throw Object.assign(new Error('Другой экземпляр Telegram-бота получает обновления'), { code: 'TELEGRAM_POLL_CONFLICT' });
       }
-      if (!response.ok || !result.ok) throw new Error();
+      if (!response.ok || !result.ok) throw Object.assign(new Error(`Telegram ${method} failed (HTTP ${response.status}, API ${result.error_code || 'unknown'})`), {
+        code: `TELEGRAM_API_${result.error_code || response.status}`,
+      });
       return result.result;
     } catch (error) {
-      trace.write('telegram.error',{method,error});
+      if (!signal?.aborted) trace.write('telegram.error',{method,error});
       if (error.code === 'TELEGRAM_POLL_CONFLICT') throw error;
       throw new Error('Telegram временно недоступен');
     }

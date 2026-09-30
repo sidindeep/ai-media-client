@@ -1,6 +1,6 @@
 const { performance } = require('node:perf_hooks');
 
-async function handleWorkspaceRequest({ req, url, user, accounts, send, readBody, recordSystemEvent }) {
+async function handleWorkspaceRequest({ req, url, user, accounts, send, readBody, recordSystemEvent, recordSystemInfo }) {
   if (accounts && req.method === 'GET' && url.pathname === '/api/workspace/history') {
     const startedAt = performance.now();
     const selected = req.headers['x-media-account'] || url.searchParams.get('account') || undefined;
@@ -9,7 +9,7 @@ async function handleWorkspaceRequest({ req, url, user, accounts, send, readBody
     try {
       const scoped = await accounts.scope(user, selected);
       const result = await scoped.dispatch('getHistoryPage', [historyRequest]);
-      if (historyRequest.chatId) recordSystemEvent('studio', 'chat.history.loaded', 'Chat history loaded', {
+      if (historyRequest.chatId) recordSystemInfo('studio', 'chat.history.loaded', 'Chat history loaded', {
         accountId: selected || user.id, chatId: historyRequest.chatId.slice(0, 80), cursorPresent: Boolean(historyRequest.cursor),
         records: result.records.length, hasNext: Boolean(result.next), durationMs: Math.round(performance.now() - startedAt),
       });
@@ -42,7 +42,7 @@ async function handleWorkspaceRequest({ req, url, user, accounts, send, readBody
       scopedService.dispatch('queueStatus'),
     ]);
     const records = since ? historyResult : [...activeRecords, ...historyResult.records];
-    if (!since) recordSystemEvent('studio', 'chat.sync.loaded', 'Workspace snapshot loaded', {
+    if (!since) recordSystemInfo('studio', 'chat.sync.loaded', 'Workspace snapshot loaded', {
       accountId: workspaceAccount, chatId: url.searchParams.get('chatId')?.slice(0, 80) || null, records: records.length,
       unassignedCount, hasNext: Boolean(historyResult.next), durationMs: Math.round(performance.now() - startedAt),
     });

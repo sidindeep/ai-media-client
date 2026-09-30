@@ -4,6 +4,20 @@ const aiLogger = require('../src/ai-logger');
 const errors = require('../src/system-errors');
 const trace = require('../src/generation-log');
 
+test('successful system events use INFO and textual errors retain safe descriptions', () => {
+  const originalEvent = aiLogger.reportEvent, originalError = aiLogger.reportSystemError;
+  const events = [], errorsReported = [];
+  aiLogger.reportEvent = (...args) => events.push(args);
+  aiLogger.reportSystemError = row => errorsReported.push(row);
+  try {
+    errors.info('studio', 'chat.history.loaded', 'private', { accountId: 'private' });
+    assert.deepEqual(events, [['studio', 'chat.history.loaded', 'INFO']]);
+    errors.record('server', 'console.error', 'Connection failed');
+    assert.equal(errorsReported[0].diagnostic.description, 'Connection failed');
+    assert.equal(errorsReported[0].diagnostic.file, undefined);
+  } finally { aiLogger.reportEvent = originalEvent; aiLogger.reportSystemError = originalError; }
+});
+
 test('system errors use only central metadata, including registered-secret redaction', async () => {
   const rows = [], original = aiLogger.reportSystemError;
   aiLogger.reportSystemError = row => { rows.push(row); return true; };

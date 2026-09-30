@@ -194,7 +194,7 @@ test('workspace sync returns one full snapshot and then only cursor-bounded delt
   };
   const auth = { providers: () => [], user: async () => user };
   const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service, auth, accounts,
-    recordSystemEvent: (source, event, message, details) => diagnostics.push({ source, event, message, details }) });
+    recordSystemInfo: (source, event, message, details) => diagnostics.push({ source, event, message, details }) });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -241,7 +241,7 @@ test('Vue shell and assets use the selected image build directory', async t => {
   const diagnostics = [];
   const server = require('../src/server/http').createHttpServer({
     config: loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false' }), service: {}, vueRoot: dir,
-    recordSystemEvent: (_source, event, _message, details) => diagnostics.push({ event, details }),
+    recordSystemInfo: (_source, event, _message, details) => diagnostics.push({ event, details }),
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { server.closeIdleConnections(); await cleanup(dir, server); });
@@ -570,6 +570,18 @@ test('Telegram polling offsets survive restart and token-bearing failures are re
   }) });
   await assert.rejects(conflicting.pollOnce(), error => error.code === 'TELEGRAM_POLL_CONFLICT'
     && error.message.includes('Другой экземпляр') && !error.message.includes('private token'));
+  const trace = require('../src/generation-log'), originalWrite = trace.write, events = [];
+  trace.write = (event, details) => events.push({ event, details });
+  try {
+    const rejected = createTelegramGateway({ service, config, directory: dir, fetchImpl: async () => ({
+      ok: false, status: 401, json: async () => ({ ok: false, error_code: 401, description: 'private token' }),
+    }) });
+    await assert.rejects(rejected.pollOnce(), /Telegram временно недоступен/);
+    const failure = events.find(row => row.event === 'telegram.error').details.error;
+    assert.equal(failure.code, 'TELEGRAM_API_401');
+    assert.match(failure.message, /getUpdates.*HTTP 401/);
+    assert.ok(!failure.message.includes('private token'));
+  } finally { trace.write = originalWrite; }
 });
 
 test('config rejects external data paths and unconfigured enabled bot', () => {

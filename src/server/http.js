@@ -187,7 +187,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
   if (req.method === 'HEAD' || !stat.size) { res.end(); return; }
   result.body.on('error', () => res.destroy()); res.on('close', () => result.body.destroy()); result.body.pipe(res);
 }
-function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, generationServices = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record }) {
+function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, generationServices = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record, recordSystemInfo = systemErrors.info }) {
   let uploadBytesInFlight = 0;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
@@ -263,7 +263,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           const starterStatus = user && accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null;
           html = html.replace('<head>', `<head><meta name="account-id" content="${user?.id || 'pending'}"><meta name="account-role" content="${user?.role || 'pending'}"><meta name="account-model-access" content="${starterStatus?.modelAccess || 'pending'}">`);
           if (user && req.method === 'GET' && (url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/`)) {
-            recordSystemEvent('studio', 'chat.page.served', 'Chat page served', {
+            recordSystemInfo('studio', 'chat.page.served', 'Chat page served', {
               accountId: user.id, asset: html.match(/\/app\/assets\/[^"']+\.js/)?.[0] || null, build: release.build,
             });
           }
@@ -439,7 +439,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         || /^\/api\/(projects|chats)(?:\/[^/]+(?:\/(archive|restore|move))?)?$/.test(url.pathname))) {
         return await handleWorkspaceRequest({ req, url, user, accounts,
           send: (status, body) => json(res, status, body),
-          readBody: limit => readBody(req, limit), recordSystemEvent });
+          readBody: limit => readBody(req, limit), recordSystemEvent, recordSystemInfo });
       }
       if (url.pathname.startsWith('/api/admin/')) {
         return await handleAdminRequest({ req, url, user, accounts, config, kieBrowserControl, kieBrowserSession, routerAiStatus, apimart,

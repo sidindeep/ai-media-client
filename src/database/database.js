@@ -60,7 +60,7 @@ async function transaction(pool, action) {
 }
 async function openDatabase(config, suppliedPool) {
   const pool = suppliedPool || retryConnections(new Pool({ connectionString: config.url, ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
-    max: config.poolMax ?? 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 0, keepAlive: true,
+    max: config.poolMax ?? 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, keepAlive: true, keepAliveInitialDelayMillis: 10000,
     // Hosted PostgreSQL proxies may reject extra startup parameters.
     // Initialize the session after authentication, before handing it to callers.
     onConnect: client => client.query('SET statement_timeout = 15000') }));

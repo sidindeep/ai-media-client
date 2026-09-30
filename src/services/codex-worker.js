@@ -123,20 +123,23 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
       try { await admission; jobs.set(key, job); }
       finally { admitting.delete(key); }
       void Promise.resolve().then(() => run(input, { signal: controller.signal })).then(async output => {
-        if (typeof output === 'string') job.output = output;
+        const completed = { ...job, state: 'success' };
+        if (typeof output === 'string') completed.output = output;
         else {
-          job.output = output.output; job.usage = normalizeUsage(output.usage);
+          completed.output = output.output; completed.usage = normalizeUsage(output.usage);
           if (output.imageBase64) {
             const image = validatePng(Buffer.from(output.imageBase64, 'base64'));
             await atomicWrite(paths(account, input.requestId).image, image);
-            job.hasImage = true;
+            completed.hasImage = true;
           }
         }
-        job.state = 'success';
-        await atomicWrite(paths(account, input.requestId).record, JSON.stringify(job));
+        // Polling must not expose success before the durable record is committed.
+        await atomicWrite(paths(account, input.requestId).record, JSON.stringify(completed));
+        Object.assign(job, completed);
       }, async error => {
-        job.error = safeErrorText(error.message) || 'Codex request failed.'; job.state = error.outcomeUnknown ? 'unknown' : 'failed';
-        await atomicWrite(paths(account, input.requestId).record, JSON.stringify(job));
+        const failed = { ...job, error: safeErrorText(error.message) || 'Codex request failed.', state: error.outcomeUnknown ? 'unknown' : 'failed' };
+        await atomicWrite(paths(account, input.requestId).record, JSON.stringify(failed));
+        Object.assign(job, failed);
       }).catch(error => { job.error = safeErrorText(error.message) || 'Codex result could not be saved.'; job.state = 'unknown'; });
       return send(res, 202, job);
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }

@@ -59,6 +59,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
     }
     if (!response.ok) throw Object.assign(providerError(value.error || value, `Codex HTTP ${response.status}`), {
+      code: `CODEX_HTTP_${response.status}`,
       remoteStatus: response.status,
       confirmedRejected: response.status === 429 && value?.accepted === false,
       retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')),

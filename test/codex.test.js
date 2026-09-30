@@ -186,7 +186,14 @@ test('Codex worker accepts over 100 simultaneous jobs while isolating accounts a
   assert.equal(calls, 105);
   assert.equal((await fetch(base + '/jobs/' + input.requestId, { headers: { 'x-account-id': randomUUID() } })).status, 404);
   finishes.forEach(finish => finish('ok'));
-  assert.equal((await fetch(base + '/jobs/' + input.requestId, { headers: { 'x-account-id': account } }).then(r => r.json())).output, 'ok');
+  let completed;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    completed = await fetch(base + '/jobs/' + input.requestId, { headers: { 'x-account-id': account } }).then(r => r.json());
+    if (completed.state === 'success') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(completed.state, 'success');
+  assert.equal(completed.output, 'ok');
   assert.equal((await post(request())).status, 202);
   finishes.at(-1)('ok');
 });
@@ -215,6 +222,9 @@ test('Codex worker stores image bytes outside status and serves them after resta
   assert.equal(job.state, 'success');
   assert.equal(job.hasImage, true);
   assert.equal(job.imageBase64, undefined);
+  const persisted = JSON.parse(await fs.readFile(path.join(directory, account, input.requestId + '.json'), 'utf8'));
+  assert.equal(persisted.state, 'success');
+  assert.equal(persisted.hasImage, true);
   await stop(first.server);
   const second = await start(() => { throw new Error('must not regenerate'); });
   t.after(() => stop(second.server));

@@ -1,5 +1,6 @@
 import type { MediaField, MediaModel } from '../types';
 import { t } from '../i18n';
+import { localizeParameterFields, parameterLabel } from '../i18n/parameter-labels';
 
 type InputSchema = { oneOf?: Record<string, unknown>[]; anyOf?: Record<string, unknown>[] };
 type Variant = { title?: string; required?: string[]; properties?: Record<string, Record<string, unknown>> };
@@ -17,7 +18,7 @@ export function unionVariants(model?: MediaModel): Variant[] {
 
 export function unionFields(model: MediaModel | undefined, index: number): MediaField[] {
   const variant = unionVariants(model)[index];
-  if (!variant) return model?.fields || [];
+  if (!variant) return localizeParameterFields(model?.fields || []);
   return Object.entries(variant.properties || {}).map(([key, schema]) => {
     const valueType = schema.type;
     const isMedia = /^(?:image|video|audio)(?:_url|_urls)$/.test(key);
@@ -29,7 +30,7 @@ export function unionFields(model: MediaModel | undefined, index: number): Media
         : valueType === 'array' || valueType === 'object' ? 'json'
           : key === 'prompt' ? 'textarea' : 'text';
     return {
-      key, label: labelKeys[key] ? t(`composer.unionField.${labelKeys[key]}` as Parameters<typeof t>[0]) : key,
+      key, label: labelKeys[key] ? t(`composer.unionField.${labelKeys[key]}` as Parameters<typeof t>[0]) : parameterLabel(key),
       type, schema, required: variant.required?.includes(key) || false,
       default: schema.default, options, scalar: valueType === 'string',
       maxFiles: valueType === 'string' ? 1 : typeof schema.maxItems === 'number' ? schema.maxItems : undefined,

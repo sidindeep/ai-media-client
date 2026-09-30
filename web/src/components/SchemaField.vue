@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { saveSourceAttachment } from '../domain/source-attachments';
 import { useI18n } from '../i18n';
+import { parameterLabel } from '../i18n/parameter-labels';
 import { useStudioStore } from '../stores/studio';
 
 type Schema = { type?: string; properties?: Record<string, Schema>; required?: string[]; items?: Schema;
@@ -11,16 +12,7 @@ const props = defineProps<{ schema: Schema; modelValue?: unknown; label: string;
 const emit = defineEmits<{ change: [value: unknown]; uploaded: [file: { ref: string; name: string; type: string; fieldKey: string }] }>();
 const studio = useStudioStore();
 const { t } = useI18n();
-const nestedLabels = {
-  speaker_id: 'composer.structured.field.speakerId', voice_name: 'composer.structured.field.voiceName',
-  audio_profile: 'composer.structured.field.audioProfile', accent: 'composer.structured.field.accent',
-  style: 'composer.structured.field.style', pace: 'composer.structured.field.pace',
-  text: 'composer.structured.field.text', voice: 'composer.structured.field.voice',
-  image_url: 'composer.structured.field.image', type: 'composer.structured.field.type',
-  ref_name: 'composer.structured.field.referenceName',
-} as const;
-const displayLabel = computed(() => props.label === props.name && props.name in nestedLabels
-  ? t(nestedLabels[props.name as keyof typeof nestedLabels]) : props.label);
+const displayLabel = computed(() => parameterLabel(props.name, props.label));
 const uploading = ref(false);
 const uploadError = ref('');
 const kind = computed(() => /image|mask/i.test(props.name) ? 'image' : /video/i.test(props.name) ? 'video' : /audio|voice/i.test(props.name) ? 'audio' : null);

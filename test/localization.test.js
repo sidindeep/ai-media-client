@@ -6,6 +6,42 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 
+test('parameter captions switch locale without changing provider keys or contextual labels', async () => {
+  const ts = require('typescript');
+  function compile(source, requireModule = () => { throw new Error('Unexpected import'); }) {
+    const exports = {};
+    vm.runInNewContext(ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS },
+    }).outputText, { exports, require: requireModule });
+    return exports;
+  }
+  const ru = compile(await readFile(path.join(root, 'web/src/i18n/locales/ru.ts'), 'utf8')).ru;
+  const en = compile(await readFile(path.join(root, 'web/src/i18n/locales/en.ts'), 'utf8')).en;
+  let dictionary = ru;
+  const labels = compile(await readFile(path.join(root, 'web/src/i18n/parameter-labels.ts'), 'utf8'), name => {
+    if (name === './index') return { t: key => dictionary[key] };
+    if (name === './locales/ru') return { ru };
+    throw new Error(`Unexpected import: ${name}`);
+  });
+  assert.equal(labels.parameterLabel('acceleration'), 'Ускорение');
+  assert.equal(labels.parameterLabel('description'), 'Описание');
+  assert.equal(labels.parameterLabel('ratio'), 'Доля цвета');
+  assert.equal(labels.parameterLabel('speaker_id'), 'ID спикера');
+  assert.equal(labels.parameterLabel('seed', 'Seed'), 'Случайное зерно');
+  const fields = [{ key: 'elements', label: 'elements', type: 'json', schema: { type: 'array' } }];
+  const translated = labels.localizeParameterFields(fields);
+  assert.equal(translated[0].label, 'Элементы');
+  assert.equal(translated[0].key, 'elements');
+  assert.equal(translated[0].schema, fields[0].schema);
+  assert.equal(fields[0].label, 'elements');
+  dictionary = en;
+  assert.equal(labels.parameterLabel('acceleration'), 'Acceleration');
+  assert.equal(labels.parameterLabel('speaker_id'), 'Speaker ID');
+  assert.equal(labels.parameterLabel('elements', 'Elements 2'), 'Elements 2');
+  assert.equal(labels.parameterLabel('ratio', 'Соотношение сторон'), 'Соотношение сторон');
+  assert.equal(labels.parameterLabel('future_provider_field'), 'future_provider_field');
+});
+
 function dictionaryKeys(source) {
   return new Set([...source.matchAll(/^\s*'([^']+)':/gm)].map(match => match[1]));
 }

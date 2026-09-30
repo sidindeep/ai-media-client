@@ -21,6 +21,7 @@ import { unionFields, unionVariants } from '../domain/union-model-fields';
 import { isReferenceField } from '../domain/source-attachments';
 import { formatCreditCost, roundedCreditCost } from '../domain/credits';
 import { useI18n } from '../i18n';
+import { localizeParameterFields } from '../i18n/parameter-labels';
 import { useLatestQuote } from '../composables/useLatestQuote';
 
 const studio = useStudioStore();
@@ -70,7 +71,7 @@ const routerAiVideoResolution = ref('');
 const routerAiVideoAspectRatio = ref('');
 const apimartMedia = computed(() => studio.provider === 'apimart' && studio.mode !== 'text');
 const apimartWhisper = computed(() => studio.provider === 'apimart' && studio.apimartModel === 'whisper-1');
-const apimartFields = computed(() => studio.provider === 'apimart' ? studio.currentApimartModel?.fields || [] : []);
+const apimartFields = computed(() => studio.provider === 'apimart' ? localizeParameterFields(studio.currentApimartModel?.fields || []) : []);
 watch(() => [studio.provider, studio.apimartModel, apimartFields.value] as const, () => {
   if (studio.provider !== 'apimart' || !apimartFields.value.length) return;
   const defaults = Object.fromEntries(apimartFields.value.flatMap(field => {

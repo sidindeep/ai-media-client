@@ -1,6 +1,18 @@
 const CATEGORIES = new Set(['all', 'image', 'video', 'text', 'audio', 'other']);
 const PERIODS = new Set([7, 30, 90]);
 const PAGE_SIZE = 30;
+const { spendingMetadata } = require('../billing/spending-metadata');
+const { kieUsdPerCredit } = require('../../config/cost-routing.json');
+
+// Historical provider amounts can be JSON numbers or decimal strings.
+function decimal(expression) {
+  return `CASE WHEN ${expression} ~ '^[0-9]+([.][0-9]+)?$' THEN (${expression})::numeric ELSE NULL END`;
+}
+const costUsd = `COALESCE(${decimal("l.details->>'costUsd'")},
+  CASE WHEN r.namespace='history' THEN ${decimal("r.data->>'creditsConsumed'")} *
+    COALESCE(${decimal("r.data->>'providerUsdPerCredit'")},${Number(kieUsdPerCredit)})
+  WHEN r.namespace='apimart' AND r.data->'apimartTariffCost'->>'confirmed'='true'
+    THEN ${decimal("r.data->'apimartTariffCost'->>'amountUsd'")} END)`;
 
 function options(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw Object.assign(new Error('Некорректный фильтр расходов'), { status: 400 });
@@ -26,19 +38,20 @@ function options(input = {}) {
 
 const entries = `WITH entries AS (
   SELECT l.id,l.kind,l.reference,l.amount,l.created_at,
+    l.details,r.data AS record_data,r.namespace,${costUsd} AS cost_usd,
     COALESCE(NULLIF(l.details->>'category',''),
       CASE WHEN COALESCE(r.data->>'modelKind',r.data->>'kind') IN ('image','video','text','audio')
         THEN COALESCE(r.data->>'modelKind',r.data->>'kind') ELSE 'other' END) AS category,
     COALESCE(NULLIF(l.details->>'modelName',''),r.data->>'modelName',r.data->>'model',r.data->>'modelId') AS model_name,
     COALESCE(NULLIF(l.details->>'recordId',''),
-      CASE WHEN r.namespace='history' THEN r.id WHEN r.namespace IN ('codex','routerai')
+      CASE WHEN r.namespace='history' THEN r.id WHEN r.namespace IN ('codex','routerai','apimart')
         THEN r.namespace || ':' || (r.data->>'id') END) AS record_id,
     GREATEST(COALESCE((l.details->>'contentCount')::integer,0),COALESCE(results.content_count,0)) AS content_count,
     COALESCE(results.content_bytes,0) AS content_bytes
   FROM media_ledger l
   LEFT JOIN LATERAL (
     SELECT namespace,id,data FROM media_records
-    WHERE account_id=l.account_id AND id=l.reference AND namespace IN ('history','codex','routerai')
+    WHERE account_id=l.account_id AND id=l.reference AND namespace IN ('history','codex','routerai','apimart')
     LIMIT 1
   ) r ON true
   LEFT JOIN LATERAL (
@@ -52,27 +65,32 @@ const entries = `WITH entries AS (
   WHERE l.account_id=$1 AND l.kind IN ('capture','release') AND l.created_at >= $2::timestamptz AND l.created_at <= $3::timestamptz
 )`;
 
-async function spendingHistory(pool, accountId, input) {
+async function spendingHistory(pool, accountId, input, admin = false) {
   const filter = options(input);
   const params = [accountId, filter.since, filter.asOf, filter.category];
   const categoryWhere = "($4='all' OR category=$4)";
   const [groups, page] = await Promise.all([
     pool.query(`${entries} SELECT category,kind,SUM(amount)::text AS amount,
+      SUM(CASE WHEN kind='capture' THEN cost_usd ELSE 0 END)::text AS cost_usd,
+      COUNT(*) FILTER (WHERE kind='capture' AND cost_usd IS NULL)::integer AS unknown_cost_count,
       SUM(CASE WHEN kind='capture' THEN content_count ELSE 0 END)::text AS content_count,
       SUM(CASE WHEN kind='capture' THEN content_bytes ELSE 0 END)::text AS content_bytes
       FROM entries WHERE ${categoryWhere} GROUP BY category,kind`, params),
-    pool.query(`${entries} SELECT id,kind,amount,created_at,category,model_name,record_id,content_count,content_bytes
+    pool.query(`${entries} SELECT id,kind,amount,created_at,category,model_name,record_id,content_count,content_bytes,details,record_data,namespace,cost_usd
       FROM entries WHERE ${categoryWhere}
         AND ($5::timestamptz IS NULL OR (created_at,id)<($5::timestamptz,$6::uuid))
       ORDER BY created_at DESC,id DESC LIMIT ${PAGE_SIZE + 1}`,
     [...params, filter.cursor?.[0] || null, filter.cursor?.[1] || null]),
   ]);
   let spentUnits = 0, releasedUnits = 0, contentCount = 0, contentBytes = 0;
+  let totalCostUsd = 0, unknownCostCount = 0;
   const byCategory = {};
   for (const row of groups.rows) {
     const amount = Number(row.amount);
     if (row.kind === 'capture') {
       spentUnits += amount;
+      totalCostUsd += Number(row.cost_usd || 0);
+      unknownCostCount += Number(row.unknown_cost_count);
       contentCount += Number(row.content_count);
       contentBytes += Number(row.content_bytes);
       byCategory[row.category] = (byCategory[row.category] || 0) + amount;
@@ -84,10 +102,13 @@ async function spendingHistory(pool, accountId, input) {
   const last = rows.at(-1);
   return {
     days: filter.days, category: filter.category, asOf: filter.asOf, since: filter.since,
-    summary: { spentUnits, releasedUnits, contentCount, contentBytes, topCategory },
+    summary: { spentUnits, releasedUnits, contentCount, contentBytes, topCategory,
+      ...(admin ? { totalCostUsd, unknownCostCount } : {}) },
     items: rows.map(row => ({ id: row.id, kind: row.kind, amountUnits: Number(row.amount),
       createdAt: row.created_at, category: row.category, modelName: row.model_name || null, recordId: row.record_id || null,
       contentCount: row.kind === 'capture' ? Number(row.content_count) : 0,
+      ...(admin ? { costUsd: row.kind === 'capture' && row.cost_usd != null ? Number(row.cost_usd) : null,
+        route: row.details?.route || (row.namespace ? spendingMetadata(row.record_data || {}, row.namespace).route : null) } : {}),
       contentBytes: row.kind === 'capture' ? Number(row.content_bytes) : 0 })),
     nextCursor: page.rows.length > PAGE_SIZE && last
       ? Buffer.from(JSON.stringify([new Date(last.created_at).toISOString(), last.id])).toString('base64url') : null,

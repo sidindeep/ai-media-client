@@ -145,7 +145,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         ...service,
         async dispatch(method, args = []) {
           if (method === 'getBalance') return wallet.get(accountId);
-          if (method === 'getSpending') return spendingHistory(pool, accountId, args[0]);
+          if (method === 'getSpending') return spendingHistory(pool, accountId, args[0], true);
           if (method === 'getGenerationJournal') return generationJournal(pool, accountId, args[0], true);
           if (method === 'getHistory') return generationHistory(pool, accountId, service);
           if (method === 'getHistoryDelta') return generationHistorySince(pool, accountId, service, args[0]?.since, args[0]?.before, undefined, args[0]?.activeIds);

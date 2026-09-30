@@ -348,6 +348,12 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   assert.equal(spending.summary.spentUnits, 2500);
   assert.equal(spending.summary.releasedUnits, 0);
   assert.equal(spending.items[0].recordId, first.id);
+  assert.equal(Object.hasOwn(spending.items[0], 'costUsd'), false);
+  assert.equal(Object.hasOwn(spending.items[0], 'route'), false);
+  const adminSpending = await result(rpc(owner, 'getSpending', [{ days: 30 }], { 'X-Media-Account': alice.id }));
+  assert.equal(typeof adminSpending.summary.totalCostUsd, 'number');
+  assert.equal(adminSpending.items[0].route.provider, 'kie');
+  assert.equal(adminSpending.items[0].route.account, 'primary');
   assert.equal((await result(rpc(bob, 'getSpending'))).summary.spentUnits, 0);
   assert.equal((await rpc(alice, 'getSpending', [{ days: 31 }])).status, 400);
   await own.history.update(first.id, { state: 'success' }); // Redelivery cannot charge twice.

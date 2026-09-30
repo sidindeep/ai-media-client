@@ -2,10 +2,12 @@ export type SpendingCategory = 'all' | 'image' | 'video' | 'text' | 'audio' | 'o
 export type SpendingItem = {
   id: string; kind: 'capture' | 'release'; amountUnits: number; createdAt: string;
   category: Exclude<SpendingCategory, 'all'>; modelName: string | null; recordId: string | null; contentCount: number; contentBytes: number;
+  costUsd?: number | null;
+  route?: { provider: string; model: string | null; account: string | null } | null;
 };
 export type SpendingPageData = {
   days: 7 | 30 | 90 | null; category: SpendingCategory; asOf: string; since: string;
-  summary: { spentUnits: number; releasedUnits: number; contentCount: number; contentBytes: number; topCategory: Exclude<SpendingCategory, 'all'> | null };
+  summary: { spentUnits: number; releasedUnits: number; contentCount: number; contentBytes: number; topCategory: Exclude<SpendingCategory, 'all'> | null; totalCostUsd?: number; unknownCostCount?: number };
   items: SpendingItem[]; nextCursor: string | null;
 };
 export type GenerationJournalItem = {

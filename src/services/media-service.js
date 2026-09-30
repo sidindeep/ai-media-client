@@ -1,4 +1,5 @@
 const trace = require('../generation-log');
+const { kieUsdPerCredit } = require('../../config/cost-routing.json');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { EventEmitter } = require('node:events');
@@ -392,6 +393,7 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
         const cachedTariffs = settings.get('kie-tariffs')?.data;
         const record = await measured('enqueue', () => queue.enqueue({
           kieAccountId,
+          providerUsdPerCredit: kieUsdPerCredit,
           modelId: model.id, providerId: model.providerId, providerName: providers.find(item => item.id === model.providerId)?.name || model.providerId, model: model.apiModel,
           modelName: model.name, kind: model.kind, input: request.input,
           sourceFiles: request.sourceFiles || [], workspace: [1, 2, 3, 4, 5].includes(request.workspace) ? request.workspace : 1,

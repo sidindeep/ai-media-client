@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { transaction } = require('../database/database');
 const { assertAdminAccount } = require('../auth/roles');
 const { units, SCALE } = require('./pricing');
+const { spendingMetadata } = require('./spending-metadata');
 async function lockWallet(client, accountId) {
   const row = (await client.query('SELECT * FROM media_wallets WHERE account_id=$1 FOR UPDATE', [accountId])).rows[0];
   if (!row) throw new Error('Счёт не найден');
@@ -14,6 +15,7 @@ function spendingDetails(jobId, record) {
   const provider = jobId.startsWith('codex:') ? 'codex' : jobId.startsWith('routerai:') ? 'routerai'
     : jobId.startsWith('apimart:') ? 'apimart' : 'media';
   return {
+    ...spendingMetadata(record, provider === 'media' ? 'history' : provider),
     category,
     modelName: String(record.modelName || record.model || record.modelId || '').slice(0, 200),
     recordId: provider === 'media' ? jobId : `${provider}:${record.id}`,

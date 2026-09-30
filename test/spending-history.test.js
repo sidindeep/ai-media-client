@@ -43,6 +43,23 @@ test('spending counts captures and releases separately with account filters and 
   assert.equal(all.items.find(item => item.kind === 'capture').modelName, 'Image model');
   assert.equal(all.items.find(item => item.kind === 'capture').contentCount, 2);
   assert.equal(all.items.find(item => item.kind === 'capture').contentBytes, 3072);
+  assert.equal(Object.hasOwn(all.summary, 'totalCostUsd'), false);
+  assert.equal(Object.hasOwn(all.items[0], 'route'), false);
+  assert.equal(Object.hasOwn(all.items[0], 'costUsd'), false);
+  const adminUnknown = await spendingHistory(pool, account, { days: 30 }, true);
+  assert.equal(adminUnknown.summary.unknownCostCount, 1);
+  assert.equal(adminUnknown.items.find(item => item.kind === 'capture').costUsd, null);
+  await pool.query(`UPDATE media_records SET data=$2 WHERE account_id=$1 AND id='image-job'`,
+    [account, JSON.stringify({ model: 'provider/image', kieAccountId: 'secondary', creditsConsumed: '7.5', providerUsdPerCredit: 0.005 })]);
+  const admin = await spendingHistory(pool, account, { days: 30, admin: true }, true);
+  assert.equal(admin.summary.totalCostUsd, 0.0375);
+  assert.equal(admin.summary.unknownCostCount, 0);
+  assert.equal(admin.items.find(item => item.kind === 'release').costUsd, null);
+  assert.equal(admin.items.find(item => item.kind === 'capture').costUsd, 0.0375);
+  // Ledger snapshot takes precedence over a subsequently changed record.
+  assert.equal(admin.items.find(item => item.kind === 'capture').route.provider, 'kie');
+  const untrusted = await spendingHistory(pool, account, { days: 30, admin: true });
+  assert.equal(Object.hasOwn(untrusted.summary, 'totalCostUsd'), false);
   assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' })).summary.spentUnits, 0);
   assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' })).summary.releasedUnits, 1500);
   assert.equal((await spendingHistory(pool, other, { days: 30, category: 'all' })).summary.spentUnits, 9999);
@@ -67,6 +84,37 @@ test('spending counts captures and releases separately with account filters and 
   assert.equal(new Set([...first.items, ...second.items].map(item => item.id)).size, 33);
   await assert.rejects(spendingHistory(pool, account, { days: 31 }), /Некорректный фильтр/);
   await assert.rejects(spendingHistory(pool, account, { from: new Date().toISOString() }), /Некорректный диапазон/);
+});
+
+test('admin USD totals preserve provider snapshots without records and exclude releases', async t => {
+  const pool = testPool();
+  t.after(() => pool.end());
+  await pool.query(await fs.readFile(path.join(__dirname, '../src/database/schema.sql'), 'utf8'));
+  const account = randomUUID();
+  await pool.query('INSERT INTO media_accounts(id,display_name) VALUES($1,$2)', [account, 'Test']);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  await transaction(pool, async client => {
+    await reserve(client, account, 'kie-job', { amountUnits: 2000, version: 'v1' });
+    await settle(client, account, 'kie-job', 'success', { model: 'kie/image', kieAccountId: 'secondary',
+      creditsConsumed: 10, providerUsdPerCredit: 0.004, kind: 'image' });
+    await reserve(client, account, 'apimart:job', { amountUnits: 2000, version: 'v1' });
+    await settle(client, account, 'apimart:job', 'success', { id: 'job', model: 'apimart/video', kind: 'video',
+      apimartTariffCost: { confirmed: true, amountUsd: 0.1 } }, 1000);
+  });
+  const all = await spendingHistory(pool, account, { days: 30 }, true);
+  assert.equal(all.summary.totalCostUsd, 0.14);
+  assert.equal(all.summary.unknownCostCount, 0);
+  assert.deepEqual(all.items.find(item => item.modelName === 'kie/image').route,
+    { provider: 'kie', model: 'kie/image', account: 'secondary' });
+  const apimart = all.items.find(item => item.kind === 'capture' && item.modelName === 'apimart/video');
+  assert.equal(apimart.costUsd, 0.1);
+  assert.equal(apimart.recordId, 'apimart:job');
+  assert.equal((await spendingHistory(pool, account, { days: 30, category: 'video' }, true)).summary.totalCostUsd, 0.1);
+  const { spendingMetadata } = require('../src/billing/spending-metadata');
+  assert.equal(spendingMetadata({ creditsConsumed: 0 }).costUsd, 0);
+  assert.equal(spendingMetadata({ creditsConsumed: '' }).costUsd, null);
+  assert.equal(spendingMetadata({ apimartTariffCost: { amountUsd: 0.2 } }, 'apimart').costUsd, null);
+  assert.equal(spendingMetadata({ providerCostRub: 50 }, 'routerai').costUsd, null);
 });
 
 test('measured settlement captures actual cost and returns unused hold exactly once', async t => {

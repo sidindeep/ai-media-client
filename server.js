@@ -1,3 +1,21 @@
+const aiLogger = require('./src/ai-logger');
+const systemErrors = require('./src/system-errors');
+let mainRuntime, fatalClosing = false;
+async function failProcess(event, error) {
+  if (fatalClosing) return;
+  fatalClosing = true;
+  systemErrors.record('process', event, error);
+  try { await mainRuntime?.close(); }
+  catch (cleanupError) { systemErrors.record('process', 'shutdown.error', cleanupError); }
+  await aiLogger.close();
+  process.exit(1);
+}
+if (require.main === module) {
+  systemErrors.captureConsole();
+  process.once('uncaughtException', error => { void failProcess('uncaught-exception.error', error); });
+  process.once('unhandledRejection', error => { void failProcess('unhandled-rejection.error', error); });
+}
+
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { loadConfig } = require('./src/server/config');
@@ -22,8 +40,8 @@ const { createYooKassaStubProvider } = require('./src/payments/providers/yookass
 const { createProductCatalog } = require('./src/commerce/catalog');
 const { createCommerce } = require('./src/commerce/service');
 const trace = require('./src/generation-log');
-const systemErrors = require('./src/system-errors');
-const aiLogger = require('./src/ai-logger');
+
+
 const { listenForAccountChanges } = require('./src/database/change-events');
 
 function startupDiagnosticRequest(service) {
@@ -58,7 +76,7 @@ async function checkProviderReadiness(service, readiness) {
   }
 }
 
-async function start({ config = loadConfig(), provider, paymentProvider, pool: suppliedPool, authProviders, startupChecks = !suppliedPool, databaseOpener = openDatabase, tariffFetcher } = {}) {
+async function startRuntime({ config, provider, paymentProvider, pool: suppliedPool, authProviders, startupChecks = !suppliedPool, databaseOpener = openDatabase, tariffFetcher } = {}) {
   trace.setErrorSink((event, details) => systemErrors.record('diagnostic', event, details.error || details.errorCode || event,
     { ...trace.current(), ...details, error: undefined }));
   const webReplica = config.replicaRole === 'web';
@@ -73,7 +91,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       throw new Error('DATABASE_URL должен быть корректным адресом PostgreSQL с именем базы данных');
   }
   if (config.auth.max?.invalid) console.warn('Вход MAX отключён: проверьте MAX_LOGIN_BOT_NAME и MAX_LOGIN_BOT_TOKEN.');
-  await fs.mkdir(config.dataDirectory, { recursive: true });
+  await systemErrors.step('startup', 'data-directory', () => fs.mkdir(config.dataDirectory, { recursive: true }));
   // Hosting mounts /app/data after image build, hiding directories created there.
   if (config.codex?.embedded && process.env.CODEX_HOME) {
     await fs.mkdir(process.env.CODEX_HOME, { recursive: true, mode: 0o700 });
@@ -142,48 +160,46 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await changeListener?.close();
     await trace.flush();
     await systemErrors.flush();
-    await aiLogger.flush();
-    systemErrors.setPool(null);
+    await aiLogger.close();
     await pool?.end();
     if (lock) { await lock.close(); await fs.unlink(lockPath).catch(() => {}); }
   };
   try {
-    generationSupport = createGenerationSupport(config);
-    provider = provider || await createKieAccounts({ primaryKey: config.kieKey, secondaryKey: config.kieSecondaryKey });
-    if (storage) await storage.check();
-    service = await createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' });
+    generationSupport = await systemErrors.step('startup', 'generation-support', () => createGenerationSupport(config));
+    provider = provider || await systemErrors.step('startup', 'providers', () => createKieAccounts({ primaryKey: config.kieKey, secondaryKey: config.kieSecondaryKey }));
+    if (storage) await systemErrors.step('startup', 'object-storage', () => storage.check());
+    service = await systemErrors.step('startup', 'media-service', () => createMediaService({ directory: config.dataDirectory, provider, rubPerCredit: config.rubPerCredit, tariffFetcher, storage, storagePrefix: 'legacy', background: config.replicaRole === 'single' }));
     if (config.auth.enabled && suppliedPool) {
-      pool = await databaseOpener(config.database, suppliedPool);
-      await require('./src/services/service-model-configs').ensureCurrentModelConfig(pool);
-      systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });
-      content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
+      pool = await systemErrors.step('startup', 'database', () => databaseOpener(config.database, suppliedPool));
+      await systemErrors.step('startup', 'model-config', () => require('./src/services/service-model-configs').ensureCurrentModelConfig(pool));
+      content = await systemErrors.step('startup', 'createContentService', () => createContentService({ pool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica }));
       const starterPack = createStarterPack({ pool, config: config.starterPack });
-      auth = createAuth({ pool, config: config.auth, providers: authProviders, starterPack });
-      accounts = createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content });
+      auth = await systemErrors.step('startup', 'createAuth', () => createAuth({ pool, config: config.auth, providers: authProviders, starterPack }));
+      accounts = await systemErrors.step('startup', 'createAccounts', () => createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content }));
       changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
       telegramLinks = createTelegramLinkService(pool);
-      await accounts.recover();
-      ({ payments, commerce } = await createBusinessServices(pool));
+      await systemErrors.step('startup', 'accounts-recovery', () => accounts.recover());
+      ({ payments, commerce } = await systemErrors.step('startup', 'payments', () => createBusinessServices(pool)));
       if (config.replicaRole === 'executor') await service.queue.recover();
-      if (payments && !webReplica) paymentTimer = setInterval(() => payments.drainWebhooks().then(() => payments.recoverCommands()).catch(error => console.error('Payment recovery failed:', error.code || error.message)), 5000);
+      if (payments && !webReplica) paymentTimer = setInterval(() => payments.drainWebhooks().then(() => payments.recoverCommands()).catch(error => systemErrors.record('payments', 'recovery.error', error)), 5000);
       databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
     }
     if (!webReplica && config.codex?.embedded) {
       codexWorker = createCodexWorker();
-      await new Promise((resolve, reject) => {
+      await systemErrors.step('startup', 'codex-listen', () => new Promise((resolve, reject) => {
         codexWorker.once('error', reject);
         codexWorker.listen(3210, '127.0.0.1', resolve);
-      });
+      }));
       console.log('Codex worker ready on loopback');
     }
-    telegram = createTelegramGateway({ service, config: webReplica ? { ...config.telegram, enabled: false } : config.telegram, directory: config.dataDirectory,
-      accountMode: config.auth.enabled, accounts, telegramLinks });
+    telegram = await systemErrors.step('startup', 'telegram-config', () => createTelegramGateway({ service, config: webReplica ? { ...config.telegram, enabled: false } : config.telegram, directory: config.dataDirectory,
+      accountMode: config.auth.enabled, accounts, telegramLinks }));
     const telegramStatus = () => ({ ...telegram.status(), ...(config.auth.enabled && config.telegram.enabled && !telegramLinks ? { disabledReason: 'account-database-unavailable' } : {}) });
-    generationServices = createGenerationServices({ config, accounts, storage, support: generationSupport });
-    server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce, generationServices, kieBrowserControl });
-    if (!webReplica) await recoverGenerationServices(generationServices);
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
-    if (!webReplica && (!config.auth.enabled || accounts)) { telegram.start(); telegramStarted = true; }
+    generationServices = await systemErrors.step('startup', 'createGenerationServices', () => createGenerationServices({ config, accounts, storage, support: generationSupport }));
+    server = await systemErrors.step('startup', 'createHttpServer', () => createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce, generationServices, kieBrowserControl }));
+    if (!webReplica) await systemErrors.step('startup', 'generation-recovery', () => recoverGenerationServices(generationServices));
+    await systemErrors.step('startup', 'http-listen', () => new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); }));
+    if (!webReplica && (!config.auth.enabled || accounts)) { await systemErrors.step('startup', 'telegram', () => telegram.start()); telegramStarted = true; }
     if (startupChecks && !webReplica) void checkProviderReadiness(service, readiness);
     if (config.auth.enabled && !accounts) {
       databaseTask = (async () => {
@@ -193,17 +209,17 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
           databaseAvailability.update({ state: 'connecting', attempt, startedAt: new Date().toISOString() });
           let nextPool, nextAccounts, nextContent;
           try {
-            nextPool = await databaseOpener(config.database);
-            await require('./src/services/service-model-configs').ensureCurrentModelConfig(nextPool);
-            nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
+            nextPool = await systemErrors.step('startup', 'database', () => databaseOpener(config.database));
+            await systemErrors.step('startup', 'model-config', () => require('./src/services/service-model-configs').ensureCurrentModelConfig(nextPool));
+            nextContent = await systemErrors.step('startup', 'createContentService', () => createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica }));
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
-            const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack });
+            const nextAuth = await systemErrors.step('startup', 'createAuth', () => createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack }));
             nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content: nextContent });
             const nextTelegramLinks = createTelegramLinkService(nextPool);
-            await nextAccounts.recover();
+            await systemErrors.step('startup', 'accounts-recovery', () => nextAccounts.recover());
             if (closing) { await nextAccounts.close(); await nextContent?.close(); await nextPool.end(); return; }
-            const nextBusiness = await createBusinessServices(nextPool);
-            const nextGenerationServices = createGenerationServices({ config, accounts: nextAccounts, storage, support: generationSupport });
+            const nextBusiness = await systemErrors.step('startup', 'payments', () => createBusinessServices(nextPool));
+            const nextGenerationServices = await systemErrors.step('startup', 'createGenerationServices', () => createGenerationServices({ config, accounts: nextAccounts, storage, support: generationSupport }));
             try {
               if (!webReplica) await recoverGenerationServices(nextGenerationServices);
               await server.setAccountServices(nextAuth, nextAccounts, nextBusiness.payments, nextBusiness.commerce, nextGenerationServices);
@@ -212,13 +228,12 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             } catch (error) { closeGenerationServices(nextGenerationServices); throw error; }
             if (config.replicaRole === 'executor') await service.queue.recover();
             pool = nextPool; auth = nextAuth; content = nextContent; accounts = nextAccounts; telegramLinks = nextTelegramLinks;
-            systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });
             changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
             payments = nextBusiness.payments; commerce = nextBusiness.commerce;
             telegram.setAccountServices(accounts, telegramLinks);
-            if (!webReplica && !telegramStarted) { telegram.start(); telegramStarted = true; }
+            if (!webReplica && !telegramStarted) { await systemErrors.step('startup', 'telegram', () => telegram.start()); telegramStarted = true; }
             if (paymentTimer) clearInterval(paymentTimer);
-            if (payments && !webReplica) paymentTimer = setInterval(() => payments.drainWebhooks().then(() => payments.recoverCommands()).catch(error => console.error('Payment recovery failed:', error.code || error.message)), 5000);
+            if (payments && !webReplica) paymentTimer = setInterval(() => payments.drainWebhooks().then(() => payments.recoverCommands()).catch(error => systemErrors.record('payments', 'recovery.error', error)), 5000);
             databaseAvailability.update({ state: 'connected', connectedAt: new Date().toISOString() });
           } catch (error) {
             if (nextAccounts) await nextAccounts.close().catch(() => {});
@@ -226,23 +241,35 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
             if (nextPool) await nextPool.end().catch(() => {});
             const retryInMs = Math.min(10000, 1000 * (2 ** Math.min(attempt - 1, 4)));
             databaseAvailability.update({ state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', attempt, retryInMs });
-            console.error('Database background retry:', error.code || error.message || 'CONNECTION_TIMEOUT');
+            systemErrors.record('database', 'background-retry.error', error);
             if (!closing) await waitForRetry(retryInMs);
           }
         }
       })();
     }
     return { server, service, telegram, readiness, get accounts() { return accounts; }, get auth() { return auth; }, databaseTask, close: cleanup };
-  } catch (error) { await cleanup(); throw error; }
+  } catch (error) { systemErrors.record('startup', 'runtime.error', error); await cleanup(); throw error; }
+}
+async function start(options = {}) {
+  return systemErrors.step('startup', 'runtime', async () => {
+    const config = options.config || await systemErrors.step('startup', 'config', () => {
+      try { return loadConfig(); }
+      catch (error) { error.code ||= 'CONFIG_INVALID'; throw error; }
+    });
+    return startRuntime({ ...options, config });
+  });
 }
 if (require.main === module) {
-  systemErrors.captureConsole();
   start().then(runtime => {
-    const address = runtime.server.address();
-    console.log(`AI Media web: http://${address.address}:${address.port}`);
+    mainRuntime = runtime;
+    aiLogger.reportEvent('startup', 'runtime.ready');
     let closing = false;
-    const close = () => { if (closing) return; closing = true; void runtime.close().then(() => process.exit(0)); };
+    const close = () => {
+      if (closing) return;
+      closing = true;
+      void runtime.close().then(() => process.exit(0), error => failProcess('shutdown.error', error));
+    };
     process.once('SIGINT', close); process.once('SIGTERM', close);
-  }).catch(error => { console.error(error.code ? 'Не удалось запустить сервис: ' + error.code : error.message); process.exitCode = 1; });
+  }).catch(error => failProcess('startup.error', error));
 }
 module.exports = { start };

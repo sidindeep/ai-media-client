@@ -17,7 +17,7 @@
     "check:async-safety": "node scripts/check-async-safety.cjs",
     "test:payments": "node --test test/payments.test.js",
     "test:payments:container": "docker compose --profile test run --build --rm tests",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.js test/*.test.mjs",
     "start:web": "pnpm start",
     "dev:web": "pnpm dev",
     "build:web": "vite build --config web/vite.config.mts",

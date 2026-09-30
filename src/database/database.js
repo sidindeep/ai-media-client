@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const systemErrors = require('../system-errors');
 const normalizeSql = sql => sql.replace(/\r\n?/g, '\n');
 const sqlHash = sql => createHash('sha256').update(sql).digest('hex');
 const migrationChecksum = sql => sqlHash(normalizeSql(sql));
@@ -63,7 +64,7 @@ async function openDatabase(config, suppliedPool) {
     // Hosted PostgreSQL proxies may reject extra startup parameters.
     // Initialize the session after authentication, before handing it to callers.
     onConnect: client => client.query('SET statement_timeout = 15000') }));
-  pool.on?.('error', () => console.error('Соединение с БД потеряно'));
+  pool.on?.('error', error => systemErrors.record('database', 'connection-lost.error', error));
   const baseline = await fs.readFile(path.join(__dirname, 'schema.sql'), 'utf8');
   const migrationFiles = (await fs.readdir(path.join(__dirname, 'migrations'))).filter(name => /^\d{4}-[a-z0-9-]+\.sql$/.test(name)).sort();
   const migrations = await Promise.all(migrationFiles.map(async name => ({ version: Number(name.slice(0, 4)), sql: await fs.readFile(path.join(__dirname, 'migrations', name), 'utf8') })));
@@ -111,7 +112,7 @@ async function openDatabase(config, suppliedPool) {
         throw Object.assign(new Error('Не удалось подключить или подготовить БД аккаунтов'), { code: error.code || 'DATABASE_STARTUP_FAILED', cause: error });
       }
       // Only idempotent schema initialization is retried, never paid requests.
-      console.error('Database startup retry:', error.code || 'CONNECTION_TIMEOUT');
+      systemErrors.record('database', 'startup-retry.error', error);
       await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
     }
   }

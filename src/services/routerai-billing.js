@@ -184,7 +184,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       await content.link(account, 'routerai', id(account, request.requestId), asset.id, 'result', 0);
       return finish(account, request.requestId, { state: 'success', contentAssetId: asset.id, hasImage: true, imageType: type,
         usage: result.usage || null, providerCostRub: typeof result.usage?.cost === 'number' ? result.usage.cost : null });
-    } catch (error) {
+    } catch (error) { require('../system-errors').record('provider', 'routerai-billing.error', error, { diagnostic: { entity: 'provider' } });
       const rejected = error.confirmedRejected === true || [400, 401, 402, 403, 404, 422, 429].includes(error.status);
       const decision = submissionDecision({ status: error.status, rejected, accepted: submissionAccepted });
       if (decision === 'retry') return retries.defer(account, request.requestId, error);

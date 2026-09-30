@@ -123,7 +123,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
           try {
             await billing.increaseReservation(db, account, reservationId,
               actualUnits - stored.nativeQuote.amountUnits, lockedWallet);
-          } catch (error) {
+          } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
             if (!/Недостаточно кредитов/.test(error.message)) throw error;
             next.state = 'unknown';
             next.billingPending = true;
@@ -212,7 +212,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
     for (let count = 0; count < POLL_LIMIT; count++) {
       let response;
       try { response = await client.task(current.providerTaskId, current.kind); }
-      catch (error) {
+      catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
         // Polling is read-only and safe to retry. Never resubmit a paid generation.
         if (!error.confirmedRejected || [404, 408, 429, 500, 502, 503, 504].includes(error.status)) {
           await new Promise(resolve => setTimeout(resolve, POLL_MS)); continue;
@@ -309,7 +309,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
       const tariff = await rates(job.model).catch(() => null);
       return finish(account, job, 'success', { output, usage: response.usage || null,
         apimartTariffCost: tariff ? usedCost(tariff, response.usage) : null });
-    } catch (error) {
+    } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
       const state = !sent || error.confirmedRejected ? 'fail' : 'unknown';
       return finish(account, job, state, { error: state === 'fail' ? safeMessage(error.message)
         : 'Исход запроса APIMart неизвестен. Проверьте расход в кабинете перед повтором.' });
@@ -382,7 +382,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
           [account, recordId(account, raw.requestId), JSON.stringify(job)]);
         await appendGenerationEvent(db, account, NAMESPACE, job, 'created');
       });
-    } catch (error) {
+    } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
       if (error.code === '23505') {
         const accepted = await get(account, raw.requestId);
         if (accepted && matches(accepted)) return accepted;

@@ -3,6 +3,7 @@ const { providerFailure, safeMessage } = require('../../provider-diagnostics');
 
 function createApimartClient({ apiKey, fetchImpl = fetch } = {}) {
   if (!apiKey) throw new Error('APIMART_API_KEY не настроен');
+  require('../../ai-logger/diagnostics').sanitizer.secret(apiKey);
   async function request(path, init = {}) {
     let response;
     try {
@@ -12,6 +13,8 @@ function createApimartClient({ apiKey, fetchImpl = fetch } = {}) {
         signal: init.signal || AbortSignal.timeout(120000),
       });
     } catch (error) {
+      require('../../system-errors').record('provider', 'apimart.connection.error', error,
+        { diagnostic: { description: 'Не удалось подключиться к APIMart', entity: 'provider' } });
       throw new Error(`APIMart: ${safeMessage(error?.message) || 'Ошибка соединения'}`);
     }
     if (!response.ok) {

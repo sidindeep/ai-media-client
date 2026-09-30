@@ -1,3 +1,4 @@
+const systemErrors = require('../system-errors');
 const { randomUUID } = require('node:crypto');
 const { transaction } = require('../database/database');
 const { normalizeCreate, normalizeContext, payloadHash, assertTransition, publicPayment, paymentError } = require('./contracts');
@@ -50,7 +51,7 @@ function createPayments({ pool, provider, onEvent }) {
     for (const row of rows) {
       try { await onEvent?.(row.payload); await pool.query(`UPDATE payment_outbox SET delivered_at=now(),attempts=attempts+1,
         lease_token=NULL,leased_until=NULL WHERE event_id=$1 AND lease_token=$2 AND leased_until>now() AND delivered_at IS NULL`, [row.event_id, token]); }
-      catch (error) { await pool.query(`UPDATE payment_outbox SET attempts=attempts+1,last_error=$3,
+      catch (error) { systemErrors.record('payments', 'operation.error', error); await pool.query(`UPDATE payment_outbox SET attempts=attempts+1,last_error=$3,
         next_attempt_at=now()+interval '5 seconds',lease_token=NULL,leased_until=NULL WHERE event_id=$1 AND lease_token=$2`,
       [row.event_id, token, String(error?.code || error?.message || 'DELIVERY_FAILED').slice(0, 200)]); }
     }
@@ -95,7 +96,7 @@ function createPayments({ pool, provider, onEvent }) {
         await applyProviderResult(ctx, row.payment_id, result);
         await drainWebhooks();
         await pool.query('UPDATE payment_commands SET lease_token=NULL,leased_until=NULL WHERE id=$1 AND lease_token=$2', [row.id, token]);
-      } catch (error) {
+      } catch (error) { systemErrors.record('payments', 'operation.error', error);
         await pool.query(`UPDATE payment_commands SET lease_token=NULL,leased_until=NULL,next_attempt_at=now()+interval '5 minutes'
           WHERE id=$1 AND lease_token=$2`, [row.id, token]);
         console.error('Payment command recovery failed:', error.code || error.message);
@@ -127,7 +128,7 @@ function createPayments({ pool, provider, onEvent }) {
         await client.query(`INSERT INTO payment_attempts(id,payment_id,provider_id,provider_account_id,environment,provider_idempotency_key,state,resolution)
           VALUES($1,$2,$3,$4,$5,$6,'created','known')`, [randomUUID(), id, provider.id, provider.accountId, ctx.environment, input.idempotencyKey]);
         return inserted;
-      }); } catch (error) {
+      }); } catch (error) { systemErrors.record('payments', 'operation.error', error);
         if (error.code !== '23505') throw error;
         const command = (await pool.query(`SELECT payload_hash,payment_id FROM payment_commands
           WHERE client_id=$1 AND environment=$2 AND operation='create' AND idempotency_key=$3`, [ctx.clientId, ctx.environment, input.idempotencyKey])).rows[0];
@@ -144,7 +145,7 @@ function createPayments({ pool, provider, onEvent }) {
       if (!created || row.status !== 'created') return publicPayment(row);
       let result;
       try { result = await provider.createPayment({ ...input, ...ctx }); }
-      catch (error) {
+      catch (error) { systemErrors.record('payments', 'operation.error', error);
         await pool.query(`UPDATE payment_payments SET resolution=$2,updated_at=now() WHERE id=$1`, [row.id, error.outcome === 'not_sent' ? 'known' : 'unknown']);
         throw Object.assign(error, { code: error.code || (error.outcome === 'not_sent' ? 'PROVIDER_UNAVAILABLE' : 'OPERATION_UNCERTAIN'), status: error.status || 502 });
       }

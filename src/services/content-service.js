@@ -289,6 +289,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
       await removeStaged(filename).catch(() => {});
       onChange(job.account_id, job.asset_id);
     } catch (error) {
+      require('../system-errors').record('content', 'storage-job.error', error);
       const retry = job.attempts < 5;
       const message = String(error?.message || 'Не удалось сохранить контент').slice(0, 1000);
       await transaction(pool, async client => {
@@ -308,7 +309,7 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
         const job = await claim();
         if (!job) break;
         activeJobs++;
-        void processJob(job).catch(() => {}).finally(() => { activeJobs--; schedule(); });
+        void processJob(job).catch(error => require('../system-errors').record('content', 'storage-worker.error', error)).finally(() => { activeJobs--; schedule(); });
       }
     }
     finally {

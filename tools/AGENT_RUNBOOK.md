@@ -42,7 +42,7 @@
 
 Команды desktop выше относятся к архивному клиенту: исходного `desktop/` в текущем checkout нет. Если владелец решит вернуть клиент, единственным output будет desktop/dist/queue-header; нельзя обходить desktop/scripts/single-distribution.cjs.
 
-Веб: http://127.0.0.1:3000; health: /api/health. Конфиг: .env, образец .env.example. Данные: data/service, включая logs/generation.jsonl. Docker монтирует тот же каталог. Остановка Node: Ctrl+C. Не запускайте одновременно Node и Docker с одними данными.
+Веб: http://127.0.0.1:3000; health: /api/health. Конфиг: .env, образец .env.example. Данные: data/service; технические логи доступны через ai_logger. Docker монтирует тот же каталог. Остановка Node: Ctrl+C. Не запускайте одновременно Node и Docker с одними данными.
 
 Dockerfile и контекст сборки находятся в корне. Образ содержит веб, Telegram и Codex CLI; desktop/ исключён allowlist в .dockerignore. На хостинге worker Codex запускается автоматически на loopback, авторизация сохраняется в /app/data/codex-auth. Compose отключает встроенный worker и использует отдельный codex. На хостинге: MEDIA_HOST=0.0.0.0, MEDIA_PUBLIC_ORIGIN=https://ваш-домен; порт MEDIA_PORT или PORT, по умолчанию 3000. Инструкция Bothost и входа: [Codex](../docs/codex.md).
 
@@ -73,8 +73,12 @@ GI: tools/agent-start.ps1 и tools/check-instruction-kit-updates.ps1. Настр
 Аккаунты: [PostgreSQL/OAuth/кредиты](../docs/accounts-and-credits.md). По умолчанию
 MEDIA_AUTH_ENABLED=true; DATABASE_URL обязателен. `.env.example` содержит только
 пустые секреты. Для полноценного входа нужны Google/VK приложения и HTTPS origin.
-Базовая схема v10 и новые миграции до v14 применяются транзакционно только при необходимости; checksum проверяется при каждом старте. Для отдельного запуска миграций: `docker compose run --rm media node scripts/migrate-schema.cjs`; затем runtime может работать с `MEDIA_DB_MIGRATE=false`. Старая JSON-история не мигрирует.
+Базовая схема v10 и новые миграции до v21 применяются транзакционно только при необходимости; checksum проверяется при каждом старте. Для отдельного запуска миграций: `docker compose run --rm media node scripts/migrate-schema.cjs`; затем runtime может работать с `MEDIA_DB_MIGRATE=false`. Старая JSON-история не мигрирует.
+Перед обновлением общей БД опубликовать совместимый код и все миграции в Git: другие ПК получают только закоммиченные и отправленные файлы. После обновления checkout выполнить `docker compose up -d --build` и проверить health. При `DATABASE_VERSION_NEWER` сверить последнюю миграцию в checkout и контейнере с версией общей БД; повторная пересборка кода без нужной миграции несовместимость не исправляет.
 Тарифы config/native-prices.json: Nano Banana 2 Lite и все режимы Codex —
 4 внутренних кредита за запрос по решению владельца от 2026-09-18;
 остальные цены публикуются отдельно.
 Docker копирует этот конфиг. В auth-режиме Telegram работает для пользователей с подтверждённой привязкой при настроенном токене.
+
+Central diagnostic metadata: `docker compose exec -T media node scripts/read-central-errors.cjs 50`.
+The reader uses only HTTP; it does not connect to logger PostgreSQL. Legacy media_system_errors is removed by schema v21.

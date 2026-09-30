@@ -16,6 +16,8 @@ async function rejected(response, fallback) {
 }
 
 function connectionError(error) {
+  require('../../system-errors').record('provider', 'routerai.connection.error', error,
+    { diagnostic: { description: 'Не удалось подключиться к RouterAI', entity: 'provider' } });
   return new Error(error?.name === 'TimeoutError' ? 'RouterAI не ответил вовремя'
     : `RouterAI: ${safeMessage(error?.message) || 'Ошибка соединения'}`);
 }
@@ -31,6 +33,7 @@ function providerPayload(payload) {
 
 function createRouterAiClient({ apiKey, fetchImpl = fetch, timeoutMs = 120000 } = {}) {
   if (!apiKey) throw new Error('ROUTERAI_API_KEY не настроен');
+  require('../../ai-logger/diagnostics').sanitizer.secret(apiKey);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600000) throw new Error('Некорректный таймаут RouterAI');
 
   async function request(path, body) {

@@ -22,7 +22,7 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
       if (!response.ok || !result.ok) throw new Error();
       return result.result;
     } catch (error) {
-      trace.write('telegram.error',{method});
+      trace.write('telegram.error',{method,error});
       if (error.code === 'TELEGRAM_POLL_CONFLICT') throw error;
       throw new Error('Telegram временно недоступен');
     }
@@ -92,7 +92,7 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
         if (callback?.id) await call('answerCallbackQuery', { callback_query_id: callback.id }).catch(() => {});
         let response;
         try { response = await bot.handle(update); }
-        catch (error) { response = { text: error.code?.startsWith('E') ? 'Не удалось сохранить данные. Повторите позже.' : error.message }; }
+        catch (error) { trace.write('telegram.handler.error', { error }); response = { text: error.code?.startsWith('E') ? 'Не удалось сохранить данные. Повторите позже.' : error.message }; }
         // Persist consumption before outgoing message. Replay never repeats a paid create.
         await state.update('offset', { value: update.update_id + 1 });
         if (response) await call('sendMessage', { chat_id: String((callback?.message || update.message).chat.id), ...response });

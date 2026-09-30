@@ -81,10 +81,11 @@ test('RouterAI treats a successful HTTP response with an error envelope as a pro
     error.confirmedRejected === true && error.providerCode === 'CONTENT_BLOCKED' && /Image rejected/.test(error.message));
 });
 
-test('RouterAI error details reach the job and the database error log', async t => {
+test('RouterAI error details reach the job and central diagnostic metadata', async t => {
   const pool = await openDatabase({}, testPool());
-  t.after(async () => { systemErrors.setPool(null); await pool.end(); });
-  systemErrors.setPool(pool);
+  const aiLogger = require('../src/ai-logger'), original = aiLogger.reportSystemError, errors = [];
+  aiLogger.reportSystemError = row => { errors.push(row); return true; };
+  t.after(async () => { aiLogger.reportSystemError = original; await pool.end(); });
   const account = randomUUID(), requestId = randomUUID();
   await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Error details')", [account]);
   await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,8000)', [account]);
@@ -105,9 +106,13 @@ test('RouterAI error details reach the job and the database error log', async t 
   assert.match(job.error, /422.*INVALID_FILE.*File type not supported/);
   assert.equal(job.errorInfo.providerCode, 'INVALID_FILE');
   await systemErrors.flush();
-  const logged = await pool.query("SELECT code,message FROM media_system_errors WHERE event='routerai.fail' ORDER BY id DESC LIMIT 1");
-  assert.equal(logged.rows[0].code, 'INVALID_FILE');
-  assert.match(logged.rows[0].message, /File type not supported/);
+  const logged = errors.find(row => row.event === 'routerai.fail');
+  const caught = errors.find(row => row.event === 'routerai-billing.error');
+  assert.ok(caught.error instanceof Error);
+  assert.match(caught.error.stack, /providers[\\/]routerai[\\/]client.js/);
+  assert.equal(caught.diagnostic.entity, 'provider');
+  assert.equal(logged.code, 'INVALID_FILE');
+  assert.equal(Object.hasOwn(logged, 'message'), false);
 });
 
 test('RouterAI quote warns when the live tariff is unavailable', async () => {

@@ -1,4 +1,5 @@
 const ACCOUNT_ID = /^[a-f0-9-]{36}$/;
+const systemErrors = require('../system-errors');
 
 function listenForAccountChanges(pool, onAccount) {
   let closed = false, client = null, timer = null, retryMs = 1000;
@@ -18,21 +19,22 @@ function listenForAccountChanges(pool, onAccount) {
       await next.query('LISTEN media_account_changed');
       client = next;
       retryMs = 1000;
-      const lost = () => {
+      const lost = error => {
         if (client !== next) return;
+        if (!closed) systemErrors.record('database', 'change-listener-lost.error', error);
         client = null;
         next.release(new Error('Change listener connection lost'));
         schedule();
       };
       next.on('notification', message => {
         if (message.channel !== 'media_account_changed' || !ACCOUNT_ID.test(message.payload || '')) return;
-        void Promise.resolve(onAccount(message.payload)).catch(error => console.error('Account notification failed:', error.code || error.message));
+        void Promise.resolve().then(() => onAccount(message.payload)).catch(error => systemErrors.record('database', 'account-notification.error', error));
       });
       next.once('error', lost);
       next.once('end', lost);
     } catch (error) {
       next?.release(error);
-      if (!closed) { console.error('Account change listener unavailable:', error.code || error.message); schedule(); }
+      if (!closed) { systemErrors.record('database', 'change-listener.error', error); schedule(); }
     }
   }
   void connect();

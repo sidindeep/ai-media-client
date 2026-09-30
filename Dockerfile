@@ -23,7 +23,7 @@ COPY public ./public
 COPY --from=frontend /app/public/vue ./public/vue
 COPY --from=frontend /app/public/vue /opt/media-vue
 COPY config ./config
-COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/migrate-schema.cjs scripts/grant-runtime-role.cjs scripts/database-preflight.cjs scripts/read-system-errors.cjs scripts/check-operations-alerts.cjs scripts/resolve-git-commit.cjs ./scripts/
+COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/migrate-schema.cjs scripts/grant-runtime-role.cjs scripts/database-preflight.cjs scripts/read-central-errors.cjs scripts/verify-central-diagnostics.cjs scripts/check-operations-alerts.cjs scripts/resolve-git-commit.cjs ./scripts/
 COPY scripts/audit-provider-quotes.cjs ./scripts/
 COPY scripts/import-service-model-config.cjs ./scripts/
 COPY .git /tmp/media-git

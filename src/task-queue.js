@@ -72,11 +72,11 @@ class TaskQueue {
     this.timerDueAt=dueAt;
     this.timer=setTimeout(()=>{
       this.timer=null;this.timerDueAt=null;
-      this.tick().catch(error=>{this.error=error.message;this.notify();if(!this.closed&&!this.paused)this.schedule();});
+      this.tick().catch(error=>{trace.write('queue.scheduler.error',{error});this.error=error.message;this.notify();if(!this.closed&&!this.paused)this.schedule();});
     },Math.max(0,dueAt-Date.now()));
     this.timer.unref?.();
   }
-  schedulePoll(delay=this.interval) {if(this.closed||this.pollTimer)return;this.pollTimer=setTimeout(()=>{this.pollTimer=null;this.pollTick().catch(error=>{this.error=error.message;this.notify();if(!this.closed)this.schedulePoll();});},delay);}
+  schedulePoll(delay=this.interval) {if(this.closed||this.pollTimer)return;this.pollTimer=setTimeout(()=>{this.pollTimer=null;this.pollTick().catch(error=>{trace.write('queue.scheduler.error',{error});this.error=error.message;this.notify();if(!this.closed)this.schedulePoll();});},delay);}
   close() {if(this.closed)return;trace.write('queue.close');this.closed=true;clearTimeout(this.timer);clearTimeout(this.pollTimer);this.timer=null;this.timerDueAt=null;this.pollTimer=null;}
   async pollRecord(job) {
     let data;
@@ -101,7 +101,7 @@ class TaskQueue {
     this.notify();
     if(terminal)this.schedule(0);
     if(data.state==='success'){
-      const completion=Promise.resolve().then(()=>this.complete(updated)).catch(()=>{}).finally(()=>{this.completions.delete(completion);this.notify();});
+      const completion=Promise.resolve().then(()=>this.complete(updated)).catch(error=>trace.write('task.completion.error',{error})).finally(()=>{this.completions.delete(completion);this.notify();});
       this.completions.add(completion);
     }
   }
@@ -127,7 +127,7 @@ class TaskQueue {
     catch(error){try{await this.store.update(record.id,{state:'blocked',error:error.message,errorInfo:error.errorInfo||errors.classify({code:error.code,message:trace.clean(error.message),stage:'prepare'})},['preparing']);}catch{}this.notify();return;}
     if(!(typeof this.store.get==='function'?await this.store.get(record.id):(await this.store.list()).find(item=>item.id===record.id))){return;}
     try { await this.beforeCreate(record); }
-    catch(error){try{await this.store.update(record.id,{state:'blocked',error:error.message},['preparing']);}catch{}this.notify();return;}
+    catch(error){trace.run(record,()=>trace.write('task.before-create.error',{error}));try{await this.store.update(record.id,{state:'blocked',error:error.message},['preparing']);}catch{}this.notify();return;}
     if(!(typeof this.store.get==='function'?await this.store.get(record.id):(await this.store.list()).find(item=>item.id===record.id))){return;}
     // Pause stops selecting new items. An item that already owns a slot keeps
     // moving forward, so its visible state never rewinds to queued.
@@ -167,8 +167,10 @@ class TaskQueue {
       const queued=records.filter(item=>item.state==='queued'&&!item.queueHidden&&(!item.retryAfterAt||Date.parse(item.retryAfterAt)<=now)).reverse().slice(0,available);
       const results=await Promise.allSettled(queued.map(record=>this.submitRecord(record)));
       const failure=results.find(result=>result.status==='rejected');
+      if(failure)trace.write('queue.submit.error',{error:failure.reason});
       this.error=failure?failure.reason.message:null;
     } catch(error) {
+      trace.write('queue.tick.error',{error});
       this.error=error.message;
     } finally {
       this.running=false;
@@ -186,7 +188,7 @@ class TaskQueue {
           }
           if(ready&&active<this.concurrency)this.schedule(0);
           else if(Number.isFinite(nextRetry))this.schedule(Math.max(1,nextRetry-Date.now()));
-        } catch(error) {this.error=error.message;this.notify();this.schedule();}
+        } catch(error) {trace.write('queue.reschedule.error',{error});this.error=error.message;this.notify();this.schedule();}
       }
     }
   }

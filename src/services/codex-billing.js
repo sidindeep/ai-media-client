@@ -116,7 +116,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
               await content.link(account, 'codex', id(account, requestId), asset.id, 'result', 0);
               await content.wait(account, asset.id);
               contentAssetId = asset.id;
-            } catch (error) {
+            } catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' } });
               // Storage catalog errors must not turn a confirmed provider result
               // into an unknown billing outcome. Preserve bytes under the legacy key.
               if (!storage) throw error;
@@ -138,7 +138,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: safeErrorText(result.error) || 'Codex request failed.' });
       if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: safeErrorText(result.error) || 'Codex result is unknown.' });
       return job;
-    } catch (error) {
+    } catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' } });
       // Unknown completion must never release or charge automatically.
       if (error.remoteStatus === 404) return await update(account, requestId, {
         state: 'unknown', error: 'Worker больше не хранит задание. Результат требует проверки; резерв сохранён.'
@@ -179,7 +179,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
         projectId, chatId, images });
       const running = await update(account, request.requestId, { state: 'running', stage: 'generating', error: null });
       watch(account, request.requestId); return running;
-    } catch (error) {
+    } catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' } });
       const rejected = [400, 403, 413].includes(error.remoteStatus) || error.confirmedRejected === true;
       const decision = submissionDecision({ status: error.remoteStatus, rejected });
       if (decision === 'retry') return retries.defer(account, request.requestId, error);
@@ -190,7 +190,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
   async function dispatchRetry(account, request) {
     let images;
     try { images = await loadImages(account, request); }
-    catch (error) { await update(account, request.requestId, { state: 'fail', error: error.message }); return; }
+    catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' } }); await update(account, request.requestId, { state: 'fail', error: error.message }); return; }
     await send(account, request, images);
   }
   const retries = createStoredRetry({ pool: accounts.pool, namespace: 'codex', jobId: id,

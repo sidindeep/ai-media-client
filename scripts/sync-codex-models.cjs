@@ -1,9 +1,8 @@
-// Refresh the reviewable model catalog from the authorized provider container.
+// Refresh the reviewable model catalog from this project's authorized Codex worker.
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const providerRoot = path.resolve(root, process.argv[2] || '../llm_providers');
 const probe = `
 import { spawn, execFileSync } from 'node:child_process';
 import readline from 'node:readline';
@@ -36,10 +35,10 @@ readline.createInterface({input:child.stdout}).on('line', line => {
 });
 send('initialize', {clientInfo:{name:'media_model_catalog',version:'1.0.0'}}, id);
 `;
-const result = spawnSync('docker', ['compose', '--project-directory', providerRoot, 'run', '--rm', '-T', '--entrypoint', 'node', 'provider', '--input-type=module', '-'], {
-  input: probe, encoding: 'utf8', timeout: 60000, windowsHide: true
+const result = spawnSync('docker', ['compose', '--project-directory', root, 'exec', '-T', 'codex', 'node', '--input-type=module', '-'], {
+  cwd: root, input: probe, encoding: 'utf8', timeout: 60000, windowsHide: true
 });
-if (result.error || result.status !== 0) throw new Error('Не удалось получить модели из контейнера Codex. Проверьте Docker и вход провайдера.');
+if (result.error || result.status !== 0) throw new Error('Не удалось получить модели из контейнера Codex. Проверьте Docker, запуск сервиса codex и вход в Codex.');
 const catalog = JSON.parse(result.stdout.trim());
 catalog.uiDefaults = JSON.parse(fs.readFileSync(path.join(root, 'config/codex-models.json'), 'utf8')).uiDefaults;
 if (!catalog.models?.length || catalog.models.some(model => typeof model.id !== 'string' || !model.id)) throw new Error('Codex вернул пустой или некорректный каталог');

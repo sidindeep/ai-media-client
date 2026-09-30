@@ -132,7 +132,6 @@ volumes:
   kie-session:
     name: ai-media-kie-session
   codex-auth:
-    external: true
-    name: ${MEDIA_CODEX_AUTH_VOLUME:-llm-providers_codex-auth}
+    name: ${MEDIA_CODEX_AUTH_VOLUME:-ai-media-codex-auth}
 networks:
   codex-link:

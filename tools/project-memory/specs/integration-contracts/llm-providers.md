@@ -82,9 +82,11 @@ Codex возвращается через отдельный allowlist с provid
 поддерживает эти ссылки. Web-процесс восстанавливает проверку заданий при старте.
 Пользователь получает доступ только к своим заданиям и своему кошельку.
 
-`Dockerfile.codex` расширяет `llm-providers:local` приватным HTTP worker;
+`Dockerfile.codex` самостоятельно устанавливает Codex CLI в Node 22 и включает
+локальные адаптеры `src/services/codex-*.js` и приватный HTTP worker;
 порт 3210 не публикуется. Веб не монтирует Docker socket или Codex credentials.
-Auth volume монтируется только в non-root worker с read-only rootfs.
+Собственный том `ai-media-codex-auth` создаётся Compose и монтируется только
+в non-root worker с read-only rootfs.
 CLI запускается без пользовательских конфигов/правил, в read-only sandbox,
 с отключёнными shell/browser/apps и другими инструментальными features.
 Для режима изображения включены image_generation/code_mode/code_mode_host.

@@ -161,7 +161,10 @@ fallback в `data/service`. Старый файловый слой исполь�
 - Пользователь выбирает модель, reasoning effort, Standard/Fast и допустимое
   соотношение сторон.
 - Каталог возможностей синхронизируется в `config/codex-models.json`.
-- Sidecar собирается поверх локального образа `llm-providers:local`.
+- Sidecar самостоятельно собирается из `Dockerfile.codex`: Node 22,
+  Codex CLI 0.155.0 и локальные адаптеры `src/services/codex-*.js`.
+- Compose создаёт собственный том `ai-media-codex-auth`; сборка и runtime
+  не зависят от проекта шаблонов `llm_providers`.
 
 ## Telegram
 

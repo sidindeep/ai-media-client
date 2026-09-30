@@ -91,7 +91,6 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
   const kieBrowserControl = !webReplica && config.kieBrowser?.embedded
     ? createKieEmbeddedBrowser({ dataDirectory: config.dataDirectory, cdpUrl: config.kieBrowser.cdpUrl,
       idleMs: config.kieBrowser.idleMinutes * 60 * 1000 }) : null;
-  let ownerClient = null, ownerTimer = null;
   const storage = createObjectStorage(config.storage);
   let generationSupport, generationServices;
   let closing = false, retryTimer, wakeRetry, telegramStarted = false;
@@ -122,33 +121,6 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     wakeRetry = resolve;
     retryTimer = setTimeout(() => { retryTimer = undefined; wakeRetry = undefined; resolve(); }, delay);
   });
-  const releaseOwnership = async () => {
-    if (ownerTimer) clearInterval(ownerTimer);
-    ownerTimer = null;
-    if (!ownerClient) return;
-    const current = ownerClient;
-    ownerClient = null;
-    await current.query('SELECT pg_advisory_unlock(18274693)').catch(() => {});
-    try { current.release(); } catch {}
-  };
-  const acquireOwnership = async activePool => {
-    if (config.replicaRole !== 'executor') return;
-    const candidate = await activePool.connect();
-    try {
-      const acquired = (await candidate.query('SELECT pg_try_advisory_lock(18274693) AS acquired')).rows[0]?.acquired;
-      if (!acquired) throw Object.assign(new Error('Другой исполнитель задач уже владеет БД'), { code: 'EXECUTOR_BUSY' });
-      ownerClient = candidate;
-      const lost = error => {
-        if (ownerClient !== candidate || closing) return;
-        console.error('Executor ownership lost:', error?.code || error?.message || 'CONNECTION_LOST');
-        void cleanup().then(() => { if (require.main === module) process.exit(73); });
-      };
-      candidate.once?.('error', lost);
-      candidate.once?.('end', lost);
-      ownerTimer = setInterval(() => { void candidate.query('SELECT 1').catch(lost); }, 2000);
-      ownerTimer.unref?.();
-    } catch (error) { candidate.release(); throw error; }
-  };
   const cleanup = async () => {
     closing = true;
     databaseAvailability.close();
@@ -172,7 +144,6 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     await systemErrors.flush();
     await aiLogger.flush();
     systemErrors.setPool(null);
-    await releaseOwnership();
     await pool?.end();
     if (lock) { await lock.close(); await fs.unlink(lockPath).catch(() => {}); }
   };
@@ -185,7 +156,6 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
       pool = await databaseOpener(config.database, suppliedPool);
       await require('./src/services/service-model-configs').ensureCurrentModelConfig(pool);
       systemErrors.setPool(pool, { retention: !webReplica && !suppliedPool });
-      await acquireOwnership(pool);
       content = await createContentService({ pool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
       const starterPack = createStarterPack({ pool, config: config.starterPack });
       auth = createAuth({ pool, config: config.auth, providers: authProviders, starterPack });
@@ -213,7 +183,7 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
     server = createHttpServer({ config, service, auth, accounts, readiness, databaseAvailability, telegramStatus, telegram, storage, payments, commerce, generationServices, kieBrowserControl });
     if (!webReplica) await recoverGenerationServices(generationServices);
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
-    if (!webReplica && (config.replicaRole !== 'executor' || ownerClient)) { telegram.start(); telegramStarted = true; }
+    if (!webReplica && (!config.auth.enabled || accounts)) { telegram.start(); telegramStarted = true; }
     if (startupChecks && !webReplica) void checkProviderReadiness(service, readiness);
     if (config.auth.enabled && !accounts) {
       databaseTask = (async () => {
@@ -225,14 +195,13 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
           try {
             nextPool = await databaseOpener(config.database);
             await require('./src/services/service-model-configs').ensureCurrentModelConfig(nextPool);
-            await acquireOwnership(nextPool);
             nextContent = await createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica });
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
             const nextAuth = createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack });
             nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content: nextContent });
             const nextTelegramLinks = createTelegramLinkService(nextPool);
             await nextAccounts.recover();
-            if (closing) { await nextAccounts.close(); await nextContent?.close(); await releaseOwnership(); await nextPool.end(); return; }
+            if (closing) { await nextAccounts.close(); await nextContent?.close(); await nextPool.end(); return; }
             const nextBusiness = await createBusinessServices(nextPool);
             const nextGenerationServices = createGenerationServices({ config, accounts: nextAccounts, storage, support: generationSupport });
             try {
@@ -254,7 +223,6 @@ async function start({ config = loadConfig(), provider, paymentProvider, pool: s
           } catch (error) {
             if (nextAccounts) await nextAccounts.close().catch(() => {});
             if (nextContent) await nextContent.close().catch(() => {});
-            if (ownerClient && nextPool) await releaseOwnership().catch(() => {});
             if (nextPool) await nextPool.end().catch(() => {});
             const retryInMs = Math.min(10000, 1000 * (2 ** Math.min(attempt - 1, 4)));
             databaseAvailability.update({ state: 'unavailable', code: error.code || 'CONNECTION_TIMEOUT', attempt, retryInMs });

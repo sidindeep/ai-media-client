@@ -8,6 +8,39 @@ const { createHttpServer } = require('../src/server/http');
 const { loadConfig } = require('../src/server/config');
 const { createMediaService } = require('../src/services/media-service');
 const { History } = require('../src/history');
+const { start } = require('../server');
+const { testPool } = require('./helpers/pg-pool');
+
+test('two executors can start against the same database despite a legacy ownership lock', async t => {
+  const pool = testPool();
+  const sharedPool = { ...pool, end: async () => {} };
+  const connect = sharedPool.connect;
+  sharedPool.connect = async () => {
+    const client = await connect();
+    const query = client.query;
+    client.query = async (sql, params) => String(sql).includes('pg_try_advisory_lock(18274693)')
+      ? { rows: [{ acquired: false }] } : query(sql, params);
+    return client;
+  };
+  const runtimes = [], directories = [];
+  t.after(async () => {
+    for (const runtime of runtimes) await runtime.close();
+    await pool.end();
+    for (const directory of directories) await fs.rm(directory, { recursive: true, force: true });
+  });
+  const root = path.resolve(__dirname, '../artifacts');
+  await fs.mkdir(root, { recursive: true });
+  for (let index = 0; index < 2; index++) {
+    const directory = await fs.mkdtemp(path.join(root, 'replica-executor-'));
+    directories.push(directory);
+    const config = { ...loadConfig({ MEDIA_PORT: '0', MEDIA_REPLICA_ROLE: 'executor' }), dataDirectory: directory };
+    const runtime = await start({ config, pool: sharedPool, provider: { id: 'kie', isConfigured: () => false }, startupChecks: false });
+    runtimes.push(runtime);
+    const base = `http://127.0.0.1:${runtime.server.address().port}`;
+    assert.equal((await fetch(base + '/api/health')).status, 200);
+    assert.equal((await fetch(base + '/api/account')).status, 401);
+  }
+});
 
 test('web replica does not scan or save completed media on startup', async t => {
   const root = path.resolve(__dirname, '../artifacts');

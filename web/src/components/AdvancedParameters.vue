@@ -7,6 +7,7 @@ defineProps<{
   values: Record<string, unknown>;
   errors?: Record<string, string>;
   context?: string;
+  inline?: boolean;
 }>();
 const emit = defineEmits<{
   change: [key: string, value: unknown];
@@ -15,8 +16,8 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <details v-if="fields.length" class="advanced-settings">
-    <summary>{{ t('composer.advanced') }}</summary>
+  <component :is="inline ? 'div' : 'details'" v-if="fields.length" class="advanced-settings" :class="{ 'advanced-inline': inline }">
+    <summary v-if="!inline">{{ t('composer.advanced') }}</summary>
     <div class="advanced-grid">
       <p v-if="context" class="advanced-context">{{ context }}</p>
       <label v-for="field in fields" :key="field.key" :class="{ invalid: errors?.[field.key] }">
@@ -33,5 +34,5 @@ const { t } = useI18n();
         <small v-else-if="field.hint">{{ field.hint }}</small>
       </label>
     </div>
-  </details>
+  </component>
 </template>

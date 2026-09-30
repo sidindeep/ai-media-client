@@ -192,6 +192,9 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .studio-header h1 { margin-top: 4px; font-size: clamp(24px, 2.3vw, 32px); letter-spacing: -.035em; }
 .studio-header .eyebrow { font-size: 9px; letter-spacing: .2em; }
 .header-actions { gap: 12px; }.balance-badge { padding: 7px 10px; background: rgba(15, 16, 25, .46); }
+.interface-toggle { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid #39313a; border-radius: 10px; color: inherit; background: transparent; font: inherit; text-decoration: none; cursor: pointer; }
+.interface-toggle:hover, .interface-toggle:focus-visible { border-color: #806be0; }
+.interface-toggle[aria-pressed="true"] { border-color: #806be0; background: #806be01a; }
 
 .account-menu { position: relative; z-index: 50; }
 .account-trigger { display: flex; min-width: 178px; align-items: center; gap: 9px; border: 1px solid #323248; border-radius: 12px; padding: 6px 9px 6px 7px; color: #e3dfed; background: rgba(18, 19, 30, .86); text-align: left; }
@@ -433,7 +436,7 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 .composer-controls .select-pill { padding: 6px 8px; }
 .composer-controls .model-pill { min-width: 180px; }
 .composer-controls .model-picker-trigger strong { max-width: 170px; }
-.generate-button { min-height: 34px; padding: 9px 14px; }
+.generate-button { min-height: 34px; padding: 7px 14px; font-size: 16px; line-height: 20px; }
 .quote { font-size: 11px; }
 .composer-hint { display: none; }
 .source-strip { min-height: 29px; margin-bottom: 8px; }
@@ -612,6 +615,48 @@ h1, h2, p { margin: 0; } h1 { margin-top: 8px; font-size: clamp(28px, 4vw, 48px)
 }
 
 /* User-selectable light palette. Theme state lives on <html> and is persisted locally. */
+.composer-controls:has(.video-settings-bar) { align-items: flex-end; flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+.composer-controls:has(.video-settings-bar)::-webkit-scrollbar { display: none; }
+.video-settings-bar { display: flex; flex: 1 0 auto; min-width: max-content; align-items: flex-end; gap: 8px; order: -1; }
+.video-setting { display: grid; flex: 0 0 auto; min-width: max-content; gap: 4px; }
+.video-setting-label { color: #9993a9; font-size: 10px; font-weight: 600; line-height: 16px; white-space: nowrap; }
+.video-settings-bar .model-picker { flex: 0 0 auto; min-width: max-content; width: auto; }
+.video-setting > input, .video-setting > select, .video-setting-unavailable, .video-settings-bar .model-picker-trigger { width: 100%; min-width: 0; min-height: 34px; border: 1px solid #35364a; border-radius: 9px; padding: 7px 8px; color: #f4f2fc; background: #181925; font: inherit; font-size: 12px; }
+.video-settings-bar .model-picker-trigger { width: max-content; min-width: 168px; height: 34px; padding-inline: 12px; }
+.video-settings-bar .model-picker-trigger strong { flex: 0 0 auto; max-width: none; overflow: visible; font-size: 14px; text-overflow: clip; }
+.video-setting > select { width: auto; min-width: max-content; color-scheme: dark; }
+.video-setting > select option { color: #f4f2fc; background: #181925; }
+.video-setting-unavailable { display: flex; align-items: center; color: #817b91; }
+.video-duration-setting { flex: 0 0 auto; }
+.video-duration-setting > input { width: 9ch; }
+.duration-picker-trigger { display: flex; min-width: 78px; min-height: 34px; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #35364a; border-radius: 9px; padding: 7px 9px; color: #f4f2fc; background: #181925; font: inherit; font-size: 12px; white-space: nowrap; }
+.duration-picker-trigger[aria-expanded='true'], .duration-picker-trigger:focus-visible { border-color: #927ae4; outline: 2px solid #927ae440; }
+.video-setting.invalid .duration-picker-trigger { border-color: #cf7889; }
+.duration-picker-menu { position: fixed; z-index: 230; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #35364a; border-radius: 10px; padding: 4px; color: #f4f2fc; background: #101014; box-shadow: 0 18px 45px #0008; }
+.duration-picker-list { min-height: 0; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; outline: none; }
+.duration-picker-list::-webkit-scrollbar { display: none; }
+.duration-picker-list > button { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: space-between; gap: 10px; border: 0; border-radius: 6px; padding: 7px 9px; color: inherit; background: transparent; font-size: 13px; text-align: left; white-space: nowrap; }
+.duration-picker-list > button:hover, .duration-picker-list > button.is-active, .duration-picker-list > button[aria-selected='true'] { background: #28282c; }
+.duration-scroll-arrow { display: grid; min-height: 20px; flex: 0 0 20px; place-items: center; border: 0; color: inherit; background: transparent; font-size: 14px; }
+.duration-scroll-arrow:disabled { visibility: hidden; }
+:root[data-theme='light'] :is(.duration-picker-trigger, .duration-picker-menu) { border-color: #dedbe5; color: #302c35; background: #fff; }
+:root[data-theme='light'] .duration-picker-list > button:is(:hover, .is-active, [aria-selected='true']) { background: #eeebf3; }
+.video-settings-toggle { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border: 1px solid #35364a; border-radius: 9px; color: #b9b2ca; background: #181925; }
+.composer-controls:has(.video-settings-bar) > .generate-button { flex: 0 0 auto; width: auto; min-height: 34px; margin-left: 0; padding: 7px 12px; }
+.composer-controls:has(.video-settings-bar) > :is(.quote, .quote-error-wrap) { flex: 0 0 auto; order: 2; white-space: nowrap; }
+.video-settings-toggle:hover, .video-settings-toggle:focus-visible, .video-settings-toggle[aria-expanded='true'] { border-color: #927ae4; outline: 2px solid #927ae440; color: #c5b5ff; }
+.video-setting.invalid > :is(input, select) { border-color: #cf7889; }
+.video-advanced-panel { margin-top: 12px; border: 1px solid #35364a; border-radius: 12px; padding: 14px; background: #15151f; }
+.video-advanced-panel h3 { margin: 0; color: #c4bed2; font-size: 12px; }
+.video-advanced-panel .advanced-inline { margin-top: 0; border: 0; padding-top: 0; }
+.video-advanced-panel .advanced-grid textarea { height: auto; max-height: none; }
+.video-settings-empty { margin: 10px 0 0; color: #9993a9; font-size: 12px; }
+:root[data-theme='light'] .video-setting-label { color: #949099; }
+:root[data-theme='light'] :is(.video-setting > input, .video-setting > select, .video-setting-unavailable, .video-settings-toggle, .video-advanced-panel) { border-color: #dedbe5; color: #302c35; background: #fff; }
+:root[data-theme='light'] .video-setting > select { color-scheme: light; }
+:root[data-theme='light'] .video-setting > select option { color: #302c35; background: #fff; }
+:root[data-theme='light'] .video-advanced-panel h3 { color: #6d6578; }
+:root[data-theme='light'] .video-settings-toggle[aria-expanded='true'] { border-color: #927ae4; color: #7054bd; }
 :root[data-theme='light'] { color-scheme: light; color: #292632; background: #f4f2f7; }
 :root[data-theme='light'] body { background: radial-gradient(circle at 65% -20%, #e8e1ff 0, #f7f5fa 34%, #efedf3 76%); }
 :root[data-theme='light'] .studio-main { background: radial-gradient(circle at 47% 34%, rgba(119, 88, 213, .07), transparent 42%); }

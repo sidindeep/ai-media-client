@@ -6,8 +6,9 @@ import type { AutoRouteQuote, ProviderDiagnostics } from '../api/client';
 import type { MediaField } from '../types';
 import ModelCatalogPicker from './ModelCatalogPicker.vue';
 import AspectRatioPicker from './AspectRatioPicker.vue';
-import PresetBar from './PresetBar.vue';
 import AdvancedParameters from './AdvancedParameters.vue';
+import VideoSettingsBar from './VideoSettingsBar.vue';
+import { videoPrimaryFields } from '../domain/video-settings';
 import SchemaField from './SchemaField.vue';
 import SourceAttachments from './SourceAttachments.vue';
 import { mediaAdvancedParameters, routerAiAdvancedParameters } from '../domain/advanced-parameters';
@@ -69,6 +70,7 @@ const routerAiExtra = ref('{}');
 const routerAiVideoDuration = ref<number | null>(null);
 const routerAiVideoResolution = ref('');
 const routerAiVideoAspectRatio = ref('');
+const videoAdvancedOpen = ref(false);
 const apimartMedia = computed(() => studio.provider === 'apimart' && studio.mode !== 'text');
 const apimartWhisper = computed(() => studio.provider === 'apimart' && studio.apimartModel === 'whisper-1');
 const apimartFields = computed(() => studio.provider === 'apimart' ? localizeParameterFields(studio.currentApimartModel?.fields || []) : []);
@@ -82,7 +84,8 @@ watch(() => [studio.provider, studio.apimartModel, apimartFields.value] as const
   if (Object.keys(defaults).length) studio.mediaInput = { ...defaults, ...studio.mediaInput };
 }, { immediate: true });
 const apimartPrimaryFields = computed(() => apimartFields.value.filter(field =>
-  /^(size|aspect_ratio|resolution|quality|mode|version|duration|voice)$/.test(field.key) && field.options?.length).slice(0, 3));
+  studio.mode === 'video' ? videoPrimaryList.value.includes(field)
+    : /^(size|aspect_ratio|resolution|quality|mode|version|duration|voice)$/.test(field.key) && field.options?.length).slice(0, 3));
 const apimartExtraFields = computed(() => apimartFields.value.filter(field => field.type !== 'files'
   && !apimartPrimaryFields.value.includes(field) && !isReferenceField(field)));
 const apimartAdvancedFields = computed(() => mediaAdvancedParameters(apimartExtraFields.value, (_field, option) => String(option)).map(field => {
@@ -120,7 +123,8 @@ const currentFields = computed(() => studio.provider === 'apimart' ? apimartFiel
       ? [{ key: 'audioFile', label: t('routerai.admin.audioFile'), type: 'files', required: true,
         scalar: true, maxFiles: 1, accept: 'audio/*' }] : []);
 const currentUnionVariants = computed(() => unionVariants(studio.currentMediaModel));
-const primaryFields = computed(() => currentFields.value.filter(field => /aspect|ratio|format|resolution|quality|^size$/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
+const primaryFields = computed(() => studio.mode === 'video' ? videoPrimaryList.value
+  : currentFields.value.filter(field => /aspect|ratio|format|resolution|quality|^size$/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
 const taskReferenceField = computed(() => currentFields.value.find(field => field.key === 'task_id' || field.key === 'taskId'));
 function compatibleTaskReference(modelId: string, source: { modelId?: string; kind?: string }): boolean {
   if (modelId === 'kie:grok-imagine-image-2-0/segment-edit')
@@ -150,6 +154,16 @@ const routerAiAdvancedFields = computed(() => routerAiSpecial.value ? routerAiAd
 }) : []);
 const routerAiAdvancedValues = computed(() => ({ duration: routerAiVideoDuration.value, resolution: routerAiVideoResolution.value,
   aspect_ratio: routerAiVideoAspectRatio.value, body: routerAiExtra.value }));
+const videoFields = computed<MediaField[]>(() => studio.provider === 'routerai'
+  ? routerAiAdvancedFields.value.map(field => ({ ...field, type: field.kind,
+    options: field.options?.map(option => option.value) })) : currentFields.value);
+const videoPrimaryList = computed(() => Object.values(videoPrimaryFields(videoFields.value)).filter((field): field is MediaField => Boolean(field)));
+const videoValues = computed(() => studio.provider === 'routerai' ? routerAiAdvancedValues.value : studio.mediaInput);
+function updateVideoField(field: MediaField, value: unknown) {
+  if (studio.provider === 'routerai') updateRouterAiAdvanced(field.key, value);
+  else if (studio.provider === 'apimart') updateApimartParameter(field.key, value);
+  else updateTypedField(field, value);
+}
 const total = computed(() => quote.value?.credits != null
   && (autoRouting.value ? quote.value.selectedProviderId === 'kie' || !studio.isAdmin : studio.provider !== 'apimart')
   ? roundedCreditCost(quote.value.credits) : null);
@@ -199,6 +213,7 @@ const modelChoice = computed({
     fieldErrors.value = {};
   },
 });
+watch(() => [studio.provider, modelChoice.value, studio.mode], () => { videoAdvancedOpen.value = false; });
 const serviceModelIds = computed(() => studio.serviceModelConfig
   ? { kie: new Set((studio.serviceModelConfig.models || []).map(row => row.kie)),
       apimart: new Set((studio.serviceModelConfig.models || []).map(row => row.apimart)) }
@@ -566,8 +581,14 @@ async function submit(event?: Event) {
         <small>{{ t('composer.taskReference.hint') }}</small>
       </div>
       <div class="composer-controls">
-        <PresetBar v-if="studio.provider !== 'apimart'" />
-        <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice"
+        <VideoSettingsBar v-if="studio.mode === 'video'" v-model:expanded="videoAdvancedOpen" :fields="videoFields" :values="videoValues" :errors="allFieldErrors" @change="updateVideoField">
+          <ModelCatalogPicker v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice"
+            :catalogs="['media', 'apimart'].includes(studio.provider) ? studio.serviceModelChoices : []"
+            :catalog-id="studio.serviceModelConfig?.id || ''"
+            :catalog-loading="studio.serviceModelConfigLoading" :catalog-error="studio.serviceModelConfigError"
+            @select-catalog="studio.selectServiceModelConfig" />
+        </VideoSettingsBar>
+        <ModelCatalogPicker v-else v-model="modelChoice" :models="modelOptions" :price="selectedModelPrice"
           :catalogs="['media', 'apimart'].includes(studio.provider) ? studio.serviceModelChoices : []"
           :catalog-id="studio.serviceModelConfig?.id || ''"
           :catalog-loading="studio.serviceModelConfigLoading" :catalog-error="studio.serviceModelConfigError"
@@ -577,30 +598,34 @@ async function submit(event?: Event) {
           <AspectRatioPicker v-if="studio.mode === 'image'" v-model="studio.codexAspectRatio" :label="t('composer.format')" :options="['auto', '1:1', '16:9', '9:16', '3:2', '2:3']" />
           <label class="select-pill"><span>{{ t('composer.speed') }}</span><select v-model="studio.codexSpeed"><option value="standard">{{ t('generation.speed.standard') }}</option><option value="fast">⚡ Fast</option></select></label>
         </template>
-        <label v-for="field in apimartPrimaryFields" :key="`apimart:${field.key}`" class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span>
+        <label v-for="field in studio.mode === 'video' ? [] : apimartPrimaryFields" :key="`apimart:${field.key}`" class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span>
           <select :value="String(studio.mediaInput[field.key] ?? '')" @change="updateApimartParameter(field.key, ($event.target as HTMLSelectElement).value)">
             <option value="">{{ t('common.default') }}</option><option v-for="value in field.options" :key="String(value)" :value="String(value)">{{ value }}</option>
           </select>
         </label>
-        <template v-for="field in primaryFields" v-if="studio.provider === 'media'" :key="field.key">
+        <template v-for="field in primaryFields" v-if="studio.provider === 'media' && studio.mode !== 'video'" :key="field.key">
           <AspectRatioPicker v-if="isAspectRatioField(field.key)" :model-value="String(fieldValue(field))" :label="field.label || t('composer.format')" :options="fieldOptions(field)" @update:model-value="updateSelectValue(field, $event)" />
           <label v-else class="select-pill"><span>{{ field.label || field.key }}{{ field.required ? ' *' : '' }}</span><select :value="fieldValue(field)" @change="updateSelect(field, $event)"><option v-for="option in fieldOptions(field)" :key="String(option)" :value="String(option)">{{ fieldOptionLabel(field, option) }}</option></select></label>
         </template>
-        <span v-if="quoteWarning" class="quote warning" role="status">{{ quoteWarning }}</span>
+        <span v-if="quoteWarning && (studio.isAdmin || quote?.status !== 'unavailable' || studio.provider !== 'media')" class="quote warning" role="status">{{ quoteWarning }}</span>
         <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button v-if="studio.isAdmin && !autoRouting" type="button" class="details-button" @click="openDiagnostics">{{ t('composer.details') }}</button></span>
         <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (autoRouting && (!autoEligible || !quote?.selectedProviderId)) || (studio.provider === 'apimart' && !autoRouting && quote?.status !== 'estimated') || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && quotedPrice"> · {{ quotedPrice }}</span><span v-else-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
       </div>
       <p v-if="studio.provider === 'apimart' && !autoRouting" class="apimart-billing-note" :class="{ 'is-error': studio.apimartCatalog?.error }" :role="studio.apimartCatalog?.error ? 'alert' : undefined">{{ studio.apimartCatalog?.error || apimartBreakdown || t(apimartMedia ? 'apimart.admin.mediaBillingNotice' : 'apimart.admin.billingNotice') }}</p>
       <p v-if="autoRouting" class="auto-route-note" role="status"><template v-if="!autoEligible">{{ t('composer.autoUnsupported') }}</template><template v-else-if="quote?.selectedProviderId"><strong>{{ t('composer.autoSelected', { provider: autoProviderLabel }) }}</strong><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-if="studio.isAdmin && quote.amountUsd != null"> · {{ t('composer.autoEstimate', { usd: formatNumber(quote.amountUsd, { maximumFractionDigits: 6 }) }) }}</span></template><template v-else-if="quote?.autoOffers?.length"><span>{{ t('composer.autoNoRoute') }}</span><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-for="offer in quote.autoOffers.filter(item => item.unavailable)" :key="offer.providerId"> · {{ autoOfferLabel(offer.providerId) }}: {{ offer.reason }}</span></template><template v-else>{{ quoteError || t('composer.calculating') }}</template></p>
-      <AdvancedParameters v-if="apimartMedia" :key="`apimart:${studio.apimartModel}`" :fields="apimartAdvancedFields" :values="apimartAdvancedValues" :errors="allFieldErrors" @change="updateApimartParameter" />
-      <AdvancedParameters v-if="apimartFallbackFields.length" :fields="apimartFallbackFields" :values="{ parameters: JSON.stringify(studio.mediaInput, null, 2) }" :errors="fieldErrors" @change="updateApimartFallback" />
-      <AdvancedParameters v-if="studio.provider === 'media'" :key="`media:${studio.mediaModelId}`" :fields="mediaAdvancedFields" :values="mediaAdvancedValues" :errors="allFieldErrors" @change="updateMediaAdvanced" />
+      <div v-show="studio.mode !== 'video' || videoAdvancedOpen" :id="studio.mode === 'video' ? 'video-advanced-settings' : undefined" :class="{ 'video-advanced-panel': studio.mode === 'video' }">
+      <h3 v-if="studio.mode === 'video'">{{ t('composer.advanced') }}</h3>
+      <AdvancedParameters v-if="apimartMedia" :key="`apimart:${studio.apimartModel}`" :inline="studio.mode === 'video'" :fields="apimartAdvancedFields" :values="apimartAdvancedValues" :errors="allFieldErrors" @change="updateApimartParameter" />
+      <AdvancedParameters v-if="apimartFallbackFields.length" :inline="studio.mode === 'video'" :fields="apimartFallbackFields" :values="{ parameters: JSON.stringify(studio.mediaInput, null, 2) }" :errors="fieldErrors" @change="updateApimartFallback" />
+      <AdvancedParameters v-if="studio.provider === 'media'" :key="`media:${studio.mediaModelId}`" :inline="studio.mode === 'video'" :fields="mediaAdvancedFields" :values="mediaAdvancedValues" :errors="allFieldErrors" @change="updateMediaAdvanced" />
       <div v-if="studio.provider === 'media' && structuredFields.length" class="advanced-settings schema-fields">
         <SchemaField v-for="field in structuredFields" :key="field.key" :schema="field.schema || {}" :model-value="studio.mediaInput[field.key]"
           :name="field.key" :root-key="field.key" :label="field.label || field.key" :required="field.required" :error="allFieldErrors[field.key]"
           @change="updateTypedField(field, $event)" @uploaded="registerStructuredUpload" />
       </div>
-      <AdvancedParameters v-if="routerAiSpecial" :key="`routerai:${studio.currentRouterAiModel?.id}`" :fields="routerAiAdvancedFields" :values="routerAiAdvancedValues" :context="`${studio.currentRouterAiModel?.id} · POST /${studio.currentRouterAiModel?.endpoint}`" @change="updateRouterAiAdvanced" />
+      <AdvancedParameters v-if="routerAiSpecial && studio.mode !== 'video'" :key="`routerai:${studio.currentRouterAiModel?.id}`" :fields="routerAiAdvancedFields" :values="routerAiAdvancedValues" :context="`${studio.currentRouterAiModel?.id} · POST /${studio.currentRouterAiModel?.endpoint}`" @change="updateRouterAiAdvanced" />
+      <p v-if="studio.mode === 'video' && !mediaAdvancedFields.length && !structuredFields.length && !apimartAdvancedFields.length && !apimartFallbackFields.length" class="video-settings-empty">{{ t('composer.video.noExtra') }}</p>
+      </div>
       <p v-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>
       <p class="composer-hint">{{ t('composer.hint') }}</p>

@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as api from '../api/client';
 import { useI18n } from '../i18n';
+import { useStudioStore } from '../stores/studio';
 import type { Account } from '../types';
 
 const props = defineProps<{ ready: boolean }>();
+const studio = useStudioStore();
 const { formatNumber, t } = useI18n();
 const emit = defineEmits<{ history: []; profile: []; plans: [] }>();
 const root = ref<HTMLElement | null>(null);
@@ -21,7 +23,7 @@ const telegramLink = ref('');
 let telegramPoll: ReturnType<typeof setInterval> | undefined;
 let telegramPollUntil = 0;
 
-const isAdmin = computed(() => account.value?.role === 'admin' && account.value.id !== 'local');
+const isAdmin = computed(() => studio.isAdmin && account.value?.id !== 'local');
 const initials = computed(() => account.value?.name.trim().slice(0, 1).toUpperCase() || '•');
 const dialogTitle = computed(() => modal.value === 'settings' ? t('account.settings') : t('account.telegramTitle'));
 
@@ -187,9 +189,9 @@ onBeforeUnmount(() => {
         <span><strong>{{ account?.name }}</strong><small>{{ account?.role === 'admin' ? t('common.admin') : t('common.user') }}</small></span>
       </div>
       <div class="account-balance"><span>{{ t('account.available') }}</span><strong>{{ formatCredits(account?.wallet?.balance) }} {{ t('common.creditsShort') }}</strong></div>
-      <a class="account-topup" href="/app/plans" role="menuitem">＋ {{ t('account.topUp') }}</a>
+      <a class="account-topup" :href="'/app/plans' + (studio.canAdmin && studio.userInterface ? '?interface=user' : '')" role="menuitem">＋ {{ t('account.topUp') }}</a>
       <div class="account-menu-section">
-        <a href="/app/profile" role="menuitem"><span>{{ t('account.profile') }}</span><small>{{ t('account.profileHint') }}</small></a>
+        <a :href="'/app/profile' + (studio.canAdmin && studio.userInterface ? '?interface=user' : '')" role="menuitem"><span>{{ t('account.profile') }}</span><small>{{ t('account.profileHint') }}</small></a>
         <button type="button" role="menuitem" @click="openHistory"><span>{{ t('navigation.history') }}</span><small>{{ t('account.historyHint') }}</small></button>
         <button type="button" role="menuitem" @click="openSettings"><span>{{ t('account.settings') }}</span><small>{{ t('account.settingsHint') }}</small></button>
         <button v-if="account?.id !== 'local'" type="button" role="menuitem" @click="openTelegram"><span>{{ t('account.telegramTitle') }}</span><small>{{ t('account.telegramHint') }}</small></button>

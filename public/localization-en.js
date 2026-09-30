@@ -1,4 +1,5 @@
 window.aiMediaEnglish = {
+  "Интерфейс пользователя": "User interface",
   "{0} · {1}: {2} → {3} · {4} · администратор: {5}": "{0} · {1}: {2} → {3} · {4} · administrator: {5}",
   "Уровень рассуждения": "Level of Reasoning",
   "Не задавать": "Don't ask",

@@ -70,9 +70,19 @@ export const useStudioStore = defineStore('studio', () => {
   const providerDiagnosticRequest = ref(0);
   const accountReady = ref(false);
   const accountRole = ref<'user' | 'admin'>('user');
-  const isAdmin = computed(() => accountRole.value === 'admin');
+  const canAdmin = computed(() => accountRole.value === 'admin');
+  const userInterface = ref(new URLSearchParams(window.location.search).get('interface') === 'user');
+  const isAdmin = computed(() => canAdmin.value && !userInterface.value);
+  function toggleInterface() {
+    if (!canAdmin.value) return;
+    userInterface.value = !userInterface.value;
+    const url = new URL(window.location.href);
+    if (userInterface.value) url.searchParams.set('interface', 'user');
+    else url.searchParams.delete('interface');
+    window.history.replaceState(window.history.state, '', url);
+  }
   const modelAccess = ref<'gpt-only' | 'all'>('all');
-  const fullModelAccess = computed(() => isAdmin.value || modelAccess.value === 'all');
+  const fullModelAccess = computed(() => canAdmin.value || modelAccess.value === 'all');
   const connectionElapsedMs = ref<number | null>(null);
   const dataLoadElapsedMs = ref<number | null>(null);
   const readyElapsedMs = ref<number | null>(null);
@@ -158,7 +168,7 @@ export const useStudioStore = defineStore('studio', () => {
   const currentApimartModel = computed(() => apimartModels.value.find(model => model.id === apimartModel.value) || apimartModels.value[0]);
   const mediaModels = computed(() => (catalog.value?.models || []).filter(model => (model.kind || 'image') === mode.value));
   const currentMediaModel = computed(() => mediaModels.value.find(model => model.id === mediaModelId.value) || mediaModels.value[0]);
-  watch([provider, mode, mediaModelId, kieAccountId, isAdmin], () => {
+  watch([provider, mode, mediaModelId, kieAccountId, canAdmin], () => {
     if (autoRouting.value && (!fullModelAccess.value || !['media', 'apimart'].includes(provider.value)
       || provider.value === 'media' && kieAccountId.value !== 'primary')) autoRouting.value = false;
   });
@@ -465,7 +475,7 @@ export const useStudioStore = defineStore('studio', () => {
     const draft = await api.loadDraft(activeChatId.value === 'system:recent' ? null : activeChatId.value).catch(() => null);
     const tab = Array.isArray(draft?.tabs) ? draft.tabs[Number(draft.active) || 0] : null;
     if (!tab) { mode.value = 'image'; provider.value = 'codex'; }
-    kieAccountId.value = isAdmin.value && tab?.kieAccountId === 'secondary' ? 'secondary' : 'primary';
+    kieAccountId.value = canAdmin.value && tab?.kieAccountId === 'secondary' ? 'secondary' : 'primary';
     prompt.value = tab && typeof tab === 'object' && typeof tab.prompt === 'string' ? tab.prompt : '';
     mediaInput.value = {};
     sourceFiles.value = [];
@@ -476,7 +486,7 @@ export const useStudioStore = defineStore('studio', () => {
     if (tab && typeof tab === 'object') {
       if (['text', 'image', 'video', 'audio'].includes(String(tab.mode))) mode.value = tab.mode as GenerationMode;
       if (tab.provider === 'codex' || tab.provider === 'media' || tab.provider === 'routerai'
-        || tab.provider === 'apimart' && (isAdmin.value || tab.autoRouting === true && fullModelAccess.value)) provider.value = tab.provider;
+        || tab.provider === 'apimart' && (canAdmin.value || tab.autoRouting === true && fullModelAccess.value)) provider.value = tab.provider;
       if (typeof tab.mediaModelId === 'string') mediaModelId.value = tab.mediaModelId;
       if (tab.mediaInput && typeof tab.mediaInput === 'object') mediaInput.value = tab.mediaInput as Record<string, unknown>;
       if (Array.isArray(tab.sourceFiles)) sourceFiles.value = tab.sourceFiles.filter((item: { ref?: unknown } | null) => item && typeof item.ref === 'string') as SourceAttachment[];
@@ -567,11 +577,11 @@ export const useStudioStore = defineStore('studio', () => {
     mode.value = value;
     const rememberedProvider = providerByMode.value[value];
     if (provider.value !== 'apimart' && rememberedProvider && (rememberedProvider === 'codex' || fullModelAccess.value)
-      && (rememberedProvider !== 'routerai' || isAdmin.value || ['text', 'image'].includes(value))
-      && (rememberedProvider !== 'apimart' || isAdmin.value)) provider.value = rememberedProvider;
+      && (rememberedProvider !== 'routerai' || canAdmin.value || ['text', 'image'].includes(value))
+      && (rememberedProvider !== 'apimart' || canAdmin.value)) provider.value = rememberedProvider;
     if (value === 'text') { if (provider.value === 'media') provider.value = 'codex'; codexKind.value = 'text'; }
     else if (value === 'image') { codexKind.value = 'image'; }
-    else if (provider.value !== 'apimart' && (provider.value !== 'routerai' || !isAdmin.value)) { provider.value = 'media'; }
+    else if (provider.value !== 'apimart' && (provider.value !== 'routerai' || !canAdmin.value)) { provider.value = 'media'; }
     useRememberedModel();
     normalizeMediaControls();
     normalizeRouterAiControls();
@@ -587,7 +597,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   function setProvider(value: 'codex' | 'media' | 'routerai' | 'apimart', forAuto = false) {
     if (value !== 'codex' && !fullModelAccess.value) throw new Error(t('studio.mediaLocked'));
-    if (value === 'apimart' && !isAdmin.value && !forAuto) throw new Error(t('studio.mediaLocked'));
+    if (value === 'apimart' && !canAdmin.value && !forAuto) throw new Error(t('studio.mediaLocked'));
     rememberSelection();
     autoRouting.value = false;
     provider.value = value;
@@ -597,7 +607,7 @@ export const useStudioStore = defineStore('studio', () => {
       codexKind.value = mode.value === 'text' ? 'text' : 'image';
       normalizeCodexControls();
     } else if (value === 'routerai') {
-      if (!isAdmin.value && !['text', 'image'].includes(mode.value)) mode.value = 'image';
+      if (!canAdmin.value && !['text', 'image'].includes(mode.value)) mode.value = 'image';
       useRememberedModel();
       normalizeRouterAiControls();
     } else if (value === 'apimart') {
@@ -901,7 +911,7 @@ export const useStudioStore = defineStore('studio', () => {
     const submittedProvider = provider.value;
     const submittedAutoModelId = autoModelId.value;
     const submittedAutoOrigin = autoOriginModelId.value;
-    const submittedKieAccount = isAdmin.value ? kieAccountId.value : 'primary';
+    const submittedKieAccount = canAdmin.value ? kieAccountId.value : 'primary';
     const submittedCodexModel = codexModel.value;
     const submittedCodexModelName = currentCodexModel.value?.name || submittedCodexModel;
     const submittedCodexEffort = codexEffort.value;
@@ -1063,7 +1073,7 @@ export const useStudioStore = defineStore('studio', () => {
       if (record.modelId) routerAiModel.value = record.modelId;
     } else {
       provider.value = 'media';
-      kieAccountId.value = isAdmin.value && record.kieAccountId === 'secondary' ? 'secondary' : 'primary';
+      kieAccountId.value = canAdmin.value && record.kieAccountId === 'secondary' ? 'secondary' : 'primary';
       if (record.modelId) mediaModelId.value = record.modelId;
     }
     restoreSelection();
@@ -1083,7 +1093,7 @@ export const useStudioStore = defineStore('studio', () => {
 
   return {
     catalog, codexCatalog, routerAiCatalog, apimartCatalog, serviceModelConfig, serviceModelConfigs, serviceModelChoices, serviceModelConfigLoading, serviceModelConfigError, selectServiceModelConfig, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
-    databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
+    databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, canAdmin, userInterface, toggleInterface, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, autoRouting, autoModelId, autoOriginModelId, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setAutoProvider, setAutoModel, setSelectedModel, setModelAccess,
     codexModel, routerAiModel, routerAiModels, currentRouterAiModel, apimartModel, apimartModels, currentApimartModel, codexEffort, codexSpeed, codexKind, codexAspectRatio,
     projects, chats, systemChat, activeChatId, activeProjectId, visibleHistory, visibleRecords, refreshWorkspaces,

@@ -4,7 +4,7 @@ import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
 import { FORMATS, FPS, MAX_SCENES, timeline, type Scene } from '../remotion/model.mjs';
 import type { mountPreview } from '../remotion/bridge';
-import { listMovieSources, downloadMovieSource } from '../api/client';
+import { listMovieSources, downloadMovieSource, reportMovieError, uploadSource, getMovieDraft, saveMovieDraft } from '../api/client';
 import MovieScenario from './MovieScenario.vue';
 
 const studio = useStudioStore();
@@ -22,11 +22,21 @@ const error = ref('');
 const download = ref('');
 const selectedAsset = ref('');
 const sourceLink = ref('');
+const script = ref('');
+const scenarioState = ref<{ modelId: string; pending?: { id: string; sources: Scene[] } }>({ modelId: '' });
+const draftReady = ref(false);
+const draftStatus = ref('');
+const projectId = studio.activeProjectId;
+let revision = 0;
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let saveChain = Promise.resolve();
+const conflict = ref(false);
 const importing = ref(false);
 const aiBusy = ref(false);
 const previousScenes = ref<Scene[]>();
-const editorLocked = computed(() => busy.value || importing.value || aiBusy.value);
+const editorLocked = computed(() => !draftReady.value || conflict.value || busy.value || importing.value || aiBusy.value);
 const importStatus = ref('');
+const importFailures = ref<string[]>([]);
 let importController: AbortController | undefined;
 const ownedUrls = new Set<string>();
 let controller: AbortController | undefined;
@@ -47,19 +57,29 @@ function add(scene: Omit<Scene, 'id'>) {
 function addTitle() { add({ kind: 'title', title: t('movie.defaultTitle'), seconds: 3 }); }
 function addLibrary() {
   const asset = library.value.find(item => item.key === selectedAsset.value);
-  if (asset) add({ kind: asset.kind, src: asset.src, name: asset.name, title: '', seconds: 5 });
+  if (asset) add({ kind: asset.kind, src: asset.src.split('?')[0], name: asset.name, title: '', seconds: 5 });
 }
 function own(blob: Blob) { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }
 function release(url?: string) { if (url && ownedUrls.delete(url)) URL.revokeObjectURL(url); }
-function upload(event: Event, audio = false) {
+async function storedSource(blob: Blob, name: string) {
+  const saved = await uploadSource(new File([blob], name, { type: blob.type }), { projectId }, true);
+  if (saved.ref.startsWith('content:')) return `/api/content/${saved.ref.slice(8)}`;
+  const legacy = /^https:\/\/local-assets\.invalid\/([a-f0-9]{64})$/.exec(saved.ref);
+  if (!legacy) throw new Error(t('movie.draftFailed'));
+  return `/api/sources/${legacy[1]}`;
+}
+async function upload(event: Event, audio = false) {
   const input = event.target as HTMLInputElement;
   error.value = '';
-  for (const file of Array.from(input.files || [])) {
+  importing.value = true;
+  try { for (const file of Array.from(input.files || [])) {
     if (file.size > 100 * 1024 * 1024 || !(audio ? file.type.startsWith('audio/') : /^(image\/(png|jpeg|webp)|video\/(mp4|webm))$/.test(file.type))) { error.value = t('movie.fileError'); continue; }
-    if (audio) { release(music.value); music.value = own(file); musicName.value = file.name; break; }
+    if (audio) { release(music.value); music.value = await storedSource(file, file.name); musicName.value = file.name; await persistDraft(); break; }
     if (scenes.value.length >= MAX_SCENES) { error.value = t('movie.limit'); break; }
-    add({ kind: file.type.startsWith('image/') ? 'image' : 'video', src: own(file), name: file.name, title: '', seconds: 5 });
-  }
+    add({ kind: file.type.startsWith('image/') ? 'image' : 'video', src: await storedSource(file, file.name), name: file.name, title: '', seconds: 5 });
+    await persistDraft();
+  } } catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.draftFailed'); }
+  finally { importing.value = false; }
   input.value = '';
 }
 function remove(index: number) {
@@ -86,7 +106,7 @@ async function importSources() {
   if (editorLocked.value || !sourceLink.value.trim()) return;
   const slots = MAX_SCENES - scenes.value.length;
   if (slots <= 0) { error.value = t('movie.limit'); return; }
-  importing.value = true; error.value = ''; importStatus.value = t('movie.importListing');
+  importing.value = true; error.value = ''; importFailures.value = []; importStatus.value = t('movie.importListing');
   const current = new AbortController(); importController = current;
   let loaded = 0; let failed = 0; let bytes = 0;
   try {
@@ -96,16 +116,24 @@ async function importSources() {
       const file = result.files[index]!;
       importStatus.value = t('movie.importProgress', { current: index + 1, total: result.files.length });
       try {
-        if (bytes + (file.size || 0) > 300 * 1024 * 1024) { failed += result.files.length - index; break; }
+        if (bytes + (file.size || 0) > 300 * 1024 * 1024) {
+          failed += result.files.length - index; importFailures.value.push(t('movie.importByteLimit')); reportMovieError('MOVIE_IMPORT_LIMIT'); break;
+        }
         const blob = await downloadMovieSource(file.id, current.signal);
         if (current.signal.aborted || !alive) break;
-        if (bytes + blob.size > 300 * 1024 * 1024) { failed += result.files.length - index; break; }
+        if (bytes + blob.size > 300 * 1024 * 1024) {
+          failed += result.files.length - index; importFailures.value.push(t('movie.importByteLimit')); reportMovieError('MOVIE_IMPORT_LIMIT'); break;
+        }
         bytes += blob.size;
-        add({ kind: file.type.startsWith('image/') ? 'image' : 'video', src: own(blob), name: file.name, title: '', seconds: 5 });
+        const src = await storedSource(blob, file.name);
+        add({ kind: file.type.startsWith('image/') ? 'image' : 'video', src, name: file.name, title: '', seconds: 5 });
+        await persistDraft();
         loaded++;
       } catch (reason) {
         if (current.signal.aborted) break;
-        failed++; error.value = reason instanceof Error ? reason.message : t('movie.fileError');
+        failed++;
+        importFailures.value.push(`${file.name}: ${reason instanceof Error ? reason.message : t('movie.fileError')}`);
+        reportMovieError('MOVIE_IMPORT_FAILED');
       }
     }
     if (alive) importStatus.value = t('movie.importDone', { count: loaded, skipped: result.skipped + failed }) + (result.truncated ? ` ${t('movie.importLimit')}` : '') + (current.signal.aborted ? ` ${t('movie.importCancelled')}` : '');
@@ -142,23 +170,64 @@ async function render() {
   } finally { if (alive) busy.value = false; }
 }
 onMounted(async () => {
+  try {
+    const draft = await getMovieDraft(projectId);
+    if (draft) {
+      scenes.value = draft.scenes; format.value = draft.format; background.value = draft.background;
+      muteClips.value = draft.muteClips; music.value = draft.music; musicName.value = draft.musicName;
+      script.value = draft.script; sourceLink.value = draft.sourceLink; scenarioState.value = draft.scenarioState || { modelId: '' }; revision = draft.revision;
+    }
+    draftReady.value = true; draftStatus.value = t('movie.draftSaved');
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.draftFailed'); }
   try { bridge = await import('../remotion/bridge'); if (alive) { await nextTick(); await updatePreview(); } }
   catch { if (alive) error.value = t('movie.renderError'); }
 });
-onBeforeUnmount(() => { alive = false; controller?.abort(); importController?.abort(); player?.dispose(); for (const url of ownedUrls) URL.revokeObjectURL(url); });
+function snapshot() {
+  return JSON.parse(JSON.stringify({ scenes: scenes.value, format: format.value, background: background.value, muteClips: muteClips.value,
+    music: music.value, musicName: musicName.value, script: script.value, sourceLink: sourceLink.value, scenarioState: scenarioState.value }));
+}
+function persistDraft() {
+  if (!draftReady.value || conflict.value) return Promise.resolve();
+  if (saveTimer) clearTimeout(saveTimer);
+  const draft = snapshot();
+  draftStatus.value = t('movie.draftSaving');
+  const operation = saveChain.then(async () => {
+    if (conflict.value) return;
+    const saved = await saveMovieDraft(projectId, draft, revision); revision = saved.revision;
+    if (alive && JSON.stringify(draft) === JSON.stringify(snapshot())) draftStatus.value = t('movie.draftSaved');
+  });
+  saveChain = operation.catch(reason => {
+    if (String(reason?.message).includes('другой вкладке')) conflict.value = true;
+    if (alive) { draftStatus.value = t('movie.draftFailed'); error.value = reason instanceof Error ? reason.message : t('movie.draftFailed'); }
+  });
+  return operation;
+}
+watch([scenes, format, background, muteClips, music, musicName, script, sourceLink, scenarioState], () => {
+  if (!draftReady.value || conflict.value) return;
+  draftStatus.value = t('movie.draftSaving'); if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { void persistDraft().catch(() => {}); }, 400);
+}, { deep: true });
+function protectUnsaved(event: BeforeUnloadEvent) {
+  if (importing.value || draftStatus.value === t('movie.draftSaving') || draftStatus.value === t('movie.draftFailed')) { event.preventDefault(); event.returnValue = ''; }
+}
+onMounted(() => window.addEventListener('beforeunload', protectUnsaved));
+onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsaved); if (saveTimer) { clearTimeout(saveTimer); void persistDraft().catch(() => {}); } alive = false; controller?.abort(); importController?.abort(); player?.dispose(); for (const url of ownedUrls) URL.revokeObjectURL(url); });
 </script>
 
 <template>
   <section class="movie-editor">
     <p>{{ t('movie.intro') }}</p>
+    <p role="status" class="movie-draft-status">{{ draftStatus }}</p>
+    <button v-if="draftReady && !conflict && draftStatus === t('movie.draftFailed')" type="button" @click="persistDraft().catch(() => {})">{{ t('movie.draftRetry') }}</button>
     <div class="movie-layout">
       <div>
-        <MovieScenario :scenes="scenes" :disabled="busy || importing" @busy="aiBusy = $event" @apply="applyScenario" />
+        <MovieScenario v-if="draftReady" v-model:script="script" v-model:saved-state="scenarioState" :scenes="scenes" :disabled="editorLocked" @busy="aiBusy = $event" @apply="applyScenario" />
         <button v-if="previousScenes" type="button" class="movie-ai-undo" :disabled="editorLocked" @click="undoScenario">{{ t('movie.aiUndo') }}</button>
         <form class="movie-source-import" @submit.prevent="importSources">
           <label>{{ t('movie.sourceLink') }}<input v-model="sourceLink" type="url" required placeholder="https://disk.yandex.ru/d/…" :disabled="editorLocked"></label>
           <div class="movie-scene-actions"><button type="submit" :disabled="editorLocked || !sourceLink.trim()">{{ t('movie.importAll') }}</button><button v-if="importing" type="button" @click="importController?.abort()">{{ t('movie.cancel') }}</button></div>
           <p v-if="importStatus" role="status">{{ importStatus }}</p>
+          <ul v-if="importFailures.length" role="status"><li v-for="(failure, index) in importFailures" :key="index">{{ failure }}</li></ul>
           <p class="movie-note">{{ t('movie.importHelp') }}</p>
         </form>
         <fieldset :disabled="editorLocked" class="movie-controls">

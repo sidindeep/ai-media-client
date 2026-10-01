@@ -11,9 +11,12 @@ const props = defineProps<{ scenes: Scene[]; disabled: boolean }>();
 const emit = defineEmits<{ busy: [value: boolean]; apply: [scenes: Scene[]] }>();
 const { t } = useI18n();
 const studio = useStudioStore();
-const script = ref('');
+const storedScript = defineModel<string>('script', { default: '' });
+const script = ref(storedScript.value);
+watch(script, value => { storedScript.value = value; });
+const savedState = defineModel<{ modelId: string; pending?: { id: string; sources: Scene[] } }>('savedState', { default: () => ({ modelId: '' }) });
 const models = ref<CodexModel[]>([]);
-const modelId = ref('');
+const modelId = ref(savedState.value.modelId);
 const loading = ref(false);
 const status = ref('');
 const error = ref('');
@@ -21,7 +24,8 @@ const cost = ref<number | null>(null);
 const quoting = ref(false);
 const selected = computed(() => models.value.find(model => model.id === modelId.value));
 const effort = computed(() => selected.value?.efforts.includes('low') ? 'low' : selected.value?.defaultEffort || selected.value?.efforts[0] || 'medium');
-const pending = ref<{ id: string; sources: Scene[] }>();
+const pending = ref<{ id: string; sources: Scene[] } | undefined>(savedState.value.pending);
+watch([modelId, pending], () => { savedState.value = { modelId: modelId.value, pending: pending.value }; }, { deep: true });
 let alive = true;
 let quoteRevision = 0;
 let stop = false;
@@ -36,7 +40,7 @@ async function loadCatalog() {
     const catalog = await getCodexCatalog();
     if (!alive) return;
     models.value = catalog.models;
-    modelId.value = catalog.models.find(model => model.id === studio.codexModel)?.id || catalog.models.find(model => model.isDefault)?.id || catalog.models[0]?.id || '';
+    modelId.value = catalog.models.find(model => model.id === modelId.value)?.id || catalog.models.find(model => model.id === studio.codexModel)?.id || catalog.models.find(model => model.isDefault)?.id || catalog.models[0]?.id || '';
   } catch (reason) { if (alive) error.value = reason instanceof Error ? reason.message : t('movie.aiUnavailable'); }
 }
 watch([modelId, effort], async () => {

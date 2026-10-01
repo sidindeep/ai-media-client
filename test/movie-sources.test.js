@@ -30,7 +30,7 @@ test('Yandex pagination, nested photo/video, ticket ownership and download URLs'
   assert.equal(calls.find(url => url.pathname.endsWith('/download')).searchParams.get('path'), '/nested/photo.png');
   const limited = await service.list('owner', 'https://disk.yandex.ru/d/public', 1, signal());
   assert.equal(limited.files.length, 1); assert.equal(limited.truncated, true);
-  await assert.rejects(service.download('owner', result.files[0].id, signal()), { status: 404 });
+  assert.deepEqual((await service.download('owner', result.files[0].id, signal())).bytes, png);
 });
 test('Google uses API key, pagination, resource keys and nested folders', async () => {
   const calls = [];
@@ -76,4 +76,38 @@ test('import concurrency is bounded and released after failure', async () => {
   release(); await running;
   await assert.rejects(service.run('owner', async () => { throw new Error('failed'); }), /failed/);
   assert.equal(await service.run('owner', async () => 'ready'), 'ready');
+});
+
+test('listing diagnostics count rejection reasons without leaking source data', async () => {
+  const records = [];
+  const service = createMovieSources({ recordDiagnostic: (...args) => records.push(args), fetchImpl: async () => json({ files: [
+    { url: 'https://example.com/private-name.png', size: MAX_FILE_BYTES + 1 },
+    'https://example.com/private-name.txt', 'https://127.0.0.1/private-name.png', 'https://example.com/ok.png',
+  ] }) });
+  const result = await service.list('private-account', 'https://example.com/manifest?token=secret', 20, signal());
+  assert.equal(result.skipped, 3);
+  assert.match(records[0][1], /skipped_type=1 skipped_size=1 skipped_url=1/);
+  assert.doesNotMatch(JSON.stringify(records), /private|secret|https/);
+});
+
+test('route records expected HTTP failures and sanitizes transport failures', async () => {
+  const { EventEmitter } = require('node:events');
+  const { handleMovieSources } = require('../src/server/routes/movie-sources');
+  const { SourceError } = require('../src/services/movie-sources');
+  for (const failure of [new SourceError('MOVIE_SOURCE_ACCESS', 'Источник вернул HTTP 429.', 422),
+    new Error('https://secret.example/private.png?token=secret')]) {
+    const records = []; const responses = [];
+    const res = new EventEmitter(); res.destroyed = false;
+    await handleMovieSources({ req: { method: 'POST', headers: { 'x-media-client': 'web', 'content-type': 'application/json' } },
+      res, url: new URL('https://example.com/api/movie/sources/file'), user: { id: 'private-account' }, sameOrigin: true,
+      sources: { run: async (_owner, action) => action(), download: async () => { throw failure; } },
+      readJson: async () => ({ id: 'ticket' }), send: (...args) => responses.push(args),
+      recordSystemEvent: (...args) => records.push(args) });
+    assert.equal(responses[0][0], 422);
+    assert.equal(records.length, 1);
+    assert.match(records[0][3].diagnostic.description, /stage=download/);
+    assert.doesNotMatch(JSON.stringify(records), /secret|private-account|private.png/);
+    if (failure instanceof SourceError) assert.equal(records[0][2], failure);
+    else assert.equal(records[0][2].code, 'MOVIE_SOURCE_FETCH');
+  }
 });

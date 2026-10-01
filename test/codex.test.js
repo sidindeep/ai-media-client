@@ -101,13 +101,17 @@ test('Image collection requires this CLI thread and validates PNG instead of mod
   assert.throws(() => validatePng(Buffer.from('not an image')), /корректный PNG/);
 });
 
-test('Every offered Codex mode has the configured four-credit product price', () => {
+test('Every offered Codex mode has the configured ten-credit product price', () => {
   const config = require('../config/native-prices.json');
   const pricing = createPricing(config);
   assert.throws(() => pricing.quote('kie:nano-banana-2-lite'), /не опубликована/);
-  for (const model of require('../config/codex-models.json').models) {
+  const liveModels = [
+    { id: 'gpt-6-sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+    { id: 'gpt-6-luna', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  ];
+  for (const model of [...require('../config/codex-models.json').models, ...liveModels]) {
     for (const effort of model.efforts) for (const speed of ['standard', 'fast']) {
-      assert.equal(pricing.quote(priceKey({ model: model.id, effort, speed })).amountUnits, 4000);
+      assert.equal(pricing.quote(priceKey({ model: model.id, effort, speed })).amountUnits, 10000);
     }
   }
 });

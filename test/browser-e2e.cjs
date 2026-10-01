@@ -133,7 +133,7 @@ async function main() {
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
     if (process.env.BROWSER_E2E_MOVIE_ONLY === '1') {
       await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
-      await client.until("document.querySelector('.movie-editor .movie-title-add')");
+      await client.until("document.querySelector('.movie-editor .movie-title-add') && !document.querySelector('.movie-controls').disabled");
       await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
       await client.until("document.querySelector('.movie-scene') && !document.querySelector('.movie-render').disabled");
       // Long library filenames must not widen the grid; scene actions remain reachable.
@@ -226,7 +226,24 @@ async function main() {
       assert.equal(Number((await pool.query("SELECT count(*) FROM media_records WHERE account_id=$1 AND namespace='codex'", [accountId])).rows[0].count), 3);
       await client.evaluate("document.querySelector('.movie-ai-undo').click();void 0");
       assert.equal(await client.evaluate("(async()=>{const r=await fetch('/api/movie/errors',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:JSON.stringify({code:'ARBITRARY_CODE'})});return r.status;})()"), 400);
-      console.log('Remotion E2E passed: layout, MP4, import/cancel, real billed AI job workflow with test worker, plan apply/undo and invalid plan preservation');
+      await client.until("/Черновик сохранён|Draft saved/.test(document.querySelector('.movie-draft-status')?.textContent || '')");
+      const savedScenes = await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)");
+      await client.evaluate("document.querySelector('.sidebar-history-link').click();void 0");
+      await client.until("location.pathname==='/app/history'");
+      await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
+      await client.until("location.pathname==='/app/movie' && Boolean(document.querySelector('.movie-scene'))");
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), savedScenes);
+      assert.equal((await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='movie-drafts'", [accountId])).rows[0].data.scenes.length, savedScenes.length);
+      await client.evaluate("window.__movieBeforeReload=true;void 0");
+      await client.command('Page.reload');
+      await client.until("!window.__movieBeforeReload && document.readyState==='complete' && /Черновик сохранён|Draft saved/.test(document.querySelector('.movie-draft-status')?.textContent || '') && Boolean(document.querySelector('.movie-scene'))");
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), savedScenes);
+      assert.equal(await client.evaluate("document.querySelector('.movie-scenario textarea').value"), 'STOP_PLAN_TEST');
+      const persistedDraft = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='movie-drafts'", [accountId])).rows[0].data;
+      assert.ok(persistedDraft.scenes.filter(scene=>scene.kind!=='title').every(scene=>scene.src.startsWith('/api/') && !scene.src.includes('blob:')));
+      const persistentMedia = persistedDraft.scenes.find(scene=>scene.kind!=='title');
+      assert.equal((await fetch(origin + persistentMedia.src, { headers: { Cookie: `media-session=${token}` } })).status, 200);
+      console.log('Remotion E2E passed: MP4, import/cancel, AI workflow, draft storage, navigation and reload with readable media');
       return;
     }
     if (process.env.BROWSER_E2E_AUTO_ONLY !== '1') {

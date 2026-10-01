@@ -15,7 +15,6 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(35000)]) : AbortSignal.timeout(35000)
       });
       const result = await response.json();
-      trace.write('telegram.response',{method,httpStatus:response.status,ok:result.ok,errorCode:result.error_code});
       if (method === 'getUpdates' && response.status === 409) {
         throw Object.assign(new Error('Другой экземпляр Telegram-бота получает обновления'), { code: 'TELEGRAM_POLL_CONFLICT' });
       }

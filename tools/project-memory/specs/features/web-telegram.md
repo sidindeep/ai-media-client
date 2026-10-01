@@ -136,6 +136,11 @@ Web запущен на loopback:4310; /api/health ok=true, generationConfigured
 telegram.enabled=false. Это готовый локальный runtime без настроенных ключей,
 а не подтверждённые живые генерации/доставка Telegram или публичный deployment.
 
+Telegram gateway не журналирует каждый ответ API (`telegram.response`), чтобы
+polling не создавал постоянный поток INFO. Сохраняются `telegram.error`,
+события запуска/остановки и обработки входящих обновлений. Контракт диагностики:
+`docs/generation-logging.md`; реализация: `src/services/telegram-gateway.js`.
+
 ## История переносимого модуля (не текущая карта файлов)
 
 Этот раздел описывает этап выделения `web-tg/`. В текущем checkout веб и бот

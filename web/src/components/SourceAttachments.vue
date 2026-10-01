@@ -7,7 +7,7 @@ import { mediaFileValue, mediaSourceDurationRange } from '../domain/media-fields
 import { frameFieldPair, orderedFileFields } from '../domain/frame-fields';
 import { isReferenceField, saveSourceAttachment, sourcePreviewUrl } from '../domain/source-attachments';
 
-const props = defineProps<{ fields: MediaField[] }>();
+const props = defineProps<{ fields: MediaField[]; inputFields?: MediaField[] }>();
 const emit = defineEmits<{ error: [message: string]; uploading: [active: boolean] }>();
 const studio = useStudioStore();
 const { formatNumber, t } = useI18n();
@@ -19,11 +19,15 @@ const fileFields = computed(() => orderedFileFields(props.fields.filter(field =>
 const frameFields = computed(() => frameFieldPair(fileFields.value));
 const otherFileFields = computed(() => frameFields.value
   ? fileFields.value.filter(field => !frameFields.value!.includes(field)) : fileFields.value);
-watch(() => [studio.provider, props.fields] as const, () => {
+const visibleSources = computed(() => studio.sourceFiles.map((file, index) => ({ ...file, sourceIndex: index }))
+  .filter(file => !['media', 'apimart'].includes(studio.provider) || !file.fieldKey
+    || props.fields.some(field => field.key === file.fieldKey)));
+// Role/view changes only alter presentation; they must not clean saved inputs.
+watch(() => [studio.provider, props.inputFields || props.fields] as const, () => {
   if (studio.provider !== 'apimart') return;
   const input = { ...studio.mediaInput };
   let changed = false;
-  for (const field of props.fields.filter(isReferenceField)) {
+  for (const field of (props.inputFields || props.fields).filter(field => !field.uiHidden && !field.uiVisibleReason && isReferenceField(field))) {
     if (!(field.key in input)) continue;
     const refs = new Set(studio.sourceFiles.filter(file => file.fieldKey === field.key).map(file => file.ref));
     const previous = input[field.key];
@@ -54,6 +58,7 @@ const dropDescription = computed(() => {
   return field?.label ? t('composer.drop.releaseField', { field: field.label }) : t('composer.drop.releaseChat');
 });
 function sourceButtonLabel(field: MediaField) {
+  if (field.uiHidden) return field.label || t('composer.sources');
   return fileFields.value.length === 1 ? t('composer.sources') : field.label || t('composer.sources');
 }
 function dropFieldLabel(field: MediaField) {
@@ -231,17 +236,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="hasSourcePicker || studio.sourceFiles.length || uploading" class="source-strip">
+  <div v-if="hasSourcePicker || visibleSources.length || uploading" class="source-strip">
     <label v-if="studio.provider === 'codex' && hasSourcePicker" class="attach-button">＋ {{ t('composer.sources') }}<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
     <template v-else>
       <FrameSourcePicker v-if="frameFields" :fields="frameFields" @selected="uploadFiles" />
       <label v-for="field in otherFileFields" :key="field.key" class="attach-button">＋ {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
     </template>
     <span v-if="uploading" class="uploading">{{ t('composer.uploading') }}</span>
-    <article v-for="(file, index) in studio.sourceFiles" :key="file.ref + index" class="source-preview">
+    <article v-for="file in visibleSources" :key="file.ref + file.sourceIndex" class="source-preview">
       <img v-if="file.type.startsWith('image/')" :src="sourcePreviewUrl(file.ref)" :alt="t('composer.thumbnail', { name: file.name })" loading="lazy">
       <span v-else class="source-file-icon" aria-hidden="true">▧</span>
-      <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(index)">×</button>
+      <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(file.sourceIndex)">×</button>
     </article>
   </div>
   <Teleport to="body">

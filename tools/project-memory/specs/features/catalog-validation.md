@@ -1,5 +1,107 @@
 # Каталог, формы и валидация
 
+## Kling 3.0 Motion Control — разрешение — 2026-10-01
+
+Сырой импорт `kling-3.0/motion-control` описывает `mode` только как string с
+текстовым соответствием std=720p, pro=1080p, поэтому общая видеопанель не могла
+распознать его как разрешение. `catalog-overrides.js` оставляет сырой
+`kie-models.json` неизменным, но в эффективном каталоге делает `mode` селектором
+720p/1080p с default 720p. Эффективная API-схема принимает также прежние
+совместимые значения std/pro, а `pricingAliases` сопоставляет обе формы с
+тарифами 720P/1080P. Длительность модели не показывается: она определяется
+исходным видео и отдельного параметра duration в схеме нет.
+
+Основание: [Kie Playground](https://kie.ai/kling-3-motion-control) и описание
+импортированной схемы `motion-control-v3.md`, проверенные 2026-10-01.
+Проверки: `test/catalog.test.js`, `test/video-settings.test.js`.
+
+APIMart использует для Kling 2.6/3.0 Motion Control обязательный `mode=std|pro`.
+`providers/apimart/catalog.js` не меняет wire-options, а добавляет presentation
+metadata: поле распознаётся основной видеопанелью как качество/разрешение,
+показывает только разрешения 720p и 1080p и получает фактический default
+std. Сырые `apimart-schemas.json` остаются неизменными. Те же подписи применяются
+в web advanced controls и Telegram; в запрос по-прежнему попадают std/pro.
+
+Автоматические адаптеры используют `media/kling-motion-control.js` для
+model-specific преобразования mode: Kie 720p/1080p ↔ APIMart std/pro, включая
+обе версии 2.6/3.0. Неизвестные значения не заменяются default и проходят
+обычную проверку enum; другие модели не затронуты. cost-router сохраняет
+prepared-запрос котировки для последующей отправки. Проверки:
+`test/kling-motion-control-routing.test.js`, `test/cost-router.test.js`.
+Полная доступность маршрута отдельно зависит от переноса исходного видео и
+подтверждённой длительности для посекундной котировки APIMart.
+
+## Suno separate-vocals — 2026-10-01
+
+`catalog-overrides.js` исправляет только эффективную схему
+`ai-music-api/separate-vocals`: готовая дорожка требует task_id+audio_id,
+загруженное аудио требует audio_url и запрещает оба ID. У uploaded-ветки
+удалены противоречивое required audio_id и запрещённый контрол audio_id.
+stem_name удалён из безусловного required и требуется через allOf/if/then
+только при type=split_stem_advanced. Enum и API wire-ключи сохранены,
+сырой kie-models.json не переписывается, повторный импорт сохраняет поправку.
+requiredUiPaths учитывает then/else и required без локальных properties,
+поэтому условно необходимый stem_name доступен пользователю.
+Контролы if.properties, управляющие обязательностью then/else, остаются
+видимыми с uiVisibleReason=required-condition-control: тип разделения нельзя
+скрыть, иначе пользователь не сможет выбрать advanced. Это не добавляет
+безусловного required и не меняет API-default.
+unionFields читает const-предикаты root allOf из той же схемы и текущего mediaInput;
+Composer обновляет обязательность при выборе типа без дублирования правила.
+Администратор сохраняет доступ, оба ID готового трека видны и пользователю.
+
+Основание: [текущая OpenAPI](https://docs.kie.ai/suno-api/separate-vocals.md),
+[старая OpenAPI](https://docs.kie.ai/old-model/suno-api/separate-vocals.md),
+публичный JS [Playground](https://kie.ai/suno-api), проверенные 2026-10-01.
+Обе схемы противоречивы; Playground требует и отправляет stemName только
+для advanced, а audioUrl исключает audioId. Playground использует старый
+/api/v1/vocal-removal/generate, проект сохраняет /api/v1/jobs/createTask.
+Это обоснованная совместимая поправка; работа нового endpoint не доказана
+платным запросом. Проверки: catalog.test.js, model-ui-visibility.test.js,
+browser-e2e.cjs (Suno без отправки генерации).
+
+## Видимость параметров Kie/APIMart по ролям — 2026-10-01
+
+Данные листа «Параметры UI» книги `model-parameter-correspondence-ru-ui-cleaned.xlsx`
+сохранены в `config/model-ui-parameters.json`: 173 строки, исходный SHA-256.
+Явная поправка владельца: применять разрешения отдельно по колонкам Kie/APIMart,
+не объединять через «Наш параметр». «Модели» — примеры, не scope-фильтр.
+`src/model-ui-visibility.js` клонирует описание модели и ставит отсутствующим
+полям/свойствам `uiHidden: true`, `uiHiddenReason: absent-from-ui-parameter-table`.
+Обход сохраняет пути `name[].child`, oneOf/anyOf/allOf и синтетический `__input`.
+Маркеры не удаляют свойства, defaults, required или API wire-ключи. Kie применяет
+политику после overrides; APIMart — после describeModel, не мутируя общие schemas.
+Другие поставщики возвращаются без изменений.
+
+Следующая поправка владельца: исключить из скрытых обязательные параметры.
+requiredUiPaths собирает требования fields.required, properties/required и
+альтернативных веток, а также пути родительских контейнеров. Отсутствующие в
+таблице обязательные поля получают uiVisibleReason=required-for-generation,
+их необязательные контейнеры — required-child-container, вместо uiHidden.
+Это исключение конкретной модели/пути: например, обязательный Suno title виден,
+а необязательный title другой модели остаётся скрытым. Табличный манифест не меняется.
+Возвращены 9 корневых ключей (24 пары модель/ключ, включая отдельные режимы)
+и 4 вложенных пути (12 пар), вместе с multi_prompt/color_palette контейнерами.
+Обязательность внутри необязательной структуры не включает эту структуру сама.
+
+Composer фильтрует только отображаемые поля при `!studio.isAdmin`. Администратор
+видит всё с пометками; его пользовательский preview применяет фильтр. SchemaField
+наследует showHidden рекурсивно; unionFields копирует маркеры выбранной ветки
+и объединяет общие свойства/required корневой схемы с выбранным режимом Suno.
+APIMart raw JSON fallback доступен только админу. Полный currentFields обеспечивает
+defaults, черновики, валидацию и API-запросы. Не создаются фиктивные обязательные
+значения: обязательные поля видны и проверяются обычным способом,
+проверки API не ослабляются. SourceAttachments получает отдельно видимые fields
+и полный inputFields: смена роли не запускает очистку скрытых исходников, их
+значения и sourceFiles сохраняются, пользовательские превью отфильтрованы.
+Параметры, открытые по обязательности, также сохраняют ранее заданные URLs.
+Legacy standalone-клиент без ролей сохраняет все поля.
+Telegram получает роль из доверенного accountFor, фильтрует меню/preview/исходники,
+но не изменяет сохранённый input или контракт ручных `/set` и `/params`.
+Проверки: `test/model-ui-visibility.test.js`, `test/catalog.test.js`,
+`BROWSER_E2E_OMNIHUMAN_ONLY=1` проверяют обоих поставщиков, обе роли,
+вложенные поля, сохранение контрактов/defaults и восстановление черновиков.
+
 ## Qwen и согласование меню — 2026-10-01
 
 `src/catalog-qwen.js` восстанавливает отдельные qwen2/text-to-image и

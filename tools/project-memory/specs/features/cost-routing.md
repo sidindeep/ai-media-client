@@ -31,6 +31,16 @@ test/model-route-sync.test.js; также service-models, kie-pricing и све�
 
 ## Граница и владение
 
+Kling Motion Control 2.6/3.0: адаптеры назначения переводят mode между
+Kie 720p/1080p и APIMart std/pro через `media/kling-motion-control.js`.
+Преобразование сохраняет качество и действует только для этих четырёх ID;
+котировка и отправка используют сохранённый prepared. Это не делает весь
+маршрут доступным: Kie video_urls сейчас читается как reference_videos,
+APIMart требует публичный video_url, а его посекундный расчёт пока ожидает
+duration вместо серверной длительности исходника. Передача закрытого content-ref
+как внешнего URL запрещена. Проверка полного запроса в свежем контейнере
+2026-10-01: `Параметр reference_videos не поддерживается APIMart`.
+
 Общий справочник параметров: `docs/parameter-correspondence.md`, машинный снимок
 `config/parameter-correspondence.json`; обновление
 `scripts/sync-parameter-correspondence.cjs`. Собирает уникальные поля локальных

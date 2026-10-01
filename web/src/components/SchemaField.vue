@@ -4,11 +4,12 @@ import { saveSourceAttachment } from '../domain/source-attachments';
 import { useI18n } from '../i18n';
 import { parameterLabel } from '../i18n/parameter-labels';
 import { useStudioStore } from '../stores/studio';
+import { schemaInitialValue } from '../domain/model-ui-visibility';
 
 type Schema = { type?: string; properties?: Record<string, Schema>; required?: string[]; items?: Schema;
   enum?: unknown[]; default?: unknown; minItems?: number; maxItems?: number; minimum?: number; maximum?: number;
-  minLength?: number; maxLength?: number; description?: string };
-const props = defineProps<{ schema: Schema; modelValue?: unknown; label: string; name: string; rootKey: string; required?: boolean; error?: string }>();
+  minLength?: number; maxLength?: number; description?: string; uiHidden?: boolean };
+const props = defineProps<{ schema: Schema; modelValue?: unknown; label: string; name: string; rootKey: string; required?: boolean; error?: string; showHidden?: boolean }>();
 const emit = defineEmits<{ change: [value: unknown]; uploaded: [file: { ref: string; name: string; type: string; fieldKey: string }] }>();
 const studio = useStudioStore();
 const { t } = useI18n();
@@ -21,18 +22,13 @@ const uploadedName = computed(() => studio.sourceFiles.find(file => file.ref ===
 const items = computed(() => Array.isArray(props.modelValue) ? props.modelValue : []);
 const objectValue = computed(() => props.modelValue && typeof props.modelValue === 'object' && !Array.isArray(props.modelValue)
   ? props.modelValue as Record<string, unknown> : {});
-function initial(schema?: Schema): unknown {
-  if (schema?.default !== undefined) return structuredClone(schema.default);
-  if (schema?.type === 'object') return {};
-  if (schema?.type === 'array') return [];
-  if (schema?.type === 'boolean') return false;
-  return undefined;
-}
+const visibleProperties = computed(() => Object.fromEntries(Object.entries(props.schema.properties || {})
+  .filter(([, schema]) => props.showHidden || !schema.uiHidden)));
 function changeItem(index: number, value: unknown) {
   const next = [...items.value]; next[index] = value; emit('change', next);
 }
 function changeProperty(key: string, value: unknown) {
-  const next = { ...objectValue.value };
+  const next = { ...(schemaInitialValue(props.schema) as Record<string, unknown> || {}), ...objectValue.value };
   if (value === undefined) delete next[key]; else next[key] = value;
   emit('change', next);
 }
@@ -56,22 +52,22 @@ async function selectFile(event: Event) {
 </script>
 
 <template>
-  <div class="schema-field">
-    <span class="schema-field-label">{{ displayLabel }}{{ required ? ' *' : '' }}</span>
+  <div v-if="showHidden || !schema.uiHidden" class="schema-field">
+    <span class="schema-field-label">{{ displayLabel }}{{ required ? ' *' : '' }}<small v-if="showHidden && schema.uiHidden"> ({{ t('composer.hiddenForUser') }})</small></span>
     <small v-if="error" class="field-error">{{ error }}</small>
     <div v-if="schema.type === 'array'" class="schema-field-items">
       <div v-for="(item, index) in items" :key="index" class="schema-field-item">
         <SchemaField :schema="schema.items || {}" :model-value="item" :label="`${label} ${index + 1}`" :name="name" :root-key="rootKey"
-          required @change="changeItem(index, $event)" @uploaded="emit('uploaded', $event)" />
+          required :show-hidden="showHidden" @change="changeItem(index, $event)" @uploaded="emit('uploaded', $event)" />
         <button type="button" @click="emit('change', items.filter((_, itemIndex) => itemIndex !== index))">{{ t('composer.structured.remove') }}</button>
       </div>
       <button type="button" :disabled="schema.maxItems !== undefined && items.length >= schema.maxItems"
-        @click="emit('change', [...items, initial(schema.items)])">{{ t('composer.structured.add') }}</button>
+        @click="emit('change', [...items, schemaInitialValue(schema.items)])">{{ t('composer.structured.add') }}</button>
     </div>
     <div v-else-if="schema.type === 'object'" class="schema-field-object">
-      <SchemaField v-for="(property, key) in schema.properties || {}" :key="key" :schema="property" :model-value="objectValue[key]"
+      <SchemaField v-for="(property, key) in visibleProperties" :key="key" :schema="property" :model-value="objectValue[key]"
         :label="String(key)" :name="String(key)" :root-key="rootKey" :required="schema.required?.includes(String(key))"
-        @change="changeProperty(String(key), $event)" @uploaded="emit('uploaded', $event)" />
+        :show-hidden="showHidden" @change="changeProperty(String(key), $event)" @uploaded="emit('uploaded', $event)" />
     </div>
     <select v-else-if="schema.enum?.length" :value="modelValue === undefined ? '' : String(modelValue)" @change="changeScalar(($event.target as HTMLSelectElement).value)">
       <option value="">—</option>

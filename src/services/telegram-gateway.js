@@ -35,7 +35,7 @@ function createTelegramGateway({ service, config, directory, fetchImpl = fetch, 
     if (!identity) return null;
     if (accountServices.accounts.starterPack && (await accountServices.accounts.starterPack.status(identity.id, identity.role)).active) return { blocked: true };
     const accountService = await accountServices.accounts.scope(identity, identity.id);
-    return { service: { ...accountService, createTelegramTask: (request, token) => accountServices.accounts.createTelegramTask(telegramUserId, request, token) }, accountId: identity.id };
+    return { service: { ...accountService, createTelegramTask: (request, token) => accountServices.accounts.createTelegramTask(telegramUserId, request, token) }, accountId: identity.id, role: identity.role };
   };
   const bot = createTelegramBot({ service, directory, allowedUsers: config.users, publicAccess: config.publicAccess,
     resolveAccount, completeLink: accountMode ? (token, telegramUserId, username) => {

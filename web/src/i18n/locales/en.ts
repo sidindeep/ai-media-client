@@ -722,6 +722,8 @@ export const en = {
   'composer.video.unavailable': 'This model does not expose this parameter',
   'composer.video.noExtra': 'This model has no additional settings.',
   'composer.required': 'Complete required settings: {fields}',
+  'composer.hiddenForUser': 'hidden for users',
+  'composer.hiddenRequired': 'Generation is unavailable: required hidden settings have no values ({fields}). Contact an administrator.',
   'composer.hint': 'Ctrl + Enter — run · draft is saved in the current chat',
   'composer.oneFile': 'One file',
   'composer.upToFiles': 'Up to {count} files',

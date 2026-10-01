@@ -193,6 +193,16 @@ export const useStudioStore = defineStore('studio', () => {
     if (model?.fields) mediaInput.value = normalizeMediaInput(model.fields, mediaInput.value);
   }
 
+  function normalizeCurrentApimartInput() {
+    const model = currentApimartModel.value;
+    if (model?.fields) mediaInput.value = normalizeMediaInput(model.fields, mediaInput.value);
+  }
+
+  function normalizeCurrentProviderInput() {
+    if (provider.value === 'media') normalizeCurrentMediaInput();
+    else if (provider.value === 'apimart') normalizeCurrentApimartInput();
+  }
+
   function selectionKey() {
     const modelId = provider.value === 'media' ? mediaModelId.value : provider.value === 'codex' ? codexModel.value
       : provider.value === 'apimart' ? apimartModel.value : routerAiModel.value;
@@ -229,7 +239,7 @@ export const useStudioStore = defineStore('studio', () => {
     const saved = selectionCache.value[selectionKey()];
     sourceFiles.value = saved ? [...saved.sourceFiles] : [];
     mediaInput.value = saved ? { ...saved.mediaInput } : {};
-    if (provider.value === 'media') normalizeCurrentMediaInput();
+    normalizeCurrentProviderInput();
   }
 
   function carryCompatibleMediaSources(previousModel: typeof currentMediaModel.value | undefined, previousFiles: SourceAttachment[]) {
@@ -519,7 +529,7 @@ export const useStudioStore = defineStore('studio', () => {
     normalizeRouterAiControls();
     normalizeApimartControls();
     normalizeMediaControls();
-    normalizeCurrentMediaInput();
+    normalizeCurrentProviderInput();
     autoServiceModelId.value = typeof tab?.autoServiceModelId === 'string' ? tab.autoServiceModelId : '';
     autoRouting.value = Boolean(fullModelAccess.value && tab?.autoRouting === true
       && (provider.value === 'apimart' || provider.value === 'media' && kieAccountId.value === 'primary'));
@@ -922,6 +932,7 @@ export const useStudioStore = defineStore('studio', () => {
     const submittedApimartModel = currentApimartModel.value;
     const submittedMediaModel = currentMediaModel.value;
     if (submittedProvider === 'media') normalizeCurrentMediaInput();
+    else if (submittedProvider === 'apimart') normalizeCurrentApimartInput();
     const submittedMediaInput = { ...mediaInput.value };
     const submittedSourceFiles = [...sourceFiles.value];
     const submittedPrompt = prompt.value.trim() || (submittedProvider === 'routerai' && submittedRouterAiModel?.kind === 'transcription'
@@ -1077,7 +1088,10 @@ export const useStudioStore = defineStore('studio', () => {
       if (record.modelId) mediaModelId.value = record.modelId;
     }
     restoreSelection();
-    if (record.providerId === 'apimart') mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
+    if (record.providerId === 'apimart') {
+      mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
+      normalizeCurrentApimartInput();
+    }
     if (record.providerId !== 'codex' && record.providerId !== 'routerai' && record.providerId !== 'apimart') {
       mediaInput.value = Object.fromEntries(Object.entries(record.input || {}).filter(([key]) => key !== 'prompt'));
       normalizeCurrentMediaInput();

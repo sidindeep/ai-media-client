@@ -1,6 +1,7 @@
 const { rawTask, semanticKey, contentRefs } = require('../../media/generation-task');
 const { validateTaskAction } = require('../../media/task-actions');
 const { describeModel } = require('./catalog');
+const { motionControlMode } = require('../../media/kling-motion-control');
 
 function readTask(raw) {
   const model = describeModel({ id: raw.modelId.replace(/^apimart:/, '') });
@@ -83,7 +84,7 @@ function prepareTask(task, model) {
       if (Object.hasOwn(defaults, key) && defaults[key] === value) continue;
       throw new Error(`Параметр ${key} не поддерживается APIMart`);
     }
-    let mapped = value;
+    let mapped = field.key === 'mode' ? motionControlMode(`apimart:${model.id}`, value) : value;
     if (role || field.type === 'files') {
       if (!role && !field.uploadToApimart && !field.acceptsBase64)
         throw new Error(`Перенос исходников ${key} в APIMart не поддерживается`);

@@ -719,6 +719,8 @@ export const ru = {
   'composer.video.unavailable': 'Модель не предоставляет этот параметр',
   'composer.video.noExtra': 'У этой модели нет дополнительных настроек.',
   'composer.required': 'Заполните обязательные параметры: {fields}',
+  'composer.hiddenForUser': 'скрыт для пользователя',
+  'composer.hiddenRequired': 'Запуск недоступен: отсутствуют обязательные значения скрытых параметров ({fields}). Обратитесь к администратору.',
   'composer.hint': 'Ctrl + Enter — запустить · черновик сохраняется в текущем чате',
   'composer.oneFile': 'Один файл',
   'composer.upToFiles': 'До {count} файлов',

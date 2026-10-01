@@ -47,7 +47,7 @@ async function cdp(url) {
     socket.send(JSON.stringify({ id, method, params }));
   });
   const evaluate = async expression => {
-    const result = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    const result = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture: true });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
     return result.result?.value;
   };
@@ -56,7 +56,7 @@ async function cdp(url) {
       if (await evaluate(expression)) return;
       await sleep(100);
     }
-    const detail = await evaluate("({model:document.querySelector('.model-pill select')?.value,button:document.querySelector('.generate-button')?.textContent,quote:document.querySelector('.quote')?.textContent,error:document.querySelector('.form-error')?.textContent,body:document.body.innerText.slice(-500)})");
+    const detail = await evaluate("({model:document.querySelector('.model-pill select')?.value,button:document.querySelector('.generate-button')?.textContent,quote:document.querySelector('.quote')?.textContent,error:document.querySelector('.form-error')?.textContent,capture:window.__lastPreviewCapture?.getTracks().map(t=>({kind:t.kind,state:t.readyState,settings:t.getSettings()})),body:document.body.innerText.slice(-500)})");
     throw new Error(`Browser condition timed out: ${expression}: ${JSON.stringify(detail)}`);
   };
   return { command, evaluate, until, close: () => socket.close() };
@@ -122,6 +122,7 @@ async function main() {
     }
     const origin = `http://localhost:${runtime.server.address().port}`;
     browser = spawn('/usr/bin/chromium', ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+      ...(process.env.BROWSER_E2E_MOVIE_ONLY === '1' ? ['--window-size=1600,1000', '--auto-select-tab-capture-source-by-title=AI Media Client', '--enable-usermedia-screen-capturing', '--autoplay-policy=no-user-gesture-required'] : []),
       '--no-first-run', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=9223',
       `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
     client = await cdp(await browserTarget());
@@ -161,22 +162,59 @@ async function main() {
       assert.deepEqual([rendered.width, rendered.height], [720, 1280]);
       assert.ok(rendered.size > 1000);
       assert.ok(Math.abs(rendered.duration - 1) < 0.1);
+      await client.evaluate("window.__nativeDisplayCapture=navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getDisplayMedia=async options=>{window.__lastPreviewCapture=await window.__nativeDisplayCapture(options);return window.__lastPreviewCapture;};document.querySelector('.movie-record-preview').click();void 0");
+      await client.until("Boolean(document.querySelector('.movie-preview-download, .movie-editor .form-error')) && !document.querySelector('.movie-controls').disabled");
+      assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
+      const recorded = await client.evaluate("(async()=>{const a=document.querySelector('.movie-preview-download');const blob=await(await fetch(a.href)).blob();const v=document.createElement('video');v.src=a.href;await new Promise((resolve,reject)=>{v.onloadedmetadata=resolve;v.onerror=reject;});return {size:blob.size,type:blob.type,filename:a.download,width:v.videoWidth,height:v.videoHeight};})()");
+      assert.ok(recorded.size > 1000);
+      assert.ok(recorded.height > recorded.width, `Only the portrait composition is captured: ${JSON.stringify(recorded)}`);
+      assert.ok(recorded.filename.endsWith(recorded.type.startsWith('video/mp4') ? '.mp4' : '.webm'));
+      assert.equal(await client.evaluate("window.__lastPreviewCapture.getTracks().every(track=>track.readyState==='ended')"), true);
+      await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='5';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+      await client.until("!document.querySelector('.movie-preview-download')");
+      await client.evaluate("document.querySelector('.movie-record-preview').click();void 0");
+      await client.until("document.querySelector('.is-recording') && document.querySelector('.movie-output progress')?.value>0");
+      await client.evaluate("document.querySelector('.movie-output [role=status] button').click();void 0");
+      await client.until("!document.querySelector('.is-recording') && !document.querySelector('.movie-controls').disabled");
+      assert.equal(await client.evaluate("Boolean(document.querySelector('.movie-preview-download, .movie-editor .form-error'))"), false);
+      assert.equal(await client.evaluate("window.__lastPreviewCapture.getTracks().every(track=>track.readyState==='ended')"), true);
+      await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
       // Real locally uploaded image + previously rendered video and PCM audio.
       await client.evaluate("(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const ctx=canvas.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,32,32);const image=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const data=new DataTransfer();data.items.add(new File([image],'test.png',{type:'image/png'}));data.items.add(new File([window.__movieBlob],'test.mp4',{type:'video/mp4'}));const input=document.querySelector('.movie-file input');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));const buffer=new ArrayBuffer(44+48000*2);const view=new DataView(buffer);function text(at,value){for(let i=0;i<value.length;i++)view.setUint8(at+i,value.charCodeAt(i));}text(0,'RIFF');view.setUint32(4,buffer.byteLength-8,true);text(8,'WAVEfmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,48000,true);view.setUint32(28,96000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,96000,true);for(let i=0;i<48000;i++)view.setInt16(44+i*2,Math.sin(i*440*2*Math.PI/48000)*5000,true);const audio=new DataTransfer();audio.items.add(new File([buffer],'music.wav',{type:'audio/wav'}));const audioInput=document.querySelector('input[accept=\"audio/*\"]');audioInput.files=audio.files;audioInput.dispatchEvent(new Event('change',{bubbles:true}));})()");
       await client.until("document.querySelectorAll('.movie-scene').length===3");
+      await client.until("!document.querySelector('.movie-controls').disabled");
+      const fullClipSeconds = await client.evaluate("window.__movieFullSeconds=Number(document.querySelectorAll('.movie-scene input[type=number]')[2].value)");
+      assert.ok(Math.abs(fullClipSeconds - rendered.duration) <= 1 / 30, 'Imported clip keeps its measured duration to the nearest frame');
+      await client.evaluate("{const el=document.querySelectorAll('.movie-scene input[type=number]')[2];el.value='0.5';el.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-full-clip').click();}void 0");
+      await client.until("!document.querySelector('.movie-controls').disabled && Number(document.querySelectorAll('.movie-scene input[type=number]')[2].value)===window.__movieFullSeconds");
+      // A failed source read must retain a safe, useful cause and allow retry.
+      await client.evaluate("window.__renderFetch=window.fetch;window.fetch=(input,init)=>/\\/api\\/(content|sources)\\//.test(String(input))?Promise.reject(new TypeError('Failed to fetch private-source?token=secret')):window.__renderFetch(input,init);document.querySelector('.movie-render').click();void 0");
+      await client.until("document.querySelector('.movie-editor .form-error')?.textContent.includes('media:NETWORK') && !document.querySelector('.movie-render').disabled");
+      assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error').textContent.includes('secret')"), false);
+      await client.evaluate("window.fetch=window.__renderFetch;void 0");
+      // Slow full downloads are allowed; per-frame Range reads and duplicate
+      // source requests are forbidden while exporting the prepared local files.
+      await client.evaluate("window.__exportReads={};window.fetch=async(input,init)=>{if(document.querySelector('.movie-controls').disabled && /\\/api\\/(content|sources)\\//.test(String(input))){const key=String(input);window.__exportReads[key]=(window.__exportReads[key]||0)+1;if(window.__exportReads[key]>1 || new Headers(init?.headers).has('Range'))throw new Error('Renderer attempted another network source read');await new Promise(resolve=>setTimeout(resolve,2000));}return window.__renderFetch(input,init);};void 0");
       await client.evaluate("for(const el of document.querySelectorAll('.movie-scene input[type=number]')){el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();void 0");
+      await client.until("/Подготовка файлов|Preparing files/.test(document.querySelector('.movie-output [role=status]')?.textContent || '')");
       for (let attempt = 0; attempt < 600; attempt++) {
         if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
         await sleep(100);
       }
       assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
       await client.until("document.querySelector('.movie-download')");
-      const finalVideo = await client.evaluate("(async()=>{const blob=await(await fetch(document.querySelector('.movie-download').href)).blob();const video=document.createElement('video');video.src=URL.createObjectURL(blob);await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});video.currentTime=1.5;await new Promise(resolve=>video.onseeked=resolve);const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0);const pixel=Array.from(ctx.getImageData(canvas.width/2,canvas.height/2,1,1).data);const context=new AudioContext();const audio=await context.decodeAudioData(await blob.arrayBuffer());const audible=audio.getChannelData(0).some(sample=>Math.abs(sample)>0.01);await context.close();return {duration:video.duration,size:blob.size,pixel,audible};})()");
-      assert.ok(Math.abs(finalVideo.duration - 3) < 0.2);
+      const finalVideo = await client.evaluate("(async()=>{const blob=await(await fetch(document.querySelector('.movie-download').href)).blob();const video=document.createElement('video');video.src=URL.createObjectURL(blob);await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});video.currentTime=0.99;await new Promise(resolve=>video.onseeked=resolve);const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0);const pixel=Array.from(ctx.getImageData(canvas.width/2,canvas.height/2,1,1).data);const context=new AudioContext();const audio=await context.decodeAudioData(await blob.arrayBuffer());const audible=audio.getChannelData(0).some(sample=>Math.abs(sample)>0.01);await context.close();return {duration:video.duration,size:blob.size,pixel,audible};})()");
+      assert.ok(Math.abs(finalVideo.duration - 2) < 0.2);
       assert.ok(finalVideo.size > rendered.size);
       assert.ok(finalVideo.pixel[0] > 200 && finalVideo.pixel[1] < 30 && finalVideo.pixel[2] < 30);
       assert.equal(finalVideo.audible, true);
+      assert.deepEqual(await client.evaluate("Object.values(window.__exportReads)"), [1, 1, 1]);
+      await client.evaluate("window.fetch=window.__renderFetch;void 0");
       const sourceHeaders = { Cookie: `media-session=${token}`, Origin: origin, 'X-Media-Client': 'web', 'X-Media-User': accountId, 'Content-Type': 'application/json' };
+      await client.evaluate("document.querySelector('.movie-record-preview').click();void 0");
+      await client.until("Boolean(document.querySelector('.movie-preview-download, .movie-editor .form-error')) && !document.querySelector('.movie-controls').disabled");
+      assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
+      assert.equal(await client.evaluate("(async()=>{const b=await(await fetch(document.querySelector('.movie-preview-download').href)).blob();const context=new AudioContext();const audio=await context.decodeAudioData(await b.arrayBuffer());const audible=audio.getChannelData(0).some(sample=>Math.abs(sample)>0.01);await context.close();return audible;})()"), true);
       assert.equal((await fetch(origin + '/api/movie/sources/file', { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ id: randomUUID() }) })).status, 404);
       assert.equal((await fetch(origin + '/api/movie/sources/list', { method: 'POST', headers: { ...sourceHeaders, Origin: 'https://other.example' }, body: JSON.stringify({ url: 'https://disk.yandex.ru/d/test' }) })).status, 403);
       assert.equal((await fetch(origin + '/api/movie/sources/list', { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ url: 'https://127.0.0.1/private.png' }) })).status, 400);
@@ -226,6 +264,7 @@ async function main() {
       assert.equal(Number((await pool.query("SELECT count(*) FROM media_records WHERE account_id=$1 AND namespace='codex'", [accountId])).rows[0].count), 3);
       await client.evaluate("document.querySelector('.movie-ai-undo').click();void 0");
       assert.equal(await client.evaluate("(async()=>{const r=await fetch('/api/movie/errors',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:JSON.stringify({code:'ARBITRARY_CODE'})});return r.status;})()"), 400);
+      assert.equal(await client.evaluate("(async()=>{const r=await fetch('/api/movie/errors',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:JSON.stringify({code:'MOVIE_RENDER_FAILED',failure:'https://private.test/secret'})});return r.status;})()"), 400);
       await client.until("/Черновик сохранён|Draft saved/.test(document.querySelector('.movie-draft-status')?.textContent || '')");
       const savedScenes = await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)");
       await client.evaluate("document.querySelector('.sidebar-history-link').click();void 0");
@@ -243,6 +282,20 @@ async function main() {
       assert.ok(persistedDraft.scenes.filter(scene=>scene.kind!=='title').every(scene=>scene.src.startsWith('/api/') && !scene.src.includes('blob:')));
       const persistentMedia = persistedDraft.scenes.find(scene=>scene.kind!=='title');
       assert.equal((await fetch(origin + persistentMedia.src, { headers: { Cookie: `media-session=${token}` } })).status, 200);
+      // Match the reported timeline size after restoring persistent sources.
+      for (let index = 0; index < 11; index++) {
+        await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
+        await client.until(`document.querySelectorAll('.movie-scene').length===${6 + index}`);
+      }
+      await client.evaluate("Array.from(document.querySelectorAll('.movie-scene input[type=number]')).forEach((el,index)=>{el.value=[2,4].includes(index)?'1':'6.5';el.dispatchEvent(new Event('input',{bubbles:true}));});document.querySelector('.movie-render').click();void 0");
+      for (let attempt = 0; attempt < 2400; attempt++) {
+        if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
+        await sleep(100);
+      }
+      assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
+      await client.until("document.querySelector('.movie-download')");
+      const longDuration = await client.evaluate("(async()=>{const video=document.createElement('video');video.src=document.querySelector('.movie-download').href;await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});return video.duration;})()");
+      assert.ok(Math.abs(longDuration - 85.5) < 0.1, `16-scene export duration: ${longDuration}`);
       console.log('Remotion E2E passed: MP4, import/cancel, AI workflow, draft storage, navigation and reload with readable media');
       return;
     }

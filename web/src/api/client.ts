@@ -11,8 +11,8 @@ export function setAccountContext(account: { id: string; role: string }) {
   document.querySelector('meta[name="account-id"]')?.setAttribute('content', account.id);
   document.querySelector('meta[name="account-role"]')?.setAttribute('content', account.role);
 }
-export function reportMovieError(code: 'MOVIE_RENDER_FAILED' | 'MOVIE_PREVIEW_FAILED' | 'MOVIE_PLAN_INVALID' | 'MOVIE_IMPORT_FAILED' | 'MOVIE_IMPORT_LIMIT') {
-  void fetch('/api/movie/errors', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }).catch(() => {});
+export function reportMovieError(code: 'MOVIE_RENDER_FAILED' | 'MOVIE_PREVIEW_FAILED' | 'MOVIE_PLAN_INVALID' | 'MOVIE_IMPORT_FAILED' | 'MOVIE_IMPORT_LIMIT', failure?: string) {
+  void fetch('/api/movie/errors', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code, failure }) }).catch(() => {});
 }
 export type MovieSourceFile = { id: string; name: string; type: string; size: number | null };
 export type MovieDraft = { scenes: import('../remotion/model.mjs').Scene[]; format: 'portrait' | 'landscape' | 'square'; background: string;

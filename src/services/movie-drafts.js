@@ -1,6 +1,7 @@
 const { AccountRecords } = require('../database/records');
 const bad = (message, status = 400) => Object.assign(new Error(message), { status });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const limits = require('../../config/movie-editor.json');
 function createMovieDrafts({ pool, workspaces, content, sourceFile, resultFile, generatedFile }) {
   async function key(owner, projectId) {
     if (!projectId) return 'account';
@@ -19,14 +20,16 @@ function createMovieDrafts({ pool, workspaces, content, sourceFile, resultFile, 
     return file;
   }
   async function validate(owner, value) {
-    if (!value || !Array.isArray(value.scenes) || value.scenes.length > 20 || JSON.stringify(value).length > 100000) throw bad('Некорректный черновик');
+    if (!value || !Array.isArray(value.scenes) || value.scenes.length > limits.maxScenes || JSON.stringify(value).length > 100000) throw bad('Некорректный черновик');
     if (!['portrait', 'landscape', 'square'].includes(value.format) || !/^#[a-f0-9]{6}$/i.test(value.background)
       || typeof value.muteClips !== 'boolean') throw bad('Некорректные параметры ролика');
     const ids = new Set();
     const scenes = [];
     for (const scene of value.scenes) {
       if (!UUID.test(scene.id) || ids.has(scene.id) || !['title', 'image', 'video'].includes(scene.kind)
-        || typeof scene.title !== 'string' || scene.title.length > 300 || !Number.isFinite(scene.seconds) || scene.seconds < 1 || scene.seconds > 30) throw bad('Некорректная сцена');
+        || typeof scene.title !== 'string' || scene.title.length > 300 || !Number.isFinite(scene.seconds)
+        || scene.seconds < (scene.kind === 'video' ? 1 / limits.fps : 1)
+        || scene.seconds > (scene.kind === 'video' ? limits.maxSeconds : limits.maxStillSeconds)) throw bad('Некорректная сцена');
       ids.add(scene.id);
       if (scene.kind !== 'title') {
         const file = await source(owner, scene.src);

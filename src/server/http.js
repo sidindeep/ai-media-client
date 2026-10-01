@@ -192,7 +192,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, generationServices = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record, recordSystemInfo = systemErrors.info }) {
   let uploadBytesInFlight = 0;
   const movieSources = createMovieSources();
-  const movieDrafts = accounts ? require('../services/movie-drafts').createMovieDrafts({
+  const createDraftService = () => accounts ? require('../services/movie-drafts').createMovieDrafts({
     pool: accounts.pool, workspaces: accounts.workspaces, content: accounts.content,
     sourceFile: async (owner, id) => (await accounts.get(owner)).sourceFile(id),
     resultFile: async (owner, id, position) => (await accounts.get(owner)).resultFile(id, position),
@@ -201,6 +201,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       return typeof file === 'string' ? { type: 'image/png' } : file;
     },
   }) : null;
+  let movieDrafts = createDraftService();
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
   let codexAdmin = generationServices?.codexAdmin || null;
@@ -461,8 +462,9 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (req.headers['x-media-client'] !== 'web' || !sameOrigin || !String(req.headers['content-type'] || '').startsWith('application/json')) return json(res, 403, { error: 'Forbidden' });
         const body = JSON.parse((await readBody(req, 256)).toString('utf8'));
         if (!['MOVIE_RENDER_FAILED', 'MOVIE_PREVIEW_FAILED', 'MOVIE_PLAN_INVALID', 'MOVIE_IMPORT_FAILED', 'MOVIE_IMPORT_LIMIT'].includes(body.code)) return json(res, 400, { error: 'Invalid error code' });
+        if (body.failure !== undefined && (typeof body.failure !== 'string' || !/^(support|media|render|output):(NETWORK|DECODE|ENCODE|TIMEOUT|MEMORY|SECURITY|UNSUPPORTED|UNKNOWN)$/.test(body.failure))) return json(res, 400, { error: 'Invalid failure category' });
         recordSystemEvent('remotion', 'movie.client.error', Object.assign(new Error('Remotion client operation failed'), { code: body.code }), {
-          diagnostic: { file: 'web/src/remotion/bridge.ts', entity: 'movie', description: 'Client movie operation failed; no user media or text included' },
+          diagnostic: { file: 'web/src/remotion/bridge.ts', entity: 'movie', description: body.failure ? `Client movie operation failed: ${body.failure}` : 'Client movie operation failed; no user media or text included' },
         });
         return json(res, 200, { ok: true });
       }
@@ -586,6 +588,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   server.requestTimeout = 60000; server.headersTimeout = 15000;
   server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null, nextGenerationServices = null) => {
     auth = nextAuth; accounts = nextAccounts; payments = nextPayments; commerce = nextCommerce;
+    movieDrafts = createDraftService();
     codexAdmin = nextGenerationServices?.codexAdmin || null;
     codexProvider = nextGenerationServices?.codexProvider || null;
     routerAi = nextGenerationServices?.routerAi || null;

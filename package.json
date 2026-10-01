@@ -40,6 +40,7 @@
     "@remotion/player": "4.0.530",
     "@remotion/web-renderer": "4.0.530",
     "ajv": "^8.20.0",
+    "mediabunny": "1.56.1",
     "nodemailer": "^10.0.11",
     "pg": "8.22.0",
     "react": "19.2.0",

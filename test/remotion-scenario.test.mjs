@@ -22,6 +22,6 @@ test('AI plan reorders, repeats materials and creates title cards with independe
 });
 test('AI plan rejects code, external sources, unknown fields and unsafe durations atomically', () => {
   const valid = { sourceId: 'photo', title: 'Текст', seconds: 3 };
-  for (const output of ['<script>alert(1)</script>', plan([]), plan([{ ...valid, sourceId: 'https://evil.test/a.png' }]), plan([{ ...valid, src: 'https://evil.test' }]), plan([{ ...valid, seconds: '3' }]), plan([{ ...valid, seconds: -1 }]), plan([{ ...valid, seconds: 31 }]), plan([{ ...valid, title: 'x'.repeat(301) }]), plan(Array(21).fill(valid)), plan(Array(5).fill({ ...valid, seconds: 30 })), JSON.stringify({ scenes: [valid], code: 'x' })])
+  for (const output of ['<script>alert(1)</script>', plan([]), plan([{ ...valid, sourceId: 'https://evil.test/a.png' }]), plan([{ ...valid, src: 'https://evil.test' }]), plan([{ ...valid, seconds: '3' }]), plan([{ ...valid, seconds: -1 }]), plan([{ ...valid, seconds: 31 }]), plan([{ ...valid, sourceId: 'clip', seconds: 6 }]), plan([{ ...valid, title: 'x'.repeat(301) }]), plan(Array(21).fill(valid)), JSON.stringify({ scenes: [valid], code: 'x' })])
     assert.throws(() => parseScenario(output, sources));
 });

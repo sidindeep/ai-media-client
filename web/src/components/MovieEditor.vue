@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
-import { FORMATS, FPS, MAX_SCENES, timeline, type Scene } from '../remotion/model.mjs';
+import { FORMATS, FPS, MAX_SCENES, MAX_SECONDS, MAX_STILL_SECONDS, timeline, type Scene } from '../remotion/model.mjs';
 import type { mountPreview } from '../remotion/bridge';
 import { listMovieSources, downloadMovieSource, reportMovieError, uploadSource, getMovieDraft, saveMovieDraft } from '../api/client';
 import MovieScenario from './MovieScenario.vue';
@@ -18,8 +18,12 @@ const musicName = ref('');
 const preview = ref<HTMLElement>();
 const busy = ref(false);
 const progress = ref(0);
+const preparing = ref('');
 const error = ref('');
 const download = ref('');
+const previewDownload = ref('');
+const previewExtension = ref('webm');
+const recording = ref(false);
 const selectedAsset = ref('');
 const sourceLink = ref('');
 const script = ref('');
@@ -55,9 +59,27 @@ function add(scene: Omit<Scene, 'id'>) {
   scenes.value.push({ ...scene, id: crypto.randomUUID() });
 }
 function addTitle() { add({ kind: 'title', title: t('movie.defaultTitle'), seconds: 3 }); }
-function addLibrary() {
+async function sourceSeconds(kind: string, source: string | Blob) {
+  if (kind !== 'video') return 5;
+  try { return await (await import('../remotion/video-duration.mjs')).videoSeconds(source); }
+  catch (reason) { throw new Error(t(reason instanceof Error && reason.message === 'MOVIE_VIDEO_TOO_LONG' ? 'movie.clipTooLong' : 'movie.durationFailed')); }
+}
+async function fullClip(scene: Scene) {
+  if (!scene.src || editorLocked.value) return;
+  importing.value = true; error.value = '';
+  try { scene.seconds = await sourceSeconds('video', scene.src); }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.durationFailed'); }
+  finally { importing.value = false; }
+}
+async function addLibrary() {
   const asset = library.value.find(item => item.key === selectedAsset.value);
-  if (asset) add({ kind: asset.kind, src: asset.src.split('?')[0], name: asset.name, title: '', seconds: 5 });
+  if (!asset || editorLocked.value) return;
+  importing.value = true; error.value = '';
+  try {
+    const src = asset.src.split('?')[0];
+    add({ kind: asset.kind, src, name: asset.name, title: '', seconds: await sourceSeconds(asset.kind, src) });
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.durationFailed'); }
+  finally { importing.value = false; }
 }
 function own(blob: Blob) { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }
 function release(url?: string) { if (url && ownedUrls.delete(url)) URL.revokeObjectURL(url); }
@@ -76,7 +98,9 @@ async function upload(event: Event, audio = false) {
     if (file.size > 100 * 1024 * 1024 || !(audio ? file.type.startsWith('audio/') : /^(image\/(png|jpeg|webp)|video\/(mp4|webm))$/.test(file.type))) { error.value = t('movie.fileError'); continue; }
     if (audio) { release(music.value); music.value = await storedSource(file, file.name); musicName.value = file.name; await persistDraft(); break; }
     if (scenes.value.length >= MAX_SCENES) { error.value = t('movie.limit'); break; }
-    add({ kind: file.type.startsWith('image/') ? 'image' : 'video', src: await storedSource(file, file.name), name: file.name, title: '', seconds: 5 });
+    const kind = file.type.startsWith('image/') ? 'image' : 'video';
+    const seconds = await sourceSeconds(kind, file);
+    add({ kind, src: await storedSource(file, file.name), name: file.name, title: '', seconds });
     await persistDraft();
   } } catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.draftFailed'); }
   finally { importing.value = false; }
@@ -125,8 +149,10 @@ async function importSources() {
           failed += result.files.length - index; importFailures.value.push(t('movie.importByteLimit')); reportMovieError('MOVIE_IMPORT_LIMIT'); break;
         }
         bytes += blob.size;
+        const kind = file.type.startsWith('image/') ? 'image' : 'video';
+        const seconds = await sourceSeconds(kind, blob);
         const src = await storedSource(blob, file.name);
-        add({ kind: file.type.startsWith('image/') ? 'image' : 'video', src, name: file.name, title: '', seconds: 5 });
+        add({ kind, src, name: file.name, title: '', seconds });
         await persistDraft();
         loaded++;
       } catch (reason) {
@@ -151,34 +177,68 @@ async function updatePreview() {
   const [width, height] = FORMATS[format.value];
   player.update(movieProps.value, width, height);
 }
-watch([movieProps, format], () => { release(download.value); download.value = ''; void updatePreview(); }, { deep: true });
+watch([movieProps, format], () => { release(download.value); download.value = ''; release(previewDownload.value); previewDownload.value = ''; void updatePreview(); }, { deep: true });
+async function downloadPreview() {
+  if (editorLocked.value || !plan.value || !player) return;
+  busy.value = true; recording.value = true; error.value = ''; progress.value = 0;
+  release(previewDownload.value); previewDownload.value = '';
+  controller = new AbortController();
+  try {
+    const blob = await player.record(controller.signal, value => { progress.value = Math.round(value * 100); });
+    if (!alive || controller.signal.aborted) return;
+    previewExtension.value = blob.type.startsWith('video/mp4') ? 'mp4' : 'webm';
+    previewDownload.value = own(blob);
+    const link = document.createElement('a'); link.href = previewDownload.value; link.download = `ai-media-preview.${previewExtension.value}`;
+    document.body.append(link); link.click(); link.remove();
+  } catch (reason) {
+    if (alive && !controller.signal.aborted) {
+      const code = reason instanceof Error ? reason.message : '';
+      error.value = t(code === 'PREVIEW_RECORD_UNSUPPORTED' ? 'movie.recordUnsupported'
+        : code === 'PREVIEW_RECORD_AUDIO_REQUIRED' ? 'movie.recordAudio'
+        : code === 'PREVIEW_RECORD_TAB_REQUIRED' ? 'movie.recordTab' : 'movie.recordFailed');
+      if (!(reason instanceof Error && reason.name === 'NotAllowedError')) reportMovieError('MOVIE_RENDER_FAILED');
+    }
+  } finally { if (alive) { busy.value = false; recording.value = false; } }
+}
 async function render() {
   if (editorLocked.value || !plan.value || !bridge) return;
   busy.value = true; error.value = ''; progress.value = 0;
   release(download.value); download.value = '';
   controller = new AbortController();
+  player?.dispose(); player = undefined;
   try {
     const [width, height] = FORMATS[format.value];
-    const blob = await bridge.exportMovie(movieProps.value, width, height, controller.signal, value => { progress.value = Math.round(value * 100); });
+    const blob = await bridge.exportMovie(movieProps.value, width, height, controller.signal,
+      value => { preparing.value = ''; progress.value = Math.round(value * 100); },
+      (completed, total) => { preparing.value = t('movie.preparing', { current: completed, total }); });
     if (alive && !controller.signal.aborted) { download.value = own(blob); progress.value = 100; }
   } catch (reason) {
     if (alive && !controller.signal.aborted) {
       const unsupported = reason instanceof Error && reason.message === 'BROWSER_UNSUPPORTED';
-      error.value = t(unsupported ? 'movie.unsupported' : 'movie.renderError');
-      if (!unsupported) bridge.reportMovieError('MOVIE_RENDER_FAILED');
+      error.value = reason instanceof bridge.MovieMediaError
+        ? t(reason.scene ? `movie.scene${reason.kind === 'video' ? 'Video' : 'Audio'}Unsupported` : 'movie.musicUnsupported', { scene: reason.scene })
+        : t(unsupported ? 'movie.unsupported' : 'movie.renderError');
+      const failure = reason instanceof bridge.MovieExportError ? reason.failure : undefined;
+      if (failure) error.value += ` (${failure})`;
+      if (!unsupported) bridge.reportMovieError('MOVIE_RENDER_FAILED', failure);
     }
-  } finally { if (alive) busy.value = false; }
+  } finally { if (alive) { busy.value = false; preparing.value = ''; void updatePreview(); } }
 }
-onMounted(async () => {
+async function loadDraft() {
+  draftStatus.value = t('movie.draftSaving'); error.value = '';
   try {
     const draft = await getMovieDraft(projectId);
+    if (!alive) return;
     if (draft) {
       scenes.value = draft.scenes; format.value = draft.format; background.value = draft.background;
       muteClips.value = draft.muteClips; music.value = draft.music; musicName.value = draft.musicName;
       script.value = draft.script; sourceLink.value = draft.sourceLink; scenarioState.value = draft.scenarioState || { modelId: '' }; revision = draft.revision;
     }
     draftReady.value = true; draftStatus.value = t('movie.draftSaved');
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.draftFailed'); }
+  } catch (reason) { if (alive) { draftStatus.value = t('movie.draftFailed'); error.value = reason instanceof Error ? reason.message : t('movie.draftFailed'); } }
+}
+onMounted(async () => {
+  await loadDraft();
   try { bridge = await import('../remotion/bridge'); if (alive) { await nextTick(); await updatePreview(); } }
   catch { if (alive) error.value = t('movie.renderError'); }
 });
@@ -215,10 +275,10 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
 </script>
 
 <template>
-  <section class="movie-editor">
+  <section class="movie-editor" :class="{ 'is-recording': recording }">
     <p>{{ t('movie.intro') }}</p>
     <p role="status" class="movie-draft-status">{{ draftStatus }}</p>
-    <button v-if="draftReady && !conflict && draftStatus === t('movie.draftFailed')" type="button" @click="persistDraft().catch(() => {})">{{ t('movie.draftRetry') }}</button>
+    <button v-if="!conflict && draftStatus === t('movie.draftFailed')" type="button" @click="draftReady ? persistDraft().catch(() => {}) : loadDraft()">{{ t('movie.draftRetry') }}</button>
     <div class="movie-layout">
       <div>
         <MovieScenario v-if="draftReady" v-model:script="script" v-model:saved-state="scenarioState" :scenes="scenes" :disabled="editorLocked" @busy="aiBusy = $event" @apply="applyScenario" />
@@ -247,7 +307,8 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
             <strong>{{ index + 1 }} · {{ scene.name || t('movie.title') }}</strong>
             <label v-if="scene.kind !== 'title'">{{ t('movie.aiDescription') }}<input v-model="scene.name" type="text" maxlength="255"></label>
             <label>{{ t('movie.caption') }}<textarea v-model="scene.title" maxlength="300" rows="2"></textarea></label>
-            <label>{{ t('movie.seconds') }}<input v-model.number="scene.seconds" type="number" min="1" max="30" step="0.5"></label>
+            <label>{{ t('movie.seconds') }}<input v-model.number="scene.seconds" type="number" :min="scene.kind === 'video' ? 1 / FPS : 1" :max="scene.kind === 'video' ? MAX_SECONDS : MAX_STILL_SECONDS" :step="scene.kind === 'video' ? 'any' : 0.5"></label>
+            <button v-if="scene.kind === 'video'" type="button" class="movie-full-clip" @click="fullClip(scene)">{{ t('movie.fullClip') }}</button>
             <div class="movie-scene-actions"><button type="button" :disabled="index === 0" :aria-label="t('movie.up')" @click="move(index, -1)">↑</button><button type="button" :disabled="index === scenes.length - 1" :aria-label="t('movie.down')" @click="move(index, 1)">↓</button><button type="button" @click="remove(index)">{{ t('movie.remove') }}</button></div>
           </article>
         </fieldset>
@@ -258,8 +319,11 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
         <p v-if="plan">{{ scenes.length }} · {{ plan.durationInFrames / FPS }} {{ t('movie.secondsShort') }}</p>
         <p v-else-if="scenes.length" role="alert">{{ t('movie.invalid') }}</p>
         <button type="button" class="movie-render" :disabled="editorLocked || !plan || !bridge" @click="render">{{ t('movie.export') }}</button>
-        <div v-if="busy" role="status"><progress :value="progress" max="100"></progress> {{ progress }}% <button type="button" @click="controller?.abort()">{{ t('movie.cancel') }}</button></div>
+        <button type="button" class="movie-record-preview" :disabled="editorLocked || !plan || !bridge" @click="downloadPreview">{{ t('movie.recordPreview') }}</button>
+        <p class="movie-note">{{ t('movie.recordNote') }}</p>
+        <div v-if="busy" role="status"><progress :value="progress" max="100"></progress> {{ preparing || `${progress}%` }} <button type="button" @click="controller?.abort()">{{ t('movie.cancel') }}</button></div>
         <a v-if="download" class="movie-download" :href="download" download="ai-media-movie.mp4">{{ t('movie.download') }}</a>
+        <a v-if="previewDownload" class="movie-preview-download" :href="previewDownload" :download="`ai-media-preview.${previewExtension}`">{{ t('movie.recordDownload') }} ({{ previewExtension.toUpperCase() }})</a>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <p class="movie-note">{{ t('movie.note') }}</p>
       </div>
@@ -268,6 +332,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
 </template>
 
 <style scoped>
+.is-recording .movie-preview { pointer-events:none; }
 .movie-editor { width:100%; height:100%; min-height:0; min-width:0; overflow-y:auto; padding:0 4px 32px; container:movie / inline-size; scrollbar-width:thin; }
 .movie-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; }
 .movie-layout > div { min-width:0; }

@@ -49,11 +49,6 @@ export function autoModelOptions(kie: Catalog['models'], apimart: ApimartCatalog
       options.push({ value: row.id || `apimart:${apimartModel.id}`, label: row.name, description: 'APIMart', price: publishedPrice,
         groupId: apimartModelBrandId(apimartModel.id) });
       usedApimart.add(apimartModel.id);
-    } else if (publishedPrice && (row.id || row.kie || !row.apimart || !usedApimart.has(row.apimart))) {
-      const value = row.id || row.kie || `apimart:${row.apimart}`;
-      options.push({ value, label: row.name, price: publishedPrice, disabled: true,
-        disabledReason: 'Нет в подключённом каталоге провайдера',
-        groupId: row.kie ? mediaModelBrandId(row.kie, row.name) : apimartModelBrandId(row.apimart || '') });
     }
   }
   // Once a versioned service list is loaded, only priced, available provider models are visible.

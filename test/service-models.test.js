@@ -57,12 +57,38 @@ test('automatic picker emits project IDs and preserves different actions of the 
   const { autoModelOptions, publishedTariffForRoute } = loadAutoModels();
   const apimart = [...new Map(table.filter(row => row.apimart).map(row => [row.apimart, {id:row.apimart,name:row.apimart,kind:row.kind}])).values()];
   const options = ['text','image','video','audio'].flatMap(mode => autoModelOptions(kie, apimart, mode, '', table, true));
-  assert.equal(options.length, table.length);
+  const availableRows = table.filter(row => kie.some(model => model.id === row.kie && model.kind === row.kind)
+    && row.kiePrice && row.kiePrice !== '—' || apimart.some(model => model.id === row.apimart && model.kind === row.kind)
+    && row.apimartPrice && row.apimartPrice !== '—');
+  assert.deepEqual(options.map(option => option.value).sort(), availableRows.map(row => row.id).sort());
   assert.equal(new Set(options.map(option => option.value)).size, options.length);
   assert.ok(options.some(option => option.value === 'gpt-image-2.text-to-image'));
   assert.ok(options.some(option => option.value === 'gpt-image-2.image-to-image'));
   for(const row of table) for(const provider of ['kie','apimart'])
     if(row[provider]) assert.equal(publishedTariffForRoute(row.id,provider,row[provider],table),row.publishedTariffs[provider] === '—' ? '' : row.publishedTariffs[provider] || '');
+});
+
+test('automatic picker hides unavailable routes in every mode and keeps priced provider fallbacks', () => {
+  const { autoModelOptions } = loadAutoModels();
+  for (const kind of ['text', 'image', 'video', 'audio']) {
+    const row = (id, providers, publishedTariffs) => publicRows([{ id, name: id, kind, action: 'auto', providers, publishedTariffs }])[0];
+    const rows = [
+      row('missing', { kie: 'kie:missing', apimart: 'missing' }, { kie: '1', apimart: '2' }),
+      row('fallback', { kie: 'kie:missing', apimart: 'available' }, { kie: '1', apimart: '2' }),
+      row('kie-only', { kie: 'kie:available' }, { kie: '1' }),
+      row('unpriced', { kie: 'kie:available', apimart: 'available' }, { kie: '—', apimart: '' }),
+      row('wrong-kind', { kie: 'kie:other', apimart: 'other' }, { kie: '1', apimart: '2' }),
+    ];
+    const otherKind = kind === 'image' ? 'video' : 'image';
+    const kieModels = [{ id: 'kie:available', name: 'Available', kind }, { id: 'kie:other', name: 'Other', kind: otherKind }];
+    const apimartModels = [{ id: 'available', name: 'Available', kind }, { id: 'other', name: 'Other', kind: otherKind }];
+    for (const listedOnly of [true, false]) {
+      const options = autoModelOptions(kieModels, apimartModels, kind, 'missing', rows, listedOnly);
+      assert.deepEqual(options.map(option => option.value), ['fallback', 'kie-only']);
+      assert.ok(options.every(option => !option.disabled));
+    }
+    assert.deepEqual(autoModelOptions([], [], kind, 'missing', rows, true), []);
+  }
 });
 
 test('migration retains the richest model snapshot before dropping both legacy tables', async t => {

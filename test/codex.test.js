@@ -5,7 +5,9 @@ const { testPool } = require('./helpers/pg-pool');
 const { openDatabase } = require('../src/database/database');
 const { createWallet } = require('../src/billing/wallet');
 const { createPricing } = require('../src/billing/pricing');
-const { createCodexBilling, priceKey } = require('../src/services/codex-billing');
+const { priceKey } = require('../src/services/codex-billing');
+const { createCodexModule } = require('../src/server/codex-module');
+const createCodexBilling = options => createCodexModule(options).billing;
 const { createCodexApplicationProvider } = require('../src/providers/codex/application');
 const { validateCodexRequest, codexArguments } = require('../src/services/codex-request');
 const { createCodexWorker, codexEnvironment } = require('../src/services/codex-worker');
@@ -40,7 +42,7 @@ test('Web model catalog comes from the active worker and fails closed when it is
   let unavailable = false;
   const server = createHttpServer({ config: loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'false' }), service: {},
     accounts: { starterPack: { assertProvider: async () => {} } },
-    generationServices: { codex: { models: async () => {
+    generationServices: { codexProvider: { listModelCatalog: async () => {
       if (unavailable) throw new Error('worker offline');
       return { source: 'app-server', checkedAt: '2026-09-29T12:00:00.000Z', models: [{ id: 'gpt-6-sol', efforts: ['medium'] }] };
     } } } });

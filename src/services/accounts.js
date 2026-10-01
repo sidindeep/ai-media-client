@@ -6,7 +6,8 @@ const { createWallet } = require('../billing/wallet');
 const { createPricing } = require('../billing/pricing');
 const { createCreditConversion } = require('../billing/conversion');
 const { createProviderRouter } = require('./provider-router');
-const { transaction } = require('../database/database');
+const { transaction, checkDatabase } = require('../database/database');
+const { createModelConfigReader } = require('./service-model-configs');
 const { lockWallet, increaseReservation, settle } = require('../billing/wallet');
 const { generationHistory, generationHistorySince, generationHistoryPage, generationActive, countUnassignedGenerations } = require('./generation-history');
 const { spendingHistory } = require('./spending-history');
@@ -100,6 +101,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
   sweepTimer.unref?.();
   return {
     pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get, sweepIdle,
+    databaseState: options => checkDatabase(pool, options),
+    modelConfigs: createModelConfigReader(pool),
     async updateProfile(accountId, name) {
       const value = typeof name === 'string' ? name.trim() : '';
       if (!value || value.length > 200) throw new Error('Укажите имя до 200 символов');

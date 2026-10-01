@@ -1,7 +1,7 @@
 const { assertAdminRole } = require('../../auth/roles');
 const { readProviderStatus } = require('../../services/provider-status');
 
-async function handleAdminRequest({ req, url, user, accounts, config, kieBrowserControl, kieBrowserSession, routerAiStatus, apimart, send, readBody }) {
+async function handleAdminRequest({ req, url, user, accounts, config, codexAdmin, kieBrowserControl, kieBrowserSession, routerAiStatus, apimart, send, readBody }) {
   if (!accounts) return send(403, { error: 'Доступ запрещён' });
   assertAdminRole(user.role);
   if (url.pathname === '/api/admin/kie-session/status' && req.method === 'GET') {
@@ -29,13 +29,7 @@ async function handleAdminRequest({ req, url, user, accounts, config, kieBrowser
   if (url.pathname === '/api/admin/provider-status' && req.method === 'GET') {
     const provider = url.searchParams.get('provider');
     const kieAccountId = url.searchParams.get('kieAccountId') || 'primary';
-    const codexLimits = config.codex?.url ? async () => {
-      const response = await fetch(`${config.codex.url.replace(/\/$/, '')}/auth/limits`, {
-        headers: { 'x-account-id': user.id }, signal: AbortSignal.timeout(15000),
-      });
-      if (!response.ok) throw new Error('Не удалось прочитать лимиты Codex');
-      return response.json();
-    } : null;
+    const codexLimits = codexAdmin ? () => codexAdmin.limits(user.id) : null;
     try { return send(200, await readProviderStatus({ provider, kieAccountId, kie: accounts.provider,
       routerAi: routerAiStatus, apimart: apimart?.provider.getStatus, codex: codexLimits })); }
     catch (error) { return send(error.status === 400 ? 400 : 502, { error: error.message || 'Не удалось проверить поставщика' }); }
@@ -52,12 +46,10 @@ async function handleAdminRequest({ req, url, user, accounts, config, kieBrowser
   if (url.pathname.startsWith('/api/admin/codex/')) {
     const action = url.pathname.slice('/api/admin/codex/'.length);
     if (!((action === 'status' && req.method === 'GET') || (['start', 'cancel'].includes(action) && req.method === 'POST' && req.headers['x-media-client'] === 'web'))) return send(404, { error: 'Не найдено' });
-    if (!config.codex?.url) return send(503, { error: 'Сервис Codex не подключён на сервере.' });
+    if (!codexAdmin) return send(503, { error: 'Сервис Codex не подключён на сервере.' });
     try {
-      const response = await fetch(`${config.codex.url.replace(/\/$/, '')}/auth/${action}`, { method: req.method, headers: { 'x-account-id': user.id }, signal: AbortSignal.timeout(15000) });
-      if (!response.ok) return send(502, { error: 'Обновите и проверьте сервис Codex на сервере.' });
-      return send(200, { result: await response.json() });
-    } catch { return send(502, { error: 'Сервис Codex не отвечает. Проверьте его запуск.' }); }
+      return send(200, { result: await codexAdmin.auth(user.id, action) });
+    } catch (error) { return send(502, { error: error.remoteStatus ? 'Обновите и проверьте сервис Codex на сервере.' : 'Сервис Codex не отвечает. Проверьте его запуск.' }); }
   }
   if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return send(200, { result: await accounts.list() });
   if (url.pathname === '/api/admin/starter-pack' && req.method === 'GET') return send(200, { result: await accounts.starterOverview() });

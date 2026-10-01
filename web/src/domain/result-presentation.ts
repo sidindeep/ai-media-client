@@ -7,6 +7,8 @@ export function resultModelLabel(record: GenerationRecord, admin: boolean) {
 
 export function publicResultError(record: GenerationRecord) {
   const error = record.error || '';
+  if (record.providerId === 'codex' && /^Codex image generation (?:failed|error)\.$/i.test(error.trim()))
+    return t('error.codexImageReasonMissing');
   // The authenticated history API returns a bounded error for the record owner.
   if (error) return error;
   if (/недостаточно\s+кредит/i.test(error)) return publicServiceError(error);
@@ -22,5 +24,5 @@ export function publicServiceError(message: string, fallback = t('error.requestF
 }
 
 export function resultError(record: GenerationRecord, admin: boolean) {
-  return admin && record.error ? record.error : publicResultError(record);
+  return publicResultError(record);
 }

@@ -65,7 +65,7 @@ flowchart LR
 | Контент | `content_assets`, `content_links`, `content_jobs`, объект S3 `accounts/<account-id>/content/<asset-uuid>` | `src/services/content-service.js`; другие модули используют `accounts.content` для сохранения и чтения. |
 | Commerce | `media_orders`, `media_payment_inbox`, `media_order_fulfillments` | `src/commerce/service.js`; обработка события платежа и выдача кредитов атомарны в продуктовой БД. |
 | Payments | `payment_payments`, `payment_commands`, `payment_attempts`, `payment_webhook_inbox`, `payment_outbox` | `src/payments/service.js`; Commerce использует PaymentClient и версионированное событие, не читает денежные таблицы. |
-| Платформа | `media_schema_versions`, `media_system_errors`, файлы диагностических журналов | `src/database/`, `src/system-errors.js`, `src/generation-log.js`; конфигурация — `src/server/config.js`. |
+| Платформа | `media_schema_versions`, диагностический HTTP-поток ai_logger | `src/database/`, `src/system-errors.js`, `src/ai-logger/`; конфигурация — `src/server/config.js`. Legacy media_system_errors удалена в v21. |
 
 Источник схемы: `src/database/schema.sql`, `src/database/migrations/`.
 Namespace разделяют одну физическую таблицу. Его владелец задаёт смысл данных;
@@ -105,8 +105,17 @@ SQL-чтения выше остаются переходными точками
 [граница медиа](features/media-provider-boundary.md). Тесты:
 `test/web-service.test.js`, `test/codex.test.js`, `test/routerai.test.js`,
 `test/apimart.test.js`, `test/media-contract.test.js`.
-Общий контракт полностью принят APIMart, а Codex использует его для котировки,
-отправки и чтения задания. Kie и RouterAI ещё сохраняют отдельные маршруты.
+Codex (проверено по исходникам 2026-10-01) использует provider facade для всех
+пользовательских операций и отдельный admin facade для входа/лимитов.
+`src/server/codex-module.js` собирает зависимости. Worker HTTP скрыт в
+`src/providers/codex/worker-client.js`; SQL, журнал и участие кошелька в общей
+транзакции скрыты в `src/generations/codex-records.js`. Оркестратор
+`codex-billing.js` не получает accounts/pool и не выполняет HTTP или SQL.
+Операции records: get/create/update/recordSend/pending/createRetry; create
+возвращает fresh, повтор не отправляется провайдеру. Update не меняет terminal
+success/fail; unknown сохраняет резерв. Интерфейс content и legacy storage
+fallback остаются публичными зависимостями оркестратора.
+Kie и RouterAI ещё сохраняют отдельные маршруты.
 Обработчик Codex/RouterAI/APIMart вынесен из
 `http.js`, но только часть маршрутов использует общий контракт. Media-фасад описывает
 виды медиа, а не кошелёк.
@@ -150,7 +159,9 @@ Payments → собственный провайдер и БД. Источник
 - Health и развёртывание: `src/server/http.js`, `compose.yaml`,
   [runbook](../../AGENT_RUNBOOK.md).
 
-Переходные обходы: HTTP использует `accounts.pool` для health;
+HTTP не использует `accounts.pool`: health/startup вызывают `databaseState`,
+а чтение каталога проходит через `modelConfigs.current/list/get`.
+Переходные обходы:
 `src/services/accounts.js` читает ledger и записи генераций для составных представлений starter pack и сверки;
 `src/database/records.js` совместно пишет историю и резерв. При M3 эти
 взаимодействия нужно либо оформить как операции владельцев, либо оставить

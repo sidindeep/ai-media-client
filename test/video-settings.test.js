@@ -12,6 +12,37 @@ vm.runInNewContext(compiled, { exports: moduleExports,
   require: () => ({ mediaFieldOptions: field => field.options || field.schema?.enum || [] }) });
 const { videoPrimaryFields, videoDurationOptions } = moduleExports;
 
+test('video settings hide unsupported resolution and preserve catalog resolution choices', async () => {
+  const { parse, compileScript } = require('vue/compiler-sfc');
+  const { createSSRApp } = require('vue');
+  const { renderToString } = require('vue/server-renderer');
+  const componentSource = fs.readFileSync(path.join(__dirname, '../web/src/components/VideoSettingsBar.vue'), 'utf8');
+  const { descriptor } = parse(componentSource);
+  const script = compileScript(descriptor, { id: 'video-settings-test', inlineTemplate: true });
+  const output = ts.transpileModule(script.content, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const componentExports = {};
+  vm.runInNewContext(output, { exports: componentExports, require: id => {
+    if (id === 'vue') return require('vue');
+    if (id.endsWith('DurationPicker.vue')) return { default: { render: () => null } };
+    if (id.endsWith('/video-settings')) return moduleExports;
+    if (id.endsWith('/media-fields')) return { mediaFieldOptions: field => field.options || field.schema?.enum || [] };
+    if (id === '../i18n') return { useI18n: () => ({ t: key => key }) };
+    throw new Error(`Unexpected import: ${id}`);
+  } });
+  const { models } = require('../src/catalog');
+  const kling = models.find(model => model.id === 'kie:kling/v2-5-turbo-text-to-video-pro');
+  const render = fields => renderToString(createSSRApp(componentExports.default,
+    { fields, values: {}, errors: {}, expanded: false }));
+  const unavailable = await render(kling.fields);
+  assert.doesNotMatch(unavailable, /composer\.unionField\.resolution/);
+  assert.match(unavailable, /composer\.video\.aspect/);
+  assert.match(unavailable, /composer\.video\.duration/);
+  const supported = await render([...kling.fields, { key: 'resolution', options: ['720p', '1080p'], default: '720p' }]);
+  assert.match(supported, /composer\.unionField\.resolution/);
+  assert.match(supported, /value="720p"/);
+  assert.match(supported, /value="1080p"/);
+});
+
 test('video primary settings select quality aliases without consuming unrelated mode or frame counts', () => {
   const quality = { key: 'quality', options: ['720p'] }, duration = { key: 'duration' }, aspect = { key: 'aspect_ratio' };
   const fields = [{ key: 'mode', options: ['fun', 'normal'] }, { key: 'num_frames' }, duration, quality, aspect];

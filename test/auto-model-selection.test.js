@@ -24,7 +24,7 @@ function studio() {
     if (id === '../domain/media-fields') return { normalizeMediaInput: (_model, input) => input, mediaFileValue: (_field, refs) => refs };
     return original(id);
   };
-  compiled._compile(output, filename);
+  compiled._compile("const window = { location: { search: '', href: 'http://localhost/' }, history: { state: null, replaceState() {} } };\n" + output, filename);
   return compiled.exports.useStudioStore();
 }
 

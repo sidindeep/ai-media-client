@@ -37,6 +37,22 @@ function providerError(value, fallback = 'Codex request failed.') {
   return new Error(parts.length ? `Codex: ${parts.join(' · ').slice(0, 4000)}` : fallback);
 }
 
+function imageGenerationError(item) {
+  const fallback = item.status === 'cancelled'
+    ? 'Codex отменил создание изображения. Подробная причина не передана.'
+    : 'Codex не смог создать изображение. Провайдер не передал подробную причину; определить её по этому ответу невозможно.';
+  // Only explicit error fields and a textual failure result are eligible.
+  // Never copy the item envelope (which can contain a prompt or image bytes).
+  const result = typeof item.result === 'string' && item.result.length <= 16000
+    && !/^[A-Za-z0-9+/=\s]{256,}$/.test(item.result) ? item.result : undefined;
+  const error = providerError({ failure: item.failure, error: item.error, message: result }, fallback);
+  if (/moderation_blocked|content_policy_violation|safety system/i.test(error.message))
+    error.message = 'Codex отклонил изображение по правилам безопасности. ' + error.message;
+  else if (/usageLimitExceeded|rate_limit_exceeded|httpStatusCode: 429/i.test(error.message))
+    error.message = 'Codex сообщил о лимите генерации. ' + error.message;
+  return error;
+}
+
 function execError(output) {
   let result;
   for (const line of output.split('\n')) {
@@ -44,9 +60,9 @@ function execError(output) {
     try { event = JSON.parse(line); } catch { continue; }
     if (event.type === 'turn.failed' || event.type === 'error') result = providerError(event.error || event);
     if (event.type === 'item.completed' && event.item?.type === 'image_generation'
-      && ['failed', 'error'].includes(event.item.status)) result = providerError({ failure: event.item.failure, message: event.item.result });
+      && ['failed', 'error', 'cancelled'].includes(event.item.status)) result = imageGenerationError(event.item);
   }
   return result;
 }
 
-module.exports = { providerError, safeErrorText, execError };
+module.exports = { providerError, safeErrorText, execError, imageGenerationError };

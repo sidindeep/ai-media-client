@@ -192,6 +192,7 @@ test('Failed imageGeneration preserves provider text instead of validating an er
       item: { id: randomUUID(), type: 'imageGeneration', status: 'failed', result: JSON.stringify({ error: {
         code: 'moderation_blocked', message: 'Rejected by safety system.', moderation_details: { moderation_stage: 'output', categories: ['sexual'] }
       } }) } } });
+    emit({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: turnId, status: 'completed' } } });
   });
   await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), error => {
     assert.match(error.message, /moderation_blocked/); assert.match(error.message, /sexual/);
@@ -205,8 +206,32 @@ test('Image usage limit failure with empty result retains limit and reset detail
     const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
     emit({ method: 'item/completed', params: { threadId: m.params.threadId, turnId,
       item: { type: 'imageGeneration', status: 'failed', result: '', failure: { type: 'usageLimitExceeded', limitId: 'images', resetsAt: 12345 } } } });
+    emit({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: turnId, status: 'completed' } } });
   });
   await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), /usageLimitExceeded.*images.*12345/);
+});
+
+test('Empty image failure waits for the final turn reason', async t => {
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
+    emit({ method: 'item/completed', params: { threadId: m.params.threadId, turnId,
+      item: { type: 'imageGeneration', status: 'failed', result: '' } } });
+    setImmediate(() => emit({ method: 'turn/completed', params: { threadId: m.params.threadId,
+      turn: { id: turnId, status: 'failed', error: { code: 'image_service_unavailable', message: 'Image service unavailable' } } } }));
+  });
+  await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), /image_service_unavailable.*Image service unavailable/);
+});
+
+test('Empty image failure explains that no cause was supplied when the turn completes', async t => {
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
+    emit({ method: 'item/completed', params: { threadId: m.params.threadId, turnId,
+      item: { type: 'imageGeneration', status: 'failed', result: '' } } });
+    emit({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: turnId, status: 'completed' } } });
+  });
+  await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), /не передал подробную причину/);
 });
 
 test('RPC and failed turns preserve details while a retry notification allows success', async t => {
@@ -283,6 +308,15 @@ test('Worker retains unknown outcome and deduplicates without running another ad
   const base = `http://127.0.0.1:${server.address().port}`;
   const job = request(), headers = { 'x-account-id': randomUUID() };
   await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(job) });
+  // Admission returns before the adapter outcome has been persisted.
+  const deadline = Date.now() + 2000;
+  let state;
+  do {
+    state = (await fetch(base + '/jobs/' + job.requestId, { headers }).then(r => r.json())).state;
+    if (state !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  } while (Date.now() < deadline);
+  assert.equal(state, 'unknown');
   const second = await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(job) }).then(r => r.json());
   assert.equal(second.state, 'unknown'); assert.equal(runs, 1);
   assert.equal((await fetch(base + '/health').then(r => r.json())).transport, 'app-server');

@@ -12,7 +12,7 @@ const { handleGenerationRequest } = require('./routes/generation');
 const { handleAdminRequest } = require('./routes/admin');
 const { handleSourceUpload, handleContentRead } = require('./routes/content');
 const { buildInfo } = require('./build-info');
-const { checkDatabase, transientConnection } = require('../database/database');
+const { transientConnection } = require('../database/database');
 const trace = require('../generation-log');
 const systemErrors = require('../system-errors');
 const sharedFiles = new Set(['renderer.js', 'provider-errors.js', 'styles.css', 'ru.js', 'templates-ui.js', 'source-preview.js', 'file-drop.js', 'choice-buttons.js', 'structured-fields.js', 'drafts.js', 'costs.js', 'tariff-snapshot.js', 'price-audit.js', 'duration.js', 'costs-ui.js']);
@@ -191,7 +191,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   let uploadBytesInFlight = 0;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
-  let codex = generationServices?.codex || null;
+  let codexAdmin = generationServices?.codexAdmin || null;
   let codexProvider = generationServices?.codexProvider || null;
   let routerAi = generationServices?.routerAi || null;
   let apimart = generationServices?.apimart || null;
@@ -281,7 +281,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       if (req.method === 'GET' && url.pathname === '/api/startup') {
         // Page navigation reuses the process-wide pool. This is only a liveness
         // probe; pg reconnects the pool when the previous connection was lost.
-        let database = accounts ? await checkDatabase(accounts.pool, { diagnostics: false }) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        let database = accounts ? await accounts.databaseState({ diagnostics: false }) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         let startupUser = config.auth.enabled ? null : { id: 'local', role: ROLES.ADMIN, name: 'Владелец' };
         if (auth && database.state === 'connected') {
           try { startupUser = await assetUser(auth, req, true); }
@@ -299,7 +299,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         });
       }
       if (req.method === 'GET' && url.pathname === '/api/health') {
-        const database = accounts ? await checkDatabase(accounts.pool) : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
+        const database = accounts ? await accounts.databaseState() : (databaseAvailability?.snapshot() || readiness?.database || { state: config.auth.enabled ? 'connecting' : 'disabled' });
         const status = ['connected', 'disabled'].includes(database.state) ? 200 : 503;
         const memory = process.memoryUsage();
         return json(res, status, { ok: status === 200, version: release.version, build: release.build, database,
@@ -382,18 +382,15 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
       }
       if (auth && req.method === 'POST' && req.headers['x-media-user'] !== user.id) return json(res, 409, { error: 'Аккаунт изменился. Перезагрузите страницу.' });
       if (accounts && req.method === 'GET' && url.pathname === '/api/service-model-config/current') {
-        const { currentModelConfig } = require('../services/service-model-configs');
-        return json(res, 200, { result: await currentModelConfig(accounts.pool) });
+        return json(res, 200, { result: await accounts.modelConfigs.current() });
       }
       if (accounts && req.method === 'GET' && url.pathname === '/api/service-model-configs') {
-        const { listModelConfigs } = require('../services/service-model-configs');
-        return json(res, 200, { result: await listModelConfigs(accounts.pool) });
+        return json(res, 200, { result: await accounts.modelConfigs.list() });
       }
       if (accounts && req.method === 'GET' && url.pathname === '/api/service-model-config') {
-        const { modelConfigById } = require('../services/service-model-configs');
         const id = url.searchParams.get('id');
         if (!id) return json(res, 400, { error: 'Не указана версия каталога моделей' });
-        const modelConfig = await modelConfigById(accounts.pool, id);
+        const modelConfig = await accounts.modelConfigs.get(id);
         return modelConfig ? json(res, 200, { result: modelConfig }) : json(res, 404, { error: 'Версия каталога моделей не найдена' });
       }
       if (url.pathname === '/api/account/telegram') {
@@ -409,7 +406,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 200, { result: await telegram.unlink(user.id) });
       }
       if (/^\/api\/(?:codex|apimart|routerai|auto)\//.test(url.pathname)) {
-        return await handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, costRouter, routerAiModels, headers,
+        return await handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, apimart, costRouter, routerAiModels, headers,
           send: (status, body) => json(res, status, body), readBody: limit => readBody(req, limit),
           sendMedia: fn => sendMedia(req, res, fn),
           sendStored: (file, attachment) => sendStored(req, res, storage, file, attachment),
@@ -442,7 +439,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           readBody: limit => readBody(req, limit), recordSystemEvent, recordSystemInfo });
       }
       if (url.pathname.startsWith('/api/admin/')) {
-        return await handleAdminRequest({ req, url, user, accounts, config, kieBrowserControl, kieBrowserSession, routerAiStatus, apimart,
+        return await handleAdminRequest({ req, url, user, accounts, config, codexAdmin, kieBrowserControl, kieBrowserSession, routerAiStatus, apimart,
           send: (status, body) => json(res, status, body), readBody: limit => readBody(req, limit) });
       }
       // An admin can explicitly select a workspace; ordinary users cannot supply a tenant.
@@ -549,7 +546,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   server.requestTimeout = 60000; server.headersTimeout = 15000;
   server.setAccountServices = async (nextAuth, nextAccounts, nextPayments = null, nextCommerce = null, nextGenerationServices = null) => {
     auth = nextAuth; accounts = nextAccounts; payments = nextPayments; commerce = nextCommerce;
-    codex = nextGenerationServices?.codex || null;
+    codexAdmin = nextGenerationServices?.codexAdmin || null;
     codexProvider = nextGenerationServices?.codexProvider || null;
     routerAi = nextGenerationServices?.routerAi || null;
     apimart = nextGenerationServices?.apimart || null;

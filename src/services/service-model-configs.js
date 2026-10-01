@@ -64,4 +64,9 @@ async function activateModelConfig(pool, id) {
   if (id !== ID) throw new Error('Существует одна единая таблица моделей; вкладки являются фильтрами');
   await readRouteDocument(pool);
 }
-module.exports = { ensureCurrentModelConfig, currentModelConfig, modelConfigById, saveModelConfig, listModelConfigs, activateModelConfig, readRouteDocument };
+function createModelConfigReader(pool) {
+  return Object.freeze({ current: () => currentModelConfig(pool), list: () => listModelConfigs(pool),
+    get: id => modelConfigById(pool, id) });
+}
+
+module.exports = { ensureCurrentModelConfig, currentModelConfig, modelConfigById, saveModelConfig, listModelConfigs, activateModelConfig, readRouteDocument, createModelConfigReader };

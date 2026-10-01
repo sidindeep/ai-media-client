@@ -6,7 +6,7 @@ const { codexEnvironment } = require('./codex-runtime');
 const { codexPrompt, disabledFeatures, imageFeatures } = require('./codex-request');
 const { collectImage, validatePng } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
-const { providerError } = require('./codex-errors');
+const { providerError, imageGenerationError } = require('./codex-errors');
 
 const uncertain = () => Object.assign(new Error('Связь с Codex app-server потеряна. Результат неизвестен; автоматический повтор отключён.'), { outcomeUnknown: true });
 const failure = () => new Error('Codex app-server не выполнил запрос. Проверьте модель и вход на сервере.');
@@ -151,8 +151,9 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
           }
           if (message.method === 'item/completed' && params.item?.type === 'imageGeneration') {
             const item = params.item;
-            if (item.failure || ['failed', 'error', 'cancelled'].includes(item.status)) {
-              job.reject(providerError({ failure: item.failure, message: item.result }, `Codex image generation ${item.status || 'failed'}.`));
+            if (item.failure || item.error || ['failed', 'error', 'cancelled'].includes(item.status)) {
+              // A later turn/error notification can explain an otherwise empty failure.
+              job.imageError = imageGenerationError(item);
               continue;
             }
             try {
@@ -162,8 +163,10 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
             }
           }
           if (message.method === 'turn/completed') {
-            if (params.turn?.status === 'completed') job.resolve();
-            else job.reject(params.turn?.error ? providerError(params.turn.error) : job.providerError || failure());
+            if (params.turn?.error) job.reject(providerError(params.turn.error));
+            else if (job.imageError) job.reject(job.providerError || job.imageError);
+            else if (params.turn?.status === 'completed') job.resolve();
+            else job.reject(job.providerError || failure());
           }
         }
       });

@@ -10,6 +10,7 @@ const props = defineProps<{ fields: MediaField[]; values: Record<string, unknown
 const emit = defineEmits<{ change: [field: MediaField, value: unknown]; 'update:expanded': [value: boolean] }>();
 const { t } = useI18n();
 const primary = computed(() => videoPrimaryFields(props.fields));
+const visibleSelectKinds = computed(() => (['aspect', 'quality'] as const).filter(kind => primary.value[kind]));
 const durationOptions = computed(() => videoDurationOptions(primary.value.duration));
 const durationChoices = computed(() => durationOptions.value.map(option => ({ value: String(option), label: durationLabel(option) })));
 const value = (field: MediaField) => props.values[field.key] ?? field.default ?? field.apiDefault ?? '';
@@ -33,7 +34,7 @@ function durationLabel(option: unknown) {
 <template>
   <div class="video-settings-bar">
     <div class="video-setting video-model-setting"><span class="video-setting-label">{{ t('composer.video.model') }}</span><slot /></div>
-    <label v-for="kind in (['aspect', 'quality'] as const)" :key="kind" class="video-setting" :class="{ invalid: primary[kind] && errors[primary[kind]!.key] }">
+    <label v-for="kind in visibleSelectKinds" :key="kind" class="video-setting" :class="{ invalid: primary[kind] && errors[primary[kind]!.key] }">
       <span class="video-setting-label">{{ t(kind === 'aspect' ? 'composer.video.aspect' : primary.quality?.key === 'quality' ? 'composer.unionField.quality' : 'composer.unionField.resolution') }}</span>
       <select v-if="primary[kind] && mediaFieldOptions(primary[kind]!).length" :value="value(primary[kind]!)" @change="change(primary[kind]!, ($event.target as HTMLSelectElement).value)">
         <option v-for="option in mediaFieldOptions(primary[kind]!)" :key="String(option)" :value="String(option)">{{ option }}</option>

@@ -494,6 +494,7 @@ export const ru = {
   'generation.duration.seconds': '{count} с',
   'generation.duration.minutes': '{minutes} мин {seconds} с',
   'generation.tokensShort': '{count} ток.',
+  'error.codexImageReasonMissing': 'Codex не смог создать изображение. Провайдер не передал подробную причину; определить её по этому ответу невозможно.',
   'generation.resultPending': 'Результат появится здесь после завершения задачи.',
   'generation.openDetails': 'Открыть подробности: {model}',
   'generation.errorDetails': 'Подробности ошибки',

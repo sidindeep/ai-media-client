@@ -1,9 +1,8 @@
-const { createCodexBilling } = require('../services/codex-billing');
+const { createCodexModule } = require('./codex-module');
 const { createRouterAiBilling } = require('../services/routerai-billing');
 const { createRouterAiCatalog } = require('../providers/routerai/catalog');
 const { createRouterAiClient } = require('../providers/routerai/client');
 const { createApimartJobs } = require('../services/apimart-jobs');
-const { createCodexApplicationProvider } = require('../providers/codex/application');
 const { createCostRouter } = require('../services/cost-router');
 
 function createGenerationSupport(config) {
@@ -15,10 +14,12 @@ function createGenerationSupport(config) {
 
 function createGenerationServices({ config, accounts, storage, support }) {
   if (!support) throw new Error('Generation support is required');
+  const codexModule = accounts && config.codex?.url ? createCodexModule({ accounts, url: config.codex.url,
+    dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null;
   const services = {
     ...support,
-    codex: accounts && config.codex?.url ? createCodexBilling({ accounts, url: config.codex.url,
-      dataDirectory: config.dataDirectory, storage, content: accounts.content }) : null,
+    codex: codexModule?.provider || null,
+    codexAdmin: codexModule?.admin || null,
     routerAi: accounts && config.routerAi?.apiKey ? createRouterAiBilling({ accounts, apiKey: config.routerAi.apiKey,
       content: accounts.content, tariffFetcher: support.routerAiModels.tariff }) : null,
     apimart: accounts && config.apimart?.apiKey ? createApimartJobs({ pool: accounts.pool,
@@ -26,7 +27,7 @@ function createGenerationServices({ config, accounts, storage, support }) {
   };
   return { ...services,
     costRouter: accounts ? createCostRouter({ accounts, apimart: services.apimart, pool: accounts.pool }) : null,
-    codexProvider: services.codex ? createCodexApplicationProvider(services.codex) : null };
+    codexProvider: services.codex };
 }
 
 async function recoverGenerationServices(services) {

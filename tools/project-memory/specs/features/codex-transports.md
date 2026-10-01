@@ -54,6 +54,30 @@
 
 ## Карта и доказательства
 
+Сборка 2026-10-01: `src/server/codex-module.js` связывает worker-client,
+records, pricing/conversion и content. Пользовательские маршруты используют
+provider facade, административные — admin facade. Worker не зависит от
+пользовательской БД, кредитов или ContentService. Продуктовая оркестрация
+`codex-billing.js` работает с переданными интерфейсами; атомарность резерва,
+записи, settlement и журнала принадлежит Generations/CodexRecords.
+Внешние HTTP API, requestId, цены, tenant scope и правила повтора сохранены.
+Проверки границ: `test/module-boundaries.test.js`; транспорт:
+`test/codex-worker-client.test.js`; собранный сценарий с PostgreSQL:
+`test/codex.test.js`. Остальные провайдеры и Vue рефакторятся по
+`docs/modularity-improvement-plan.md` и не объявляются завершёнными.
+
+Ошибки изображений (2026-10-01): `codex-errors.imageGenerationError` читает
+только явные `failure`, `error` и ограниченный текстовый `result`; бинарный
+результат и поля запроса не копируются. App-server сохраняет ошибку элемента
+до `turn/completed`, чтобы учесть итоговый `turn.error` или неповторяемое
+уведомление `error`. При отсутствии причины возвращается явное пояснение,
+а не предположение о модерации/лимите. Известные коды модерации и лимита
+получают понятную подпись с сохранением исходных безопасных деталей.
+История показывает это владельцу; старый общий текст отображается через RU/EN
+словарь без изменения записей БД. Проверки: `test/codex-errors.test.js`,
+`test/codex-app-server.test.js`. Транспорт без завершения turn по-прежнему
+попадает в `unknown`; автоматические повторы и расчёты кредитов не меняются.
+
 - `src/services/codex-worker.js`: выбор транспорта, дедупликация, кеш и shutdown.
 - `src/services/codex-exec.js`: прежний exec-путь; `codex-runtime.js`: фильтр окружения.
 - `src/services/codex-app-server.js`: JSON-RPC, threads/turns, ошибки, PNG и usage.

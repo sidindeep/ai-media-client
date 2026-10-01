@@ -10,7 +10,7 @@ const { createTelegramBot } = require('../src/services/telegram-bot');
 const { createTelegramGateway } = require('../src/services/telegram-gateway');
 const { models } = require('../src/catalog');
 const { createDatabaseAvailability } = require('../src/database/availability');
-const { openDatabase } = require('../src/database/database');
+const { openDatabase, checkDatabase } = require('../src/database/database');
 const { testPool } = require('./helpers/pg-pool');
 const model = models.find(item => item.apiModel === 'grok-imagine-video-1-5-preview');
 const input = { prompt: 'Тест кота', duration: 8, aspect_ratio: '16:9', resolution: '720p' };
@@ -48,7 +48,7 @@ test('temporary database failure keeps the public landing and Vue shell availabl
   const databaseQueries = [];
   const unavailable = async () => { throw Object.assign(new Error('private database details'), { code: 'EAI_AGAIN' }); };
   const query = async request => { databaseQueries.push(request?.text || request); return unavailable(); };
-  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { pool: { query } } });
+  const server = require('../src/server/http').createHttpServer({ config: loadConfig({ MEDIA_PORT: '0' }), service: {}, auth: { user: unavailable, providers: () => [] }, accounts: { databaseState: options => checkDatabase({ query }, options) } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;

@@ -8,7 +8,7 @@ const document = require('../config/model-routes.json');
 const { publicRows, validateDocument } = require('../src/services/model-route-document');
 const { testPool } = require('./helpers/pg-pool');
 const { openDatabase, transaction } = require('../src/database/database');
-const { ensureCurrentModelConfig, currentModelConfig, saveModelConfig, listModelConfigs, modelConfigById, readRouteDocument } = require('../src/services/service-model-configs');
+const { ensureCurrentModelConfig, currentModelConfig, saveModelConfig, listModelConfigs, modelConfigById, readRouteDocument, createModelConfigReader } = require('../src/services/service-model-configs');
 const { loadConfig } = require('../src/server/config');
 const { createHttpServer } = require('../src/server/http');
 const kie = require('../src/catalog').models;
@@ -129,7 +129,7 @@ test('both picker views read one registry and imports replace it without resurre
 
 test('model API exposes stable project IDs and two filters of one table', async t => {
   const pool=await openDatabase({},testPool());t.after(()=>pool.end());await ensureCurrentModelConfig(pool);
-  const server=createHttpServer({config:loadConfig({MEDIA_PORT:'0',MEDIA_AUTH_ENABLED:'false'}),service:{},accounts:{pool},auth:{user:async()=>({id:'test-user',role:'user'}),providers:()=>[]}});
+  const server=createHttpServer({config:loadConfig({MEDIA_PORT:'0',MEDIA_AUTH_ENABLED:'false'}),service:{},accounts:{modelConfigs:createModelConfigReader(pool)},auth:{user:async()=>({id:'test-user',role:'user'}),providers:()=>[]}});
   t.after(()=>new Promise(resolve=>server.close(resolve)));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const url='http://127.0.0.1:'+server.address().port;
   const current=await fetch(url+'/api/service-model-config/current').then(r=>r.json());

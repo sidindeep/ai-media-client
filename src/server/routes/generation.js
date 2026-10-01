@@ -3,7 +3,7 @@ const { validateRouterAiRequest } = require('../../services/routerai-billing');
 const { isAdminRole, assertAdminRole } = require('../../auth/roles');
 const snapshotCatalog = require('../../../config/codex-models.json');
 
-async function handleGenerationRequest({ req, res, url, user, accounts, codex, codexProvider, routerAi, apimart, costRouter, routerAiModels,
+async function handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, apimart, costRouter, routerAiModels,
   send, readBody, sendMedia, sendStored, sendFile, headers }) {
   if (url.pathname.startsWith('/api/auto/')) {
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
@@ -23,16 +23,16 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codex, c
   if (url.pathname.startsWith('/api/codex/')) {
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
     if (req.method === 'GET' && url.pathname === '/api/codex/status') return send(200, { enabled: Boolean(codexProvider), allowed: Boolean(accounts) });
-    if (!codex) return send(503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
+    if (!codexProvider) return send(503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
     if (req.method === 'GET' && url.pathname === '/api/codex/models') {
-      try { return send(200, { ...await codex.models(), uiDefaults: snapshotCatalog.uiDefaults }); }
+      try { return send(200, { ...await codexProvider.listModelCatalog(), uiDefaults: snapshotCatalog.uiDefaults }); }
       catch { return send(503, { error: 'Каталог Codex временно недоступен.' }); }
     }
     const imageRequest = /^\/api\/codex\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
     if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
       const selectedAccount = url.searchParams.get('account');
       if (selectedAccount) await accounts.scope(user, selectedAccount);
-      const file = await codex.image(selectedAccount || user.id, imageRequest[1]);
+      const file = await codexProvider.getImage(selectedAccount || user.id, imageRequest[1]);
       return await sendMedia(() => file.storageKey
         ? sendStored(file, url.searchParams.get('download') === '1')
         : sendFile(file, 'image/png', url.searchParams.get('download') === '1'));
@@ -46,7 +46,7 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codex, c
     if (req.method === 'POST') {
       if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
       const raw = JSON.parse((await readBody(100000)).toString('utf8'));
-      const body = validateCodexRequest(raw, (await codex.models()).models);
+      const body = validateCodexRequest(raw, await codexProvider.listModels());
       const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
       return send(200, await codexProvider.submit(user.id, { ...body, ...binding }));
     }

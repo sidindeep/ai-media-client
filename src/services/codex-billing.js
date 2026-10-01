@@ -1,81 +1,23 @@
-const { transaction } = require('../database/database');
-const { reserve, settle, lockWallet } = require('../billing/wallet');
 const { validateCodexRequest } = require('./codex-request');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
-const { createCreditConversion } = require('../billing/conversion');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { parseContentRef } = require('./content-service');
-const { appendGenerationEvent } = require('./generation-journal');
-const { submissionDecision, createStoredRetry } = require('./submission-control');
-const { parseRetryAfter } = require('../retry-after');
-const { providerError, safeErrorText } = require('./codex-errors');
+const { submissionDecision } = require('./submission-control');
+const { safeErrorText } = require('./codex-errors');
 const priceKey = request => `codex:${request.model}:${request.effort}:${request.speed}`;
-function createCodexBilling({ accounts, url, dataDirectory, storage = null, content = accounts?.content || null, fetchImpl = fetch,
+function createCodexBilling({ records, worker, pricing, conversion, dataDirectory, storage = null, content = null,
   retryDelayMs = 10_000 }) {
   const timers = new Map(), statusInFlight = new Map(); let closed = false;
   const id = (account, requestId) => `codex:${account}:${requestId}`;
-  const get = async (account, requestId) => (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
-  const conversion = accounts.conversion || createCreditConversion();
-  const quote = request => ({ ...conversion.quote('codex', accounts.pricing.quote(priceKey(request))), source: 'configured' });
+  const get = records.get;
+  const quote = request => ({ ...conversion.quote('codex', pricing.quote(priceKey(request))), source: 'configured' });
   const imagePath = (account, requestId) => path.join(dataDirectory, 'codex-images', account, requestId + '.png');
   const imageKey = (account, requestId) => `accounts/${account}/codex-images/${requestId}.png`;
-  async function update(account, requestId, patch) {
-    return transaction(accounts.pool, async client => {
-      await lockWallet(client, account);
-      const row = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2 FOR UPDATE", [account, id(account, requestId)])).rows[0];
-      if (!row) throw Object.assign(new Error('Запрос не найден'), { status: 404 });
-      if (['success', 'fail'].includes(row.data.state)) return row.data;
-      const now = new Date();
-      const next = { ...row.data, ...patch, revision: Number(row.data.revision || 0) + 1, updatedAt: now.toISOString() };
-      if (['success', 'fail'].includes(next.state) && next.durationMs == null) {
-        const started = Date.parse(next.startedAt || next.createdAt);
-        if (Number.isFinite(started)) {
-          next.completedAt = now.toISOString();
-          next.durationMs = Math.max(0, now.getTime() - started);
-        }
-      }
-      await settle(client, account, id(account, requestId), next.state, next);
-      await client.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, requestId), JSON.stringify(next)]);
-      if (row.data.state !== next.state) await appendGenerationEvent(client, account, 'codex', next, next.state,
-        { error: next.error });
-      return next;
-    });
-  }
-  async function remote(account, pathname, body) {
-    const response = await fetchImpl(url + pathname, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Account-Id': account }, body: body && JSON.stringify(body), signal: AbortSignal.timeout(10000) });
-    // A reverse proxy can return concatenated JSON or an HTML/plain-text error.
-    // Keep the original status and classify it as an unknown submission instead
-    // of leaking JSON.parse's misleading syntax error to the user.
-    let value;
-    if (typeof response.text === 'function') {
-      const text = await response.text();
-      try { value = JSON.parse(text); }
-      catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
-    } else {
-      try { value = await response.json(); }
-      catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
-    }
-    if (!response.ok) throw Object.assign(providerError(value.error || value, `Codex HTTP ${response.status}`), {
-      code: `CODEX_HTTP_${response.status}`,
-      remoteStatus: response.status,
-      confirmedRejected: response.status === 429 && value?.accepted === false,
-      retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')),
-    });
-    return value;
-  }
-  const models = () => remote('local', '/models');
-  async function remoteImage(account, requestId) {
-    const response = await fetchImpl(url + '/jobs/' + requestId + '/image', {
-      headers: { 'X-Account-Id': account }, signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) throw Object.assign(new Error('Изображение Codex недоступно'), { remoteStatus: response.status });
-    const length = Number(response.headers?.get?.('content-length'));
-    if (Number.isFinite(length) && length > MAX_IMAGE_BYTES) throw new Error('Изображение Codex слишком большое');
-    return validatePng(Buffer.from(await response.arrayBuffer()));
-  }
+  const update = records.update;
+  const models = worker.listModels;
   function watch(account, requestId) {
     const key = id(account, requestId);
     if (closed || timers.has(key)) return;
@@ -98,14 +40,14 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     const job = await read(account, requestId);
     if (['success', 'fail', 'queued'].includes(job.state)) return job;
     try {
-      const result = await remote(account, '/jobs/' + requestId);
+      const result = await worker.getTask(account, requestId);
       if (result.state === 'success') {
         let contentAssetId = null;
         let contentSaveError = null;
         if (job.kind === 'image') {
           let image;
           try {
-            if (result.hasImage === true) image = await remoteImage(account, requestId);
+            if (result.hasImage === true) image = await worker.getImage(account, requestId);
             else {
               if (typeof result.imageBase64 !== 'string' || result.imageBase64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('missing image');
               image = validatePng(Buffer.from(result.imageBase64, 'base64'));
@@ -133,7 +75,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
         }
         const saved = await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', ...(typeof contentAssetId === 'string' ? { contentAssetId } : {}), ...(contentSaveError ? { contentSaveError } : {}), error: null });
         if (job.kind === 'image' && !contentSaveError && result.hasImage === true)
-          await remote(account, '/jobs/' + requestId + '/ack', {}).catch(() => {});
+          await worker.acknowledgeImage(account, requestId).catch(() => {});
         return saved;
       }
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: safeErrorText(result.error) || 'Codex request failed.' });
@@ -174,9 +116,9 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
   }
   async function send(account, request, images) {
     try {
-      await appendGenerationEvent(accounts.pool, account, 'codex', request, 'send_start');
+      await records.recordSend(account, request);
       const { prompt, model, effort, speed, requestId, kind, aspectRatio, sourceFiles, projectId, chatId } = request;
-      await remote(account, '/jobs', { prompt, model, effort, speed, requestId, kind, aspectRatio, sourceFiles,
+      await worker.submit(account, { prompt, model, effort, speed, requestId, kind, aspectRatio, sourceFiles,
         projectId, chatId, images });
       const running = await update(account, request.requestId, { state: 'running', stage: 'generating', error: null });
       watch(account, request.requestId); return running;
@@ -194,7 +136,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' } }); await update(account, request.requestId, { state: 'fail', error: error.message }); return; }
     await send(account, request, images);
   }
-  const retries = createStoredRetry({ pool: accounts.pool, namespace: 'codex', jobId: id,
+  const retries = records.createRetry({
     activeState: 'submitting', activePatch: { stage: 'submitting' }, queuedPatch: { stage: 'queued' },
     retryDelayMs, dispatch: dispatchRetry });
   async function submit(account, raw) {
@@ -202,24 +144,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
     const request = validateCodexRequest(raw, catalog.models);
     const modelName = catalog.models.find(model => model.id === request.model)?.name || request.model;
     const images = await loadImages(account, request);
-    let fresh = false;
-    const job = await transaction(accounts.pool, async client => {
-      await lockWallet(client, account);
-      const previous = (await client.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex' AND id=$2", [account, id(account, request.requestId)])).rows[0]?.data;
-      if (previous) {
-        if (['model', 'effort', 'speed', 'prompt', 'aspectRatio', 'projectId', 'chatId'].some(key => (previous[key] ?? null) !== (request[key] ?? null))
-          || JSON.stringify(previous.sourceFiles || []) !== JSON.stringify(request.sourceFiles || [])
-          || (previous.kind || 'text') !== (request.kind || 'text')) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
-        return previous;
-      }
-      const nativeQuote = quote(request);
-      await reserve(client, account, id(account, request.requestId), nativeQuote);
-      const createdAt = new Date().toISOString();
-      const record = { ...request, modelName, id: request.requestId, revision: 1, state: 'submitting', stage: 'submitting', nativeQuote, createdAt, updatedAt: createdAt, startedAt: createdAt };
-      await client.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'codex',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
-      await appendGenerationEvent(client, account, 'codex', record, 'created');
-      fresh = true; return record;
-    });
+    const { record: job, fresh } = await records.create(account, request, modelName, quote);
     if (!fresh) return job;
     return send(account, request, images);
   }
@@ -232,7 +157,7 @@ function createCodexBilling({ accounts, url, dataDirectory, storage = null, cont
       return imagePath(account, requestId);
     },
     async recover() {
-      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='codex' AND data->>'state' IN ('running','submitting','unknown','queued')")).rows;
+      const rows = await records.pending();
       for (const row of rows) {
         if (row.data.state === 'queued') { retries.recover(row.account_id, row.data); continue; }
         const current = await status(row.account_id, row.data.id);

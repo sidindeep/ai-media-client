@@ -1,7 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { providerError, safeErrorText, execError } = require('../src/services/codex-errors');
+const { providerError, safeErrorText, execError, imageGenerationError } = require('../src/services/codex-errors');
 const { parseCodexOutput } = require('../src/services/codex-usage');
+
+test('Image failure preserves explicit error and excludes request and binary payloads', () => {
+  const error = imageGenerationError({ status: 'failed', error: { code: 'content_policy_violation', message: 'Blocked', prompt: 'PRIVATE' },
+    prompt: 'PRIVATE', result: 'a'.repeat(1000) });
+  assert.match(error.message, /правилам безопасности.*content_policy_violation/);
+  assert.doesNotMatch(error.message, /PRIVATE|aaaa|binary data/);
+  assert.match(imageGenerationError({ status: 'failed', result: '' }).message, /не передал подробную причину/);
+  assert.match(execError(JSON.stringify({ type: 'item.completed', item: { type: 'image_generation', status: 'failed', result: '' } })).message, /не передал подробную причину/);
+});
 
 test('Provider errors retain moderation and structured transport details, not request fields', () => {
   const error = providerError(JSON.stringify({ error: { code: 'moderation_blocked', message: 'Rejected by safety system.',
@@ -38,4 +47,8 @@ test('The result view displays Codex details for a non-admin owner', () => {
   const record = { providerId: 'codex', state: 'fail', error: 'Codex: moderation_blocked: Rejected by safety system.' };
   assert.equal(context.exports.resultError(record, false), record.error);
   assert.equal(context.exports.resultError({ ...record, providerId: 'media' }, false), record.error);
+  for (const admin of [true, false]) {
+    assert.equal(context.exports.resultError({ ...record, error: 'Codex image generation failed.' }, admin), 'error.codexImageReasonMissing');
+    assert.equal(context.exports.resultError(record, admin), record.error);
+  }
 });

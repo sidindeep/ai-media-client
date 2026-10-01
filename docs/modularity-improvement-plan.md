@@ -7,6 +7,45 @@ Payments, выделенные HTTP-маршруты, адаптер Codex и co
 [правила модульности](../patterns/MODULAR_SERVICE_ENGINEERING.md).
 Документ подробно раскрывает пункт 6 [общего плана аудита](project-improvement-plan-2026-09-27.md).
 
+## Выполненный пакет 2026-10-01 и продолжение
+
+Общий рефакторинг проекта остаётся в работе. По текущему запросу закрыты
+конкретные обходы Codex и доступа HTTP к пулу БД; это не закрывает M0–M6 целиком.
+
+- Codex: HTTP использует только `codexProvider` и `codexAdmin`. Каталог с
+  метаданными, изображение, запуск, чтение и lifecycle имеют явные операции.
+- `src/providers/codex/worker-client.js` владеет HTTP-контрактом worker,
+  таймаутами, безопасными ошибками и доказательством `accepted: false`.
+- `src/generations/codex-records.js` владеет namespace Codex и общей транзакцией
+  записи/резерва/журнала. `codex-billing.js` получает операции records, worker,
+  pricing, conversion и content; SQL и HTTP в нём отсутствуют.
+- Сборка зависимостей находится в `src/server/codex-module.js`.
+- HTTP получает состояние БД и каталоги моделей через `accounts.databaseState`
+  и `accounts.modelConfigs`, без `accounts.pool`.
+- `test/module-boundaries.test.js` проверяет все текущие HTTP-маршруты и
+  Codex-транспорты, включая новые файлы этих областей.
+
+Проверка пакета: рабочий Compose пересобран; media/codex healthy, API health
+`ok: true`. Полный контейнерный набор — 344/344; браузерный smoke прошёл.
+Живой локальный worker-client получил каталог `app-server` без генерации.
+Smoke использует настоящий PostgreSQL тестового профиля, подставных
+исполнителей Kie/Codex и явно опубликованные schema-fixtures только в этой
+изолированной БД. Реальные платные генерации и платёжный sandbox не проверены.
+
+Следующие пакеты выполняются в этом checkout и том же Compose, без изменения
+публичного HTTP API и схемы БД:
+
+| Порядок | Открытая работа | Источники и приёмка |
+| --- | --- | --- |
+| 1 | RouterAI: worker/client, records, provider facade; убрать отдельные вызовы из generation routes | `routerai-billing.js`, `providers/routerai`, `routes/generation.js`; `routerai.test.js`, `provider-status.test.js`, PostgreSQL |
+| 2 | Kie/APIMart и cost routing: перейти всеми потребителями на явные операции; сохранить очередь и внешнюю оплату | `media-service.js`, `provider-router.js`, `apimart-jobs.js`, `cost-router.js`; контрактные, queue, accounts, APIMart, Telegram тесты |
+| 3 | Accounts/history: владельцы read models и общей транзакции ручной сверки; оставшиеся auth/workspace/content маршруты | `accounts.js`, `generation-history.js`, `spending-history.js`, `http.js`; tenant isolation, резерв/ledger, replica-web тесты |
+| 4 | Vue: владельцы session, workspace/drafts, history и submission; Composer получает операции | `stores/studio.ts`, `components/Composer.vue`, `composables`; смена чата/аккаунта, quote race, browser smoke |
+| 5 | Паспорта всех областей, полный аудит конфигурации/дублирования и assembled приёмка | M0–M6 ниже; реальные PostgreSQL и тестовое хранилище; платные границы только с отдельным бюджетом |
+
+Наличие интерфейса не означает отдельный сервис. Общую транзакцию разделять
+на независимые операции нельзя: она защищает идемпотентность и деньги.
+
 ## Цель и результат
 
 Сделать границы модулей явными и проверяемыми: у каждого значимого модуля есть

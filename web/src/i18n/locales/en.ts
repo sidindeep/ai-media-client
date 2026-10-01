@@ -496,6 +496,7 @@ export const en = {
   'generation.duration.seconds': '{count} sec',
   'generation.duration.minutes': '{minutes} min {seconds} sec',
   'generation.tokensShort': '{count} tok.',
+  'error.codexImageReasonMissing': 'Codex could not create the image. The provider did not supply a detailed reason, so the cause cannot be determined from this response.',
   'generation.resultPending': 'The result will appear here when the task is complete.',
   'generation.openDetails': 'Open details: {model}',
   'generation.errorDetails': 'Error details',

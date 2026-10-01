@@ -6,6 +6,8 @@
 - [Рабочие соглашения](tools/AGENT_WORKING_AGREEMENTS.md).
 - [Правила Git](patterns/GIT_WORKFLOW.md).
 - [Runbook](tools/AGENT_RUNBOOK.md).
+- [Тестирование](test/README.md) и [инструкции для агентов ручного UI-обхода](test/manual-ui/README.md).
+- [Промпт повторного UI-аудита моделей без генераций](docs/model-ui-audit-prompt.md).
 - [Бизнес-логика, алгоритмы и архитектура](tools/project-memory/README.md).
 - [Стек](tools/project-memory/specs/technology-stack.md).
 

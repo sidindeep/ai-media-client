@@ -31,6 +31,7 @@
 - Память и бизнес-логика: [tools/project-memory/README.md](tools/project-memory/README.md).
 - Стек: [tools/project-memory/specs/technology-stack.md](tools/project-memory/specs/technology-stack.md).
 - Команды: [tools/AGENT_RUNBOOK.md](tools/AGENT_RUNBOOK.md).
+- Тестирование: [test/README.md](test/README.md); перед ручным UI-обходом прочитать [test/manual-ui/README.md](test/manual-ui/README.md), затем промпт и контракт выбранного сценария.
 
 # Agent Instructions
 

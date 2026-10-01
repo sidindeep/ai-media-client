@@ -37,10 +37,28 @@ test('video settings hide unsupported resolution and preserve catalog resolution
   assert.doesNotMatch(unavailable, /composer\.unionField\.resolution/);
   assert.match(unavailable, /composer\.video\.aspect/);
   assert.match(unavailable, /composer\.video\.duration/);
+  const withoutDuration = await render(kling.fields.filter(field => field.key !== 'duration'));
+  assert.doesNotMatch(withoutDuration, /composer\.video\.duration/);
   const supported = await render([...kling.fields, { key: 'resolution', options: ['720p', '1080p'], default: '720p' }]);
   assert.match(supported, /composer\.unionField\.resolution/);
   assert.match(supported, /value="720p"/);
   assert.match(supported, /value="1080p"/);
+  const motion = models.find(model => model.id === 'kie:kling-3.0/motion-control');
+  const motionSettings = await render(motion.fields);
+  assert.match(motionSettings, /composer\.unionField\.resolution/);
+  assert.match(motionSettings, /value="720p"/);
+  assert.match(motionSettings, /value="1080p"/);
+  assert.doesNotMatch(motionSettings, /composer\.video\.duration/);
+  const { describeModel } = require('../src/providers/apimart/catalog');
+  for (const id of ['kling-v2-6-motion-control', 'kling-v3-motion-control']) {
+    const apimart = describeModel({ id, category: 'video' });
+    const apimartSettings = await render(apimart.fields);
+    assert.match(apimartSettings, /composer\.unionField\.resolution/);
+    assert.match(apimartSettings, /value="std"[^>]*>720p/);
+    assert.match(apimartSettings, /value="pro"[^>]*>1080p/);
+    assert.doesNotMatch(apimartSettings, /Standard|Pro ·/);
+    assert.doesNotMatch(apimartSettings, /composer\.video\.duration/);
+  }
 });
 
 test('video primary settings select quality aliases without consuming unrelated mode or frame counts', () => {

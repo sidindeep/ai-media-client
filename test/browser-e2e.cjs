@@ -89,7 +89,8 @@ async function main() {
     await new Promise(resolve => codexWorker.listen(0, '127.0.0.1', resolve));
     config.codex = { ...config.codex, embedded: false, url: `http://127.0.0.1:${codexWorker.address().port}` };
     const schemaFixtures = new Set(['kie:grok-imagine-image-2-0/segment-edit', 'kie:grok-imagine-image-2-0/segment-map',
-      'kie:google/gemini-2-5-pro-tts', 'kie:wan/2-6-image-to-video', 'kie:pixverse-v6/reference-to-video']);
+      'kie:google/gemini-2-5-pro-tts', 'kie:wan/2-6-image-to-video', 'kie:pixverse-v6/reference-to-video', 'kie:omnihuman-1-5',
+      'kie:ai-music-api/replace-section', 'kie:ai-music-api/separate-vocals']);
     config.pricing = { ...config.pricing, models: { ...config.pricing.models,
       'kie:grok-imagine-image-2-0/segment-edit': { baseUnits: 1000 } } };
     const tariffFetcher = async () => new Response(JSON.stringify({ code: 200, data: { pages: 1, records: [
@@ -106,7 +107,8 @@ async function main() {
     await saveModelConfig(pool, { ...modelRoutes, version: 'browser-schema-fixtures', models: modelRoutes.models.map(row =>
       schemaFixtures.has(row.providers.kie) ? { ...row, publishedTariffs: { ...row.publishedTariffs, kie: '1 test credit' } } : row) });
     const accountId = randomUUID(), token = randomBytes(32).toString('base64url');
-    await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Browser E2E')", [accountId]);
+    await pool.query("INSERT INTO media_accounts(id,display_name,role) VALUES($1,'Browser E2E',$2)",
+      [accountId, process.env.BROWSER_E2E_OMNIHUMAN_ONLY === '1' ? 'admin' : 'user']);
     await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,$2)', [accountId, process.env.BROWSER_E2E_MOVIE_ONLY === '1' ? 500000 : 5000]);
     await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(token), accountId]);
     let grokRecordId;
@@ -131,6 +133,83 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
+    if (process.env.BROWSER_E2E_OMNIHUMAN_ONLY === '1') {
+      await client.evaluate("document.querySelectorAll('.composer-tabs button')[2].click();void 0");
+      await client.evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
+      await client.until("document.querySelector('.model-native-select option[value=\"kie:omnihuman-1-5\"]') !== null");
+      await client.evaluate("{const select=document.querySelector('.model-native-select');select.value='kie:omnihuman-1-5';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+      await client.until("document.querySelectorAll('.source-strip input[type=file]').length===3 && document.querySelector('.video-settings-bar')");
+      await client.evaluate("document.querySelector('.video-settings-toggle').click();void 0");
+      await client.until("document.querySelector('.video-advanced-panel input[type=number]') !== null");
+      // Administrators retain every control; their user-preview uses the user policy.
+      assert.equal(await client.evaluate("document.querySelectorAll('.video-advanced-panel input[type=checkbox]').length"), 1);
+      assert.equal(await client.evaluate("/скрыт для пользователя|hidden for users/.test(document.querySelector('.video-advanced-panel').textContent)"), true);
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').toggleInterface();void 0");
+      assert.equal(await client.evaluate("document.querySelectorAll('.video-advanced-panel input[type=checkbox]').length"), 0);
+      assert.equal(await client.evaluate("document.querySelector('.video-advanced-panel input[type=number]').value"), '-1');
+      assert.equal(await client.evaluate("document.querySelector('.composer-body textarea') !== null"), true);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.video-settings-bar select option')).map(option=>option.value).filter(value=>['720','1080'].includes(value))"), ['720', '1080']);
+      assert.equal(await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.pe_fast_mode"), false);
+      await client.until("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').accountReady");
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.pe_fast_mode=true;void 0");
+      await sleep(1500);
+      await client.command('Page.reload');
+      await client.until("document.querySelector('.model-native-select')?.value==='kie:omnihuman-1-5'");
+      await client.evaluate("document.querySelector('.video-settings-toggle').click();void 0");
+      await client.until("document.querySelector('.video-advanced-panel input[type=number]') !== null");
+      assert.equal(await client.evaluate("document.querySelectorAll('.video-advanced-panel input[type=checkbox]').length"), 0);
+      assert.equal(await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.pe_fast_mode"), true);
+      // Exercise APIMart metadata through the same real composer; no paid requests.
+      const apimartFixture = require('../src/providers/apimart/catalog').describeModel({ id: 'kling-v2-6-motion-control', category: 'video' });
+      await client.evaluate(`{const store=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');store.toggleInterface();store.serviceModelConfig=null;store.apimartCatalog={models:[${JSON.stringify(apimartFixture)}]};store.setProvider('apimart');store.setSelectedModel('kling-v2-6-motion-control');}void 0`);
+      await client.until("document.querySelectorAll('.source-strip input[type=file]').length===1 && document.querySelector('.video-settings-toggle')");
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.video-setting:not(.video-model-setting) select option')).map(option=>option.textContent)"), ['720p', '1080p']);
+      await client.evaluate("{const store=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');store.mediaInput.mode='720p';store.setSelectedModel('kling-v2-6-motion-control');}void 0");
+      await client.until("document.querySelector('.video-setting:not(.video-model-setting) select')?.value==='std'");
+      assert.equal(await client.evaluate("document.querySelector('.video-settings-bar .field-error') === null"), true);
+      await client.evaluate("if(document.querySelector('.video-settings-toggle').getAttribute('aria-expanded')!=='true')document.querySelector('.video-settings-toggle').click();void 0");
+      await client.until("document.querySelector('.video-advanced-panel input[type=text]') !== null");
+      assert.equal(await client.evaluate("/hidden for users|скрыт для пользователя/.test(document.querySelector('.video-advanced-panel').textContent)"), true);
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').toggleInterface();void 0");
+      await client.until("document.querySelectorAll('.source-strip input[type=file]').length===1");
+      assert.equal(await client.evaluate("document.querySelector('.video-advanced-panel input[type=text]') !== null"), true);
+      assert.equal(await client.evaluate("!/hidden for users|скрыт для пользователя/.test(document.querySelector('.video-advanced-panel').textContent)"), true);
+      assert.equal(await client.evaluate("document.querySelector('.form-error') !== null && !document.querySelector('.form-error[role=alert]') && document.querySelector('.generate-button').disabled"), true);
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.video_url='https://example.test/saved.mp4';void 0");
+      await client.until("!document.querySelector('.form-error[role=alert]')");
+      assert.equal(await client.evaluate("document.querySelectorAll('.source-strip input[type=file]').length"), 1);
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').toggleInterface();void 0");
+      await client.until("document.querySelector('.video-advanced-panel input[type=text]')?.value==='https://example.test/saved.mp4'");
+      assert.equal(await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.video_url"), 'https://example.test/saved.mp4');
+      await client.evaluate("{const store=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');store.setMode('audio');store.setProvider('media');store.serviceModelConfig=null;store.setSelectedModel('kie:ai-music-api/replace-section');store.toggleInterface();}void 0");
+      await client.until("document.querySelector('.model-native-select')?.value==='kie:ai-music-api/replace-section' && document.querySelectorAll('.select-pill select').length > 0");
+      // The required common Suno controls must remain present in both input modes.
+      await client.until("document.querySelectorAll('.advanced-grid input[type=number]').length >= 2 && document.querySelectorAll('.advanced-grid input[type=text]').length >= 3");
+      await client.evaluate("{const select=Array.from(document.querySelectorAll('.select-pill select')).find(select=>Array.from(select.options).some(option=>option.textContent.includes('uploaded custom audio')));select.value='1';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+      await client.until("document.querySelectorAll('.advanced-grid input[type=number]').length >= 2");
+      assert.equal(await client.evaluate("document.querySelector('.composer-body textarea') !== null"), true);
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').setSelectedModel('kie:ai-music-api/separate-vocals');void 0");
+      await client.until("document.querySelector('.model-native-select')?.value==='kie:ai-music-api/separate-vocals' && document.querySelector('.task-reference-field input')");
+      for (const admin of [false, true]) {
+        await client.evaluate(`{const store=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');if(store.isAdmin!==${admin})store.toggleInterface();store.mediaInput={task_id:'example-task',audio_id:'example-track',type:'separate_vocal'};}void 0`);
+        await client.until("!document.querySelector('.composer-body .form-error')");
+        assert.equal(await client.evaluate("Array.from(document.querySelectorAll('.advanced-grid input[type=text]')).some(input=>input.value==='example-track')"), true);
+        assert.equal(await client.evaluate("/hidden for users|скрыт для пользователя/.test(document.querySelector('.advanced-grid').textContent)"), false);
+        await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.type='split_stem_advanced';void 0");
+        await client.until("document.querySelector('.composer-body .form-error') && document.querySelector('.generate-button').disabled");
+        assert.equal(await client.evaluate("Array.from(document.querySelectorAll('.advanced-grid select')).find(select=>Array.from(select.options).some(option=>option.value==='Lead Vocal'))?.closest('label').querySelector('span').textContent.includes('*')"), true);
+        await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput.stem_name='Lead Vocal';void 0");
+        await client.until("!document.querySelector('.composer-body .form-error')");
+        await client.evaluate("{const select=Array.from(document.querySelectorAll('.select-pill select')).find(select=>Array.from(select.options).some(option=>option.textContent.includes('user-uploaded audio')));select.value='1';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+        await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').mediaInput={audio_url:'https://example.test/audio.mp3',type:'split_stem'};void 0");
+        await client.until("!document.querySelector('.task-reference-field') && !document.querySelector('.composer-body .form-error')");
+        assert.equal(await client.evaluate("document.querySelectorAll('.advanced-grid input[type=text]').length"), 0);
+        // Return to the existing-track branch for the next role's check.
+        await client.evaluate("{const select=Array.from(document.querySelectorAll('.select-pill select')).find(select=>Array.from(select.options).some(option=>option.textContent.includes('user-uploaded audio')));select.value='0';select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+      }
+      console.log('Kie/APIMart UI passed: required fields restored, optional fields hidden, Suno common/mode fields and saved drafts preserved; no provider generation');
+      return;
+    }
     if (process.env.BROWSER_E2E_MOVIE_ONLY === '1') {
       await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
       await client.until("document.querySelector('.movie-editor .movie-title-add')");

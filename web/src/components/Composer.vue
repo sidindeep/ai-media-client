@@ -19,6 +19,7 @@ import { autoModelOptions, publishedTariffForRoute, serviceNameForApimart, servi
 import { publicServiceError } from '../domain/result-presentation';
 import { aspectRatioName, isAspectRatioField } from '../domain/aspect-ratios';
 import { unionFields, unionVariants } from '../domain/union-model-fields';
+import { hiddenRequiredPaths, userVisibleFields } from '../domain/model-ui-visibility';
 import { isReferenceField } from '../domain/source-attachments';
 import { formatCreditCost, roundedCreditCost } from '../domain/credits';
 import { useI18n } from '../i18n';
@@ -83,18 +84,19 @@ watch(() => [studio.provider, studio.apimartModel, apimartFields.value] as const
   }));
   if (Object.keys(defaults).length) studio.mediaInput = { ...defaults, ...studio.mediaInput };
 }, { immediate: true });
-const apimartPrimaryFields = computed(() => apimartFields.value.filter(field =>
+const apimartPrimaryFields = computed(() => visibleFields.value.filter(field =>
   studio.mode === 'video' ? videoPrimaryList.value.includes(field)
     : /^(size|aspect_ratio|resolution|quality|mode|version|duration|voice)$/.test(field.key) && field.options?.length).slice(0, 3));
-const apimartExtraFields = computed(() => apimartFields.value.filter(field => field.type !== 'files'
-  && !apimartPrimaryFields.value.includes(field) && !isReferenceField(field)));
+const apimartExtraFields = computed(() => visibleFields.value.filter(field => field.type !== 'files'
+  && !apimartPrimaryFields.value.includes(field)
+  && !structuredFields.value.includes(field)));
 const apimartAdvancedFields = computed(() => mediaAdvancedParameters(apimartExtraFields.value, (_field, option) => String(option)).map(field => {
   if (field.kind === 'boolean') return { ...field, kind: 'select' as const,
     options: [{ value: '', label: t('common.default') }, { value: 'true', label: t('common.yes') }, { value: 'false', label: t('common.no') }] };
   return field.kind === 'select' ? { ...field, options: [{ value: '', label: t('common.default') }, ...(field.options || [])] } : field;
 }));
 const apimartAdvancedValues = computed(() => Object.fromEntries(apimartExtraFields.value.map(field => [field.key, fieldValue(field)])));
-const apimartFallbackFields = computed(() => apimartMedia.value && !apimartFields.value.length
+const apimartFallbackFields = computed(() => studio.isAdmin && apimartMedia.value && !apimartFields.value.length
   ? [{ key: 'parameters', label: t('routerai.admin.body'), kind: 'json' as const }] : []);
 function updateApimartFallback(_key: string, raw: unknown) {
   try {
@@ -118,14 +120,17 @@ const routerAiSpecial = computed(() => studio.provider === 'routerai' && studio.
 const QUOTE_DEBOUNCE_MS = 1500;
 const effortOptions = computed(() => studio.currentCodexModel?.efforts || ['low', 'medium', 'high']);
 const currentFields = computed(() => studio.provider === 'apimart' ? apimartFields.value
-  : studio.provider === 'media' ? unionFields(studio.currentMediaModel, unionMode.value)
+  : studio.provider === 'media' ? unionFields(studio.currentMediaModel, unionMode.value, studio.mediaInput)
     : studio.provider === 'routerai' && studio.currentRouterAiModel?.kind === 'transcription'
       ? [{ key: 'audioFile', label: t('routerai.admin.audioFile'), type: 'files', required: true,
         scalar: true, maxFiles: 1, accept: 'audio/*' }] : []);
 const currentUnionVariants = computed(() => unionVariants(studio.currentMediaModel));
+// Keep the full field set for defaults, drafts, validation and API inputs.
+const visibleFields = computed(() => userVisibleFields(currentFields.value, studio.isAdmin).map(field =>
+  studio.isAdmin && field.uiHidden ? { ...field, label: `${field.label || field.key} (${t('composer.hiddenForUser')})` } : field));
 const primaryFields = computed(() => studio.mode === 'video' ? videoPrimaryList.value
-  : currentFields.value.filter(field => /aspect|ratio|format|resolution|quality|^size$/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
-const taskReferenceField = computed(() => currentFields.value.find(field => field.key === 'task_id' || field.key === 'taskId'));
+  : visibleFields.value.filter(field => /aspect|ratio|format|resolution|quality|^size$/i.test(field.key) && (field.options?.length || field.schema?.enum?.length)).slice(0, 2));
+const taskReferenceField = computed(() => visibleFields.value.find(field => field.key === 'task_id' || field.key === 'taskId'));
 function compatibleTaskReference(modelId: string, source: { modelId?: string; kind?: string }): boolean {
   if (modelId === 'kie:grok-imagine-image-2-0/segment-edit')
     return ['kie:grok-imagine-image-2-0/text-to-image', 'kie:grok-imagine-image-2-0/segment-map'].includes(source.modelId || '');
@@ -141,9 +146,11 @@ const taskReferences = computed(() => {
     && (record.kieAccountId || 'primary') === studio.kieAccountId
     && compatibleTaskReference(studio.currentMediaModel?.id || '', record));
 });
-const extraFields = computed(() => currentFields.value.filter(field => !/prompt/i.test(field.key) && field.type !== 'files'
+const extraFields = computed(() => visibleFields.value.filter(field => !['prompt', 'text'].includes(field.key) && field.type !== 'files'
   && field !== taskReferenceField.value && !primaryFields.value.includes(field)));
-const structuredFields = computed(() => extraFields.value.filter(field => field.type === 'json'
+const structuredFields = computed(() => (studio.provider === 'apimart'
+  ? studio.isAdmin ? [] : visibleFields.value.filter(field => !apimartPrimaryFields.value.includes(field))
+  : extraFields.value).filter(field => field.type === 'json'
   && (field.schema?.type === 'array' || field.schema?.type === 'object')));
 const mediaAdvancedFields = computed(() => mediaAdvancedParameters(extraFields.value.filter(field => !structuredFields.value.includes(field)), fieldOptionLabel));
 const mediaAdvancedValues = computed(() => Object.fromEntries(extraFields.value.map(field => [field.key, fieldValue(field)])));
@@ -156,7 +163,7 @@ const routerAiAdvancedValues = computed(() => ({ duration: routerAiVideoDuration
   aspect_ratio: routerAiVideoAspectRatio.value, body: routerAiExtra.value }));
 const videoFields = computed<MediaField[]>(() => studio.provider === 'routerai'
   ? routerAiAdvancedFields.value.map(field => ({ ...field, type: field.kind,
-    options: field.options?.map(option => option.value) })) : currentFields.value);
+    options: field.options?.map(option => option.value) })) : visibleFields.value);
 const videoPrimaryList = computed(() => Object.values(videoPrimaryFields(videoFields.value)).filter((field): field is MediaField => Boolean(field)));
 const videoValues = computed(() => studio.provider === 'routerai' ? routerAiAdvancedValues.value : studio.mediaInput);
 function updateVideoField(field: MediaField, value: unknown) {
@@ -238,7 +245,7 @@ watch(modelOptions, options => {
 });
 const autoModelName = computed(() => modelOptions.value.find(model => model.value === modelChoice.value)?.label || modelChoice.value);
 const promptField = computed(() => studio.provider === 'media' ? currentFields.value.find(field => field.key === 'prompt' || field.key === 'text') : undefined);
-const showsPrompt = computed(() => !apimartWhisper.value && (studio.provider !== 'media' || Boolean(promptField.value)));
+const showsPrompt = computed(() => !apimartWhisper.value && (studio.provider !== 'media' || Boolean(promptField.value && (studio.isAdmin || !promptField.value.uiHidden))));
 const promptValue = computed({
   get: () => studio.prompt,
   set: value => { studio.prompt = value; },
@@ -262,11 +269,14 @@ const missingRequiredFields = computed(() => ['media', 'apimart', 'routerai'].in
   return value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length);
 }) : []);
 const mediaRequestInput = () => ({ ...studio.mediaInput, ...(promptField.value ? { [promptField.value.key]: studio.prompt } : {}) });
+const hiddenRequired = computed(() => studio.isAdmin ? [] : hiddenRequiredPaths(currentFields.value, mediaRequestInput()));
 const retryableReadError = (error: unknown) => error instanceof Error
   && /^(?:Не удалось выполнить запрос|Некорректный ответ сервиса|Подключаемся к базе данных|Связь с базой данных временно недоступна)/i.test(error.message);
 
 function fieldOptions(field: MediaField) { return mediaFieldOptions(field); }
 function fieldOptionLabel(field: MediaField, option: unknown) {
+  const custom = field.optionLabels?.[String(option)];
+  if (custom) return custom;
   if (field.key === 'duration' && Number(option) <= 0) return t('composer.auto');
   const name = isAspectRatioField(field.key) ? aspectRatioName(option) : '';
   return name ? `${option} — ${name}` : String(option);
@@ -523,6 +533,7 @@ function submissionSelection() {
 
 async function submit(event?: Event) {
   if (submitting.value || uploading.value) return;
+  if (hiddenRequired.value.length) { submitError.value = t('composer.hiddenRequired', { fields: hiddenRequired.value.join(', ') }); return; }
   if (hasFieldErrors.value) {
     const [key, message] = Object.entries(allFieldErrors.value)[0] || [];
     const field = currentFields.value.find(item => item.key === key);
@@ -567,7 +578,7 @@ async function submit(event?: Event) {
       <p v-if="studio.provider === 'codex' && !studio.codexCatalog && !studio.loading" class="notice" role="status">{{ t('composer.codexCatalogUnavailable') }}</p>
       <textarea v-if="showsPrompt" v-model="promptValue" maxlength="20000" :placeholder="promptPlaceholder" :aria-label="t('composer.promptAria')" @keydown.ctrl.enter="submit"></textarea>
       <label v-if="studio.provider === 'media' && currentUnionVariants.length" class="select-pill"><span>{{ t('composer.unionMode') }}</span><select :value="unionMode" @change="selectUnionMode"><option v-for="(variant, index) in currentUnionVariants" :key="index" :value="index">{{ variant.title || t('composer.unionVariant', { number: index + 1 }) }}</option></select></label>
-      <SourceAttachments ref="sourceAttachments" :fields="currentFields" @error="submitError = $event" @uploading="uploading = $event" />
+      <SourceAttachments ref="sourceAttachments" :fields="visibleFields" :input-fields="currentFields" @error="submitError = $event" @uploading="uploading = $event" />
       <div v-if="studio.provider === 'media' && taskReferenceField" class="task-reference-field">
         <label v-if="taskReferences.length">{{ t('composer.taskReference.choose') }}
           <select :value="studio.mediaInput[taskReferenceField.key] ?? ''" @change="updateField(taskReferenceField.key, ($event.target as HTMLSelectElement).value || undefined)">
@@ -609,7 +620,7 @@ async function submit(event?: Event) {
         </template>
         <span v-if="quoteWarning && (studio.isAdmin || quote?.status !== 'unavailable' || studio.provider !== 'media')" class="quote warning" role="status">{{ quoteWarning }}</span>
         <span v-else-if="quoteError" class="quote-error-wrap"><span class="quote error">{{ quoteErrorMessage }}</span><button v-if="studio.isAdmin && !autoRouting" type="button" class="details-button" @click="openDiagnostics">{{ t('composer.details') }}</button></span>
-        <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (autoRouting && (!autoEligible || !quote?.selectedProviderId)) || (studio.provider === 'apimart' && !autoRouting && quote?.status !== 'estimated') || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && quotedPrice"> · {{ quotedPrice }}</span><span v-else-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
+        <button class="generate-button" :class="{ 'is-loading': quoteLoading || submitting }" type="button" :aria-busy="quoteLoading || submitting" :disabled="quoteLoading || uploading || submitting || !modelOptions.length || (autoRouting && (!autoEligible || !quote?.selectedProviderId)) || (studio.provider === 'apimart' && !autoRouting && quote?.status !== 'estimated') || (studio.provider === 'codex' && total === null) || (studio.provider === 'routerai' && !quote) || hasFieldErrors || hiddenRequired.length > 0 || missingRequiredFields.length > 0" @click="submit"><span v-if="quoteLoading || submitting" class="generate-spinner" aria-hidden="true"></span>{{ quoteLoading ? t('composer.calculating') : submitting ? t('common.loading') : t('composer.generate') }}<span v-if="!quoteLoading && !submitting && quotedPrice"> · {{ quotedPrice }}</span><span v-else-if="!quoteLoading && !submitting && total !== null"> · {{ formatNumber(total) }}</span> <span v-if="!quoteLoading && !submitting" aria-hidden="true">↗</span></button>
       </div>
       <p v-if="studio.provider === 'apimart' && !autoRouting" class="apimart-billing-note" :class="{ 'is-error': studio.apimartCatalog?.error }" :role="studio.apimartCatalog?.error ? 'alert' : undefined">{{ studio.apimartCatalog?.error || apimartBreakdown || t(apimartMedia ? 'apimart.admin.mediaBillingNotice' : 'apimart.admin.billingNotice') }}</p>
       <p v-if="autoRouting" class="auto-route-note" role="status"><template v-if="!autoEligible">{{ t('composer.autoUnsupported') }}</template><template v-else-if="quote?.selectedProviderId"><strong>{{ t('composer.autoSelected', { provider: autoProviderLabel }) }}</strong><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-if="studio.isAdmin && quote.amountUsd != null"> · {{ t('composer.autoEstimate', { usd: formatNumber(quote.amountUsd, { maximumFractionDigits: 6 }) }) }}</span></template><template v-else-if="quote?.autoOffers?.length"><span>{{ t('composer.autoNoRoute') }}</span><button ref="autoDetailsTrigger" type="button" class="auto-route-details-button" @click="openAutoDetails">{{ t('composer.details') }}</button><span v-for="offer in quote.autoOffers.filter(item => item.unavailable)" :key="offer.providerId"> · {{ autoOfferLabel(offer.providerId) }}: {{ offer.reason }}</span></template><template v-else>{{ quoteError || t('composer.calculating') }}</template></p>
@@ -618,15 +629,16 @@ async function submit(event?: Event) {
       <AdvancedParameters v-if="apimartMedia" :key="`apimart:${studio.apimartModel}`" :inline="studio.mode === 'video'" :fields="apimartAdvancedFields" :values="apimartAdvancedValues" :errors="allFieldErrors" @change="updateApimartParameter" />
       <AdvancedParameters v-if="apimartFallbackFields.length" :inline="studio.mode === 'video'" :fields="apimartFallbackFields" :values="{ parameters: JSON.stringify(studio.mediaInput, null, 2) }" :errors="fieldErrors" @change="updateApimartFallback" />
       <AdvancedParameters v-if="studio.provider === 'media'" :key="`media:${studio.mediaModelId}`" :inline="studio.mode === 'video'" :fields="mediaAdvancedFields" :values="mediaAdvancedValues" :errors="allFieldErrors" @change="updateMediaAdvanced" />
-      <div v-if="studio.provider === 'media' && structuredFields.length" class="advanced-settings schema-fields">
+      <div v-if="['media', 'apimart'].includes(studio.provider) && structuredFields.length" class="advanced-settings schema-fields">
         <SchemaField v-for="field in structuredFields" :key="field.key" :schema="field.schema || {}" :model-value="studio.mediaInput[field.key]"
-          :name="field.key" :root-key="field.key" :label="field.label || field.key" :required="field.required" :error="allFieldErrors[field.key]"
+          :name="field.key" :root-key="field.key" :label="field.label || field.key" :required="field.required" :error="allFieldErrors[field.key]" :show-hidden="studio.isAdmin"
           @change="updateTypedField(field, $event)" @uploaded="registerStructuredUpload" />
       </div>
       <AdvancedParameters v-if="routerAiSpecial && studio.mode !== 'video'" :key="`routerai:${studio.currentRouterAiModel?.id}`" :fields="routerAiAdvancedFields" :values="routerAiAdvancedValues" :context="`${studio.currentRouterAiModel?.id} · POST /${studio.currentRouterAiModel?.endpoint}`" @change="updateRouterAiAdvanced" />
       <p v-if="studio.mode === 'video' && !mediaAdvancedFields.length && !structuredFields.length && !apimartAdvancedFields.length && !apimartFallbackFields.length" class="video-settings-empty">{{ t('composer.video.noExtra') }}</p>
       </div>
-      <p v-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
+      <p v-if="hiddenRequired.length" class="form-error" role="alert">{{ t('composer.hiddenRequired', { fields: hiddenRequired.join(', ') }) }}</p>
+      <p v-else-if="missingRequiredFields.length" class="form-error">{{ t('composer.required', { fields: missingRequiredFields.map(field => field.label || field.key).join(', ') }) }}</p>
       <p v-if="submitError" class="form-error" role="alert">{{ submitError }}</p>
       <p class="composer-hint">{{ t('composer.hint') }}</p>
     </div>

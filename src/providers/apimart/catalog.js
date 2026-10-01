@@ -16,6 +16,12 @@ const LEGACY_COMPLETIONS = new Set(['babbage-002', 'davinci-002', 'text-ada-001'
 const SPEECH_MODELS = new Set(['tts-1', 'tts-1-1106', 'tts-1-hd', 'tts-1-hd-1106', 'gpt-4o-mini-tts']);
 const MUSIC_MODELS = new Set(['suno', 'flowmusic']);
 const MODEL_ID = /^[a-z0-9][a-z0-9._:/-]{0,159}$/i;
+const fieldPresentation = {
+  'kling-v2-6-motion-control': { mode: { label: 'Качество', default: 'std',
+    optionLabels: { std: '720p', pro: '1080p' } } },
+  'kling-v3-motion-control': { mode: { label: 'Качество', default: 'std',
+    optionLabels: { std: '720p', pro: '1080p' } } },
+};
 const voiceField = { key: 'voice', label: 'Голос', type: 'string',
   options: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'], hint: 'По умолчанию: alloy' };
 function describeModel(item) {
@@ -25,6 +31,8 @@ function describeModel(item) {
   let endpoint = kind === 'text' ? '/v1/chat/completions' : kind === 'image' ? '/v1/images/generations'
     : kind === 'video' ? '/v1/videos/generations' : '/v1/music/generations';
   let fields = metadata?.fields || [];
+  const presentation = fieldPresentation[item.id];
+  if (presentation) fields = fields.map(field => ({ ...field, ...(presentation[field.key] || {}) }));
   let promptRequired = metadata?.promptRequired ?? true;
   if (metadata) endpoint = metadata.endpoint;
   if (item.id === 'dall-e-3') fields = [
@@ -49,9 +57,9 @@ function describeModel(item) {
   }
   // These variants explicitly require a reference input.
   if (item.id.includes('-edit-apimart') || item.id === 'wan2.6-i2v') fields = fields.map(field => field.key === 'image_urls' ? { ...field, required: true } : field);
-  return { id: item.id, name: item.id, kind, endpoint, fields, promptRequired,
+  return require('../../model-ui-visibility').applyModelUiVisibility({ id: item.id, name: item.id, kind, endpoint, fields, promptRequired,
     ...(metadata?.taskActions ? { taskActions: metadata.taskActions } : {}),
     capabilities: Array.isArray(item.capability_tags) ? item.capability_tags.filter(value => typeof value === 'string') : [],
-    ...(metadata?.source ? { documentation: metadata.source } : {}) };
+    ...(metadata?.source ? { documentation: metadata.source } : {}) }, 'apimart');
 }
 module.exports = { describeModel, SPEECH_MODELS, MUSIC_MODELS, MODEL_ID };

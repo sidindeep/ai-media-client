@@ -7,7 +7,8 @@ export function videoPrimaryFields(fields: MediaField[]) {
     aspect: find(['aspect_ratio', 'aspectRatio', 'ratio', 'size']),
     quality: find(['resolution', 'output_resolution', 'quality'])
       || fields.find(field => field.key === 'mode' && (field.label === 'Качество'
-        || mediaFieldOptions(field).some(value => /^\d+(?:p|k)$/i.test(String(value))))),
+        || [...mediaFieldOptions(field), ...Object.values(field.optionLabels || {})]
+          .some(value => /^\d+(?:p|k)$|\b\d+(?:p|k)\b/i.test(String(value))))),
     duration: find(['duration', 'duration_seconds', 'durationSeconds', 'video_duration']),
   };
 }

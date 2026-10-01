@@ -29,9 +29,10 @@ function createTelegramBot({ service, directory, allowedUsers = [], publicAccess
     const initial = allModels.find(model=>model.startupDefault) || allModels.find(model => model.kind === 'image' && model.fields.some(field => field.key === 'prompt') && !model.fields.some(field => field.type === 'files' && field.required)) || allModels[0];
     return saved || { id, modelId: initial.id, input: defaults(initial), sourceFiles: [], selectedFileField: null, confirmation: null };
   }
-  function draftReply(data, allModels, activeService) {
+  function renderDraft(data, allModels, activeService, showHidden) {
     const model = activeService.findModel(data.modelId);
-    return reply(`${model.name}\n\n${data.input.prompt || 'Отправьте текст промпта.'}\n\nИсходников: ${data.sourceFiles.length}\nПараметры: ${JSON.stringify(data.input, null, 2)}\n\nСообщения и фото только меняют черновик. Платная генерация запускается после подтверждения.`, menu);
+    const display = showHidden ? data.input : require('../model-ui-visibility').visibleUiInput(model, data.input);
+    return reply(`${model.name}\n\n${display.prompt || 'Отправьте текст промпта.'}\n\nИсходников: ${data.sourceFiles.length}\nПараметры: ${JSON.stringify(display, null, 2)}\n\nСообщения и фото только меняют черновик. Платная генерация запускается после подтверждения.`, menu);
   }
   async function handle(update) {
     if (!accepts(update)) return null;
@@ -49,6 +50,8 @@ function createTelegramBot({ service, directory, allowedUsers = [], publicAccess
     if (context?.blocked) return reply('Для медиагенераций этому аккаунту нужен доступ к каталогу Kie. Стартовый доступ к GPT действует в веб-студии.');
     if (!context) return reply('Сначала войдите в AI Media Client, откройте меню аккаунта → Telegram и нажмите «Привязать Telegram».');
     const activeService = context.service;
+    const showHidden = context.role === 'admin';
+    const draftReply = (data, allModels, activeService) => renderDraft(data, allModels, activeService, showHidden);
     const allModels = activeService.catalog().models;
     const sessionId = context.accountId || chatId;
     let data = await session(sessionId, allModels);
@@ -72,21 +75,22 @@ function createTelegramBot({ service, directory, allowedUsers = [], publicAccess
     }
     if (['draft', '/draft'].includes(text)) return draftReply(data, allModels, activeService);
     if (['settings', '/settings'].includes(text)) {
-      const rows = model.fields.filter(field => field.key !== 'prompt').map(field => [button(field.label || field.key, `field:${model.fields.indexOf(field)}`)]);
+      const rows = model.fields.filter(field => field.key !== 'prompt' && (showHidden || !field.uiHidden)).map(field => [button(`${field.label || field.key}${field.uiHidden ? ' (скрыт для пользователя)' : ''}`, `field:${model.fields.indexOf(field)}`)]);
       return reply('Параметры модели. Для сложных полей: /set имя JSON. Отправка параметров не запускает генерацию.', rows.slice(0, 30));
     }
     if (text.startsWith('field:')) {
       const index = Number(text.split(':')[1]); const field = model.fields[index];
-      if (!field) throw new Error('Поле не найдено');
+      if (!field || field.uiHidden && !showHidden) throw new Error('Поле недоступно');
       if (field.type === 'files') { await save({ selectedFileField: field.key }); return reply(`Следующий файл попадёт в «${field.label}». Отправьте фото, видео или документ с медиа.`); }
       const options = field.type === 'boolean' ? [true, false] : field.options || [];
-      if (options.length) return reply(field.label || field.key, options.slice(0, 40).map((value, option) => [button(String(typeof value === 'object' ? value.label || value.value : value), `value:${index}:${option}`)]));
+      if (options.length) return reply(field.label || field.key, options.slice(0, 40).map((value, option) => [button(String(typeof value === 'object'
+        ? value.label || value.value : field.optionLabels?.[String(value)] || value), `value:${index}:${option}`)]));
       return reply(`${field.label || field.key}\n/set ${field.key} значение\nДля объекта/списка используйте JSON.`);
     }
     if (text.startsWith('value:')) {
       const [, index, option] = text.split(':').map((value, i) => i ? Number(value) : value);
       const field = model.fields[index]; const values = field?.type === 'boolean' ? [true, false] : field?.options;
-      if (!values || values[option] === undefined) throw new Error('Значение не найдено');
+      if (!values || values[option] === undefined || field.uiHidden && !showHidden) throw new Error('Значение недоступно');
       const value = values[option];
       await save({ input: { ...data.input, [field.key]: typeof value === 'object' ? value.value : value }, confirmation: null });
       return draftReply(data, allModels, activeService);
@@ -151,7 +155,7 @@ function createTelegramBot({ service, directory, allowedUsers = [], publicAccess
     }
     const attachment = message.photo?.at(-1) || message.video || message.document;
     if (attachment) {
-      const fields = model.fields.filter(field => field.type === 'files');
+      const fields = model.fields.filter(field => field.type === 'files' && (showHidden || !field.uiHidden));
       const field = fields.find(item => item.key === data.selectedFileField) || fields[0];
       if (!field) throw new Error('У этой модели нет простого поля для файла. Выберите другую модель или задайте вложенные параметры через /params.');
       const kind = message.photo ? 'image/jpeg' : message.video ? 'video/mp4' : attachment.mime_type;

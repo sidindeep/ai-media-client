@@ -1,8 +1,7 @@
-const { randomBytes, randomUUID, createHash, scrypt: scryptCallback, timingSafeEqual } = require('node:crypto');
+const { randomBytes, createHash, scrypt: scryptCallback, timingSafeEqual } = require('node:crypto');
 const { promisify } = require('node:util');
 const nodemailer = require('nodemailer');
 const { transaction } = require('../database/database');
-const { ensureDefaultChatRow } = require('../services/workspaces');
 
 const scrypt = promisify(scryptCallback);
 const token = () => randomBytes(32).toString('base64url');
@@ -30,8 +29,9 @@ async function matchesPassword(password, stored) {
   const actual = await scrypt(password, Buffer.from(parts[1], 'base64url'), 64);
   return timingSafeEqual(actual, expected);
 }
-function createEmailAuth({ pool, config, starterPack, issueSession, mailer }) {
+function createEmailAuth({ pool, config, registerAccount, issueSession, mailer }) {
   if (!config.email?.enabled) return null;
+  if (typeof registerAccount !== 'function') throw new Error('Account registration is required');
   const smtp = config.email.smtp;
   const sender = mailer || nodemailer.createTransport({ host: smtp.host, port: smtp.port, secure: smtp.port === 465,
     requireTLS: smtp.port !== 465, auth: { user: smtp.user, pass: smtp.password } });
@@ -59,13 +59,9 @@ function createEmailAuth({ pool, config, starterPack, issueSession, mailer }) {
         if (!pending) throw new Error('Ссылка подтверждения устарела');
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`email:${pending.email}`]);
         if ((await client.query('SELECT 1 FROM media_email_credentials WHERE email=$1', [pending.email])).rows.length) throw new Error('Этот email уже зарегистрирован');
-        const accountId = randomUUID();
-        await client.query('INSERT INTO media_accounts(id,display_name,role) VALUES($1,$2,$3)', [accountId, pending.email.split('@')[0].slice(0, 200), 'user']);
+        const accountId = await registerAccount(client, { name: pending.email.split('@')[0], role: 'user' });
         await client.query('INSERT INTO media_identities(provider,subject,account_id,verified_email) VALUES($1,$2,$3,$4)', ['email', pending.email, accountId, pending.email]);
         await client.query('INSERT INTO media_email_credentials(email,account_id,password_hash) VALUES($1,$2,$3)', [pending.email, accountId, pending.password_hash]);
-        if (starterPack) await starterPack.enroll(client, accountId, 'user');
-        else await client.query('INSERT INTO media_wallets(account_id) VALUES($1)', [accountId]);
-        await ensureDefaultChatRow(client, accountId);
         return issueSession(client, req, accountId);
       });
     },

@@ -6,6 +6,21 @@
 
 ## Система и сквозной поток
 
+Переносимый Google-вход: auth/google-auth.js + google.js + oauth.js зависят
+только от Node.js и предоставленного store. Таблицы/SQL и правила назначения
+аккаунта принадлежат auth/postgres-store.js; composition root server.js собирает
+адаптер с registerAccount. auth/service.js добавляет существующие email/MAX.
+Контракт внешнего хранилища: docs/google-auth-integration.md; переносимость
+проверяет test/google-auth.test.js, границы — test/module-boundaries.test.js.
+
+Регистрация аккаунта, 2026-10-01: `services/account-registration.js` собирает
+аккаунт, кошелёк/StarterPack и основной чат в транзакции вызывающего входа.
+`server.js` передаёт registerAccount в Auth при старте и восстановлении БД.
+Auth владеет identity/credentials/flows/сессиями и проверкой прав, без прямого
+доступа к таблицам кошелька и чатов. Контракт и проверки:
+[аккаунты](features/accounts-credits.md), `test/account-registration.test.js`,
+`test/module-boundaries.test.js` и существующие OAuth/email/MAX тесты.
+
 Vue и legacy UI, Telegram и HTTP API работают с одним продуктовым контуром.
 Сервис `media` исполняет API и прикладную логику; `codex` исполняет изолированный
 worker. Web-реплики читают общую PostgreSQL и пересылают записи одному executor.

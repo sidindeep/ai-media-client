@@ -1,3 +1,4 @@
+const { createAccountRegistration } = require('../src/services/account-registration');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { openDatabase } = require('../src/database/database');
@@ -10,7 +11,7 @@ test('email registration requires its link, login checks password, and reset rev
   const messages = [];
   const mailer = { sendMail: async message => { messages.push(message); } };
   const issueSession = async (_client, _req, accountId) => `session-for-${accountId}`;
-  const email = createEmailAuth({ pool, config: { origin: 'https://app.test', email: { enabled: true, smtp: { from: 'test@app.test' } } },
+  const email = createEmailAuth({ pool, registerAccount: createAccountRegistration(), config: { origin: 'https://app.test', email: { enabled: true, smtp: { from: 'test@app.test' } } },
     issueSession, mailer });
   await email.register(' New@Example.test ', 'long-password-123');
   assert.equal(messages.length, 1);
@@ -20,6 +21,8 @@ test('email registration requires its link, login checks password, and reset rev
   const session = await email.verify({}, verifyToken);
   assert.match(session, /^session-for-/);
   assert.equal((await pool.query('SELECT count(*) AS n FROM media_accounts')).rows[0].n, 1);
+  assert.equal((await pool.query('SELECT count(*) AS n FROM media_wallets')).rows[0].n, 1);
+  assert.equal((await pool.query('SELECT count(*) AS n FROM media_chats')).rows[0].n, 1);
   await assert.rejects(email.verify({}, verifyToken), /устарела/);
   await assert.rejects(email.login({}, 'new@example.test', 'wrong-password'), /Неверный email или пароль/);
   assert.equal(await email.login({}, 'new@example.test', 'long-password-123'), session);

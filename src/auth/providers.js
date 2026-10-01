@@ -1,5 +1,6 @@
 // Each identity provider implements authorize() and exchange(). Never accept browser profile data.
 const { verifyTelegramIdToken } = require('./telegram-oidc');
+const { createGoogleProvider } = require('./google');
 async function responseJson(fetcher, url, options) {
   const response = await fetcher(url, { ...options, signal: AbortSignal.timeout(15000), redirect: 'error' });
   const data = await response.json();
@@ -10,25 +11,8 @@ function createProviders(config, fetcher = fetch) {
   const registry = new Map();
   const configured = value => typeof value === 'string' && Boolean(value.trim());
   const authorize = (endpoint, params) => { const url = new URL(endpoint); url.search = new URLSearchParams(params).toString(); return url.href; };
-  if (configured(config.google.clientId) && configured(config.google.clientSecret)) registry.set('google', {
-    label: 'Google',
-    authorize: ({ state, challenge, redirectUri }) => authorize('https://accounts.google.com/o/oauth2/v2/auth', {
-      client_id: config.google.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid profile email',
-      state, code_challenge: challenge, code_challenge_method: 'S256'
-    }),
-    async exchange({ code, verifier, redirectUri }) {
-      const token = await responseJson(fetcher, 'https://oauth2.googleapis.com/token', { method: 'POST', body: new URLSearchParams({
-        grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: redirectUri,
-        client_id: config.google.clientId, client_secret: config.google.clientSecret
-      }) });
-      if (typeof token.access_token !== 'string') throw new Error('Не получен токен входа');
-      const user = await responseJson(fetcher, 'https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${token.access_token}` } });
-      if (typeof user.sub !== 'string' || !user.sub) throw new Error('Не получен идентификатор аккаунта');
-      return { subject: user.sub, name: user.name || 'Пользователь Google',
-        ...(user.email_verified === true && typeof user.email === 'string'
-          ? { verifiedEmail: user.email.trim().toLowerCase() } : {}) };
-    }
-  });
+  if (configured(config.google.clientId) && configured(config.google.clientSecret))
+    registry.set('google', createGoogleProvider({ ...config.google, fetcher }));
   if (configured(config.vk.clientId)) registry.set('vk', {
     label: 'VK',
     authorize: ({ state, challenge, redirectUri }) => authorize('https://id.vk.ru/authorize', {

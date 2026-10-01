@@ -1,3 +1,4 @@
+const { createAccountRegistration } = require('../src/services/account-registration');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHmac } = require('node:crypto');
@@ -17,7 +18,7 @@ test('MAX signed launch approves only its one-time browser flow', async t => {
   const pool = await openDatabase({}, testPool());
   t.after(() => pool.end());
   const config = { origin: 'https://app.test', max: { botName: 'StudioBot', botToken: 'private-token' }, adminIdentities: [] };
-  const max = createMaxAuth({ pool, config, issueSession: async (_client, _req, accountId) => `session-${accountId}`,
+  const max = createMaxAuth({ pool, config, registerAccount: createAccountRegistration(), issueSession: async (_client, _req, accountId) => `session-${accountId}`,
     cookieValue: (req, name) => req.headers.cookie.split(';').map(item => item.trim()).find(item => item.startsWith(`${name}=`))?.slice(name.length + 1) || '' });
   const start = await max.begin();
   const request = { headers: { cookie: start.cookie.split(';')[0] } };
@@ -34,6 +35,8 @@ test('MAX signed launch approves only its one-time browser flow', async t => {
   assert.equal(result.ready, true);
   assert.match(result.cookie[0], /^session-/);
   assert.equal((await pool.query("SELECT count(*) AS n FROM media_identities WHERE provider='max'")).rows[0].n, 1);
+  assert.equal((await pool.query('SELECT count(*) AS n FROM media_wallets')).rows[0].n, 1);
+  assert.equal((await pool.query('SELECT count(*) AS n FROM media_chats')).rows[0].n, 1);
   await assert.rejects(max.status(request), /устарел/);
   await assert.rejects(max.confirm(data), /устарел/);
 });

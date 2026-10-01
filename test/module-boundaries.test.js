@@ -8,6 +8,26 @@ function files(directory) {
     ? files(path.join(directory, entry.name)) : entry.name.endsWith('.js') ? [path.join(directory, entry.name)] : []);
 }
 
+test('authentication delegates account setup without wallet or workspace dependencies', () => {
+  for (const file of files(path.join(root, 'auth')).filter(file => !file.endsWith('postgres-store.js'))) {
+    const source = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(source, /media_(?:wallets|ledger|chats)|starterPack|ensureDefaultChatRow/, path.relative(root, file));
+    const imports = [...source.matchAll(/require\(['"]([^'"]+)['"]\)/g)].map(match => match[1]);
+    for (const dependency of imports) assert.doesNotMatch(dependency,
+      /(?:billing\/|services\/(?:workspaces|account-registration))/, path.relative(root, file));
+  }
+});
+
+test('portable Google OAuth files only import their local portable files and Node builtins', () => {
+  const portable = ['google-auth.js', 'google.js', 'oauth.js'];
+  for (const name of portable) {
+    const source = fs.readFileSync(path.join(root, 'auth', name), 'utf8');
+    assert.doesNotMatch(source, /media_|\.query\s*\(|adminIdentities/);
+    for (const [, dependency] of source.matchAll(/require\(['"]([^'"]+)['"]\)/g))
+      assert.ok(dependency.startsWith('node:') || portable.includes(dependency.replace('./', '') + '.js'), dependency);
+  }
+});
+
 test('HTTP consumers use public operations without database pool or Codex transport access', () => {
   for (const file of [path.join(root, 'server/http.js'), ...files(path.join(root, 'server/routes'))]) {
     const source = fs.readFileSync(file, 'utf8');

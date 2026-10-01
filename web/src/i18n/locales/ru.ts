@@ -819,7 +819,7 @@ export const ru = {
   'commerce.plans': 'Тарифы',
   'commerce.accountSections': 'Разделы аккаунта',
   'commerce.buyCredits': 'Купить кредиты',
-  'commerce.creditHistory': 'История кредитов',
+  'commerce.creditHistory': 'История расходов',
   'commerce.oneTime': 'Разовая покупка',
   'commerce.currentAccess': 'Текущий доступ',
   'commerce.starterAccess': 'Стартовый пакет',

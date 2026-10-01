@@ -822,7 +822,7 @@ export const en = {
   'commerce.plans': 'Plans',
   'commerce.accountSections': 'Account sections',
   'commerce.buyCredits': 'Buy credits',
-  'commerce.creditHistory': 'Credit history',
+  'commerce.creditHistory': 'Spending history',
   'commerce.oneTime': 'One-time purchase',
   'commerce.currentAccess': 'Current access',
   'commerce.starterAccess': 'Starter package',

@@ -43,7 +43,10 @@ async function readLimited(response, limit) {
   } finally { await reader.cancel().catch(() => {}); }
 }
 
-function createMovieSources({ fetchImpl = (url, signal, headers) => fetchPublicResult(url, signal, undefined, undefined, headers), googleApiKey = process.env.MEDIA_GOOGLE_DRIVE_API_KEY || '' } = {}) {
+function createMovieSources({ fetchImpl = (url, signal, headers) => fetchPublicResult(url, signal, undefined, undefined, headers), googleApiKey = process.env.MEDIA_GOOGLE_DRIVE_API_KEY || '',
+  recordDiagnostic = (code, description) => require('../system-errors').record('remotion', 'movie.source.skipped', { code }, {
+    diagnostic: { file: 'src/services/movie-sources.js', entity: 'movie', description },
+  }) } = {}) {
   const tickets = new Map();
   const active = new Set();
   function prune() { for (const [id, ticket] of tickets) if (ticket.expires < Date.now()) tickets.delete(id); }
@@ -60,7 +63,7 @@ function createMovieSources({ fetchImpl = (url, signal, headers) => fetchPublicR
       }
       if (!response.ok) {
         await response.body?.cancel();
-        throw new SourceError('MOVIE_SOURCE_ACCESS', 'Не удалось получить файлы. Проверьте публичный доступ и разрешение на скачивание.', 422);
+        throw new SourceError('MOVIE_SOURCE_ACCESS', `Источник вернул HTTP ${response.status}. Проверьте публичный доступ и разрешение на скачивание.`, 422);
       }
       return { response, target };
     }
@@ -78,14 +81,15 @@ function createMovieSources({ fetchImpl = (url, signal, headers) => fetchPublicR
   }
   async function list(owner, value, limit, signal) {
     prune();
-    for (const [id, ticket] of tickets) if (ticket.owner === owner) tickets.delete(id);
+    // Separate tabs/imports keep their tickets until expiry; ownership is checked on download.
     const url = sourceUrl(value);
     const files = []; let skipped = 0; let truncated = false; let requests = 0;
+    const skipReasons = { type: 0, size: 0, url: 0 };
     const max = Math.min(MAX_ITEMS, Math.max(1, Number.isInteger(limit) ? limit : MAX_ITEMS));
     const seen = new Set();
     function add(name, type, size, source) {
       const mime = mediaType(name, type);
-      if (!mime || Number(size) > MAX_FILE_BYTES) { skipped++; return; }
+      if (!mime || Number(size) > MAX_FILE_BYTES) { skipped++; skipReasons[!mime ? 'type' : 'size']++; return; }
       const key = JSON.stringify(source);
       if (seen.has(key)) return;
       seen.add(key);
@@ -147,12 +151,14 @@ function createMovieSources({ fetchImpl = (url, signal, headers) => fetchPublicR
               const file = sourceUrl(new URL(typeof item === 'string' ? item : item.url, target).href);
               const filename = (typeof item === 'object' && item.name) || decodeURIComponent(file.pathname.split('/').pop());
               add(filename, typeof item === 'object' ? item.type : '', typeof item === 'object' ? item.size : null, { provider: 'direct', url: file.href });
-            } catch { skipped++; }
+            } catch { skipped++; skipReasons.url++; }
           }
           if (entries.length > 1000) truncated = true;
         }
       }
     }
+    if (skipped || truncated) recordDiagnostic('MOVIE_SOURCE_SKIPPED',
+      `stage=list accepted=${files.length} skipped_type=${skipReasons.type} skipped_size=${skipReasons.size} skipped_url=${skipReasons.url} truncated=${truncated}`);
     if (!files.length) throw new SourceError('MOVIE_SOURCE_EMPTY', 'Нет доступных фото PNG/JPEG/WebP или видео MP4/WebM до 100 МБ. Для другого сервиса нужна прямая ссылка или открытый список файлов.', 422);
     if (tickets.size + files.length > 2000) throw new SourceError('MOVIE_SOURCE_BUSY', 'Слишком много импортов. Попробуйте позже.', 429);
     return { files: files.map(({ source, ...file }) => {

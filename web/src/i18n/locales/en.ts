@@ -3,6 +3,10 @@ import type {
 
 export const en = {
   'movie.heading': "Create a video",
+  'movie.draftSaved': 'Draft saved to your account',
+  'movie.draftSaving': 'Saving draft…',
+  'movie.draftFailed': 'Draft was not saved. Check your connection and retry.',
+  'movie.draftRetry': 'Retry saving',
   'movie.intro': "Build a video from your images, clips and title cards.",
   'movie.format': "Format",
   'movie.background': "Background color",
@@ -30,7 +34,7 @@ export const en = {
   'movie.fileError': "PNG, JPEG, WebP, MP4, WebM and audio supported; up to 100 MB per file.",
   'movie.unsupported': "This browser cannot export MP4. Open the app in an up-to-date Chrome or Edge.",
   'movie.renderError': "Could not render the video. Check that the files are available and playable, then retry.",
-  'movie.note': "Export runs on your device. Up to 20 scenes and 2 minutes. Editing state lasts until you leave this section; download the video before leaving.",
+  'movie.note': "Export runs on your device. Up to 20 scenes and 2 minutes. Materials and montage are saved in the current project draft. Download the finished MP4 to your device.",
 
   'composer.parameter.acceleration': "Acceleration",
   'composer.parameter.align_audio': "Align audio",
@@ -824,7 +828,7 @@ export const en = {
   'commerce.plans': 'Plans',
   'commerce.accountSections': 'Account sections',
   'commerce.buyCredits': 'Buy credits',
-  'commerce.creditHistory': 'Credit history',
+  'commerce.creditHistory': 'Spending history',
   'commerce.oneTime': 'One-time purchase',
   'commerce.currentAccess': 'Current access',
   'commerce.starterAccess': 'Starter package',
@@ -1138,6 +1142,7 @@ export const en = {
   'movie.importDone': 'Added: {count}. Skipped: {skipped}.',
   'movie.importLimit': 'Scene or folder traversal limit reached; some files were added.',
   'movie.importCancelled': 'Import stopped. Downloaded scenes are kept.',
+  'movie.importByteLimit': 'Remaining files were not downloaded: the 300 MB import limit was reached.',
   'movie.aiHeading': 'Edit from a script',
   'movie.aiScript': 'Prompt / script',
   'movie.aiPlaceholder': 'Make a 30-second video: introduction, photos and clips, then a closing title “Thank you!”. Short captions, 3–5 seconds per scene.',

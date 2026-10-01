@@ -192,6 +192,15 @@ async function sendStored(req, res, storage, file, attachment = false) {
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, generationServices = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record, recordSystemInfo = systemErrors.info }) {
   let uploadBytesInFlight = 0;
   const movieSources = createMovieSources();
+  const movieDrafts = accounts ? require('../services/movie-drafts').createMovieDrafts({
+    pool: accounts.pool, workspaces: accounts.workspaces, content: accounts.content,
+    sourceFile: async (owner, id) => (await accounts.get(owner)).sourceFile(id),
+    resultFile: async (owner, id, position) => (await accounts.get(owner)).resultFile(id, position),
+    generatedFile: async (owner, provider, id) => {
+      const file = await (provider === 'codex' ? codexProvider : routerAi).getImage(owner, id);
+      return typeof file === 'string' ? { type: 'image/png' } : file;
+    },
+  }) : null;
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
   let codexAdmin = generationServices?.codexAdmin || null;
@@ -440,10 +449,18 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return await handleMovieSources({ req, res, url, user, sameOrigin, sources: movieSources, headers, recordSystemEvent,
           send: (status, body) => json(res, status, body), readJson: async limit => JSON.parse((await readBody(req, limit)).toString('utf8')) });
       }
+      if (url.pathname === '/api/movie/draft') {
+        if (!movieDrafts) return json(res, 503, { error: 'Сохранение черновиков требует аккаунта и БД' });
+        const projectId = url.searchParams.get('projectId') || null;
+        if (req.method === 'GET') return json(res, 200, { result: await movieDrafts.read(user.id, projectId) });
+        if (req.method !== 'PUT' || !sameOrigin || req.headers['x-media-client'] !== 'web'
+          || !String(req.headers['content-type'] || '').startsWith('application/json')) return json(res, 403, { error: 'Доступ запрещён' });
+        return json(res, 200, { result: await movieDrafts.save(user.id, projectId, JSON.parse((await readBody(req, 100000)).toString('utf8'))) });
+      }
       if (req.method === 'POST' && url.pathname === '/api/movie/errors') {
         if (req.headers['x-media-client'] !== 'web' || !sameOrigin || !String(req.headers['content-type'] || '').startsWith('application/json')) return json(res, 403, { error: 'Forbidden' });
         const body = JSON.parse((await readBody(req, 256)).toString('utf8'));
-        if (!['MOVIE_RENDER_FAILED', 'MOVIE_PREVIEW_FAILED', 'MOVIE_PLAN_INVALID'].includes(body.code)) return json(res, 400, { error: 'Invalid error code' });
+        if (!['MOVIE_RENDER_FAILED', 'MOVIE_PREVIEW_FAILED', 'MOVIE_PLAN_INVALID', 'MOVIE_IMPORT_FAILED', 'MOVIE_IMPORT_LIMIT'].includes(body.code)) return json(res, 400, { error: 'Invalid error code' });
         recordSystemEvent('remotion', 'movie.client.error', Object.assign(new Error('Remotion client operation failed'), { code: body.code }), {
           diagnostic: { file: 'web/src/remotion/bridge.ts', entity: 'movie', description: 'Client movie operation failed; no user media or text included' },
         });
@@ -471,8 +488,10 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         : legacyService;
       if (req.method === 'POST') {
         if (req.headers['x-media-client'] !== 'web') return json(res, 403, { error: 'Недопустимый источник запроса' });
-        if (url.pathname === '/api/source') {
-          return await handleSourceUpload({ req, url, user, accounts, selected, service, config,
+        if (url.pathname === '/api/source' || url.pathname === '/api/movie/asset') {
+          if (url.pathname === '/api/movie/asset' && (!accounts || !sameOrigin)) return json(res, 403, { error: 'Доступ запрещён' });
+          return await handleSourceUpload({ req, url, user, accounts, selected, service,
+            config: url.pathname === '/api/movie/asset' ? { ...config, uploadLimit: 100 * 1024 * 1024 } : config,
             send: (status, body) => json(res, status, body),
             reserveUpload: async (reservation, action) => {
               if (uploadBytesInFlight + reservation > (config.uploadInFlightLimit ?? 256 * 1024 * 1024))

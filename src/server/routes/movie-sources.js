@@ -18,12 +18,20 @@ async function handleMovieSources({ req, res, url, user, sameOrigin, sources, re
       res.end(file.bytes);
     });
   } catch (error) {
+    const stage = url.pathname.endsWith('/file') ? 'download' : 'list';
+    const code = res.destroyed ? 'MOVIE_SOURCE_CANCELLED' : signal.aborted ? 'MOVIE_SOURCE_TIMEOUT'
+      : error instanceof SourceError ? error.code : error instanceof SyntaxError ? 'MOVIE_SOURCE_BODY' : 'MOVIE_SOURCE_FETCH';
+    const transportCode = error?.cause?.code || error?.code;
+    const network = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT'].includes(transportCode)
+      ? transportCode : 'unknown';
+    // SourceError messages are fixed product diagnostics. Raw transport errors may contain signed URLs.
+    recordSystemEvent('remotion', 'movie.source.error', error instanceof SourceError ? error : { code }, {
+      diagnostic: { ...(error instanceof SourceError ? {} : { file: 'src/server/routes/movie-sources.js' }), entity: 'movie',
+        description: `stage=${stage} code=${code} network=${network}; ${error instanceof SourceError ? error.message : 'Request failed; remote data excluded'}` },
+    });
     if (res.destroyed) return;
     if (error instanceof SourceError) return send(error.status, { error: error.message, code: error.code });
     if (error instanceof SyntaxError) return send(400, { error: 'Некорректный запрос.' });
-    recordSystemEvent('remotion', 'movie.source.error', Object.assign(new Error('Remote movie source request failed'), { code: 'MOVIE_SOURCE_FETCH' }), {
-      diagnostic: { file: 'src/services/movie-sources.js', entity: 'movie', description: 'Remote source request failed; no URLs or filenames included' },
-    });
     return send(422, { error: signal.aborted ? 'Время загрузки истекло. Повторите импорт.' : 'Не удалось загрузить источник. Проверьте публичную HTTPS-ссылку.', code: 'MOVIE_SOURCE_FETCH' });
   } finally { res.off('close', abort); }
 }

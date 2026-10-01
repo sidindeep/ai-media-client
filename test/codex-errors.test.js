@@ -7,6 +7,7 @@ test('Image failure preserves explicit error and excludes request and binary pay
   const error = imageGenerationError({ status: 'failed', error: { code: 'content_policy_violation', message: 'Blocked', prompt: 'PRIVATE' },
     prompt: 'PRIVATE', result: 'a'.repeat(1000) });
   assert.match(error.message, /правилам безопасности.*content_policy_violation/);
+  assert.equal(error.code, 'content_policy_violation');
   assert.doesNotMatch(error.message, /PRIVATE|aaaa|binary data/);
   assert.match(imageGenerationError({ status: 'failed', result: '' }).message, /не передал подробную причину/);
   assert.match(execError(JSON.stringify({ type: 'item.completed', item: { type: 'image_generation', status: 'failed', result: '' } })).message, /не передал подробную причину/);

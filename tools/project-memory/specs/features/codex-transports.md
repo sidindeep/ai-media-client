@@ -167,6 +167,18 @@ GPT-5.6 Sol: 128/128 PNG на одном app-server, medium + fast, 1,690 PNG/с
 предел и 256 Sol не проверены. Evidence: docs/codex-capacity.md.
 # Диагностика ошибок — 2026-09-27
 
+Дополнение 2026-10-01: worker записывает исходный Error выполнения/сохранения
+в ai_logger (`codex-worker.run.error`, `codex-worker.persist.error`), независимо
+от успешности доставки; исходный стек не заменяется. Образ содержит
+`system-errors.js`, Compose передаёт настройки логгера с ролью `codex-worker`.
+Код ошибки проходит worker JSON → billing → историю (`errorCode`).
+При пустом image failure сохраняется последняя ошибка внутреннего retry,
+если нет итоговой неповторяемой ошибки; successful turn её игнорирует.
+Если технической причины всё ещё нет, финальный agentMessage хранится отдельно
+от Error.message и добавляется только в ошибку для владельца, без передачи
+в центральный журнал. Проверки: codex-errors и codex-app-server (поздний retry,
+owner-only explanation, исходный Error, отказ логгера без изменения результата).
+
 `codex-errors.js` формирует ограниченное сообщение из разрешённых полей
 ошибки провайдера с удалением секретов и бинарных данных. App-server проверяет
 status/failure imageGeneration до декодирования PNG, сохраняет ошибки RPC,

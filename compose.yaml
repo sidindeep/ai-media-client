@@ -74,6 +74,10 @@ services:
       MEDIA_CODEX_RPC_TIMEOUT_MS: ${MEDIA_CODEX_RPC_TIMEOUT_MS:-60000}
       MEDIA_CODEX_RESULT_DIR: /worker/results
       MEDIA_CODEX_MAX_PENDING_JOBS: ${MEDIA_CODEX_MAX_PENDING_JOBS:-256}
+      AI_LOGGER_SERVER_URL: ${AI_LOGGER_SERVER_URL:-}
+      AI_LOGGER_SERVICE: codex-worker
+      AI_LOGGER_ENVIRONMENT: ${AI_LOGGER_ENVIRONMENT:-production}
+      AI_LOGGER_ALLOW_PRIVATE_HTTP: ${AI_LOGGER_ALLOW_PRIVATE_HTTP:-0}
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

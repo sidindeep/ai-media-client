@@ -115,7 +115,31 @@ Codex (проверено по исходникам 2026-10-01) использу
 возвращает fresh, повтор не отправляется провайдеру. Update не меняет terminal
 success/fail; unknown сохраняет резерв. Интерфейс content и legacy storage
 fallback остаются публичными зависимостями оркестратора.
-Kie и RouterAI ещё сохраняют отдельные маршруты.
+RouterAI, 2026-10-01: HTTP получает provider/admin из
+`src/server/routerai-module.js`. Provider (`providers/routerai/application.js`)
+предоставляет каталог с ролью и метаданными, quote/nativeQuote, submit/getTask,
+getImage/getStatus и lifecycle; admin — полный каталог, API submit и видео.
+Валидация пользовательского запроса принадлежит `providers/routerai/request.js`.
+`src/generations/routerai-records.js` владеет namespace routerai и общей
+транзакцией записи, резерва, settlement и журнала. Операции: id/get/create,
+markVideo/finish/recordSend/pending/createRetry. Create возвращает fresh под
+блокировкой кошелька; terminal success/fail не меняется; unknown сохраняет
+резерв и не повторяется. Оркестратор получает records, client, conversion и
+content; SQL, pool, создание HTTP-клиента и ключ исключены из его входов.
+Клиент RouterAI сохраняет таймауты, очищенные ошибки и retry-after; отдельный
+worker-процесс не требуется. Контрактные проверки:
+`test/routerai-application.test.js`, `test/routerai.test.js`,
+`test/module-boundaries.test.js`. Приёмка 2026-10-01: 46 разных контейнерных
+тестов RouterAI/HTTP/границ, browser smoke и проверки синтаксиса/async прошли;
+рабочая общая БД connected, media/codex healthy. Реальные платные вызовы
+RouterAI не проверены. Владельцы контракта — области Providers и Generations;
+зависимости records направлены к PostgreSQL, wallet и journal, оркестрация
+использует публичный ContentService. Конфигурация ключа задаётся серверным
+config.routerAi, транспортные таймауты и лимиты — routerai/client.js,
+валидация и лимиты тела — request.js и routes/generation.js. Диагностика
+следует provider-diagnostics и ai_logger; отсутствие цены допускает задачу
+без резерва по действующему контракту, отсутствие задачи даёт HTTP 404.
+Kie ещё сохраняет отдельные маршруты.
 Обработчик Codex/RouterAI/APIMart вынесен из
 `http.js`, но только часть маршрутов использует общий контракт. Media-фасад описывает
 виды медиа, а не кошелёк.

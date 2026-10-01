@@ -78,7 +78,9 @@ function createCodexBilling({ records, worker, pricing, conversion, dataDirector
           await worker.acknowledgeImage(account, requestId).catch(() => {});
         return saved;
       }
-      if (result.state === 'failed') return await update(account, requestId, { state: 'fail', error: safeErrorText(result.error) || 'Codex request failed.' });
+      if (result.state === 'failed') return await update(account, requestId, { state: 'fail',
+        ...(result.errorCode ? { errorCode: safeErrorText(String(result.errorCode)).slice(0, 100) } : {}),
+        error: safeErrorText(result.error) || 'Codex request failed.' });
       if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: safeErrorText(result.error) || 'Codex result is unknown.' });
       return job;
     } catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' } });

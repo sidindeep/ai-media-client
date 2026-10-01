@@ -15,11 +15,13 @@ const { createCodexAppServer } = require('./codex-app-server');
 const snapshotCatalog = require('../../config/codex-models.json');
 const { validatePng } = require('./codex-images');
 const { safeErrorText } = require('./codex-errors');
+const systemErrors = require('../system-errors');
 
 function createCodexWorker(run, { login = createCodexLogin({ environment: codexEnvironment }),
   transport = process.env.MEDIA_CODEX_TRANSPORT || 'app-server',
   resultDirectory = process.env.MEDIA_CODEX_RESULT_DIR || path.join(os.tmpdir(), 'media-codex-results'),
-  maxPendingJobs = Number(process.env.MEDIA_CODEX_MAX_PENDING_JOBS || 256) } = {}) {
+  maxPendingJobs = Number(process.env.MEDIA_CODEX_MAX_PENDING_JOBS || 256),
+  recordError = systemErrors.record } = {}) {
   if (!['exec', 'app-server'].includes(transport)) throw new Error('MEDIA_CODEX_TRANSPORT должен быть exec или app-server');
   if (!Number.isSafeInteger(maxPendingJobs) || maxPendingJobs < 1 || maxPendingJobs > 10000) throw new Error('MEDIA_CODEX_MAX_PENDING_JOBS должен быть от 1 до 10000');
   const adapter = !run && transport === 'app-server' ? createCodexAppServerPool() : null;
@@ -30,6 +32,9 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
   // Active and queued requests listen for shutdown; the app-server pool limits execution.
   setMaxListeners(0, controller.signal);
   const jobs = new Map(), admitting = new Map();
+  const reportError = (event, error) => {
+    try { recordError('provider', event, error, { diagnostic: { entity: 'provider' } }); } catch {}
+  };
   const sweep = setInterval(() => {
     const cutoff = Date.now() - 3600000;
     for (const [key, job] of jobs) if (job.state !== 'running' && job.createdAt < cutoff) jobs.delete(key);
@@ -137,10 +142,15 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
         await atomicWrite(paths(account, input.requestId).record, JSON.stringify(completed));
         Object.assign(job, completed);
       }, async error => {
-        const failed = { ...job, error: safeErrorText(error.message) || 'Codex request failed.', state: error.outcomeUnknown ? 'unknown' : 'failed' };
+        reportError('codex-worker.run.error', error);
+        const explanation = safeErrorText(error.ownerMessage);
+        const failed = { ...job, error: safeErrorText(error.message) || 'Codex request failed.',
+          ...(error.code ? { errorCode: safeErrorText(String(error.code)).slice(0, 100) } : {}),
+          state: error.outcomeUnknown ? 'unknown' : 'failed' };
+        if (explanation) failed.error = safeErrorText(failed.error + '\n\nОтвет модели: ' + explanation);
         await atomicWrite(paths(account, input.requestId).record, JSON.stringify(failed));
         Object.assign(job, failed);
-      }).catch(error => { job.error = safeErrorText(error.message) || 'Codex result could not be saved.'; job.state = 'unknown'; });
+      }).catch(error => { reportError('codex-worker.persist.error', error); job.error = safeErrorText(error.message) || 'Codex result could not be saved.'; job.state = 'unknown'; });
       return send(res, 202, job);
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });

@@ -234,6 +234,38 @@ test('Empty image failure explains that no cause was supplied when the turn comp
   await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), /не передал подробную причину/);
 });
 
+test('Empty image failure retains a late retry error without replaying the turn', async t => {
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
+    const params = { threadId: m.params.threadId, turnId };
+    emit({ method: 'item/completed', params: { ...params, item: { type: 'imageGeneration', status: 'failed', result: '' } } });
+    emit({ method: 'error', params: { ...params, willRetry: true, error: { code: 'rate_limit_exceeded', message: 'Too many requests' } } });
+    emit({ method: 'turn/completed', params: { ...params, turn: { id: turnId, status: 'completed' } } });
+  });
+  await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), error => {
+    assert.equal(error.code, 'rate_limit_exceeded');
+    assert.match(error.message, /Too many requests/); return true;
+  });
+  assert.equal(h.calls.filter(m => m.method === 'turn/start').length, 1);
+});
+
+test('Final model explanation stays separate from the technical image error', async t => {
+  const h = await harness(t, ({ m, emit, reply }) => {
+    if (m.method !== 'turn/start') return;
+    const turnId = randomUUID(); reply(m, { turn: { id: turnId } });
+    const params = { threadId: m.params.threadId, turnId };
+    emit({ method: 'item/completed', params: { ...params, item: { type: 'imageGeneration', status: 'failed', result: '' } } });
+    emit({ method: 'item/completed', params: { ...params, item: { id: 'final', type: 'agentMessage', text: 'PRIVATE owner explanation' } } });
+    emit({ method: 'turn/completed', params: { ...params, turn: { id: turnId, status: 'completed' } } });
+  });
+  await assert.rejects(h.adapter.run({ ...request(), kind: 'image' }), error => {
+    assert.equal(error.code, 'CODEX_IMAGE_FAILED');
+    assert.equal(error.ownerMessage, 'PRIVATE owner explanation');
+    assert.doesNotMatch(error.message, /PRIVATE/); return true;
+  });
+});
+
 test('RPC and failed turns preserve details while a retry notification allows success', async t => {
   const h = await harness(t, data => {
     const { m, emit, reply } = data;
@@ -325,7 +357,11 @@ test('Worker retains unknown outcome and deduplicates without running another ad
 
 test('Worker persists sanitized provider details and returns them through its status API', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'media-worker-errors-'));
-  const server = createCodexWorker(async () => { throw new Error('moderation_blocked: output sexual; Bearer private-token'); }, { resultDirectory: directory });
+  const original = Object.assign(new Error('moderation_blocked: output sexual; Bearer private-token'),
+    { code: 'moderation_blocked', ownerMessage: 'Owner explanation Bearer owner-token' });
+  const reports = [];
+  const server = createCodexWorker(async () => { throw original; }, { resultDirectory: directory,
+    recordError: (...args) => { reports.push(args); throw new Error('Logger unavailable'); } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }); await fs.rm(directory, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${server.address().port}`, input = request(), account = randomUUID();
@@ -338,7 +374,12 @@ test('Worker persists sanitized provider details and returns them through its st
     await new Promise(resolve => setTimeout(resolve, 5));
   }
   assert.equal(job.state, 'failed'); assert.match(job.error, /moderation_blocked.*sexual/);
-  assert.doesNotMatch(job.error, /private-token/);
+  assert.doesNotMatch(job.error, /private-token|owner-token/);
+  assert.match(job.error, /Owner explanation/);
+  assert.equal(job.errorCode, 'moderation_blocked');
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0][1], 'codex-worker.run.error');
+  assert.equal(reports[0][2], original);
   // A duplicate POST waits for initial admission and must preserve the same failure.
   const replay = await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) }).then(r => r.json());
   assert.equal(replay.error, job.error);

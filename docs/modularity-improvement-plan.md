@@ -37,7 +37,7 @@ Smoke использует настоящий PostgreSQL тестового пр
 
 | Порядок | Открытая работа | Источники и приёмка |
 | --- | --- | --- |
-| 1 | RouterAI: worker/client, records, provider facade; убрать отдельные вызовы из generation routes | `routerai-billing.js`, `providers/routerai`, `routes/generation.js`; `routerai.test.js`, `provider-status.test.js`, PostgreSQL |
+| 1 | RouterAI: records и provider/admin реализованы; контейнерная приёмка пройдена | `routerai-billing.js`, `providers/routerai`, `routes/generation.js`; `routerai.test.js`, `routerai-application.test.js`, `module-boundaries.test.js`, PostgreSQL |
 | 2 | Kie/APIMart и cost routing: перейти всеми потребителями на явные операции; сохранить очередь и внешнюю оплату | `media-service.js`, `provider-router.js`, `apimart-jobs.js`, `cost-router.js`; контрактные, queue, accounts, APIMart, Telegram тесты |
 | 3 | Accounts/history: владельцы read models и общей транзакции ручной сверки; оставшиеся auth/workspace/content маршруты | `accounts.js`, `generation-history.js`, `spending-history.js`, `http.js`; tenant isolation, резерв/ledger, replica-web тесты |
 | 4 | Vue: владельцы session, workspace/drafts, history и submission; Composer получает операции | `stores/studio.ts`, `components/Composer.vue`, `composables`; смена чата/аккаунта, quote race, browser smoke |
@@ -45,6 +45,17 @@ Smoke использует настоящий PostgreSQL тестового пр
 
 Наличие интерфейса не означает отдельный сервис. Общую транзакцию разделять
 на независимые операции нельзя: она защищает идемпотентность и деньги.
+
+RouterAI, продолжение 2026-10-01: SQL, запись/резерв/settlement/журнал и
+восстановление очереди вынесены в RouterAiRecords. HTTP получает публичные
+provider/admin; каталог, нативная котировка и выдача файлов сохраняют прежние
+ответы. Рабочий Compose пересобран, media/codex healthy, общая БД connected,
+API health ok=true. Прошли 46 разных контейнерных тестов RouterAI/HTTP/границ,
+проверки синтаксиса и async-паттернов, браузерный smoke. Генерации в тестах
+используют подставного поставщика и настоящий PostgreSQL test-профиля;
+реальные платные вызовы не проверены. Следующий пакет — пункт 2 таблицы.
+Windows-дистрибутив не обновлён: в checkout отсутствуют desktop/package.json
+и desktop/scripts/single-distribution.cjs; альтернативный output не создавался.
 
 ## Цель и результат
 

@@ -137,7 +137,11 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
           if (job.turnId && turnId && job.turnId !== turnId) continue;
           if (turnId) job.turnId = turnId;
           // Retriable notifications are diagnostic only: the CLI still owns its turn.
-          if (message.method === 'error' && params.willRetry === false) job.providerError = providerError(params.error);
+          if (message.method === 'error') {
+            const error = providerError(params.error);
+            if (params.willRetry === false) job.providerError = error;
+            else job.retryError = error;
+          }
           if (message.method === 'thread/tokenUsage/updated') {
             const value = params.tokenUsage?.total;
             job.usage = normalizeUsage(value && { input_tokens: value.inputTokens, output_tokens: value.outputTokens,
@@ -164,9 +168,16 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
           }
           if (message.method === 'turn/completed') {
             if (params.turn?.error) job.reject(providerError(params.turn.error));
-            else if (job.imageError) job.reject(job.providerError || job.imageError);
+            else if (job.imageError) {
+              const error = job.providerError || (job.imageError.reasonMissing && job.retryError) || job.imageError;
+              // The final model explanation belongs to the owner, never the central logger.
+              const explanation = [...job.messages.values()].join('\n\n').trim();
+              if (job.imageError.reasonMissing && error === job.imageError && explanation)
+                error.ownerMessage = explanation;
+              job.reject(error);
+            }
             else if (params.turn?.status === 'completed') job.resolve();
-            else job.reject(job.providerError || failure());
+            else job.reject(job.providerError || job.retryError || failure());
           }
         }
       });

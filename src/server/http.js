@@ -196,7 +196,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
   let routerAi = generationServices?.routerAi || null;
   let apimart = generationServices?.apimart || null;
   let costRouter = generationServices?.costRouter || null;
-  let routerAiModels = generationServices?.routerAiModels || null;
+  let routerAiAdmin = generationServices?.routerAiAdmin || null;
   let routerAiStatus = generationServices?.routerAiStatus || null;
   const connections = new Set();
   const eventLoopBaseline = performance.eventLoopUtilization();
@@ -406,7 +406,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return json(res, 200, { result: await telegram.unlink(user.id) });
       }
       if (/^\/api\/(?:codex|apimart|routerai|auto)\//.test(url.pathname)) {
-        return await handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, apimart, costRouter, routerAiModels, headers,
+        return await handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, routerAiAdmin, apimart, costRouter, headers,
           send: (status, body) => json(res, status, body), readBody: limit => readBody(req, limit),
           sendMedia: fn => sendMedia(req, res, fn),
           sendStored: (file, attachment) => sendStored(req, res, storage, file, attachment),
@@ -551,7 +551,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
     routerAi = nextGenerationServices?.routerAi || null;
     apimart = nextGenerationServices?.apimart || null;
     costRouter = nextGenerationServices?.costRouter || null;
-    routerAiModels = nextGenerationServices?.routerAiModels || null;
+    routerAiAdmin = nextGenerationServices?.routerAiAdmin || null;
     routerAiStatus = nextGenerationServices?.routerAiStatus || null;
   };
   server.closeEvents = () => { for (const connection of connections) connection.end(); };

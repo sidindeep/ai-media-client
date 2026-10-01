@@ -1,13 +1,9 @@
-const { transaction } = require('../database/database');
-const { reserve, settle, lockWallet } = require('../billing/wallet');
-const { createRouterAiClient } = require('../providers/routerai/client');
+const { validateRouterAiRequest } = require('../providers/routerai/request');
 const { quoteRouterAi } = require('../providers/routerai/pricing');
 const { unpricedQuote } = require('../billing/quote-engine');
 const { resolvePriceSources } = require('../billing/price-sources');
-const { appendGenerationEvent } = require('./generation-journal');
-const { createCreditConversion } = require('../billing/conversion');
 const { validatePng, MAX_IMAGE_BYTES } = require('./codex-images');
-const { submissionDecision, createStoredRetry } = require('./submission-control');
+const { submissionDecision } = require('./submission-control');
 const catalog = require('../../config/routerai-models.json');
 const { providerFailure, safeMessage } = require('../provider-diagnostics');
 
@@ -32,27 +28,9 @@ function streamedWav(events) {
   wav.write('data', 36); wav.writeUInt32LE(pcm.length, 40); pcm.copy(wav, 44);
   return wav;
 }
-function validateRouterAiRequest(raw, models = catalog.models) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid('Некорректный запрос RouterAI');
-  if (Object.keys(raw).some(key => !['requestId', 'model', 'prompt', 'projectId', 'chatId', 'quotedAmountUnits'].includes(key))) throw invalid('Недопустимые параметры RouterAI');
-  const model = models.find(item => item.id === raw.model);
-  if (!model || !['text', 'image'].includes(model.kind)) throw invalid('Модель RouterAI недоступна в этом режиме');
-  if (typeof raw.prompt !== 'string' || !raw.prompt.trim() || raw.prompt.length > 20000) throw invalid('Укажите текст до 20 000 символов');
-  if (typeof raw.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(raw.requestId)) throw invalid('Некорректный ID запроса');
-  for (const [value, label] of [[raw.projectId, 'Проект'], [raw.chatId, 'Чат']]) {
-    if (value !== undefined && value !== null && (typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value))) throw invalid(`${label} не найден`);
-  }
-  return { requestId: raw.requestId, model: model.id, kind: model.kind, endpoint: model.endpoint || (model.kind === 'image' ? 'images' : 'chat/completions'),
-    outputFormat: model.outputFormat || 'raster', prompt: raw.prompt.trim(),
-    ...(raw.quotedAmountUnits !== undefined ? { quotedAmountUnits: raw.quotedAmountUnits } : {}),
-    ...(raw.projectId ? { projectId: raw.projectId } : {}), ...(raw.chatId ? { chatId: raw.chatId } : {}) };
-}
 
-function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFetcher, accountQuote, documentedQuote,
+function createRouterAiBilling({ records, client, conversion, content, tariffFetcher, accountQuote, documentedQuote,
   retryDelayMs = 10_000 }) {
-  const client = createRouterAiClient({ apiKey, ...(fetchImpl ? { fetchImpl } : {}) });
-  const id = (account, requestId) => `routerai:${account}:${requestId}`;
-  const conversion = accounts.conversion || createCreditConversion();
   const quote = async (request, _role = 'user', force = false) => {
     try {
       const result = await resolvePriceSources([
@@ -63,37 +41,12 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
       return result.quote ? { ...result.value, source: result.source } : unpricedQuote('price_unavailable');
     } catch { return unpricedQuote('price_unavailable'); }
   };
-  async function get(account, requestId) {
-    return (await accounts.pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, requestId)])).rows[0]?.data;
-  }
-  async function markVideo(account, request, providerVideoId) {
-    await transaction(accounts.pool, async db => {
-      await db.query("UPDATE media_records SET data=jsonb_set(data,'{providerVideoId}',to_jsonb($3::text)),updated_at=now() WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, request.requestId), providerVideoId]);
-      await appendGenerationEvent(db, account, 'routerai', request, 'accepted', { providerTaskId: providerVideoId });
-    });
-  }
-  async function finish(account, requestId, patch) {
-    return transaction(accounts.pool, async db => {
-      await lockWallet(db, account);
-      const row = (await db.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='routerai' AND id=$2 FOR UPDATE", [account, id(account, requestId)])).rows[0];
-      if (!row) throw new Error('Запрос RouterAI не найден');
-      if (['success', 'fail'].includes(row.data.state)) return row.data;
-      const now = new Date().toISOString();
-      const next = { ...row.data, ...patch, revision: row.data.revision + 1, updatedAt: now, completedAt: now,
-        durationMs: Math.max(0, Date.parse(now) - Date.parse(row.data.createdAt)) };
-      await settle(db, account, id(account, requestId), next.state, next);
-      await db.query("UPDATE media_records SET data=$3,updated_at=now() WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, requestId), JSON.stringify(next)]);
-      await appendGenerationEvent(db, account, 'routerai', next, next.state,
-        { providerCostRub: next.providerCostRub, error: next.error });
-      return next;
-    });
-  }
-  const retries = createStoredRetry({ pool: accounts.pool, namespace: 'routerai', jobId: id,
-    activeState: 'running', retryDelayMs, dispatch: process });
+  const { get, markVideo, finish, id } = records;
+  const retries = records.createRetry({ retryDelayMs, dispatch: process });
   async function process(account, request) {
     let submissionAccepted = false;
     try {
-      await appendGenerationEvent(accounts.pool, account, 'routerai', request, 'send_start');
+      await records.recordSend(account, request);
       if (request.kind === 'api') {
         const payload = { ...request.payload };
         if (request.endpoint === 'audio/transcriptions' && typeof payload.input_audio?.data === 'string'
@@ -208,22 +161,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
     if (request.quotedAmountUnits !== undefined && nativeQuote.amountUnits !== null && request.quotedAmountUnits !== nativeQuote.amountUnits) {
       throw Object.assign(new Error('Тариф RouterAI изменился. Обновите цену перед отправкой.'), { status: 409 });
     }
-    let fresh = false;
-    const job = await transaction(accounts.pool, async db => {
-      await lockWallet(db, account);
-      const previous = (await db.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='routerai' AND id=$2", [account, id(account, request.requestId)])).rows[0]?.data;
-      if (previous) {
-        if (!matches(previous)) throw Object.assign(new Error('Запрос с этим ID уже имеет другие параметры'), { status: 409 });
-        return previous;
-      }
-      if (nativeQuote.amountUnits !== null) await reserve(db, account, id(account, request.requestId), nativeQuote);
-      const createdAt = new Date().toISOString();
-      const record = { ...request, id: request.requestId, state: 'running', revision: 1, nativeQuote, createdAt, updatedAt: createdAt };
-      await db.query("INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,'routerai',$2,$3)", [account, id(account, request.requestId), JSON.stringify(record)]);
-      await appendGenerationEvent(db, account, 'routerai', record, 'created');
-      fresh = true;
-      return record;
-    });
+    const { record: job, fresh } = await records.create(account, request, nativeQuote, matches);
     if (fresh) void process(account, job).catch(() => {});
     return job;
   }
@@ -256,7 +194,7 @@ function createRouterAiBilling({ accounts, apiKey, content, fetchImpl, tariffFet
   }
   return { quote, submit, submitAdmin, adminVideo, get,
     async recover() {
-      const rows = (await accounts.pool.query("SELECT account_id,id,data FROM media_records WHERE namespace='routerai' AND data->>'state' IN ('running','queued')")).rows;
+      const rows = await records.pending();
       for (const row of rows) {
         if (row.data.state === 'queued') { retries.recover(row.account_id, row.data); continue; }
         await finish(row.account_id, row.data.id, { state: 'unknown', error: row.data.nativeQuote?.amountUnits == null

@@ -1,9 +1,8 @@
 const { validateCodexRequest } = require('../../services/codex-request');
-const { validateRouterAiRequest } = require('../../services/routerai-billing');
 const { isAdminRole, assertAdminRole } = require('../../auth/roles');
 const snapshotCatalog = require('../../../config/codex-models.json');
 
-async function handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, apimart, costRouter, routerAiModels,
+async function handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, routerAiAdmin, apimart, costRouter,
   send, readBody, sendMedia, sendStored, sendFile, headers }) {
   if (url.pathname.startsWith('/api/auto/')) {
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
@@ -85,20 +84,20 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codexPro
   if (url.pathname.startsWith('/api/routerai/')) {
     await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
     if (!routerAi) return send(503, { error: 'RouterAI не настроен.' });
-    if (req.method === 'GET' && url.pathname === '/api/routerai/models') return send(200, await routerAiModels.list(user.role));
+    if (req.method === 'GET' && url.pathname === '/api/routerai/models') return send(200, await routerAi.listModelCatalog(user.role));
     if (url.pathname.startsWith('/api/routerai/admin/')) {
       assertAdminRole(user.role);
-      if (req.method === 'GET' && url.pathname === '/api/routerai/admin/models') return send(200, await routerAiModels.all(user.role));
+      if (req.method === 'GET' && url.pathname === '/api/routerai/admin/models') return send(200, await routerAiAdmin.listModels(user.role));
       if (req.method === 'POST' && url.pathname === '/api/routerai/admin/jobs') {
         if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
         const raw = JSON.parse((await readBody(300000)).toString('utf8'));
         const binding = await accounts.workspaces.assertBinding(user.id, raw.projectId, raw.chatId);
-        return send(200, await routerAi.submitAdmin(user.id, { ...raw, ...binding }, (await routerAiModels.all(user.role)).models));
+        return send(200, await routerAiAdmin.submit(user.id, { ...raw, ...binding }, (await routerAiAdmin.listModels(user.role)).models));
       }
       const adminVideo = /^\/api\/routerai\/admin\/jobs\/([a-f0-9-]{36})\/video\/(status|content)$/.exec(url.pathname);
       if (req.method === 'GET' && adminVideo) {
-        if (adminVideo[2] === 'status') return send(200, await routerAi.adminVideo(user.id, adminVideo[1]));
-        const bytes = await routerAi.adminVideo(user.id, adminVideo[1], true);
+        if (adminVideo[2] === 'status') return send(200, await routerAiAdmin.getVideo(user.id, adminVideo[1]));
+        const bytes = await routerAiAdmin.getVideo(user.id, adminVideo[1], true);
         res.writeHead(200, { ...headers, 'Content-Type': 'video/mp4', 'Content-Length': bytes.length,
           'Content-Disposition': `attachment; filename="routerai-${adminVideo[1]}.mp4"`, 'Cache-Control': 'no-store' });
         res.end(bytes); return;
@@ -107,30 +106,30 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codexPro
     }
     if (req.method === 'GET' && url.pathname === '/api/routerai/quote') {
       try {
-        const allowed = (await routerAiModels.list(user.role)).models;
+        const allowed = (await routerAi.listModelCatalog(user.role)).models;
         const model = allowed.find(item => item.id === url.searchParams.get('model'));
         if (!model) return send(403, { quote: null, error: 'Модель RouterAI недоступна.' });
         const rawPayload = url.searchParams.get('payload') || '{}';
         if (rawPayload.length > 4096) return send(400, { quote: null, error: 'Параметры слишком длинные.' });
         const payload = JSON.parse(rawPayload);
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return send(400, { quote: null, error: 'Некорректные параметры.' });
-        return send(200, { quote: await routerAi.quote({ model: model.id, endpoint: model.endpoint ||
-          (model.kind === 'image' ? 'images' : 'chat/completions'), payload }, user.role) });
+        return send(200, { quote: (await routerAi.quote({ model: model.id, endpoint: model.endpoint ||
+          (model.kind === 'image' ? 'images' : 'chat/completions'), payload }, user.role)).nativeQuote });
       }
       catch (error) { return send(200, { quote: null, error: error.message || 'Цена модели RouterAI не опубликована.' }); }
     }
     const imageRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})\/image$/.exec(url.pathname);
     if (imageRequest && ['GET', 'HEAD'].includes(req.method)) {
-      const file = await routerAi.image(user.id, imageRequest[1]);
+      const file = await routerAi.getImage(user.id, imageRequest[1]);
       return sendMedia(() => file.storageKey
         ? sendStored(file, url.searchParams.get('download') === '1' || file.type === 'image/svg+xml')
         : sendFile(file.path, file.type, url.searchParams.get('download') === '1' || file.type === 'image/svg+xml'));
     }
     if (req.method === 'POST' && url.pathname === '/api/routerai/jobs') {
       if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
-      const allowed = (await routerAiModels.list(user.role)).models;
+      const allowed = (await routerAi.listModelCatalog(user.role)).models;
       const raw = JSON.parse((await readBody(100000)).toString('utf8'));
-      const body = validateRouterAiRequest(raw, allowed);
+      const body = routerAi.validateRequest(raw, allowed);
       const binding = await accounts.workspaces.assertBinding(user.id, body.projectId, body.chatId);
       const job = await routerAi.submit(user.id, { ...raw, ...binding }, user.role, allowed);
       if (!isAdminRole(user.role)) delete job.providerCostRub;
@@ -138,7 +137,7 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codexPro
     }
     const jobRequest = /^\/api\/routerai\/jobs\/([a-f0-9-]{36})$/.exec(url.pathname);
     if (req.method === 'GET' && jobRequest) {
-      const job = await routerAi.get(user.id, jobRequest[1]);
+      const job = await routerAi.getTask(user.id, jobRequest[1]);
       if (job && !isAdminRole(user.role)) delete job.providerCostRub;
       return job ? send(200, job) : send(404, { error: 'Запрос не найден' });
     }

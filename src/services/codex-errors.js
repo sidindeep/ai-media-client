@@ -8,6 +8,7 @@ function safeErrorText(value) {
 
 function providerError(value, fallback = 'Codex request failed.') {
   const parts = [];
+  let providerCode;
   const add = text => { const safe = safeErrorText(text); if (safe && !parts.includes(safe)) parts.push(safe); };
   function visit(item, depth = 0) {
     if (depth > 4 || item == null) return;
@@ -18,6 +19,8 @@ function providerError(value, fallback = 'Codex request failed.') {
     if (typeof item !== 'object') return;
     for (const key of ['code', 'type', 'httpStatusCode', 'statusCode', 'limitId', 'resetsAt']) {
       if (typeof item[key] === 'string' || typeof item[key] === 'number') add(`${key}: ${item[key]}`);
+      if (!providerCode && ['code', 'type', 'httpStatusCode', 'statusCode'].includes(key)
+        && ['string', 'number'].includes(typeof item[key])) providerCode = safeErrorText(String(item[key])).slice(0, 100);
     }
     visit(item.message, depth + 1);
     visit(item.additionalDetails, depth + 1);
@@ -34,7 +37,8 @@ function providerError(value, fallback = 'Codex request failed.') {
     }
   }
   visit(value);
-  return new Error(parts.length ? `Codex: ${parts.join(' · ').slice(0, 4000)}` : fallback);
+  return Object.assign(new Error(parts.length ? `Codex: ${parts.join(' · ').slice(0, 4000)}` : fallback),
+    providerCode ? { code: providerCode } : {});
 }
 
 function imageGenerationError(item) {
@@ -46,6 +50,8 @@ function imageGenerationError(item) {
   const result = typeof item.result === 'string' && item.result.length <= 16000
     && !/^[A-Za-z0-9+/=\s]{256,}$/.test(item.result) ? item.result : undefined;
   const error = providerError({ failure: item.failure, error: item.error, message: result }, fallback);
+  error.reasonMissing = error.message === fallback;
+  error.code ||= item.status === 'cancelled' ? 'CODEX_IMAGE_CANCELLED' : 'CODEX_IMAGE_FAILED';
   if (/moderation_blocked|content_policy_violation|safety system/i.test(error.message))
     error.message = 'Codex отклонил изображение по правилам безопасности. ' + error.message;
   else if (/usageLimitExceeded|rate_limit_exceeded|httpStatusCode: 429/i.test(error.message))

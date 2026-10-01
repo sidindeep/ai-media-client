@@ -6,8 +6,8 @@ import type { ProviderStatus } from '../api/client';
 import { useI18n } from '../i18n';
 import type { Chat, Project } from '../types';
 
-const props = defineProps<{ activeSection: 'landing' | 'home' | 'workspace' | 'history' | 'spending' | 'profile' | 'plans' }>();
-const emit = defineEmits<{ landing: []; home: []; workspace: []; history: []; spending: []; profile: []; plans: [] }>();
+const props = defineProps<{ activeSection: 'landing' | 'home' | 'movie' | 'workspace' | 'history' | 'spending' | 'profile' | 'plans' }>();
+const emit = defineEmits<{ landing: []; home: []; movie: []; workspace: []; history: []; spending: []; profile: []; plans: [] }>();
 const studio = useStudioStore();
 const { formatDate, formatNumber, t, tp } = useI18n();
 const activeTab = ref<'chats' | 'projects' | 'archive'>('chats');
@@ -239,6 +239,7 @@ function checkProvider() {
         <span class="sidebar-home-icon" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation"><circle cx="12" cy="12" r="8.25" /><path d="M12 7.5v4.75l3.25 2" /></svg></span>
         <span>{{ t('navigation.history') }}</span>
       </button>
+      <button type="button" class="sidebar-home-link sidebar-movie-link" :class="{ active: props.activeSection === 'movie' }" :aria-label="t('movie.heading')" :title="t('movie.heading')" @click="emit('movie')"><span class="sidebar-home-icon" aria-hidden="true">▷</span><span>{{ t('movie.heading') }}</span></button>
     </nav>
     <template v-if="!collapsed">
       <div class="sidebar-toolbar" :class="{ 'archive-mode': activeTab === 'archive' }"><label class="search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" :placeholder="t('common.search')" :aria-label="t('sidebar.search')" /></label><button v-if="activeTab !== 'archive'" class="icon-button" type="button" :aria-label="primaryActionLabel" @click="primaryAdd">＋</button></div>

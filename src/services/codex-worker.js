@@ -16,6 +16,7 @@ const snapshotCatalog = require('../../config/codex-models.json');
 const { validatePng } = require('./codex-images');
 const { safeErrorText } = require('./codex-errors');
 const systemErrors = require('../system-errors');
+const { generationContext } = require('../ai-logger/generation-context.mjs');
 
 function createCodexWorker(run, { login = createCodexLogin({ environment: codexEnvironment }),
   transport = process.env.MEDIA_CODEX_TRANSPORT || 'app-server',
@@ -32,8 +33,9 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
   // Active and queued requests listen for shutdown; the app-server pool limits execution.
   setMaxListeners(0, controller.signal);
   const jobs = new Map(), admitting = new Map();
-  const reportError = (event, error) => {
-    try { recordError('provider', event, error, { diagnostic: { entity: 'provider' } }); } catch {}
+  const reportError = (event, error, request) => {
+    try { recordError('provider', event, error, { diagnostic: { entity: 'provider' },
+      generation: generationContext(request, 'codex') }); } catch {}
   };
   const sweep = setInterval(() => {
     const cutoff = Date.now() - 3600000;
@@ -142,7 +144,7 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
         await atomicWrite(paths(account, input.requestId).record, JSON.stringify(completed));
         Object.assign(job, completed);
       }, async error => {
-        reportError('codex-worker.run.error', error);
+        reportError('codex-worker.run.error', error, input);
         const explanation = safeErrorText(error.ownerMessage);
         const failed = { ...job, error: safeErrorText(error.message) || 'Codex request failed.',
           ...(error.code ? { errorCode: safeErrorText(String(error.code)).slice(0, 100) } : {}),
@@ -150,7 +152,7 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
         if (explanation) failed.error = safeErrorText(failed.error + '\n\nОтвет модели: ' + explanation);
         await atomicWrite(paths(account, input.requestId).record, JSON.stringify(failed));
         Object.assign(job, failed);
-      }).catch(error => { reportError('codex-worker.persist.error', error); job.error = safeErrorText(error.message) || 'Codex result could not be saved.'; job.state = 'unknown'; });
+      }).catch(error => { reportError('codex-worker.persist.error', error, input); job.error = safeErrorText(error.message) || 'Codex result could not be saved.'; job.state = 'unknown'; });
       return send(res, 202, job);
     } catch (error) { send(res, error.status || 400, { error: error.status ? error.message : 'Некорректный запрос' }); }
   });

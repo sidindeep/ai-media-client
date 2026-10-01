@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-30-unified-1",
+  "version": "2026-10-01-unified-2",
   "models": [
     {
       "providers": {
@@ -3562,7 +3562,7 @@
       "name": "Qwen - Image to Image",
       "action": "image-to-image",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Qwen Image, image-to-image: 4.0 кредитов / per megapixel",
         "apimart": ""
       },
       "id": "image.qwen.image-to-image"
@@ -3575,7 +3575,7 @@
       "name": "Qwen - Text to Image",
       "action": "text-to-image",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Qwen Image , text-to-image: 4.0 кредитов / per megapixel",
         "apimart": ""
       },
       "id": "image.qwen.text-to-image"
@@ -3611,10 +3611,10 @@
         "kie": "kie:qwen2/image-edit"
       },
       "kind": "image",
-      "name": "Qwen2 - Text To Image",
+      "name": "Qwen2 Image Edit",
       "action": "image-to-image",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Qwen2 - Image edit, image-to-image: 5.6 кредитов / per image",
         "apimart": ""
       },
       "id": "image.qwen2.image-edit"
@@ -3640,7 +3640,7 @@
       "name": "Qwen2.1 Image To Image",
       "action": "image-to-image",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Qwen-Image-2.1, image to image, 2K: 8 кредитов / per image\nQwen-Image-2.1, image to image, 1K: 4 кредитов / per image",
         "apimart": ""
       },
       "id": "image.qwen2-1.image-to-image"
@@ -3653,7 +3653,7 @@
       "name": "Qwen2.1 Text To Image",
       "action": "text-to-image",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Qwen-Image-2.1, text to image, 2K: 8 кредитов / per image\nQwen-Image-2.1, text to image, 1K: 4 кредитов / per image",
         "apimart": ""
       },
       "id": "image.qwen2-1.text-to-image"
@@ -4006,7 +4006,7 @@
       "name": "Bytedance - V1 Lite Image to Video",
       "action": "image-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "480p, 5 с: 10 кредитов / видео\n480p, 10 с: 20 кредитов / видео\n720p, 5 с: 22.5 кредитов / видео\n720p, 10 с: 45 кредитов / видео\n1080p, 5 с: 50 кредитов / видео\n1080p, 10 с: 100 кредитов / видео",
         "apimart": ""
       },
       "id": "video.bytedance.v1-lite-image-to-video"
@@ -4019,7 +4019,7 @@
       "name": "Bytedance - V1 Lite Text to Video",
       "action": "text-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "480p, 5 с: 10 кредитов / видео\n480p, 10 с: 20 кредитов / видео\n720p, 5 с: 22.5 кредитов / видео\n720p, 10 с: 45 кредитов / видео\n1080p, 5 с: 50 кредитов / видео\n1080p, 10 с: 100 кредитов / видео",
         "apimart": ""
       },
       "id": "video.bytedance.v1-lite-text-to-video"
@@ -4032,7 +4032,7 @@
       "name": "Bytedance - V1 Pro Text to Video",
       "action": "text-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "480p, 5 с: 14 кредитов / видео\n480p, 10 с: 28 кредитов / видео\n720p, 5 с: 30 кредитов / видео\n720p, 10 с: 60 кредитов / видео\n1080p, 5 с: 70 кредитов / видео\n1080p, 10 с: 140 кредитов / видео",
         "apimart": ""
       },
       "id": "video.bytedance.v1-pro-text-to-video"
@@ -4058,7 +4058,7 @@
       "name": "Bytedance V1 Pro Fast Image to Video",
       "action": "image-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "720p, 5 с: 16 кредитов / видео\n720p, 10 с: 36 кредитов / видео\n1080p, 5 с: 36 кредитов / видео\n1080p, 10 с: 72 кредитов / видео",
         "apimart": ""
       },
       "id": "video.bytedance.v1-pro-fast-image-to-video"
@@ -4071,7 +4071,7 @@
       "name": "Bytedance V1 Pro Image to Video",
       "action": "image-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "480p, 5 с: 14 кредитов / видео\n480p, 10 с: 28 кредитов / видео\n720p, 5 с: 30 кредитов / видео\n720p, 10 с: 60 кредитов / видео\n1080p, 5 с: 70 кредитов / видео\n1080p, 10 с: 140 кредитов / видео",
         "apimart": ""
       },
       "id": "video.bytedance.v1-pro-image-to-video"
@@ -4440,7 +4440,7 @@
       "name": "Infinitalk - From Audio",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "MeiGen-AI InfiniteTalk, lip sync, up to 15 secondss-480p: 3.0 кредитов / per second\nMeiGen-AI InfiniteTalk, lip sync, up to 15 secondss-720p: 12.0 кредитов / per second",
         "apimart": ""
       },
       "id": "video.infinitalk.from-audio"
@@ -4492,7 +4492,7 @@
       "name": "Kling - V3 Turbo Image to Video",
       "action": "image-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "kling 3.0 turbo, image-to-video, 1080P: 22.5 кредитов / per second\nkling 3.0 turbo, image-to-video, 720P: 18 кредитов / per second",
         "apimart": ""
       },
       "id": "video.kling.v3-turbo-image-to-video"
@@ -4506,7 +4506,7 @@
       "name": "Kling - V3 Turbo Text to Video",
       "action": "text-to-video",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "kling 3.0 turbo, text-to-video, 1080P: 22.5 кредитов / per second\nkling 3.0 turbo, text-to-video, 720P: 18 кредитов / per second",
         "apimart": "720P: $0.1144 / с\n1080P: $0.1432 / с"
       },
       "id": "video.kling.v3-turbo-text-to-video"
@@ -4561,7 +4561,7 @@
       "name": "Kling 3.0",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Kling 3.0, video, with audio-4K: 67 кредитов / per second\nKling 3.0, video, without audio-4K: 67 кредитов / per second\nKling 3.0, video, with audio-1080P: 27 кредитов / per second\nKling 3.0, video, without audio-1080P: 18 кредитов / per second\nKling 3.0, video, with audio-720P: 20 кредитов / per second\nKling 3.0, video, without audio-720P: 14 кредитов / per second",
         "apimart": ""
       },
       "id": "video.kling-3.0.video"
@@ -4784,7 +4784,7 @@
       "name": "Kling-3.0 motion-control",
       "action": "motion-control",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "kling 3.0 motion control, video-to-video, 1080P: 27 кредитов / per second\nkling 3.0 motion control, video-to-video, 720P: 20 кредитов / per second",
         "apimart": "billing_tier pro: $0.13712 / с"
       },
       "id": "video.kling-3.0.motion-control"
@@ -5078,7 +5078,7 @@
       "name": "Runway",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Runway, text-to-video, 5.0s-720p: 12.0 кредитов / per video\nRunway, text-to-video, 10.0s-720p: 30.0 кредитов / per video\nRunway, text-to-video, 5.0s-1080p: 30.0 кредитов / per video\nRunway, image-to-video, 5.0s-720p: 12.0 кредитов / per video\nRunway, image-to-video, 10.0s-720p: 30.0 кредитов / per video\nRunway, image-to-video, 5.0s-1080p: 30.0 кредитов / per video",
         "apimart": ""
       },
       "id": "video.runway"
@@ -5408,7 +5408,7 @@
       "name": "Topaz - Video Upscale",
       "action": "video-upscale",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Topaz Video Upscaler, upscale factor 4x: 14 кредитов / per second\nTopaz Video Upscaler, upscale factor 1x/2x: 8.0 кредитов / per second",
         "apimart": ""
       },
       "id": "video.topaz.video-upscale"
@@ -5702,7 +5702,7 @@
       "name": "Wan - 2.2 A14B Speech to Video Turbo",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Wan 2.2 A14B Turbo API Speech to Video, 480p: 12.0 кредитов / per second\nWan 2.2 A14B Turbo API Speech to Video, 720p: 24.0 кредитов / per second\nWan 2.2 A14B Turbo API Speech to Video, 580p: 18.0 кредитов / per second",
         "apimart": ""
       },
       "id": "video.wan.2-2-a14b-speech-to-video-turbo"
@@ -5741,7 +5741,7 @@
       "name": "Wan - Animate Move",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "wan 2.2 Animate, 2.2 Animate Move, 1.0s-480p: 6.0 кредитов / per second\nwan 2.2 Animate, 2.2 Animate Move, 1.0s-580p: 9.5 кредитов / per second\nwan 2.2 Animate, 2.2 Animate Move, 1.0s-720p: 12.5 кредитов / per second",
         "apimart": ""
       },
       "id": "video.wan.2-2-animate-move"
@@ -5754,7 +5754,7 @@
       "name": "Wan - Animate Replace",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "wan 2.2 Animate, 2.2 Animate Replace, 1.0s-720p: 12.5 кредитов / per second\nwan 2.2 Animate, 2.2 Animate Replace, 1.0s-580p: 9.5 кредитов / per second\nwan 2.2 Animate, 2.2 Animate Replace, 1.0s-480p: 6 кредитов / per second",
         "apimart": ""
       },
       "id": "video.wan.2-2-animate-replace"
@@ -6163,7 +6163,7 @@
       "name": "Gemini 2.5 Pro · Озвучивание",
       "action": "auto",
       "publishedTariffs": {
-        "kie": "—",
+        "kie": "Gemini 2.5 Pro TTS, Text to Speech, Audio Output: 2800 кредитов / per million tokens\nGemini 2.5 Pro TTS, Text to Speech, Input: 140 кредитов / per million tokens",
         "apimart": ""
       },
       "id": "audio.google.gemini-2-5-pro-tts"
@@ -6596,6 +6596,750 @@
         "apimart": "вход: $0.000024 / токен ($24 / 1 млн)\nвыход: $0.000024 / токен ($24 / 1 млн)"
       },
       "id": "audio.whisper-1"
+    },
+    {
+      "providers": {
+        "apimart": "chatgpt-image-latest"
+      },
+      "kind": "text",
+      "name": "chatgpt-image-latest",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.chatgpt-image-latest"
+    },
+    {
+      "providers": {
+        "apimart": "computer-use-preview"
+      },
+      "kind": "text",
+      "name": "computer-use-preview",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $2.4 / млн токенов\nВыход: $9.6 / млн токенов"
+      },
+      "id": "text.computer-use-preview"
+    },
+    {
+      "providers": {
+        "apimart": "computer-use-preview-2025-03-11"
+      },
+      "kind": "text",
+      "name": "computer-use-preview-2025-03-11",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $2.4 / млн токенов\nВыход: $9.6 / млн токенов"
+      },
+      "id": "text.computer-use-preview-2025-03-11"
+    },
+    {
+      "providers": {
+        "apimart": "dall-e-2"
+      },
+      "kind": "image",
+      "name": "dall-e-2",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Базовая цена: $0.016 / изображение"
+      },
+      "id": "image.dall-e-2"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-3.5-turbo-instruct-0914"
+      },
+      "kind": "text",
+      "name": "gpt-3.5-turbo-instruct-0914",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $1.2 / млн токенов\nВыход: $1.596 / млн токенов"
+      },
+      "id": "text.gpt-3.5-turbo-instruct-0914"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4"
+      },
+      "kind": "text",
+      "name": "gpt-4",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $24 / млн токенов\nВыход: $48 / млн токенов"
+      },
+      "id": "text.gpt-4"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4-0613"
+      },
+      "kind": "text",
+      "name": "gpt-4-0613",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $24 / млн токенов\nВыход: $48 / млн токенов"
+      },
+      "id": "text.gpt-4-0613"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4-turbo"
+      },
+      "kind": "text",
+      "name": "gpt-4-turbo",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $8 / млн токенов\nВыход: $24 / млн токенов"
+      },
+      "id": "text.gpt-4-turbo"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4-turbo-2024-04-09"
+      },
+      "kind": "text",
+      "name": "gpt-4-turbo-2024-04-09",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $8 / млн токенов\nВыход: $24 / млн токенов"
+      },
+      "id": "text.gpt-4-turbo-2024-04-09"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4-turbo-preview"
+      },
+      "kind": "text",
+      "name": "gpt-4-turbo-preview",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $8 / млн токенов\nВыход: $24 / млн токенов"
+      },
+      "id": "text.gpt-4-turbo-preview"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-2024-08-06"
+      },
+      "kind": "text",
+      "name": "gpt-4o-2024-08-06",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $2 / млн токенов\nВыход: $8 / млн токенов"
+      },
+      "id": "text.gpt-4o-2024-08-06"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-audio-preview-2024-12-17"
+      },
+      "kind": "audio",
+      "name": "gpt-4o-audio-preview-2024-12-17",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-4o-audio-preview-2024-12-17"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-audio-preview-2025-06-03"
+      },
+      "kind": "audio",
+      "name": "gpt-4o-audio-preview-2025-06-03",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-4o-audio-preview-2025-06-03"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-2024-07-18"
+      },
+      "kind": "text",
+      "name": "gpt-4o-mini-2024-07-18",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $0.12 / млн токенов\nВыход: $0.48 / млн токенов"
+      },
+      "id": "text.gpt-4o-mini-2024-07-18"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-audio-preview"
+      },
+      "kind": "audio",
+      "name": "gpt-4o-mini-audio-preview",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-4o-mini-audio-preview"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-audio-preview-2024-12-17"
+      },
+      "kind": "audio",
+      "name": "gpt-4o-mini-audio-preview-2024-12-17",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-4o-mini-audio-preview-2024-12-17"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-search-preview"
+      },
+      "kind": "text",
+      "name": "gpt-4o-mini-search-preview",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $0.12 / млн токенов\nВыход: $0.48 / млн токенов"
+      },
+      "id": "text.gpt-4o-mini-search-preview"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-search-preview-2025-03-11"
+      },
+      "kind": "text",
+      "name": "gpt-4o-mini-search-preview-2025-03-11",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $0.12 / млн токенов\nВыход: $0.48 / млн токенов"
+      },
+      "id": "text.gpt-4o-mini-search-preview-2025-03-11"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-transcribe-2025-03-20"
+      },
+      "kind": "text",
+      "name": "gpt-4o-mini-transcribe-2025-03-20",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-4o-mini-transcribe-2025-03-20"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-transcribe-2025-12-15"
+      },
+      "kind": "text",
+      "name": "gpt-4o-mini-transcribe-2025-12-15",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-4o-mini-transcribe-2025-12-15"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-tts-2025-03-20"
+      },
+      "kind": "audio",
+      "name": "gpt-4o-mini-tts-2025-03-20",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-4o-mini-tts-2025-03-20"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-mini-tts-2025-12-15"
+      },
+      "kind": "audio",
+      "name": "gpt-4o-mini-tts-2025-12-15",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-4o-mini-tts-2025-12-15"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-realtime-preview-2025-06-03"
+      },
+      "kind": "text",
+      "name": "gpt-4o-realtime-preview-2025-06-03",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $4 / млн токенов\nВыход: $16 / млн токенов"
+      },
+      "id": "text.gpt-4o-realtime-preview-2025-06-03"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-search-preview"
+      },
+      "kind": "text",
+      "name": "gpt-4o-search-preview",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $2 / млн токенов\nВыход: $8 / млн токенов"
+      },
+      "id": "text.gpt-4o-search-preview"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-search-preview-2025-03-11"
+      },
+      "kind": "text",
+      "name": "gpt-4o-search-preview-2025-03-11",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $2 / млн токенов\nВыход: $8 / млн токенов"
+      },
+      "id": "text.gpt-4o-search-preview-2025-03-11"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-4o-transcribe-diarize"
+      },
+      "kind": "text",
+      "name": "gpt-4o-transcribe-diarize",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $2 / млн токенов\nВыход: $8 / млн токенов"
+      },
+      "id": "text.gpt-4o-transcribe-diarize"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5-codex-mini"
+      },
+      "kind": "text",
+      "name": "gpt-5-codex-mini",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5-codex-mini"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5-codex-mini-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5-codex-mini-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5-codex-mini-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5-codex-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5-codex-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5-codex-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.1-codex-max-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.1-codex-max-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.1-codex-max-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.1-codex-mini-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.1-codex-mini-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.1-codex-mini-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.1-codex-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.1-codex-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.1-codex-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.1-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.1-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.1-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.2-2025-12-11"
+      },
+      "kind": "text",
+      "name": "gpt-5.2-2025-12-11",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.2-2025-12-11"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.2-codex-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.2-codex-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.2-codex-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.2-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.2-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.2-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.2-pro-2025-12-11"
+      },
+      "kind": "text",
+      "name": "gpt-5.2-pro-2025-12-11",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.2-pro-2025-12-11"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.3-chat-latest"
+      },
+      "kind": "text",
+      "name": "gpt-5.3-chat-latest",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.3-chat-latest"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.3-codex-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.3-codex-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.3-codex-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.3-codex-spark"
+      },
+      "kind": "text",
+      "name": "gpt-5.3-codex-spark",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.3-codex-spark"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.3-codex-spark-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.3-codex-spark-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.3-codex-spark-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.4-2026-03-05"
+      },
+      "kind": "text",
+      "name": "gpt-5.4-2026-03-05",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.4-2026-03-05"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.4-openai-compact"
+      },
+      "kind": "text",
+      "name": "gpt-5.4-openai-compact",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.4-openai-compact"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.4-pro-2026-03-05"
+      },
+      "kind": "text",
+      "name": "gpt-5.4-pro-2026-03-05",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.4-pro-2026-03-05"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.5-pro"
+      },
+      "kind": "text",
+      "name": "gpt-5.5-pro",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $24 / млн токенов\nВыход: $144 / млн токенов"
+      },
+      "id": "text.gpt-5.5-pro"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-5.6-sol-pro"
+      },
+      "kind": "text",
+      "name": "gpt-5.6-sol-pro",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-5.6-sol-pro"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-6.1-sol"
+      },
+      "kind": "text",
+      "name": "gpt-6.1-sol",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $1.6 / млн токенов\nВыход: $8 / млн токенов"
+      },
+      "id": "text.gpt-6.1-sol"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-audio"
+      },
+      "kind": "audio",
+      "name": "gpt-audio",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-audio"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-audio-1.5"
+      },
+      "kind": "audio",
+      "name": "gpt-audio-1.5",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-audio-1.5"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-audio-2025-08-28"
+      },
+      "kind": "audio",
+      "name": "gpt-audio-2025-08-28",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-audio-2025-08-28"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-audio-mini-2025-12-15"
+      },
+      "kind": "audio",
+      "name": "gpt-audio-mini-2025-12-15",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "audio.gpt-audio-mini-2025-12-15"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-image-1-mini"
+      },
+      "kind": "image",
+      "name": "gpt-image-1-mini",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "image.gpt-image-1-mini"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime"
+      },
+      "kind": "text",
+      "name": "gpt-realtime",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $3.2 / млн токенов\nВыход: $12.8 / млн токенов"
+      },
+      "id": "text.gpt-realtime"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime-1.5"
+      },
+      "kind": "text",
+      "name": "gpt-realtime-1.5",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-realtime-1.5"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime-2"
+      },
+      "kind": "text",
+      "name": "gpt-realtime-2",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-realtime-2"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime-2025-08-28"
+      },
+      "kind": "text",
+      "name": "gpt-realtime-2025-08-28",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $3.2 / млн токенов\nВыход: $12.8 / млн токенов"
+      },
+      "id": "text.gpt-realtime-2025-08-28"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime-mini"
+      },
+      "kind": "text",
+      "name": "gpt-realtime-mini",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $0.48 / млн токенов\nВыход: $1.92 / млн токенов"
+      },
+      "id": "text.gpt-realtime-mini"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime-mini-2025-10-06"
+      },
+      "kind": "text",
+      "name": "gpt-realtime-mini-2025-10-06",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $0.48 / млн токенов\nВыход: $1.92 / млн токенов"
+      },
+      "id": "text.gpt-realtime-mini-2025-10-06"
+    },
+    {
+      "providers": {
+        "apimart": "gpt-realtime-mini-2025-12-15"
+      },
+      "kind": "text",
+      "name": "gpt-realtime-mini-2025-12-15",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.gpt-realtime-mini-2025-12-15"
+    },
+    {
+      "providers": {
+        "apimart": "omni-moderation-2024-09-26"
+      },
+      "kind": "text",
+      "name": "omni-moderation-2024-09-26",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": "Вход: $0.16 / млн токенов\nВыход: $0.16 / млн токенов"
+      },
+      "id": "text.omni-moderation-2024-09-26"
+    },
+    {
+      "providers": {
+        "apimart": "text-embedding-v1"
+      },
+      "kind": "text",
+      "name": "text-embedding-v1",
+      "action": "auto",
+      "publishedTariffs": {
+        "apimart": ""
+      },
+      "id": "text.text-embedding-v1"
     }
   ]
 }

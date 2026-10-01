@@ -364,7 +364,7 @@ test('Worker persists sanitized provider details and returns them through its st
     recordError: (...args) => { reports.push(args); throw new Error('Logger unavailable'); } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }); await fs.rm(directory, { recursive: true, force: true }); });
-  const base = `http://127.0.0.1:${server.address().port}`, input = request(), account = randomUUID();
+  const base = `http://127.0.0.1:${server.address().port}`, input = { ...request(), sourceFiles: ['content:' + randomUUID()] }, account = randomUUID();
   const headers = { 'x-account-id': account };
   await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) });
   let job;
@@ -380,6 +380,10 @@ test('Worker persists sanitized provider details and returns them through its st
   assert.equal(reports.length, 1);
   assert.equal(reports[0][1], 'codex-worker.run.error');
   assert.equal(reports[0][2], original);
+  assert.equal(reports[0][3].generation.prompt, input.prompt);
+  assert.equal(reports[0][3].generation.source_urls.length, 1);
+  assert.ok(reports[0][3].generation.source_urls[0].endsWith('/api/content/' + input.sourceFiles[0].slice(8)));
+  assert.ok(!JSON.stringify(reports[0][3]).includes(account));
   // A duplicate POST waits for initial admission and must preserve the same failure.
   const replay = await fetch(base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) }).then(r => r.json());
   assert.equal(replay.error, job.error);

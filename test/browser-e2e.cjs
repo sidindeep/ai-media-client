@@ -73,7 +73,18 @@ async function main() {
     const config = { ...loadConfig({ MEDIA_PORT: '0', MEDIA_AUTH_ENABLED: 'true' }), dataDirectory: directory };
     // Draft tests need a catalog through the real worker HTTP boundary.
     // The injected executor never calls an external provider.
-    codexWorker = createCodexWorker(async () => { throw new Error('Unexpected Codex generation in browser smoke'); },
+    codexWorker = createCodexWorker(async input => {
+      if (process.env.BROWSER_E2E_MOVIE_ONLY === '1' && input.kind === 'text' && input.prompt.includes('TASK_DATA=')) {
+        const data = JSON.parse(input.prompt.split('TASK_DATA=')[1]);
+        await sleep(data.script === 'STOP_PLAN_TEST' ? 3000 : 500);
+        if (data.script === 'INVALID_PLAN_TEST') return JSON.stringify({ scenes: [{ sourceId: 'nonexistent', title: 'Invalid', seconds: 3 }] });
+        const image = data.materials.find(item => item.kind === 'image');
+        const video = data.materials.find(item => item.kind === 'video');
+        assert.ok(image && video);
+        return JSON.stringify({ scenes: [{ sourceId: null, title: 'Отпуск', seconds: 1 }, { sourceId: video.id, title: 'Клип', seconds: 1 }, { sourceId: image.id, title: 'Фото', seconds: 1 }, { sourceId: image.id, title: 'Финал', seconds: 1 }] });
+      }
+      throw new Error('Unexpected Codex generation in browser smoke');
+    },
       { resultDirectory: path.join(directory, 'codex-results') });
     await new Promise(resolve => codexWorker.listen(0, '127.0.0.1', resolve));
     config.codex = { ...config.codex, embedded: false, url: `http://127.0.0.1:${codexWorker.address().port}` };
@@ -96,7 +107,7 @@ async function main() {
       schemaFixtures.has(row.providers.kie) ? { ...row, publishedTariffs: { ...row.publishedTariffs, kie: '1 test credit' } } : row) });
     const accountId = randomUUID(), token = randomBytes(32).toString('base64url');
     await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Browser E2E')", [accountId]);
-    await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,5000)', [accountId]);
+    await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,$2)', [accountId, process.env.BROWSER_E2E_MOVIE_ONLY === '1' ? 500000 : 5000]);
     await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(token), accountId]);
     let grokRecordId;
     for (let index = 0; index < 55; index++) {
@@ -120,6 +131,104 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
+    if (process.env.BROWSER_E2E_MOVIE_ONLY === '1') {
+      await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
+      await client.until("document.querySelector('.movie-editor .movie-title-add')");
+      await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
+      await client.until("document.querySelector('.movie-scene') && !document.querySelector('.movie-render').disabled");
+      // Long library filenames must not widen the grid; scene actions remain reachable.
+      await client.evaluate("{const option=document.createElement('option');option.textContent='GPT Image 1 Mini · '+ 'long-filename-'.repeat(20)+'.png';document.querySelectorAll('.movie-controls select')[1].append(option);}void 0");
+      for (const width of [390, 1024, 1440]) {
+        await client.command('Emulation.setDeviceMetricsOverride', { width, height: 768, deviceScaleFactor: 1, mobile: false });
+        await sleep(100);
+        const layout = await client.evaluate("(()=>{const editor=document.querySelector('.movie-editor');const preview=document.querySelector('.movie-output');const actions=document.querySelector('.movie-scene-actions');editor.scrollTop=editor.scrollHeight;const e=editor.getBoundingClientRect(),p=preview.getBoundingClientRect(),a=actions.getBoundingClientRect();return {width:editor.clientWidth,scrollWidth:editor.scrollWidth,bottom:e.bottom,actionsBottom:a.bottom,previewLeft:p.left,previewRight:p.right,left:e.left,right:e.right,height:innerHeight};})()");
+        assert.ok(layout.scrollWidth <= layout.width + 1, `Movie overflows horizontally at ${width}: ${JSON.stringify(layout)}`);
+        assert.ok(layout.previewLeft >= layout.left - 1 && layout.previewRight <= layout.right + 1, `Preview exceeds editor at ${width}`);
+        assert.ok(layout.actionsBottom <= layout.bottom + 1 && layout.bottom <= layout.height + 1, `Scene actions cannot be reached at ${width}: ${JSON.stringify(layout)}`);
+      }
+      await client.command('Emulation.clearDeviceMetricsOverride');
+      await client.evaluate("document.querySelector('.movie-editor').scrollTop=0;void 0");
+      await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-scene textarea').value='Remotion тест';document.querySelector('.movie-scene textarea').dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+      await client.evaluate("document.querySelector('.movie-render').click();void 0");
+      for (let attempt = 0; attempt < 600; attempt++) {
+        if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
+        await sleep(100);
+      }
+      assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
+      await client.until("document.querySelector('.movie-download')");
+      const rendered = await client.evaluate("(async()=>{const url=document.querySelector('.movie-download').href;const blob=await(await fetch(url)).blob();window.__movieBlob=blob;const bytes=new Uint8Array(await blob.arrayBuffer());const video=document.createElement('video');video.src=url;await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});return {size:blob.size,header:String.fromCharCode(...bytes.slice(4,8)),width:video.videoWidth,height:video.videoHeight,duration:video.duration};})()");
+      assert.equal(rendered.header, 'ftyp');
+      assert.deepEqual([rendered.width, rendered.height], [720, 1280]);
+      assert.ok(rendered.size > 1000);
+      assert.ok(Math.abs(rendered.duration - 1) < 0.1);
+      // Real locally uploaded image + previously rendered video and PCM audio.
+      await client.evaluate("(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const ctx=canvas.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,32,32);const image=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const data=new DataTransfer();data.items.add(new File([image],'test.png',{type:'image/png'}));data.items.add(new File([window.__movieBlob],'test.mp4',{type:'video/mp4'}));const input=document.querySelector('.movie-file input');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));const buffer=new ArrayBuffer(44+48000*2);const view=new DataView(buffer);function text(at,value){for(let i=0;i<value.length;i++)view.setUint8(at+i,value.charCodeAt(i));}text(0,'RIFF');view.setUint32(4,buffer.byteLength-8,true);text(8,'WAVEfmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,48000,true);view.setUint32(28,96000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,96000,true);for(let i=0;i<48000;i++)view.setInt16(44+i*2,Math.sin(i*440*2*Math.PI/48000)*5000,true);const audio=new DataTransfer();audio.items.add(new File([buffer],'music.wav',{type:'audio/wav'}));const audioInput=document.querySelector('input[accept=\"audio/*\"]');audioInput.files=audio.files;audioInput.dispatchEvent(new Event('change',{bubbles:true}));})()");
+      await client.until("document.querySelectorAll('.movie-scene').length===3");
+      await client.evaluate("for(const el of document.querySelectorAll('.movie-scene input[type=number]')){el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();void 0");
+      for (let attempt = 0; attempt < 600; attempt++) {
+        if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
+        await sleep(100);
+      }
+      assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
+      await client.until("document.querySelector('.movie-download')");
+      const finalVideo = await client.evaluate("(async()=>{const blob=await(await fetch(document.querySelector('.movie-download').href)).blob();const video=document.createElement('video');video.src=URL.createObjectURL(blob);await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});video.currentTime=1.5;await new Promise(resolve=>video.onseeked=resolve);const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0);const pixel=Array.from(ctx.getImageData(canvas.width/2,canvas.height/2,1,1).data);const context=new AudioContext();const audio=await context.decodeAudioData(await blob.arrayBuffer());const audible=audio.getChannelData(0).some(sample=>Math.abs(sample)>0.01);await context.close();return {duration:video.duration,size:blob.size,pixel,audible};})()");
+      assert.ok(Math.abs(finalVideo.duration - 3) < 0.2);
+      assert.ok(finalVideo.size > rendered.size);
+      assert.ok(finalVideo.pixel[0] > 200 && finalVideo.pixel[1] < 30 && finalVideo.pixel[2] < 30);
+      assert.equal(finalVideo.audible, true);
+      const sourceHeaders = { Cookie: `media-session=${token}`, Origin: origin, 'X-Media-Client': 'web', 'X-Media-User': accountId, 'Content-Type': 'application/json' };
+      assert.equal((await fetch(origin + '/api/movie/sources/file', { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ id: randomUUID() }) })).status, 404);
+      assert.equal((await fetch(origin + '/api/movie/sources/list', { method: 'POST', headers: { ...sourceHeaders, Origin: 'https://other.example' }, body: JSON.stringify({ url: 'https://disk.yandex.ru/d/test' }) })).status, 403);
+      assert.equal((await fetch(origin + '/api/movie/sources/list', { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ url: 'https://127.0.0.1/private.png' }) })).status, 400);
+      // Exercise importing photo + clip, partial failure, and cancelling a pending file.
+      await client.evaluate(`window.__sourceFetch=window.fetch.bind(window);window.fetch=async(input,init)=>{
+        if(input==='/api/movie/sources/list')return new Response(JSON.stringify({result:{files:[{id:'photo',name:'фото.png',type:'image/png',size:9},{id:'clip',name:'клип.mp4',type:'video/mp4',size:10},{id:'failed',name:'недоступное.png',type:'image/png',size:9}],skipped:1,truncated:false}}),{headers:{'Content-Type':'application/json'}});
+        if(input==='/api/movie/sources/file') {const id=JSON.parse(init.body).id;if(id==='failed')return new Response(JSON.stringify({error:'Файл недоступен'}),{status:422,headers:{'Content-Type':'application/json'}});if(id==='clip')return new Response(window.__movieBlob,{headers:{'Content-Type':'video/mp4'}});const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;return new Response(await new Promise(resolve=>canvas.toBlob(resolve,'image/png')),{headers:{'Content-Type':'image/png'}});}
+        return window.__sourceFetch(input,init);
+      };const link=document.querySelector('.movie-source-import input');link.value='https://disk.yandex.ru/d/test';link.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-source-import').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));void 0`);
+      await client.until("document.querySelectorAll('.movie-scene').length===5 && !document.querySelector('.movie-source-import input').disabled");
+      assert.ok(await client.evaluate("document.querySelector('.movie-source-import [role=status]').textContent.includes('2')"));
+      assert.equal(await client.evaluate("document.querySelectorAll('.movie-scene')[3].querySelector('strong').textContent.includes('фото.png')"), true);
+      await client.evaluate(`window.fetch=(input,init)=>{
+        if(input==='/api/movie/sources/list')return Promise.resolve(new Response(JSON.stringify({result:{files:[{id:'waiting',name:'waiting.png',type:'image/png',size:9}],skipped:0,truncated:false}}),{headers:{'Content-Type':'application/json'}}));
+        if(input==='/api/movie/sources/file')return new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));return window.__sourceFetch(input,init);
+      };document.querySelector('.movie-source-import').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));void 0`);
+      await client.until("document.querySelector('.movie-source-import button[type=button]')");
+      await client.evaluate("document.querySelector('.movie-source-import button[type=button]').click();void 0");
+      await client.until("!document.querySelector('.movie-source-import input').disabled");
+      assert.equal(await client.evaluate("document.querySelectorAll('.movie-scene').length"), 5);
+      await client.evaluate("window.fetch=window.__sourceFetch;void 0");
+      const beforeAi = await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)");
+      await client.until("document.querySelector('.movie-scenario select').options.length>0");
+      await client.evaluate("{const el=document.querySelector('.movie-scenario textarea');el.value='Сделай короткий ролик про отпуск';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+      await client.until("!document.querySelector('.movie-ai-generate').disabled");
+      await client.evaluate("document.querySelector('.movie-ai-generate').click();void 0");
+      await client.until("document.querySelectorAll('.movie-scene').length===4 && document.querySelector('.movie-ai-undo') && !document.querySelector('.movie-ai-generate').disabled");
+      assert.equal(await client.evaluate("document.querySelector('.movie-scene textarea').value"), 'Отпуск');
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene input[type=number]')).map(el=>el.value)"), ['1', '1', '1', '1']);
+      await client.evaluate("document.querySelector('.movie-ai-undo').click();void 0");
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), beforeAi);
+      // A billed text result with invalid material references must not mutate the montage.
+      await client.evaluate("{const el=document.querySelector('.movie-scenario textarea');el.value='INVALID_PLAN_TEST';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-ai-generate').click();void 0");
+      await client.until("document.querySelector('.movie-scenario .form-error') && !document.querySelector('.movie-ai-generate').disabled");
+      assert.match(await client.evaluate("document.querySelector('.movie-scenario .form-error').textContent"), /некорректный план|invalid plan/);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), beforeAi);
+      const aiRecords = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex'", [accountId])).rows;
+      assert.equal(aiRecords.length, 2);
+      assert.ok(aiRecords.every(row => row.data.kind === 'text' && row.data.state === 'success'));
+      await client.evaluate("{const el=document.querySelector('.movie-scenario textarea');el.value='STOP_PLAN_TEST';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-ai-generate').click();void 0");
+      await client.until("document.querySelector('.movie-ai-stop')");
+      await client.evaluate("document.querySelector('.movie-ai-stop').click();void 0");
+      await client.until("!document.querySelector('.movie-ai-generate').disabled");
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), beforeAi);
+      await client.evaluate("document.querySelector('.movie-ai-generate').click();void 0");
+      await client.until("document.querySelectorAll('.movie-scene').length===4 && !document.querySelector('.movie-ai-generate').disabled");
+      assert.equal(Number((await pool.query("SELECT count(*) FROM media_records WHERE account_id=$1 AND namespace='codex'", [accountId])).rows[0].count), 3);
+      await client.evaluate("document.querySelector('.movie-ai-undo').click();void 0");
+      assert.equal(await client.evaluate("(async()=>{const r=await fetch('/api/movie/errors',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:JSON.stringify({code:'ARBITRARY_CODE'})});return r.status;})()"), 400);
+      console.log('Remotion E2E passed: layout, MP4, import/cancel, real billed AI job workflow with test worker, plan apply/undo and invalid plan preservation');
+      return;
+    }
     if (process.env.BROWSER_E2E_AUTO_ONLY !== '1') {
     assert.equal(await client.evaluate("Boolean(document.querySelector('.sidebar-profile-link, .sidebar-plans-link, .sidebar-primary-nav [aria-label=\"История расходов\"]'))"), false);
     await client.evaluate("document.querySelector('.account-trigger').click();void 0");

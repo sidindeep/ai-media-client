@@ -9,6 +9,7 @@ function responseError(status,body) {
   }
   error.errorInfo=errors.classify({code:body.code??status,message:trace.clean(body.msg),stage:'request'});
   error.providerCode=body.code??status;
+  error.providerMessage=error.errorInfo.providerMessage;
   error.outcome=[400,401,402,403,404,422,429].includes(Number(error.providerCode))?'rejected':'unknown';
   error.message=error.code==='INSUFFICIENT_CREDITS'?creditErrorMessage:error.errorInfo.message;
   return error;

@@ -14,3 +14,11 @@ V8 locations. Product-specific sanitizer additions remove labeled private fields
 embedded JSON payloads and URL credentials. identity.js resolves the canonical
 product project and actual hostname:PID automatically for every replica; legacy
 AI_LOGGER_PROJECT and AI_LOGGER_INSTANCE_ID environment values are ignored.
+
+2026-10-01 owner-authorized product extension: generation-context.mjs selects
+error-only prompt/source_urls/provider/model/job_id/request_id through a
+separate generation envelope. Ordinary details remain excluded. sanitizer.prompt
+retains prompt prose/JSON while removing secrets and inline image bytes; the
+normal sanitizer still rejects prompt fields. Content URLs keep existing account
+authorization; no public S3 or signed URL is introduced. The logger reader is
+currently public, so logged prompt text is visible there.

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { createSanitizer } from './sanitize.mjs';
+import { sanitizeGenerationContext } from './generation-context.mjs';
 
 function positiveInteger(value, name) {
   if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} must be a positive integer`);
@@ -42,6 +43,7 @@ export function createHttpSystemErrorSink(client) {
     context: { source: identifier(row.source, 'system'), error_code: identifier(row.code, 'unknown'),
       ...Object.fromEntries(['description', 'file', 'line', 'function', 'entity']
         .filter(key => row.diagnostic?.[key] != null).map(key => [key, row.diagnostic[key]])) },
+    generation: row.generation,
     exception: row.exception || row.diagnostic?.exception,
   });
 }
@@ -69,6 +71,7 @@ export function createSystemErrorRecorder({
       code: (value?.code ?? safe.details?.code) == null ? null : String(value?.code ?? safe.details.code).slice(0, 100),
       message: String(message).slice(0, 4000), details: safe.details || {},
       diagnostic: safe.details?.diagnostic,
+      generation: details.generation ? sanitizeGenerationContext(details.generation, sanitizer) : undefined,
       exception: error instanceof Error ? { type: value?.name || "Error",
         message: String(message).slice(0, 1000), stack_trace: String(value?.stack || "").slice(0, 4000),
       } : safe.details?.exception,

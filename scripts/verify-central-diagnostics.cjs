@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const logger = require('../src/ai-logger');
 const errors = require('../src/system-errors');
+const { generationContext } = require('../src/ai-logger/generation-context.mjs');
 async function main() {
   const { project, instanceId } = require('../src/ai-logger/identity').resolveIdentity();
   const marker = 'diagnostic-check-' + randomUUID();
@@ -9,6 +10,9 @@ async function main() {
   let failure;
   try { safeDiagnosticFailure(); } catch (error) { failure = error; }
   const originalStack = failure.stack;
+  const assetId = randomUUID();
+  const generation = generationContext({ id: marker, modelId: 'diagnostic-fixture',
+    input: { prompt: 'Тестовый промпт: кот на синем фоне ' + marker, image_input: ['content:' + assetId] } }, 'kie');
   errors.record('diagnostic-test', 'integration.error', failure,
     { diagnostic: { description: 'Безопасная проверка диагностики ' + marker, entity: 'diagnostic-test' },
       prompt: 'DO_NOT_SEND_PROMPT', cookies: 'DO_NOT_SEND_COOKIE', accountId: 'DO_NOT_SEND_ACCOUNT' });
@@ -19,13 +23,15 @@ async function main() {
     target.error('Console diagnostic ' + marker, failure, { prompt: 'DO_NOT_SEND_CONSOLE_PAYLOAD' });
     target.error('String diagnostic ' + marker, 'token=DO_NOT_SEND_CONSOLE_TOKEN');
   } finally { restoreConsole(); }
+  errors.record('generation', 'integration.generation.error', { code: '1501', message: 'Content review failed' },
+    { generation, diagnostic: { description: 'Generation context check ' + marker } });
   await logger.flush();
   assert.equal(failure.stack, originalStack);
   const url = new URL(process.env.AI_LOGGER_READ_URL || '/api/agent/logs', process.env.AI_LOGGER_SERVER_URL);
   url.searchParams.set('project', project); url.searchParams.set('limit', '200');
   const headers = process.env.AI_LOGGER_READ_TOKEN ? { Authorization: 'Bearer ' + process.env.AI_LOGGER_READ_TOKEN } : {};
-  let saved, consoleSaved, stringSaved;
-  for (let attempt = 0; attempt < 30 && !(saved && consoleSaved && stringSaved); attempt++) {
+  let saved, consoleSaved, stringSaved, generationSaved;
+  for (let attempt = 0; attempt < 30 && !(saved && consoleSaved && stringSaved && generationSaved); attempt++) {
     // Startup traffic and bounded drains can defer later records to retry.
     await logger.flush();
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
@@ -34,7 +40,8 @@ async function main() {
     saved = data.records?.find(row => row.message === 'integration.error' && row.context?.description?.includes(marker));
     consoleSaved = data.records?.find(row => row.context?.description === 'Console diagnostic ' + marker);
     stringSaved = data.records?.find(row => row.context?.description?.startsWith('String diagnostic ' + marker));
-    if (!(saved && consoleSaved && stringSaved)) await new Promise(resolve => setTimeout(resolve, 1000));
+    generationSaved = data.records?.find(row => row.message === 'integration.generation.error' && row.context?.description?.includes(marker));
+    if (!(saved && consoleSaved && stringSaved && generationSaved)) await new Promise(resolve => setTimeout(resolve, 1000));
   }
   assert.ok(saved, 'Test error was not read back from /api/agent/logs: ' + marker);
   assert.equal(saved.message, 'integration.error');
@@ -61,10 +68,17 @@ async function main() {
   assert.ok(!stringSaved.exception);
   assert.equal(stringSaved.context.file, undefined);
   assert.ok(!JSON.stringify([consoleSaved, stringSaved]).includes('DO_NOT_SEND_'));
+  assert.ok(generationSaved, 'Generation context was not read back: ' + marker);
+  assert.equal(generationSaved.context.prompt, generation.prompt);
+  assert.deepEqual(generationSaved.context.source_urls, generation.source_urls);
+  assert.equal(generationSaved.context.model, generation.model);
+  assert.equal(generationSaved.context.provider, 'kie');
+  assert.equal(generationSaved.context.job_id, marker);
+  assert.equal(generationSaved.context.error_code, '1501');
   console.log(JSON.stringify({ marker, delivered: true, instance_id: saved.context.instance_id,
     service: saved.context.service, file: saved.context.file, line: saved.context.line,
     function: saved.context.function, entity: saved.context.entity, description: saved.context.description,
     exception_verified: true, console_verified: true, string_diagnostic_verified: true,
-    sensitive_data_excluded: true }, null, 2));
+    sensitive_data_excluded: true, generation_context_verified: true }, null, 2));
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => logger.close());

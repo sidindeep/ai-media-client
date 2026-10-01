@@ -2,6 +2,7 @@
 // Kept separate from generated OpenAPI imports so refreshes preserve these fixes.
 function applyOverrides(models) {
   const result=structuredClone(models);
+  require('./catalog-qwen').applyQwenCorrections(result);
   const durationRules=require('./duration');
   // A few imported property names contain trailing whitespace that is absent
   // from the documented request body. Keep field and schema keys in
@@ -164,6 +165,10 @@ function applyOverrides(models) {
     if(image){image.required=false;image.label='Исходные изображения (необязательно)';image.hint='Без изображения — генерация по тексту. Добавьте изображения, если нужны референсы.';}
     quickStart.inputSchema.required=quickStart.inputSchema.required.filter(key=>key!=='image_urls');
     quickStart.fields.sort((a,b)=>(a.key==='prompt'?-1:b.key==='prompt'?1:0));
+  }
+  for (const model of result.filter(model => ['kling-3.0/video', 'kling-3.0/motion-control'].includes(model.apiModel))) {
+    const klingMode = model.fields.find(field => field.key === 'mode');
+    if (klingMode) klingMode.pricingAliases = { std: '720P', pro: '1080P', '4K': '4K' };
   }
   return result;
 }

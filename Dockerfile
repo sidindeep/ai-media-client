@@ -25,7 +25,7 @@ COPY --from=frontend /app/public/vue /opt/media-vue
 COPY config ./config
 COPY scripts/migrate-content-assets.cjs scripts/audit-content.cjs scripts/migrate-schema.cjs scripts/grant-runtime-role.cjs scripts/database-preflight.cjs scripts/read-central-errors.cjs scripts/verify-central-diagnostics.cjs scripts/check-operations-alerts.cjs scripts/resolve-git-commit.cjs ./scripts/
 COPY scripts/audit-provider-quotes.cjs ./scripts/
-COPY scripts/import-service-model-config.cjs ./scripts/
+COPY scripts/import-service-model-config.cjs scripts/refresh-model-routes.cjs scripts/sync-model-routes.cjs ./scripts/
 COPY .git /tmp/media-git
 RUN node scripts/resolve-git-commit.cjs /tmp/media-git > /opt/media-commit && rm -rf /tmp/media-git
 RUN node src/server/build-info.js /opt/media-build.json /opt/media-commit

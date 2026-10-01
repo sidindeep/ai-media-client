@@ -1,3 +1,4 @@
+const { generationContext } = require('../ai-logger/generation-context.mjs');
 const { createApimartClient } = require('../providers/apimart/client');
 const { safeMessage } = require('../provider-diagnostics');
 const { appendGenerationEvent } = require('./generation-journal');
@@ -123,7 +124,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
           try {
             await billing.increaseReservation(db, account, reservationId,
               actualUnits - stored.nativeQuote.amountUnits, lockedWallet);
-          } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
+          } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(next, 'apimart') });
             if (!/Недостаточно кредитов/.test(error.message)) throw error;
             next.state = 'unknown';
             next.billingPending = true;
@@ -212,7 +213,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
     for (let count = 0; count < POLL_LIMIT; count++) {
       let response;
       try { response = await client.task(current.providerTaskId, current.kind); }
-      catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
+      catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(current, 'apimart') });
         // Polling is read-only and safe to retry. Never resubmit a paid generation.
         if (!error.confirmedRejected || [404, 408, 429, 500, 502, 503, 504].includes(error.status)) {
           await new Promise(resolve => setTimeout(resolve, POLL_MS)); continue;
@@ -309,7 +310,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
       const tariff = await rates(job.model).catch(() => null);
       return finish(account, job, 'success', { output, usage: response.usage || null,
         apimartTariffCost: tariff ? usedCost(tariff, response.usage) : null });
-    } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
+    } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(job, 'apimart') });
       const state = !sent || error.confirmedRejected ? 'fail' : 'unknown';
       return finish(account, job, state, { error: state === 'fail' ? safeMessage(error.message)
         : 'Исход запроса APIMart неизвестен. Проверьте расход в кабинете перед повтором.' });
@@ -382,7 +383,7 @@ function createApimartJobs({ pool, apiKey, content, fetchImpl, now = Date.now, b
           [account, recordId(account, raw.requestId), JSON.stringify(job)]);
         await appendGenerationEvent(db, account, NAMESPACE, job, 'created');
       });
-    } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' } });
+    } catch (error) { require('../system-errors').record('provider', 'apimart-jobs.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(job, 'apimart') });
       if (error.code === '23505') {
         const accepted = await get(account, raw.requestId);
         if (accepted && matches(accepted)) return accepted;

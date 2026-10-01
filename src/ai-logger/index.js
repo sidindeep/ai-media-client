@@ -29,7 +29,8 @@ function createForwarder({ env = process.env, fetchImpl = fetch, retryMs = 5000,
     lifecycle(event) { return recorder.record('diagnostic', event, event, { level: 'INFO' }); },
     event(source, event, level = 'INFO', code) { return recorder.record(source, event, { code }, { level }); },
     systemError(row) { return recorder.record(row.source, row.event, row.error || { code: row.code },
-      { code: row.code, diagnostic: row.diagnostic, exception: row.exception || row.diagnostic?.exception }); },
+      { code: row.code, diagnostic: row.diagnostic, exception: row.exception || row.diagnostic?.exception,
+        generation: row.generation }); },
     flush: recorder.flush, close: recorder.close, status: recorder.status,
   };
 }

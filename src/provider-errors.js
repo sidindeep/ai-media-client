@@ -4,7 +4,7 @@
     const raw=safe(message),number=Number(code);let category='unknown',text='Провайдер не сообщил точную причину ошибки.',action='Обратитесь в поддержку с ID задачи.',retryable=false;
     if(outcome==='unknown'){category='submission_unknown';text='Не удалось подтвердить отправку задачи. Она могла быть принята провайдером.';action='Проверьте историю Kie перед повторной отправкой.';}
     else if(number===524||/\btimeout\b|timed out/i.test(raw)){category='timeout';text='Провайдер не завершил обработку вовремя.';action='Попробуйте позже. Новый запуск может быть платным.';retryable=true;}
-    else if(/content.*(?:violat|policy|blocked)|nsfw|moderation|inappropriate content|safety filter/i.test(raw)){category='content_policy';text='Провайдер отклонил содержимое запроса.';action='Проверьте промпт и исходники с учётом правил модели.';}
+    else if(/content.*(?:violat|policy|blocked|review\s+(?:failed|not\s+passed))|nsfw|moderation|inappropriate content|safety filter|内容安全审查未通过/i.test(raw)){category='content_policy';text='Провайдер отклонил содержимое запроса.';action='Проверьте промпт и исходники с учётом правил модели.';}
     else if(number===402||code==='INSUFFICIENT_CREDITS'||/insufficient credits?|credits? insufficient/i.test(raw)){category='credits';text='Недостаточно кредитов провайдера.';action='Пополните баланс перед новым запуском.';}
     else if(number===401||number===403){category='authorization';text='Провайдер отказал в доступе.';action='Проверьте ключ и права сервисного аккаунта.';}
     else if(number===429){category='rate_limit';text='Достигнут лимит запросов провайдера.';action='Подождите и повторите вручную.';retryable=true;}
@@ -15,7 +15,16 @@
     if(stage==='poll')action='Проверка статуса не удалась. Задача продолжает проверяться; новую генерацию отправлять не нужно.';
     return {category,providerCode:code==null?null:safe(code),providerMessage:raw||null,message:text,action,retryable,automaticRetry:false,taskId:taskId||null,stage};
   }
-  function forRecord(record){if(record.errorInfo)return record.errorInfo;if(!record.error&&!record.failMsg)return null;return classify({code:record.failCode??record.errorCode??record.failureCode,message:record.failMsg||record.error,taskId:record.taskId,stage:['waiting','queuing','generating'].includes(record.state)?'poll':'generation',outcome:record.state==='unknown'?'unknown':undefined});}
+  function forRecord(record){
+    if(record.errorInfo){
+      if(record.errorInfo.category==='unknown'){
+        const updated=classify({code:record.errorInfo.providerCode,message:record.errorInfo.providerMessage,taskId:record.errorInfo.taskId,stage:record.errorInfo.stage});
+        if(updated.category!=='unknown')return updated;
+      }
+      return record.errorInfo;
+    }
+    if(!record.error&&!record.failMsg)return null;return classify({code:record.failCode??record.errorCode??record.failureCode,message:record.failMsg||record.error,taskId:record.taskId,stage:['waiting','queuing','generating'].includes(record.state)?'poll':'generation',outcome:record.state==='unknown'?'unknown':undefined});
+  }
   function text(record){const e=forRecord(record);return e?`${e.message} ${e.action}${e.providerCode?' Код: '+e.providerCode+'.':''}${e.providerMessage?' Детали Kie: '+e.providerMessage:''}${e.taskId?' · ID: '+e.taskId:''}`:'';}
   return {safe,classify,forRecord,text};
 });

@@ -8,6 +8,7 @@ const { createCreditConversion } = require('../billing/conversion');
 const { createProviderRouter } = require('./provider-router');
 const { transaction, checkDatabase } = require('../database/database');
 const { createModelConfigReader } = require('./service-model-configs');
+const { createModelRouteSynchronizer } = require('./model-route-sync');
 const { lockWallet, increaseReservation, settle } = require('../billing/wallet');
 const { generationHistory, generationHistorySince, generationHistoryPage, generationActive, countUnassignedGenerations } = require('./generation-history');
 const { spendingHistory } = require('./spending-history');
@@ -33,7 +34,10 @@ function publicRecord(record) {
       ? 'Генерация не выполнена. Кредиты не списаны.'
       : 'Генерация не выполнена. Резерв возвращён.';
   if (['fail', 'blocked', 'unknown', 'unconfirmed'].includes(record.state) || record.statusError) {
-    const failure = recordFailure(record, 'Kie.ai').message;
+    const errorInfo = require('../provider-errors').forRecord(record);
+    const current = record.errorInfo?.category === 'unknown' && errorInfo?.category !== 'unknown'
+      ? { ...record, errorInfo, error: errorInfo.message } : record;
+    const failure = recordFailure(current, 'Kie.ai').message;
     if (failure) result.error = `${result.error ? result.error + ' ' : ''}${failure}`.slice(0, 4000);
   }
   return result;
@@ -102,7 +106,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
   return {
     pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get, sweepIdle,
     databaseState: options => checkDatabase(pool, options),
-    modelConfigs: createModelConfigReader(pool),
+    modelConfigs: createModelConfigReader(pool, { refresh: createModelRouteSynchronizer({ pool,
+      apiKey: config.apimart?.apiKey, ...(tariffFetcher ? { fetcher: tariffFetcher } : {}) }) }),
     async updateProfile(accountId, name) {
       const value = typeof name === 'string' ? name.trim() : '';
       if (!value || value.length > 200) throw new Error('Укажите имя до 200 символов');

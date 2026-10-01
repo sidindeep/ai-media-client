@@ -1,6 +1,6 @@
 const seed = require('../../config/model-routes.json');
 const { transaction } = require('../database/database');
-const { normalizeRows, validateDocument, publicRows } = require('./model-route-document');
+const { normalizeRows, validateDocument, publicRows, mergeSeedDocument, isNewerManagedVersion } = require('./model-route-document');
 const ID = 'model-routes';
 const titles = { all: 'Все модели с ценой', shared: 'Модели с ID Kie и APIMart' };
 
@@ -16,6 +16,14 @@ async function ensureCurrentModelConfig(pool) {
     if (stored?.models.length && stored.models.every(row => row.id && row.providers)) {
       const models = normalizeRows(stored.models);
       validateDocument({ version: stored.source_version, models });
+      // Refresh bundled managed snapshots without replacing owner-defined rows,
+      // prices or imported custom catalogues. Never downgrade a newer snapshot.
+      if (isNewerManagedVersion(seed.version, stored.source_version)) {
+        const merged = mergeSeedDocument({ version: stored.source_version, models }, seed);
+        await db.query('UPDATE media_model_routes SET source_version=$1,models=$2::jsonb,updated_at=now() WHERE id=$3',
+          [merged.version, JSON.stringify(merged.models), ID]);
+        return ID;
+      }
       if (stored.models.some((row, index) => row.action !== models[index].action))
         await db.query('UPDATE media_model_routes SET models=$1::jsonb,updated_at=now() WHERE id=$2', [JSON.stringify(models), ID]);
       return ID;
@@ -64,9 +72,26 @@ async function activateModelConfig(pool, id) {
   if (id !== ID) throw new Error('Существует одна единая таблица моделей; вкладки являются фильтрами');
   await readRouteDocument(pool);
 }
-function createModelConfigReader(pool) {
-  return Object.freeze({ current: () => currentModelConfig(pool), list: () => listModelConfigs(pool),
-    get: id => modelConfigById(pool, id) });
+function createModelConfigReader(pool, { refresh } = {}) {
+  const read = async () => {
+    const document = await readRouteDocument(pool);
+    if (!refresh) return document;
+    try { return await refresh(document); }
+    catch (error) {
+      require('../system-errors').record('catalog', 'catalog.refresh.failed', error);
+      return document;
+    }
+  };
+  return Object.freeze({ current: async () => view(await read()),
+    list: async () => {
+      const document = await read();
+      return ['all', 'shared'].map(variant => {
+        const result = view(document, variant);
+        return { ...result, models: undefined, isCurrent: variant === 'all', modelCount: result.models.length };
+      });
+    },
+    get: async id => ['model-routes', 'model-routes/shared'].includes(id)
+      ? view(await read(), id.endsWith('/shared') ? 'shared' : 'all') : null });
 }
 
 module.exports = { ensureCurrentModelConfig, currentModelConfig, modelConfigById, saveModelConfig, listModelConfigs, activateModelConfig, readRouteDocument, createModelConfigReader };

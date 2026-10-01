@@ -11,6 +11,23 @@ export function setAccountContext(account: { id: string; role: string }) {
   document.querySelector('meta[name="account-id"]')?.setAttribute('content', account.id);
   document.querySelector('meta[name="account-role"]')?.setAttribute('content', account.role);
 }
+export function reportMovieError(code: 'MOVIE_RENDER_FAILED' | 'MOVIE_PREVIEW_FAILED' | 'MOVIE_PLAN_INVALID') {
+  void fetch('/api/movie/errors', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }).catch(() => {});
+}
+export type MovieSourceFile = { id: string; name: string; type: string; size: number | null };
+export async function listMovieSources(url: string, limit: number, signal: AbortSignal) {
+  const body = await parse<RpcResult<{ files: MovieSourceFile[]; skipped: number; truncated: boolean }>>(await fetch('/api/movie/sources/list', {
+    method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ url, limit }), signal,
+  }));
+  return body.result;
+}
+export async function downloadMovieSource(id: string, signal: AbortSignal) {
+  const response = await fetch('/api/movie/sources/file', {
+    method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ id }), signal,
+  });
+  if (!response.ok) await parse(response);
+  return response.blob();
+}
 async function parse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { error?: string } | T | null;
   if (response.status === 401) {

@@ -11,6 +11,8 @@ const { handleWorkspaceRequest } = require('./routes/workspace');
 const { handleGenerationRequest } = require('./routes/generation');
 const { handleAdminRequest } = require('./routes/admin');
 const { handleSourceUpload, handleContentRead } = require('./routes/content');
+const { createMovieSources } = require('../services/movie-sources');
+const { handleMovieSources } = require('./routes/movie-sources');
 const { buildInfo } = require('./build-info');
 const { transientConnection } = require('../database/database');
 const trace = require('../generation-log');
@@ -189,6 +191,7 @@ async function sendStored(req, res, storage, file, attachment = false) {
 }
 function createHttpServer({ config, service: legacyService, auth, accounts, readiness, databaseAvailability, databaseWaitMs = 10000, telegramStatus = () => ({ enabled: false }), telegram = null, storage = null, payments = null, commerce = null, generationServices = null, kieBrowserControl = null, vueRoot = process.env.MEDIA_VUE_ROOT || path.join(config.root, 'public', 'vue'), recordSystemEvent = systemErrors.record, recordSystemInfo = systemErrors.info }) {
   let uploadBytesInFlight = 0;
+  const movieSources = createMovieSources();
   const release = buildInfo(config.root);
   const kieBrowserSession = createKieBrowserSession(config.kieBrowser);
   let codexAdmin = generationServices?.codexAdmin || null;
@@ -267,7 +270,12 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
               accountId: user.id, asset: html.match(/\/app\/assets\/[^"']+\.js/)?.[0] || null, build: release.build,
             });
           }
-          res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+          // Remotion reads user-selected object URLs and bundled WASM audio codecs.
+          // External connections and arbitrary JavaScript eval remain disallowed.
+          const movieCsp = headers['Content-Security-Policy']
+            .replace("connect-src 'self'", "connect-src 'self' blob:")
+            .replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'") + "; worker-src 'self' blob:";
+          res.writeHead(200, { ...headers, 'Content-Security-Policy': movieCsp, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
           res.end(req.method === 'HEAD' ? '' : html);
         };
         if (relative === 'index.html') return await sendVueIndex();
@@ -427,6 +435,19 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return handleCommerceRequest({ req, url, user, config, commerce,
           send: (status, body) => json(res, status, body),
           readJson: async limit => JSON.parse((await readBody(req, limit)).toString('utf8')) });
+      }
+      if (['/api/movie/sources/list', '/api/movie/sources/file'].includes(url.pathname)) {
+        return await handleMovieSources({ req, res, url, user, sameOrigin, sources: movieSources, headers, recordSystemEvent,
+          send: (status, body) => json(res, status, body), readJson: async limit => JSON.parse((await readBody(req, limit)).toString('utf8')) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/movie/errors') {
+        if (req.headers['x-media-client'] !== 'web' || !sameOrigin || !String(req.headers['content-type'] || '').startsWith('application/json')) return json(res, 403, { error: 'Forbidden' });
+        const body = JSON.parse((await readBody(req, 256)).toString('utf8'));
+        if (!['MOVIE_RENDER_FAILED', 'MOVIE_PREVIEW_FAILED', 'MOVIE_PLAN_INVALID'].includes(body.code)) return json(res, 400, { error: 'Invalid error code' });
+        recordSystemEvent('remotion', 'movie.client.error', Object.assign(new Error('Remotion client operation failed'), { code: body.code }), {
+          diagnostic: { file: 'web/src/remotion/bridge.ts', entity: 'movie', description: 'Client movie operation failed; no user media or text included' },
+        });
+        return json(res, 200, { ok: true });
       }
       if (accounts && req.method === 'POST' && url.pathname === '/api/account/profile' && req.headers['x-media-client'] === 'web') {
         const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));

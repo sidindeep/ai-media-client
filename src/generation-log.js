@@ -16,7 +16,7 @@ function write(event, details = {}) {
         generation: context.getStore()?.generation,
         diagnostic: require('./ai-logger/diagnostics').diagnostic('diagnostic', event, details.error,
           { ...(details.error?.providerMessage ? { description: details.error.providerMessage } : {}), ...details.diagnostic }) });
-    } else aiLogger.reportEvent('diagnostic', event);
+    }
   } catch { /* Diagnostics never change product behavior. */ }
 }
 function timing(event, details) { write(event, details); }

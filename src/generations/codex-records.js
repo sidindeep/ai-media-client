@@ -21,6 +21,13 @@ function createCodexRecords({ pool }) {
         if (['success', 'fail'].includes(row.data.state)) return row.data;
         const now = new Date();
         const next = { ...row.data, ...patch, revision: Number(row.data.revision || 0) + 1, updatedAt: now.toISOString() };
+        if (Array.isArray(patch.missingWorkerInstanceIds) && patch.missingWorkerInstanceIds.length) {
+          // Merge under the record lock so independent executors retain each other's evidence.
+          next.missingWorkerInstanceIds = [...new Set([
+            ...(Array.isArray(row.data.missingWorkerInstanceIds) ? row.data.missingWorkerInstanceIds : []),
+            ...patch.missingWorkerInstanceIds,
+          ])].slice(-8);
+        }
         if (['success', 'fail'].includes(next.state) && next.durationMs == null) {
           const started = Date.parse(next.startedAt || next.createdAt);
           if (Number.isFinite(started)) { next.completedAt = now.toISOString(); next.durationMs = Math.max(0, now.getTime() - started); }

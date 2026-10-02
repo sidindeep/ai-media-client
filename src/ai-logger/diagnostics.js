@@ -7,6 +7,22 @@ for (const [key, value] of Object.entries(process.env)) {
     try { const url = new URL(value); sanitizer.secret(decodeURIComponent(url.password)); } catch {}
   }
 }
+// Only technical cause fields cross the boundary, never arbitrary error payloads.
+function causeSummary(error) {
+  const parts = [], seen = new Set([error]);
+  function visit(cause, depth) {
+    if (!cause || typeof cause !== 'object' || seen.has(cause) || depth > 3 || parts.length >= 6) return;
+    seen.add(cause);
+    const fields = ['name', 'code', 'message'].filter(key => ['string', 'number'].includes(typeof cause[key]))
+      .map(key => `${key}=${sanitizer.text(String(cause[key])).slice(0, 200)}`);
+    if (fields.length) parts.push(fields.join(' '));
+    visit(cause.cause, depth + 1);
+    if (cause instanceof AggregateError) for (const nested of cause.errors.slice(0, 3)) visit(nested, depth + 1);
+  }
+  visit(error?.cause, 1);
+  if (error instanceof AggregateError) for (const nested of error.errors.slice(0, 3)) visit(nested, 1);
+  return parts.join('; ');
+}
 function diagnostic(source, event, error, selected = {}) {
   const entity = event.startsWith('task.') ? 'task' : event === 'config.error' ? 'configuration'
     : source === 'diagnostic' ? event.split('.')[0] : source;
@@ -24,6 +40,8 @@ function diagnostic(source, event, error, selected = {}) {
   for (const key of ['description', 'file', 'line', 'function', 'entity']) {
     if (typeof selected[key] === 'string' || typeof selected[key] === 'number') result[key] = selected[key];
   }
+  const causes = causeSummary(error);
+  if (causes) result.description = `${result.description}; cause: ${causes}`.slice(0, 1000);
   return sanitizer.clean(result);
 }
 module.exports = { sanitizer, diagnostic };

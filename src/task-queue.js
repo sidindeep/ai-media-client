@@ -1,5 +1,6 @@
 const errors=require('./provider-errors');
 const trace = require('./generation-log');
+const aiLogger = require('./ai-logger');
 const costs = require('./costs');
 const {randomUUID}=require('node:crypto');
 const {insufficientCredits,creditErrorMessage}=require('./api-errors');
@@ -97,6 +98,7 @@ class TaskQueue {
     try {updated=await this.store.update(job.id,{...data,...timing,lastCheckedAt:checkedAt,providerFirstCheckedAt:job.providerFirstCheckedAt||checkedAt,
       ...(data.state!==job.state?{providerStateChangedAt:checkedAt}:{}),error:data.errorInfo?.message||data.failMsg||null,errorInfo:data.errorInfo||null,statusError:null},remoteStates);}
     catch{return;}
+    if(terminal)aiLogger.reportGenerationEvent('generation.completed','kie',updated);
     if(terminal)trace.run(updated,()=>trace.write('task.cost',{state:data.state,cost:costs.breakdown(updated,updated.rubPerCredit)}));
     this.notify();
     if(terminal)this.schedule(0);
@@ -134,6 +136,7 @@ class TaskQueue {
     if(this.closed){try{await this.store.update(record.id,{state:'queued'},['preparing']);}catch{}return;}
     const generationStartedAt=new Date().toISOString();
     try{await this.store.update(record.id,{state:'submitting',generationStartedAt,submittingAt:generationStartedAt,retryAfterAt:null},['preparing']);}catch{return;}this.notify();
+    aiLogger.reportGenerationEvent('generation.started','kie',{...record,state:'submitting'});
     let taskId;
     try {taskId=(await this.create(record,input)).taskId;if(!taskId)throw new Error('API не вернул ID задачи');}
     catch(error){
@@ -148,7 +151,9 @@ class TaskQueue {
       }
       const rejected=decision==='fail';
       const generationCompletedAt=new Date().toISOString();
-      try{await this.store.update(record.id,{state:rejected?'fail':'unknown',error:error.message,errorInfo:errors.classify({code:error.errorInfo?.providerCode??error.status??error.code,message:trace.clean(error.errorInfo?.providerMessage||error.message),stage:'submit',outcome:rejected?'rejected':(error.outcome==='rejected'?'rejected':'unknown')}),...(rejected?{failureCode:error.code,...this.finishTiming({generationStartedAt},generationCompletedAt)}:{})},['submitting']);}catch{}
+      try{const failed=await this.store.update(record.id,{state:rejected?'fail':'unknown',error:error.message,errorInfo:errors.classify({code:error.errorInfo?.providerCode??error.status??error.code,message:trace.clean(error.errorInfo?.providerMessage||error.message),stage:'submit',outcome:rejected?'rejected':(error.outcome==='rejected'?'rejected':'unknown')}),...(rejected?{failureCode:error.code,...this.finishTiming({generationStartedAt},generationCompletedAt)}:{})},['submitting']);
+        if(rejected)aiLogger.reportGenerationEvent('generation.completed','kie',failed);
+      }catch{}
       this.notify();return;
     }
     try{await this.store.update(record.id,{state:'waiting',taskId,providerAcceptedAt:new Date().toISOString()},['submitting']);}catch{return;}

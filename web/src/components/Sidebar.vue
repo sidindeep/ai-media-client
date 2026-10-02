@@ -123,7 +123,8 @@ async function loadArchive() {
 const releaseLabel = computed(() => {
   const release = studio.release;
   if (!release) return t('sidebar.versionUnavailable');
-  const builtAt = release.builtAt ? new Date(release.builtAt) : null;
+  const timestamp = release.builtAt || release.sourceUpdatedAt;
+  const builtAt = timestamp ? new Date(timestamp) : null;
   const date = builtAt && !Number.isNaN(builtAt.getTime())
     ? formatDate(builtAt, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', '')
     : null;

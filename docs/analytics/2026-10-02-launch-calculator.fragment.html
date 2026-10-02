@@ -1,0 +1,132 @@
+<div id="media-growth-forecast">
+  <h3>Условный прогноз на 30 + 30 дней</h3>
+  <div class="viz-row" aria-label="Сценарий запуска">
+    <button type="button" class="btn" data-preset="small" aria-pressed="false">Небольшой запуск</button>
+    <button type="button" class="btn" data-preset="base" aria-pressed="false">База: ваши каналы</button>
+    <button type="button" class="btn" data-preset="fast" aria-pressed="true">Быстрый рост</button>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label">Активные за месяц 1<input class="form-control" name="m1" type="number" value="150" min="0" max="1000000" step="10"></label>
+    <label class="form-label">Активные за месяц 2<input class="form-control" name="m2" type="number" value="350" min="0" max="1000000" step="10"></label>
+    <label class="form-label">Генераций / активного / месяц<input class="form-control" name="usage" type="number" value="40" min="0" max="10000" step="5"></label>
+    <label class="form-label">Генерации с ошибками, %<input class="form-control" name="errors" type="number" value="5" min="0" max="100" step="1"></label>
+  </div>
+  <details>
+    <summary>Допущения нагрузки и хранения</summary>
+    <div class="viz-controls">
+      <label class="form-label">Тестовые генерации команды / сутки<input class="form-control" name="testsDaily" type="number" value="30" min="0" max="100000" step="5"></label>
+      <label class="form-label">Активные от регистраций, %<input class="form-control" name="activation" type="number" value="60" min="1" max="100"></label>
+      <label class="form-label">Активные за день от месяца, %<input class="form-control" name="daily" type="number" value="20" min="1" max="100"></label>
+      <label class="form-label">Дополнительных отправок, %<input class="form-control" name="retry" type="number" value="5" min="0" max="1000"></label>
+      <label class="form-label">Логов на проблемную генерацию<input class="form-control" name="perError" type="number" value="3" min="0" max="100"></label>
+      <label class="form-label">Фоновых ошибок / сутки<input class="form-control" name="background" type="number" value="0" min="0" max="1000000"></label>
+      <label class="form-label">Среднее ожидание результата, с<input class="form-control" name="duration" type="number" value="87" min="1" max="3600"></label>
+      <label class="form-label">Пик к среднему за 10 часов<input class="form-control" name="peak" type="number" value="3" min="1" max="100" step="0.5"></label>
+      <label class="form-label">Средний INFO, КБ<input class="form-control" name="infoKb" type="number" value="1" min="0.1" max="100" step="0.1"></label>
+      <label class="form-label">Средний ERROR/WARNING, КБ<input class="form-control" name="errorKb" type="number" value="8" min="0.1" max="500" step="1"></label>
+      <label class="form-label">Запас на хранение БД, раз<input class="form-control" name="storage" type="number" value="3" min="1" max="10" step="0.5"></label>
+    </div>
+  </details>
+  <div class="table-responsive" aria-live="polite">
+    <table class="table table-sm">
+      <thead><tr><th>Показатель</th><th class="text-end">Месяц 1</th><th class="text-end">Месяц 2</th></tr></thead>
+      <tbody data-results></tbody>
+    </table>
+  </div>
+  <div data-bars aria-label="Технические логи по месяцам"></div>
+  <div class="viz-row tabular-nums" aria-live="polite"><span>Всего за 60 дней:</span><strong data-total></strong></div>
+</div>
+<style>
+  #media-growth-forecast > * + * { margin-top: 16px; }
+  #media-growth-forecast .log-lane { margin-top: 12px; }
+  #media-growth-forecast .log-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+  #media-growth-forecast .log-track { background: var(--muted); height: 22px; }
+  #media-growth-forecast .log-bar { height: 100%; display: flex; }
+  #media-growth-forecast .log-info { background: var(--viz-series-1); }
+  #media-growth-forecast .log-error { background: var(--viz-series-2); }
+  #media-growth-forecast .log-bar > span { height: 100%; }
+  #media-growth-forecast .log-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  #media-growth-forecast .log-swatch { display: inline-block; width: 12px; height: 12px; margin-right: 6px; }
+  @media (prefers-reduced-motion: no-preference) { #media-growth-forecast .log-bar, #media-growth-forecast .log-bar > span { transition: width 180ms ease; } }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('media-growth-forecast');
+  const presets = { small: {m1:30,m2:60,usage:15}, base: {m1:60,m2:120,usage:25}, fast: {m1:150,m2:350,usage:40} };
+  const fields = Object.fromEntries([...root.querySelectorAll('input[name]')].map(el => [el.name,el]));
+  const integer = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
+  const decimal = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:1});
+  let chosen = 'fast';
+  function inputValues() {
+    return Object.fromEntries(Object.entries(fields).map(([name,el]) => {
+      const parsed = Number(el.value);
+      const value = Math.max(Number(el.min),Math.min(Number(el.max),Number.isFinite(parsed)?parsed:Number(el.min)));
+      return [name,value];
+    }));
+  }
+  function calculate(active,p) {
+    const userGenerations = active*p.usage;
+    const testGenerations = 30*p.testsDaily;
+    const generations = userGenerations+testGenerations;
+    const info = generations*(2+p.retry/100);
+    const error = generations*p.errors/100*p.perError+30*p.background;
+    const peakPerMinute = generations/30*0.8/(10*60)*p.peak;
+    return { active, registered:active/(p.activation/100), daily:active*p.daily/100,
+      userGenerations, testGenerations, generations, info, error, logs:info+error, peakPerMinute,
+      parallel:peakPerMinute*p.duration/60,
+      diskMb:(info*p.infoKb+error*p.errorKb)*p.storage/1000 };
+  }
+  const bars = root.querySelector('[data-bars]');
+  bars.innerHTML = [1,2].map(i=>`<div class="log-lane"><div class="log-label"><span>Логи за месяц ${i}</span><span data-label="${i}" class="tabular-nums"></span></div><div class="log-track" role="img" data-lane="${i}"><div class="log-bar"><span class="log-info"></span><span class="log-error"></span></div></div></div>`).join('')+
+    '<div class="log-legend"><span><span class="log-swatch log-info"></span>Начало и завершение</span><span><span class="log-swatch log-error"></span>Ошибки и предупреждения</span></div>';
+  function draw() {
+    const p=inputValues(), months=[calculate(p.m1,p),calculate(p.m2,p)];
+    const rows=[
+      ['Регистрации к концу месяца, условно','registered',integer],
+      ['Активные за месяц (MAU)','active',integer],
+      ['Активные за день (DAU)','daily',integer],
+      ['Пользовательские генерации / месяц','userGenerations',integer],
+      ['Тестовые генерации / месяц','testGenerations',integer],
+      ['Все генерации / месяц','generations',integer],
+      ['Генерации / сутки',null,integer,m=>m.generations/30],
+      ['Технические логи / месяц','logs',integer],
+      ['Технические логи / сутки',null,integer,m=>m.logs/30],
+      ['Пиковые отправки / минуту','peakPerMinute',decimal],
+      ['Одновременные генерации в пике','parallel',decimal],
+      ['Место под логи, МБ / месяц, оценка','diskMb',decimal]
+    ];
+    root.querySelector('[data-results]').innerHTML=rows.map(([label,key,fmt,fn])=>`<tr><th scope="row">${label}</th>${months.map(m=>`<td class="text-end tabular-nums">${fmt.format(fn?fn(m):m[key])}</td>`).join('')}</tr>`).join('');
+    const max=Math.max(1,...months.map(m=>m.logs));
+    months.forEach((m,index)=>{
+      const lane=bars.querySelector(`[data-lane="${index+1}"]`);
+      lane.setAttribute('aria-label',`Месяц ${index+1}: ${integer.format(m.info)} INFO, ${integer.format(m.error)} ERROR/WARNING`);
+      lane.querySelector('.log-bar').style.width=(100*m.logs/max)+'%';
+      lane.querySelector('.log-info').style.width=(m.logs?100*m.info/m.logs:0)+'%';
+      lane.querySelector('.log-error').style.width=(m.logs?100*m.error/m.logs:0)+'%';
+      bars.querySelector(`[data-label="${index+1}"]`).textContent=integer.format(m.logs)+' записей';
+    });
+    root.querySelector('[data-total]').textContent=integer.format(months[0].generations+months[1].generations)+' генераций · '+integer.format(months[0].logs+months[1].logs)+' логов';
+    root.querySelectorAll('[data-preset]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.preset===chosen)));
+    return {p,months};
+  }
+  function save() {
+    const result=draw();
+    if(window.openai?.setWidgetState) Promise.resolve(window.openai.setWidgetState({modelContent:{type:'conditional-media-forecast',scenario:chosen,assumptions:result.p,months:result.months},privateContent:null})).catch(()=>{});
+  }
+  function restore(state) {
+    const saved=state?.modelContent;
+    if(saved?.type!=='conditional-media-forecast')return;
+    chosen=saved.scenario||'custom';
+    for(const [key,value] of Object.entries(saved.assumptions||{})) if(fields[key]&&Number.isFinite(value)) fields[key].value=String(value);
+  }
+  root.querySelectorAll('[data-preset]').forEach(el=>el.addEventListener('click',()=>{
+    chosen=el.dataset.preset;
+    Object.entries(presets[chosen]).forEach(([key,value])=>fields[key].value=String(value));
+    save();
+  }));
+  Object.values(fields).forEach(el=>el.addEventListener('input',()=>{chosen='custom';save();}));
+  restore(window.openai?.widgetState);
+  window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState){restore(event.detail.globals.widgetState);draw();}});
+  draw();
+})();
+</script>

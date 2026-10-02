@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { codexEnvironment } = require('./codex-runtime');
-const { codexPrompt, disabledFeatures, imageFeatures } = require('./codex-request');
+const { codexPrompt, codexWebSearch, disabledFeatures, imageFeatures } = require('./codex-request');
 const { collectImage, validatePng } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
 const { providerError, imageGenerationError } = require('./codex-errors');
@@ -15,7 +15,7 @@ function threadParams(request, cwd) {
     model: request.model, cwd, ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only',
     serviceTier: request.speed === 'fast' ? 'fast' : 'default',
     config: {
-      project_doc_max_bytes: 0, web_search: 'disabled', model_reasoning_effort: request.effort,
+      project_doc_max_bytes: 0, web_search: codexWebSearch(request), model_reasoning_effort: request.effort,
       'features.fast_mode': request.speed === 'fast',
       ...Object.fromEntries(disabledFeatures.map(name => [`features.${name}`, false])),
       ...Object.fromEntries(imageFeatures.map(name => [`features.${name}`, request.kind === 'image'])),

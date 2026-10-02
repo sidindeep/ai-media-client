@@ -6,6 +6,10 @@ const { parseRetryAfter } = require('../../retry-after');
 // Owns transport errors, timeouts and acceptance evidence, never wallet state.
 function createCodexWorkerClient({ url, fetchImpl = fetch }) {
   const base = url.replace(/\/$/, '');
+  const instance = response => {
+    const value = response.headers?.get?.('x-codex-worker-instance');
+    return typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value) ? value : null;
+  };
   async function json(account, pathname, { body, method = body ? 'POST' : 'GET', timeout = 10000 } = {}) {
     const response = await fetchImpl(base + pathname, { method,
       headers: { 'Content-Type': 'application/json', 'X-Account-Id': account },
@@ -15,12 +19,19 @@ function createCodexWorkerClient({ url, fetchImpl = fetch }) {
     catch { throw Object.assign(new Error(`Codex вернул некорректный ответ (HTTP ${response.status})`), { remoteStatus: response.status }); }
     if (!response.ok) throw Object.assign(providerError(value.error || value, `Codex HTTP ${response.status}`), {
       code: `CODEX_HTTP_${response.status}`, remoteStatus: response.status,
+      workerInstanceId: instance(response),
       confirmedRejected: response.status === 429 && value?.accepted === false,
       retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after')),
     });
     return value;
   }
   return Object.freeze({
+    async getIdentity() {
+      const response = await fetchImpl(base + '/health', { signal: AbortSignal.timeout(10000) });
+      if (typeof response.arrayBuffer === 'function') await response.arrayBuffer();
+      if (!response.ok) throw Object.assign(new Error(`Codex health HTTP ${response.status}`), { code: `CODEX_HTTP_${response.status}` });
+      return instance(response);
+    },
     listModels: () => json('local', '/models'),
     submit: (account, body) => json(account, '/jobs', { body }),
     getTask: (account, requestId) => json(account, '/jobs/' + requestId),

@@ -32,7 +32,7 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
   const controller = new AbortController();
   // Active and queued requests listen for shutdown; the app-server pool limits execution.
   setMaxListeners(0, controller.signal);
-  const jobs = new Map(), admitting = new Map();
+  const jobs = new Map(), admitting = new Map(), instanceId = randomUUID();
   const reportError = (event, error, request) => {
     try { recordError('provider', event, error, { diagnostic: { entity: 'provider' },
       generation: generationContext(request, 'codex') }); } catch {}
@@ -67,7 +67,7 @@ function createCodexWorker(run, { login = createCodexLogin({ environment: codexE
     if (saved) jobs.set(key, saved);
     return saved;
   }
-  const send = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+  const send = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Codex-Worker-Instance': instanceId }); res.end(JSON.stringify(value)); };
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://worker');

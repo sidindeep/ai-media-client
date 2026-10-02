@@ -57,7 +57,7 @@ test('prompt-shaped JSON is preserved only in explicit error context; other leve
   const prompt = '{"prompt":"Кот", "token":"json-private-token"}';
   forwarder.systemError({ source: 'generation', event: 'kie.fail', generation: { prompt, source_urls: [] } });
   forwarder.systemError({ source: 'server', event: 'other.error', diagnostic: { prompt }, details: { prompt } });
-  forwarder.event('generation', 'success');
+  forwarder.generation('generation.completed', 'kie', { state: 'success', prompt });
   await forwarder.flush(); await forwarder.close();
   assert.match(saved[0].context.prompt, /"prompt":"Кот"/);
   assert.ok(!JSON.stringify(saved).includes('json-private-token'));

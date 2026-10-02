@@ -218,6 +218,8 @@ test('Codex worker stores image bytes outside status and serves them after resta
   const stop = server => new Promise(resolve => { server.closeIdleConnections(); server.close(resolve); });
   const headers = { 'x-account-id': account };
   const first = await start(async () => ({ output: 'Изображение создано.', imageBase64: png.toString('base64'), usage: sampleUsage }));
+  const firstIdentity = (await fetch(first.base + '/health')).headers.get('x-codex-worker-instance');
+  assert.match(firstIdentity, /^[a-f0-9-]{36}$/);
   assert.equal((await fetch(first.base + '/jobs', { method: 'POST', headers, body: JSON.stringify(input) })).status, 202);
   let job;
   for (let attempt = 0; attempt < 30; attempt++) {
@@ -234,7 +236,9 @@ test('Codex worker stores image bytes outside status and serves them after resta
   await stop(first.server);
   const second = await start(() => { throw new Error('must not regenerate'); });
   t.after(() => stop(second.server));
-  const restored = await fetch(second.base + '/jobs/' + input.requestId, { headers }).then(response => response.json());
+  const restoredResponse = await fetch(second.base + '/jobs/' + input.requestId, { headers });
+  assert.notEqual(restoredResponse.headers.get('x-codex-worker-instance'), firstIdentity);
+  const restored = await restoredResponse.json();
   assert.equal(restored.state, 'success');
   assert.equal(restored.imageBase64, undefined);
   const image = await fetch(second.base + '/jobs/' + input.requestId + '/image', { headers });
@@ -417,4 +421,57 @@ test('Codex does not repeat a 429 without proof that the worker rejected it', as
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(sends, 1);
   assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, 1000);
+});
+
+test('missing worker jobs are polled once across status reads and billing restarts without releasing the reserve', async t => {
+  const pool = await openDatabase({}, testPool());
+  t.after(() => pool.end());
+  const account = randomUUID(), input = request();
+  await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Missing worker job')", [account]);
+  await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
+  let sends = 0, polls = 0, workerInstanceId = randomUUID(), recovered = false;
+  const options = { accounts: { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) },
+    url: 'http://worker', fetchImpl: async (url, options) => {
+      if (url.endsWith('/models')) return { ok: true, json: async () => require('../config/codex-models.json') };
+      if (url.endsWith('/health')) return { ok: true, headers: { get: () => workerInstanceId } };
+      if (options.method === 'POST') { sends++; return { ok: true, json: async () => ({ state: 'running' }) }; }
+      polls++;
+      if (recovered) return { ok: true, json: async () => ({ state: 'success', output: 'Recovered result', usage: sampleUsage }) };
+      return { ok: false, status: 404, headers: { get: () => workerInstanceId }, json: async () => ({ error: 'Запрос не найден' }) };
+    } };
+  const first = createCodexBilling(options);
+  t.after(() => first.close());
+  await first.submit(account, input);
+  const missing = await first.status(account, input.requestId);
+  assert.equal(missing.state, 'unknown');
+  assert.equal(missing.errorCode, 'CODEX_WORKER_JOB_MISSING');
+  assert.deepEqual(missing.missingWorkerInstanceIds, [workerInstanceId]);
+  first.close();
+  const restarted = createCodexBilling(options);
+  t.after(() => restarted.close());
+  await restarted.recover();
+  await restarted.recover();
+  const reads = await Promise.all(Array.from({ length: 8 }, () => restarted.status(account, input.requestId)));
+  assert.ok(reads.every(job => job.revision === missing.revision));
+  assert.equal(polls, 1);
+  assert.equal(sends, 1);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0],
+    { balance: 10000, held: 1000 });
+  const originalInstance = workerInstanceId;
+  workerInstanceId = randomUUID();
+  const otherMissing = await restarted.status(account, input.requestId);
+  assert.deepEqual(otherMissing.missingWorkerInstanceIds, [originalInstance, workerInstanceId]);
+  workerInstanceId = originalInstance;
+  await restarted.recover();
+  assert.equal(polls, 2);
+  workerInstanceId = randomUUID(); recovered = true;
+  const result = await restarted.status(account, input.requestId);
+  assert.equal(result.state, 'success');
+  assert.equal(result.output, 'Recovered result');
+  assert.equal(result.missingWorkerInstanceIds, null);
+  assert.equal(result.errorCode, null);
+  assert.equal(polls, 3);
+  assert.equal(sends, 1);
+  assert.deepEqual((await pool.query('SELECT balance,held FROM media_wallets WHERE account_id=$1', [account])).rows[0],
+    { balance: 9000, held: 0 });
 });

@@ -15,7 +15,7 @@ function createApimartClient({ apiKey, fetchImpl = fetch } = {}) {
     } catch (error) {
       require('../../system-errors').record('provider', 'apimart.connection.error', error,
         { diagnostic: { description: 'Не удалось подключиться к APIMart', entity: 'provider' } });
-      throw new Error(`APIMart: ${safeMessage(error?.message) || 'Ошибка соединения'}`);
+      throw new Error(`APIMart: ${safeMessage(error?.message) || 'Ошибка соединения'}`, { cause: error });
     }
     if (!response.ok) {
       let body = null;

@@ -19,6 +19,7 @@
 !config/codex-models.json
 !config/apimart-schemas.json
 !config/product-offers.json
+!config/kie-megapixel-pricing.json
 !scripts/
 !scripts/migrate-content-assets.cjs
 !scripts/audit-content.cjs

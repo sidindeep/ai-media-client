@@ -17,8 +17,9 @@ export async function checkMovieMedia(props: MovieProps, signal: AbortSignal,
   open: (src: string) => MediaInput = src => new Input({ formats: ALL_FORMATS,
     source: new UrlSource(src, { requestInit: { credentials: 'same-origin' }, getRetryDelay: () => null, maxCacheSize: 1024 * 1024 }) })) {
   const checked = new Set<string>();
-  const sources = props.scenes.flatMap((scene, index) => scene.kind === 'video' ? [{ src: scene.src!, scene: index + 1, video: true }] : []);
-  if (props.music) sources.push({ src: props.music, scene: 0, video: false });
+  const sources = props.scenes.flatMap((scene, index) => scene.kind === 'video' ? [{ src: scene.src!, scene: index + 1, video: true,
+    audio: !props.muteClips && props.scenes.some(item => item.src === scene.src && (item.volume ?? 1) > 0) }] : []);
+  if (props.music && (props.musicSettings?.volume ?? 0.7) > 0) sources.push({ src: props.music, scene: 0, video: false, audio: true });
   for (const source of sources) {
     signal.throwIfAborted();
     if (checked.has(source.src)) continue;
@@ -31,7 +32,7 @@ export async function checkMovieMedia(props: MovieProps, signal: AbortSignal,
         const track = await input.getPrimaryVideoTrack();
         if (!track || !await track.canDecode()) throw new MovieMediaError(source.scene, 'video');
       }
-      if (!source.video || !props.muteClips) {
+      if (source.audio) {
         const track = await input.getPrimaryAudioTrack();
         if ((!source.video && !track) || (track && !await track.canDecode())) throw new MovieMediaError(source.scene, 'audio');
       }

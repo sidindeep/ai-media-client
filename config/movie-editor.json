@@ -7,5 +7,17 @@
   "renderTimeoutMs": 30000,
   "mediaCacheBytes": 268435456,
   "sourceTimeoutMs": 180000,
-  "maxFileBytes": 104857600
+  "maxFileBytes": 104857600,
+  "editing": {
+    "defaultTransition": "cut",
+    "maxTransitionSeconds": 3,
+    "maxScale": 4,
+    "maxOffset": 100,
+    "maxFadeSeconds": 10,
+    "captionSize": 48,
+    "minCaptionSize": 16,
+    "maxCaptionSize": 120,
+    "musicVolume": 0.7,
+    "photoZoom": 1.12
+  }
 }

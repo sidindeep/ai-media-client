@@ -4,7 +4,7 @@ import limits from '../../../config/movie-editor.json' with { type: 'json' };
 
 // The recovery path uses the same native decoder as Player. Only the canvas
 // enters the renderer; audio is still assembled separately at exact timestamps.
-export function NativeVideo({ src }: { src: string }) {
+export function NativeVideo({ src, trimStart = 0, fit = 'contain' }: { src: string; trimStart?: number; fit?: 'contain' | 'cover' }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const { delayRender, continueRender, cancelRender } = useDelayRender();
@@ -36,7 +36,7 @@ export function NativeVideo({ src }: { src: string }) {
     void (async () => {
       if (video.readyState < 2) await wait('loadeddata');
       controller.signal.throwIfAborted();
-      const time = Math.min(frame / fps, Math.max(0, video.duration - 1 / fps));
+      const time = Math.min(trimStart + frame / fps, Math.max(0, video.duration - 1 / fps));
       if (Math.abs(video.currentTime - time) > 0.00001) {
         const seeked = wait('seeked'); video.currentTime = time; await seeked;
       }
@@ -47,6 +47,6 @@ export function NativeVideo({ src }: { src: string }) {
       continueRender(handle);
     })().catch(reason => { if (!controller.signal.aborted) cancelRender(reason); });
     return () => { controller.abort(); continueRender(handle); };
-  }, [frame, fps, src, video, delayRender, continueRender, cancelRender]);
-  return h('canvas', { ref: canvas, style: { width: '100%', height: '100%', objectFit: 'contain' } });
+  }, [frame, fps, src, trimStart, video, delayRender, continueRender, cancelRender]);
+  return h('canvas', { ref: canvas, style: { width: '100%', height: '100%', objectFit: fit } });
 }

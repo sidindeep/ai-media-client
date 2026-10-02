@@ -1,4 +1,6 @@
 import limits from '../../../config/movie-editor.json' with { type: 'json' };
+import { sceneEditing } from '../../../src/movie/editing.mjs';
+export { sceneEditing, musicEditing, trimScene, splitScene } from '../../../src/movie/editing.mjs';
 export const FPS = limits.fps;
 export const MAX_SCENES = limits.maxScenes;
 export const MAX_SECONDS = limits.maxSeconds;
@@ -15,7 +17,7 @@ export function timeline(scenes) {
     if (!['title', 'image', 'video'].includes(scene.kind)) throw new Error('SCENE_KIND');
     if (scene.kind !== 'title' && (!scene.src || !/^(blob:|data:image\/|\/api\/)/.test(scene.src))) throw new Error('SCENE_SOURCE');
     const durationInFrames = Math.round(seconds * FPS);
-    const entry = { ...scene, from, durationInFrames, fadeIn: 0, fadeOut: 0 };
+    const entry = { ...scene, ...sceneEditing(scene), from, durationInFrames, fadeIn: 0, fadeOut: 0, incomingTransition: 'cut' };
     from += durationInFrames;
     return entry;
   });
@@ -24,9 +26,9 @@ export function timeline(scenes) {
     const scene = result[index];
     scene.from = position;
     const next = result[index + 1];
-    const overlap = next ? Math.min(limits.transitionFrames, Math.floor(scene.durationInFrames / 2), Math.floor(next.durationInFrames / 2)) : 0;
+    const overlap = next && scene.transition !== 'cut' ? Math.min(Math.round(scene.transitionSeconds * FPS), Math.floor(scene.durationInFrames / 2), Math.floor(next.durationInFrames / 2)) : 0;
     scene.fadeOut = overlap;
-    if (next) next.fadeIn = overlap;
+    if (next) { next.fadeIn = overlap; next.incomingTransition = scene.transition; }
     position += scene.durationInFrames - overlap;
   }
   if (position > FPS * MAX_SECONDS) throw new Error('TOTAL_DURATION');

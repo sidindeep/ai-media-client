@@ -16,7 +16,7 @@ export function reportMovieError(code: 'MOVIE_RENDER_FAILED' | 'MOVIE_PREVIEW_FA
 }
 export type MovieSourceFile = { id: string; name: string; type: string; size: number | null };
 export type MovieDraft = { scenes: import('../remotion/model.mjs').Scene[]; format: 'portrait' | 'landscape' | 'square'; background: string;
-  muteClips: boolean; music: string; musicName: string; script: string; sourceLink: string; revision: number;
+  muteClips: boolean; music: string; musicName: string; musicSettings?: import('../remotion/model.mjs').MusicEditing; script: string; sourceLink: string; revision: number;
   scenarioState?: { modelId: string; pending?: { id: string; sources: import('../remotion/model.mjs').Scene[] } } };
 export async function getMovieDraft(projectId: string | null): Promise<MovieDraft | null> {
   const query = new URLSearchParams(projectId ? { projectId } : {});

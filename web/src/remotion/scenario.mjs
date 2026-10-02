@@ -33,7 +33,8 @@ export function parseScenario(output, sources, makeId = () => crypto.randomUUID(
     const source = materials.get(scene.sourceId);
     if (!source) throw new Error('MOVIE_PLAN_SOURCE');
     if (source.kind === 'video' && scene.seconds > source.seconds) throw new Error('MOVIE_PLAN_DURATION');
-    return { id: makeId(), kind: source.kind, src: source.src, name: source.name, title: scene.title, seconds: scene.seconds };
+    return { ...source, id: makeId(), title: scene.title, seconds: scene.seconds,
+      captionStart: Math.min(source.captionStart ?? 0, scene.seconds), captionEnd: Math.min(source.captionEnd ?? scene.seconds, scene.seconds) };
   });
   timeline(scenes);
   return scenes;

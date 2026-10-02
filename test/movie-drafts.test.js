@@ -51,11 +51,17 @@ test('movie drafts persist per account/project, validate owners and reject stale
     return { type: 'image/png' };
   }, link: async (...args) => links.push(args) };
   const drafts = createMovieDrafts({ pool, workspaces, content });
-  const draft = { scenes: [{ id: randomUUID(), kind: 'image', title: '', seconds: 5, src: `/api/content/${asset}`, name: 'photo.png' }],
+  const draft = { scenes: [{ id: randomUUID(), kind: 'image', title: 'Текст', seconds: 5, src: `/api/content/${asset}`, name: 'photo.png',
+    fit: 'cover', scale: 1.4, offsetX: 12, motion: 'zoom-in', transition: 'slide', transitionSeconds: 0.8,
+    captionStart: 1, captionEnd: 4, captionSize: 32, captionColor: '#ff8800' }], musicSettings: { volume: 0.4, start: 1, trimStart: 2, fadeIn: 0.5, fadeOut: 1 },
     format: 'portrait', background: '#151522', muteClips: false, music: '', musicName: '', script: 'Сценарий', sourceLink: '' };
   const saved = await drafts.save(owner, project.id, { draft, revision: 0 });
   assert.equal(saved.revision, 1); assert.equal(links.length, 1);
   assert.equal((await drafts.read(owner, project.id)).script, 'Сценарий');
+  assert.equal((await drafts.read(owner, project.id)).scenes[0].captionColor, '#ff8800');
+  assert.deepEqual((await drafts.read(owner, project.id)).musicSettings, draft.musicSettings);
+  for (const patch of [{ volume: -1 }, { captionEnd: 6 }, { fit: 'bad' }, { scale: 5 }])
+    await assert.rejects(drafts.save(owner, null, { draft: { ...draft, scenes: [{ ...draft.scenes[0], ...patch }] }, revision: 0 }), { status: 400 });
   assert.equal(await drafts.read(owner, null), null);
   assert.equal(await drafts.read(other, null), null);
   await assert.rejects(drafts.read(other, project.id), { status: 404 });

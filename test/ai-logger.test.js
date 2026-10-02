@@ -15,14 +15,14 @@ test('central logger forwards only selected diagnostic metadata', async () => {
     },
   });
 
-  forwarder.lifecycle('task.enqueued');
+  forwarder.generation('generation.started', 'kie', { id: require('node:crypto').randomUUID(), state: 'submitting' });
   forwarder.systemError({
     source: 'provider', event: 'request.failed', code: 'UPSTREAM_TIMEOUT',
     message: 'private prompt', details: { token: 'private key', accountId: 'private account' },
   });
   await forwarder.flush();
   assert.equal(records.length, 2);
-  assert.equal(records[0].message, 'task.enqueued');
+  assert.equal(records[0].message, 'generation.started');
   assert.equal(records[1].message, 'request.failed');
   assert.equal(records[1].level, 'ERROR');
   assert.equal(records[1].context.project, 'ai-media-client');
@@ -40,6 +40,30 @@ test('central logger leaves application flow unaffected when delivery fails', as
   await forwarder.flush();
   assert.equal(forwarder.status().pending, 1);
   await forwarder.close();
+});
+
+test('INFO allowlist is enforced before queueing and generation metadata excludes private fields', async () => {
+  const records = [], id = require('node:crypto').randomUUID();
+  const forwarder = createForwarder({ env: { AI_LOGGER_SERVER_URL: 'https://logger.example/ingest' },
+    fetchImpl: async (_, options) => { records.push(JSON.parse(options.body)); return { ok: true }; } });
+  for (const source of ['diagnostic', 'studio', 'startup', 'generation']) {
+    assert.equal(forwarder.event(source, 'task.poll.success'), false);
+    assert.equal(forwarder.event(source, 'generation.account_service'), false);
+  }
+  assert.equal(forwarder.event('studio', 'generation.started'), false);
+  assert.equal(forwarder.lifecycle('queue.recover'), false);
+  assert.equal(forwarder.event('generation', 'generation.started', 'DEBUG'), false);
+  assert.equal(forwarder.status().pending, 0);
+  forwarder.generation('generation.started', 'codex', { id, requestId: id, state: 'submitting',
+    prompt: 'DO_NOT_SEND_PROMPT', accountId: 'DO_NOT_SEND_ACCOUNT', images: ['DO_NOT_SEND_IMAGE'] });
+  forwarder.generation('generation.completed', 'codex', { id, state: 'fail' });
+  await forwarder.flush(); await forwarder.close();
+  assert.deepEqual(records.map(row => row.message), ['generation.started', 'generation.completed']);
+  assert.equal(records[0].context.job_id, id);
+  assert.equal(records[0].context.request_id, id);
+  assert.equal(records[0].context.provider, 'codex');
+  assert.equal(records[1].context.status, 'fail');
+  assert.ok(!JSON.stringify(records).includes('DO_NOT_SEND_'));
 });
 
 test('central recorder bounds outage queues, retries and stops after close', async () => {

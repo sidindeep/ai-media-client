@@ -6,7 +6,10 @@ const { generationContext } = require('../src/ai-logger/generation-context.mjs')
 async function main() {
   const { project, instanceId } = require('../src/ai-logger/identity').resolveIdentity();
   const marker = 'diagnostic-check-' + randomUUID();
-  function safeDiagnosticFailure() { throw Object.assign(new Error('Safe diagnostic test ' + marker), { code: 'DIAGNOSTIC_TEST' }); }
+  function safeDiagnosticFailure() {
+    const cause = Object.assign(new Error('Connection reset; token=DO_NOT_SEND_CAUSE_TOKEN'), { code: 'ECONNRESET' });
+    throw Object.assign(new Error('Safe diagnostic test ' + marker, { cause }), { code: 'DIAGNOSTIC_TEST' });
+  }
   let failure;
   try { safeDiagnosticFailure(); } catch (error) { failure = error; }
   const originalStack = failure.stack;
@@ -25,28 +28,36 @@ async function main() {
   } finally { restoreConsole(); }
   errors.record('generation', 'integration.generation.error', { code: '1501', message: 'Content review failed' },
     { generation, diagnostic: { description: 'Generation context check ' + marker } });
+  logger.reportGenerationEvent('generation.started', 'kie', { id: assetId, state: 'submitting', prompt: 'DO_NOT_SEND_SUCCESS_PROMPT' });
+  for (const event of ['generation.account_service', 'task.poll.start', 'task.poll.success', 'http.request', 'http.response'])
+    assert.equal(logger.reportEvent('diagnostic', event), false);
+  assert.equal(logger.reportEvent('studio', 'chat.sync.loaded'), false);
+  assert.equal(logger.reportEvent('startup', 'runtime.ready'), false);
+  logger.reportGenerationEvent('generation.completed', 'kie', { id: assetId, state: 'success' });
   await logger.flush();
   assert.equal(failure.stack, originalStack);
   const url = new URL(process.env.AI_LOGGER_READ_URL || '/api/agent/logs', process.env.AI_LOGGER_SERVER_URL);
   url.searchParams.set('project', project); url.searchParams.set('limit', '200');
   const headers = process.env.AI_LOGGER_READ_TOKEN ? { Authorization: 'Bearer ' + process.env.AI_LOGGER_READ_TOKEN } : {};
-  let saved, consoleSaved, stringSaved, generationSaved;
-  for (let attempt = 0; attempt < 30 && !(saved && consoleSaved && stringSaved && generationSaved); attempt++) {
+  let saved, consoleSaved, stringSaved, generationSaved, lifecycleRows = [];
+  for (let attempt = 0; attempt < 30 && !(saved && consoleSaved && stringSaved && generationSaved && lifecycleRows.length === 2); attempt++) {
     // Startup traffic and bounded drains can defer later records to retry.
     await logger.flush();
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
     assert.ok(response.ok, 'Logger reader HTTP ' + response.status);
     const data = await response.json();
     saved = data.records?.find(row => row.message === 'integration.error' && row.context?.description?.includes(marker));
-    consoleSaved = data.records?.find(row => row.context?.description === 'Console diagnostic ' + marker);
+    consoleSaved = data.records?.find(row => row.context?.description?.startsWith('Console diagnostic ' + marker + '; cause:'));
     stringSaved = data.records?.find(row => row.context?.description?.startsWith('String diagnostic ' + marker));
     generationSaved = data.records?.find(row => row.message === 'integration.generation.error' && row.context?.description?.includes(marker));
-    if (!(saved && consoleSaved && stringSaved && generationSaved)) await new Promise(resolve => setTimeout(resolve, 1000));
+    lifecycleRows = data.records?.filter(row => row.context?.instance_id === instanceId && row.level === 'INFO') || [];
+    if (!(saved && consoleSaved && stringSaved && generationSaved && lifecycleRows.length === 2)) await new Promise(resolve => setTimeout(resolve, 1000));
   }
   assert.ok(saved, 'Test error was not read back from /api/agent/logs: ' + marker);
   assert.equal(saved.message, 'integration.error');
   assert.equal(saved.context.error_code, 'DIAGNOSTIC_TEST');
-  assert.equal(saved.context.description, 'Безопасная проверка диагностики ' + marker);
+  assert.ok(saved.context.description.startsWith('Безопасная проверка диагностики ' + marker + '; cause:'));
+  assert.match(saved.context.description, /ECONNRESET/);
   assert.equal(saved.context.entity, 'diagnostic-test');
   assert.equal(saved.context.project, project);
   assert.equal(saved.context.instance_id, instanceId);
@@ -75,10 +86,14 @@ async function main() {
   assert.equal(generationSaved.context.provider, 'kie');
   assert.equal(generationSaved.context.job_id, marker);
   assert.equal(generationSaved.context.error_code, '1501');
+  assert.deepEqual(lifecycleRows.map(row => row.message).sort(), ['generation.completed', 'generation.started']);
+  assert.ok(lifecycleRows.every(row => row.context.job_id === assetId && row.context.provider === 'kie'));
+  assert.ok(!JSON.stringify(lifecycleRows).includes('DO_NOT_SEND_'));
   console.log(JSON.stringify({ marker, delivered: true, instance_id: saved.context.instance_id,
     service: saved.context.service, file: saved.context.file, line: saved.context.line,
     function: saved.context.function, entity: saved.context.entity, description: saved.context.description,
-    exception_verified: true, console_verified: true, string_diagnostic_verified: true,
-    sensitive_data_excluded: true, generation_context_verified: true }, null, 2));
+    exception_verified: true, cause_verified: true, console_verified: true, string_diagnostic_verified: true,
+    sensitive_data_excluded: true, generation_context_verified: true,
+    lifecycle_verified: true, noise_filtered: true }, null, 2));
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => logger.close());

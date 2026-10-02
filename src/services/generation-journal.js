@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const systemErrors = require('../system-errors');
 const { recordFailure } = require('../provider-diagnostics');
 const { generationContext } = require('../ai-logger/generation-context.mjs');
+const aiLogger = require('../ai-logger');
 
 const NAMESPACE = 'generation-journal';
 
@@ -29,6 +30,12 @@ async function appendGenerationEvent(client, accountId, provider, record, event,
   const item = entry(provider, record, event, details);
   await client.query('INSERT INTO media_records(account_id,namespace,id,data) VALUES($1,$2,$3,$4)',
     [accountId, NAMESPACE, item.id, JSON.stringify(item)]);
+  // Kie lifecycle is emitted by TaskQueue, which also supports file-backed histories.
+  if (provider !== 'kie') {
+    if (event === 'send_start') aiLogger.reportGenerationEvent('generation.started', provider, { ...record, state: 'submitting' });
+    else if (['success', 'fail', 'failed', 'cancelled'].includes(event))
+      aiLogger.reportGenerationEvent('generation.completed', provider, record);
+  }
   if (['fail', 'failed', 'error', 'unknown'].includes(event)) {
     const failure = recordFailure(record, provider);
     systemErrors.record('generation', `${provider}.${event}`,

@@ -32,3 +32,20 @@ test('generation journal keeps provider attempts per account without prompts or 
   assert.equal(other.items.length, 1);
   assert.equal(other.items[0].provider, 'codex');
 });
+
+test('provider journal emits only sending and terminal lifecycle events while preserving intermediate business rows', async t => {
+  const logger = require('../src/ai-logger');
+  const original = logger.reportGenerationEvent, calls = [], businessRows = [];
+  logger.reportGenerationEvent = (event, provider, record) => calls.push({ event, provider, state: record.state });
+  t.after(() => { logger.reportGenerationEvent = original; });
+  const client = { query: async (_, args) => { businessRows.push(JSON.parse(args[3])); } };
+  for (const provider of ['kie', 'codex', 'routerai', 'apimart']) {
+    for (const event of ['created', 'send_start', 'running', 'success'])
+      await appendGenerationEvent(client, 'account-a', provider, { id: 'job-a', state: event }, event);
+  }
+  assert.equal(businessRows.length, 16);
+  assert.deepEqual(calls, ['codex', 'routerai', 'apimart'].flatMap(provider => [
+    { event: 'generation.started', provider, state: 'submitting' },
+    { event: 'generation.completed', provider, state: 'success' },
+  ]));
+});

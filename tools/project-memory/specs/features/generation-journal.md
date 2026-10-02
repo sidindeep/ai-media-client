@@ -35,6 +35,30 @@ media_system_errors со всеми строками. Исторические �
 в ai_logger_records; чтение /api/agent/logs через scripts/read-central-errors.cjs.
 Отдельный ai_logger_system_errors не используется.
 
+Уточнение 2026-10-02: диагностический reader по умолчанию фильтрует
+ERROR/WARNING/CRITICAL до limit, третий аргумент выбирает другие уровни.
+`src/ai-logger/diagnostics.js` добавляет в description очищенные name/code/message
+вложенных Error.cause/AggregateError: глубина 3, максимум 6 причин, итог 1000
+символов, с защитой от циклов. Исключение и исходный стек не меняются;
+произвольные поля причин не отправляются. APIMart сохраняет Error.cause при
+оборачивании транспортного отказа. Проверки: `test/system-errors.test.js` и
+HTTP-readback `scripts/verify-central-diagnostics.cjs` на синтетической причине.
+
+Политика INFO от 2026-10-02 (`src/ai-logger/events.js`): только
+generation.started/generation.completed от source=generation. INFO/DEBUG
+остальных событий блокируются в forwarder до очереди HTTP-доставки;
+generation-log не отправляет промежуточные успешные шаги вообще. Ошибки всех
+этапов и WARNING сохраняются. Lifecycle INFO выбирает только provider,
+UUID job_id/request_id и конечный status, без prompts/source_urls/account.
+TaskQueue владеет началом отправки и конечным статусом Kie (включая файловую
+историю); остальные провайдеры используют send_start и terminal событие
+generation-journal. queued/created и unknown не являются подтверждённым
+завершением. Безопасный повтор отправки создаёт отдельное событие начала попытки.
+Пользовательские SQL-события и ledger сохраняются в прежнем объёме.
+Проверки: generation-log.test.js (50 успешных опросов без INFO, ошибки между
+началом и завершением), ai-logger.test.js (фильтр до очереди, приватность),
+generation-journal.test.js (границы провайдеров без сокращения бизнес-журнала).
+
 Критичные границы: загрузка/валидация config, data-directory, providers, storage,
 media-service, database/model config, content/accounts, payment recovery,
 generation recovery, HTTP listen, Telegram. Ошибки процесса до БД, uncaught

@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "preparedOn": "2026-10-02",
+  "status": "conditional_scenarios_not_observed_statistics",
+  "forecastStart": null,
+  "periodDays": 30,
+  "periodCount": 2,
+  "selectedScenario": "fast",
+  "ownerInputs": {
+    "externalUsers": 0,
+    "teamMembersRange": [
+      5,
+      10
+    ],
+    "channels": [
+      "Telegram",
+      "Instagram",
+      "friends"
+    ],
+    "listedAudienceSizes": [
+      500,
+      1000,
+      1500,
+      5000
+    ],
+    "grossAudienceSum": 8000,
+    "audienceOverlap": null,
+    "promotionBudget": null
+  },
+  "funnelHypothesis": {
+    "viewShare": 0.3,
+    "clickShareOfViews": 0.08,
+    "registrationShareOfClicks": 0.5,
+    "generatingShareOfRegistrations": 0.6
+  },
+  "baseUsageHypothesis": [
+    {
+      "share": 0.7,
+      "generationsPerMonth": 10
+    },
+    {
+      "share": 0.25,
+      "generationsPerMonth": 40
+    },
+    {
+      "share": 0.05,
+      "generationsPerMonth": 160
+    }
+  ],
+  "loadHypothesis": {
+    "imageShare": 0.85,
+    "imageDurationSeconds": 60,
+    "videoShare": 0.15,
+    "videoDurationSeconds": 240,
+    "shareDuringBusyHours": 0.8,
+    "busyHoursPerDay": 10
+  },
+  "units": {
+    "registered": "cumulative external accounts at period end",
+    "active": "external generating users in period",
+    "daily": "external generating users per day",
+    "generations": "provider operations including team tests",
+    "logs": "technical ai_logger records only",
+    "peakPerMinute": "submissions per minute",
+    "parallel": "expected average in-flight jobs during peak",
+    "infoKb": "decimal KB per INFO record",
+    "errorKb": "decimal KB per ERROR or WARNING record",
+    "diskMb": "decimal MB estimated with storage multiplier; excludes WAL backups and media"
+  },
+  "scenarios": {
+    "small": {
+      "assumptions": {
+        "activation": 60,
+        "daily": 20,
+        "retry": 5,
+        "errors": 5,
+        "perError": 3,
+        "background": 0,
+        "testsDaily": 30,
+        "duration": 87,
+        "peak": 3,
+        "infoKb": 1,
+        "errorKb": 8,
+        "storage": 3,
+        "m1": 30,
+        "m2": 60,
+        "usage": 15
+      },
+      "months": [
+        {
+          "active": 30,
+          "registered": 50,
+          "daily": 6,
+          "userGenerations": 450,
+          "testGenerations": 900,
+          "generations": 1350,
+          "info": 2767.5,
+          "error": 202.5,
+          "logs": 2970,
+          "peakPerMinute": 0.18,
+          "parallel": 0.261,
+          "diskMb": 13.1625
+        },
+        {
+          "active": 60,
+          "registered": 100,
+          "daily": 12,
+          "userGenerations": 900,
+          "testGenerations": 900,
+          "generations": 1800,
+          "info": 3690,
+          "error": 270,
+          "logs": 3960,
+          "peakPerMinute": 0.24,
+          "parallel": 0.348,
+          "diskMb": 17.55
+        }
+      ],
+      "totals": {
+        "generations": 3150,
+        "logs": 6930,
+        "diskMb": 30.7125
+      }
+    },
+    "base": {
+      "assumptions": {
+        "activation": 60,
+        "daily": 20,
+        "retry": 5,
+        "errors": 5,
+        "perError": 3,
+        "background": 0,
+        "testsDaily": 30,
+        "duration": 87,
+        "peak": 3,
+        "infoKb": 1,
+        "errorKb": 8,
+        "storage": 3,
+        "m1": 60,
+        "m2": 120,
+        "usage": 25
+      },
+      "months": [
+        {
+          "active": 60,
+          "registered": 100,
+          "daily": 12,
+          "userGenerations": 1500,
+          "testGenerations": 900,
+          "generations": 2400,
+          "info": 4920,
+          "error": 360,
+          "logs": 5280,
+          "peakPerMinute": 0.32,
+          "parallel": 0.464,
+          "diskMb": 23.4
+        },
+        {
+          "active": 120,
+          "registered": 200,
+          "daily": 24,
+          "userGenerations": 3000,
+          "testGenerations": 900,
+          "generations": 3900,
+          "info": 7995,
+          "error": 585,
+          "logs": 8580,
+          "peakPerMinute": 0.52,
+          "parallel": 0.754,
+          "diskMb": 38.025
+        }
+      ],
+      "totals": {
+        "generations": 6300,
+        "logs": 13860,
+        "diskMb": 61.425
+      }
+    },
+    "fast": {
+      "assumptions": {
+        "activation": 60,
+        "daily": 20,
+        "retry": 5,
+        "errors": 5,
+        "perError": 3,
+        "background": 0,
+        "testsDaily": 30,
+        "duration": 87,
+        "peak": 3,
+        "infoKb": 1,
+        "errorKb": 8,
+        "storage": 3,
+        "m1": 150,
+        "m2": 350,
+        "usage": 40
+      },
+      "months": [
+        {
+          "active": 150,
+          "registered": 250,
+          "daily": 30,
+          "userGenerations": 6000,
+          "testGenerations": 900,
+          "generations": 6900,
+          "info": 14145,
+          "error": 1035,
+          "logs": 15180,
+          "peakPerMinute": 0.92,
+          "parallel": 1.334,
+          "diskMb": 67.275
+        },
+        {
+          "active": 350,
+          "registered": 583.333333,
+          "daily": 70,
+          "userGenerations": 14000,
+          "testGenerations": 900,
+          "generations": 14900,
+          "info": 30545,
+          "error": 2235,
+          "logs": 32780,
+          "peakPerMinute": 1.986667,
+          "parallel": 2.880667,
+          "diskMb": 145.275
+        }
+      ],
+      "totals": {
+        "generations": 21800,
+        "logs": 47960,
+        "diskMb": 212.55
+      }
+    }
+  },
+  "unmeasured": [
+    "actual reach and audience overlap",
+    "retention and paying-user activation",
+    "team generation volume",
+    "generation durations and provider mix",
+    "actual error retry and duplicate rates",
+    "host sustained capacity and provider quotas",
+    "actual logger record and index sizes",
+    "application business-journal size"
+  ]
+}

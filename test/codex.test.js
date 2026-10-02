@@ -423,17 +423,21 @@ test('Codex does not repeat a 429 without proof that the worker rejected it', as
   assert.equal((await pool.query('SELECT held FROM media_wallets WHERE account_id=$1', [account])).rows[0].held, 1000);
 });
 
-test('missing worker jobs are polled once across status reads and billing restarts without releasing the reserve', async t => {
+test('missing worker jobs are polled once per worker and logged once across restarts without releasing the reserve', async t => {
+  const errors = [];
+  t.mock.method(require('../src/system-errors'), 'record', (_source, event, error) => {
+    if (event === 'codex-billing.error') errors.push(error);
+  });
   const pool = await openDatabase({}, testPool());
   t.after(() => pool.end());
   const account = randomUUID(), input = request();
   await pool.query("INSERT INTO media_accounts(id,display_name) VALUES($1,'Missing worker job')", [account]);
   await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,10000)', [account]);
-  let sends = 0, polls = 0, workerInstanceId = randomUUID(), recovered = false;
+  let sends = 0, polls = 0, workerInstanceId = randomUUID(), recovered = false, healthUnavailable = false;
   const options = { accounts: { pool, pricing: createPricing({ version: 'test', models: { [priceKey(input)]: { baseUnits: 1000 } } }) },
     url: 'http://worker', fetchImpl: async (url, options) => {
       if (url.endsWith('/models')) return { ok: true, json: async () => require('../config/codex-models.json') };
-      if (url.endsWith('/health')) return { ok: true, headers: { get: () => workerInstanceId } };
+      if (url.endsWith('/health')) return { ok: !healthUnavailable, status: healthUnavailable ? 503 : 200, headers: { get: () => workerInstanceId } };
       if (options.method === 'POST') { sends++; return { ok: true, json: async () => ({ state: 'running' }) }; }
       polls++;
       if (recovered) return { ok: true, json: async () => ({ state: 'success', output: 'Recovered result', usage: sampleUsage }) };
@@ -446,6 +450,7 @@ test('missing worker jobs are polled once across status reads and billing restar
   assert.equal(missing.state, 'unknown');
   assert.equal(missing.errorCode, 'CODEX_WORKER_JOB_MISSING');
   assert.deepEqual(missing.missingWorkerInstanceIds, [workerInstanceId]);
+  assert.deepEqual(errors.map(error => error.code), ['CODEX_HTTP_404']);
   first.close();
   const restarted = createCodexBilling(options);
   t.after(() => restarted.close());
@@ -461,9 +466,14 @@ test('missing worker jobs are polled once across status reads and billing restar
   workerInstanceId = randomUUID();
   const otherMissing = await restarted.status(account, input.requestId);
   assert.deepEqual(otherMissing.missingWorkerInstanceIds, [originalInstance, workerInstanceId]);
+  assert.deepEqual(errors.map(error => error.code), ['CODEX_HTTP_404']);
   workerInstanceId = originalInstance;
   await restarted.recover();
   assert.equal(polls, 2);
+  healthUnavailable = true;
+  assert.equal((await restarted.status(account, input.requestId)).state, 'unknown');
+  assert.deepEqual(errors.map(error => error.code), ['CODEX_HTTP_404', 'CODEX_HTTP_503']);
+  healthUnavailable = false;
   workerInstanceId = randomUUID(); recovered = true;
   const result = await restarted.status(account, input.requestId);
   assert.equal(result.state, 'success');

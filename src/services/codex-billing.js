@@ -91,7 +91,11 @@ function createCodexBilling({ records, worker, pricing, conversion, dataDirector
         error: safeErrorText(result.error) || 'Codex request failed.' });
       if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: safeErrorText(result.error) || 'Codex result is unknown.' });
       return job;
-    } catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(job, 'codex') });
+    } catch (error) {
+      // A new worker must still be checked for a recoverable result, but its 404
+      // is not a new failure when the shared record already marks this job missing.
+      if (error.remoteStatus !== 404 || job.errorCode !== 'CODEX_WORKER_JOB_MISSING')
+        require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(job, 'codex') });
       // Unknown completion must never release or charge automatically.
       if (error.remoteStatus === 404) return await update(account, requestId, {
         state: 'unknown', errorCode: 'CODEX_WORKER_JOB_MISSING',

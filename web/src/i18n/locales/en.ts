@@ -2,6 +2,13 @@ import type {
  TranslationKey } from './ru';
 
 export const en = {
+  'popup.confirm': 'Confirm',
+  'popup.working': 'Working…',
+  'popup.failed': 'The action failed. Please try again.',
+  'popup.create': 'Create',
+  'popup.delete': 'Delete',
+  'popup.moveTitle': 'Move chat',
+  'popup.chooseProject': 'Project',
   'movie.materials': 'Materials',
   'movie.details': 'Selected material',
   'movie.selectMaterial': 'Select a material in the grid to open its settings.',

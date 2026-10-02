@@ -141,6 +141,79 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
+    if (process.env.BROWSER_E2E_POPUPS_ONLY === '1') {
+      await client.evaluate("window.prompt=window.confirm=window.alert=()=>{throw new Error('Native dialog called')};window.__popupStudio=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');void 0");
+      const openAdd = async () => {
+        await client.evaluate("{const button=document.querySelector('.sidebar-toolbar .icon-button');button.focus();button.click();}void 0");
+        await client.until("Boolean(document.querySelector('.popup-dialog[open] input'))");
+      };
+      const setName = async name => client.evaluate(`{const input=document.querySelector('.popup-field input');input.value=${JSON.stringify(name)};input.dispatchEvent(new Event('input',{bubbles:true}));}void 0`);
+      const submit = async () => {
+        await client.evaluate("document.querySelector('.popup-submit').click();void 0");
+        await client.until("!document.querySelector('.popup-dialog[open]')");
+      };
+      const chatAction = async index => {
+        await client.evaluate("Array.from(document.querySelectorAll('.sidebar-entry')).find(entry=>entry.querySelector('strong')?.textContent==='Окно: чат').querySelector('.entry-menu').click();void 0");
+        await client.evaluate(`document.querySelectorAll('.entry-actions button')[${index}].click();void 0`);
+        await client.until("Boolean(document.querySelector('.popup-dialog[open]'))");
+      };
+      const initialChats = await client.evaluate('window.__popupStudio.chats.length');
+      await openAdd();
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.popup-field input') && document.activeElement.selectionEnd===document.activeElement.value.length"), true);
+      await setName('   ');
+      assert.equal(await client.evaluate("document.querySelector('.popup-submit').disabled"), true);
+      await client.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await client.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal(await client.evaluate('window.__popupStudio.chats.length'), initialChats);
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.sidebar-toolbar .icon-button')"), true);
+      await openAdd();
+      await client.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: 2, y: 2, button: 'left', clickCount: 1 });
+      await client.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 2, y: 2, button: 'left', clickCount: 1 });
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal(await client.evaluate('window.__popupStudio.chats.length'), initialChats);
+      await openAdd();
+      await setName('Окно: чат');
+      // One transport failure proves that input survives and retry uses the real API.
+      await client.evaluate("window.__popupFetch=window.fetch;window.fetch=(input,init)=>{if(init?.method==='POST' && new URL(String(input),location.origin).pathname==='/api/chats'){window.fetch=window.__popupFetch;return Promise.reject(new Error('Popup retry test'))}return window.__popupFetch(input,init)};document.querySelector('.popup-submit').click();void 0");
+      await client.until("Boolean(document.querySelector('.popup-error'))");
+      assert.equal(await client.evaluate("document.querySelector('.popup-field input').value"), 'Окно: чат');
+      assert.equal(await client.evaluate("document.querySelector('.popup-submit').disabled"), false);
+      await client.evaluate("document.querySelector('.popup-field input').focus();void 0");
+      await client.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 });
+      await client.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await client.until("!document.querySelector('.popup-dialog[open]') && window.__popupStudio.chats.some(chat=>chat.name==='Окно: чат')");
+      const chatId = await client.evaluate("window.__popupStudio.chats.find(chat=>chat.name==='Окно: чат').id");
+      assert.equal((await pool.query('SELECT name FROM media_chats WHERE id=$1', [chatId])).rows[0].name, 'Окно: чат');
+      await chatAction(0);
+      assert.equal(await client.evaluate("document.querySelector('.popup-field input').value"), 'Окно: чат');
+      await setName('Не сохранять');
+      await client.evaluate("document.querySelector('.popup-cancel').click();void 0");
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal(await client.evaluate(`window.__popupStudio.chats.find(chat=>chat.id===${JSON.stringify(chatId)}).name`), 'Окно: чат');
+      const projects = await client.evaluate("Promise.all([window.__popupStudio.createProject('Одинаковый'),window.__popupStudio.createProject('Одинаковый')]).then(projects=>projects.map(project=>project.id))");
+      await chatAction(1);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.popup-field option')).filter(option=>option.textContent==='Одинаковый').map(option=>option.value).sort()"), [...projects].sort());
+      await client.evaluate(`{const select=document.querySelector('.popup-field select');select.value=${JSON.stringify(projects[1])};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+      await submit();
+      assert.equal((await pool.query('SELECT project_id FROM media_chats WHERE id=$1', [chatId])).rows[0].project_id, projects[1]);
+      // Return to standalone so archive exercises the same visible consumer.
+      await client.evaluate(`window.__popupStudio.moveChat(${JSON.stringify(chatId)},null)`);
+      await chatAction(2);
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.popup-cancel')"), true);
+      await submit();
+      assert.ok((await pool.query('SELECT archived_at FROM media_chats WHERE id=$1', [chatId])).rows[0].archived_at);
+      await client.evaluate("document.querySelectorAll('.sidebar-tabs button')[2].click();void 0");
+      await client.until("Boolean(document.querySelector('.archive-delete'))");
+      await client.evaluate("document.querySelector('.archive-delete').click();void 0");
+      await client.until("Boolean(document.querySelector('.popup-dialog[open].popup-danger'))");
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.popup-cancel')"), true);
+      await client.evaluate("document.querySelector('.popup-cancel').click();void 0");
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal((await pool.query('SELECT name FROM media_chats WHERE id=$1', [chatId])).rowCount, 1);
+      console.log('Popup browser E2E passed: native dialogs forbidden, cancel/Escape/backdrop, focus, retry/Enter, real chat creation, project IDs and archive/delete confirmation');
+      return;
+    }
     if (process.env.BROWSER_E2E_OMNIHUMAN_ONLY === '1') {
       await client.evaluate("document.querySelectorAll('.composer-tabs button')[2].click();void 0");
       await client.evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");

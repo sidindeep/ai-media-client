@@ -34,6 +34,7 @@
 - [План production CDN и Storage](specs/features/cdn-storage-production-plan.md) —
   Versioning, Object Lock, CDN-авторизация, backup 3-2-1 и восстановление.
 - [Рабочие вкладки](specs/features/workspaces-templates.md) — черновики, шаблоны и избранное.
+- [Всплывающие окна](specs/features/popups.md) — общий модуль ввода, выбора и подтверждения в студии.
 - [Монтаж Remotion](specs/features/remotion-video-editor.md) — сцены, предпросмотр, локальный MP4 и границы данных.
 - [Локализация](specs/features/localization.md) — RU/EN-словари, ключи, plural rules, выбор языка и границы перевода.
 - [Стоимость](specs/business-rules/cost-accounting.md) — оценки, списания и сверка.

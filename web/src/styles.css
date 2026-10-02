@@ -7,6 +7,33 @@
   text-rendering: optimizeLegibility;
 }
 
+.popup-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; margin: auto; padding: 24px; border: 1px solid #49425e; border-radius: 20px; color: #f3effb; background: linear-gradient(145deg, #201c30, #12131d); box-shadow: 0 28px 100px #0009; }
+.popup-dialog::backdrop { background: rgba(5, 6, 11, .7); backdrop-filter: blur(7px); }
+.popup-header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.popup-header h2 { flex: 1; margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 20px; line-height: 1.3; }
+.popup-icon { display: grid; flex: none; width: 38px; height: 38px; place-items: center; border-radius: 12px; color: #c1a8ff; background: #8a63e51c; font-size: 22px; }
+.popup-close { flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; color: #b5abc8; background: transparent; font-size: 24px; }
+.popup-message { margin: 0 0 22px; color: #c7bed7; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.popup-field { display: grid; gap: 9px; color: #bfb4d1; font-size: 13px; }
+.popup-field :is(input, select) { width: 100%; min-width: 0; padding: 12px 14px; border: 1px solid #514663; border-radius: 11px; color: #f3effb; background: #100f19; font-size: 15px; }
+.popup-field option { color: #f3effb; background: #171421; }
+.popup-dialog :is(button, input, select):focus-visible { outline: 2px solid #b598f8; outline-offset: 3px; }
+.popup-error { margin: 16px 0 0; padding: 12px; border: 1px solid #7e4353; border-radius: 10px; color: #ffbecd; background: #51233044; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.popup-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+.popup-actions button { min-height: 42px; padding: 10px 18px; border: 1px solid #514663; border-radius: 11px; font-size: 14px; font-weight: 600; }
+.popup-cancel { color: #d7cee6; background: #ffffff06; }
+.popup-actions .popup-submit { border-color: #8962df; color: #fff; background: #7950d0; }
+.popup-dialog button:disabled { opacity: .5; }
+.popup-danger .popup-icon { color: #ffafbd; background: #c74c6322; }
+.popup-danger .popup-submit { border-color: #c54e66; background: #a83b52; }
+:root[data-theme='light'] .popup-dialog { border-color: #d8d1e4; color: #30283d; background: linear-gradient(145deg, #fff, #f6f3fb); box-shadow: 0 28px 90px #342d3f38; }
+:root[data-theme='light'] .popup-dialog::backdrop { background: rgba(52, 47, 59, .38); }
+:root[data-theme='light'] :is(.popup-message, .popup-field, .popup-close) { color: #675b79; }
+:root[data-theme='light'] .popup-field :is(input, select, option) { border-color: #c7bdd7; color: #30283d; background: #fff; }
+:root[data-theme='light'] .popup-cancel { border-color: #c7bdd7; color: #514365; background: #fff; }
+:root[data-theme='light'] .popup-error { border-color: #dfa9b5; color: #9e3047; background: #fff0f3; }
+@media (max-width: 480px) { .popup-dialog { padding: 20px; border-radius: 16px; }.popup-header h2 { font-size: 18px; }.popup-actions button { flex: 1; } }
+
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 65% -20%, #24204a 0, #10111b 30%, #090a0f 72%); }
 button, input, select, textarea { font: inherit; }

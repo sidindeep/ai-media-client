@@ -1,4 +1,11 @@
 export const ru = {
+  'popup.confirm': 'Подтвердить',
+  'popup.working': 'Выполняется…',
+  'popup.failed': 'Не удалось выполнить действие. Попробуйте ещё раз.',
+  'popup.create': 'Создать',
+  'popup.delete': 'Удалить',
+  'popup.moveTitle': 'Перенести чат',
+  'popup.chooseProject': 'Проект',
   'movie.materials': 'Материалы',
   'movie.details': 'Выбранный материал',
   'movie.selectMaterial': 'Выберите материал в сетке, чтобы открыть его настройки.',

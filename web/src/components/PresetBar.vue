@@ -2,6 +2,7 @@
 import { computed, nextTick, ref } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
+import { popups } from '../popups/service';
 import type { GenerationPreset } from '../types';
 
 const studio = useStudioStore();
@@ -58,10 +59,9 @@ function apply(preset: GenerationPreset) {
 }
 
 async function remove(preset: GenerationPreset) {
-  if (!confirm(t('preset.deleteConfirm', { name: preset.name }))) return;
-  error.value = '';
-  try { await studio.removePreset(preset.id); }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : t('preset.deleteError'); }
+  await popups.confirm({ title: t('preset.deleteNamed', { name: preset.name }), message: t('preset.deleteConfirm', { name: preset.name }),
+    confirmLabel: t('popup.delete'), danger: true, onConfirm: async () => { error.value = ''; await studio.removePreset(preset.id); },
+  });
 }
 </script>
 

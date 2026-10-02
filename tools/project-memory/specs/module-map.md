@@ -6,6 +6,11 @@
 
 ## Система и сквозной поток
 
+Модуль всплывающих окон студии: `web/src/popups/service.ts` владеет временной
+очередью и состояниями, `PopupHost.vue` — оформлением и фокусом. Sidebar и
+PresetBar передают прикладные callbacks; popup не обращается к API/БД.
+Контракт и проверки: [всплывающие окна](features/popups.md).
+
 Переносимый Google-вход: auth/google-auth.js + google.js + oauth.js зависят
 только от Node.js и предоставленного store. Таблицы/SQL и правила назначения
 аккаунта принадлежат auth/postgres-store.js; composition root server.js собирает

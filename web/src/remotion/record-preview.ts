@@ -1,4 +1,5 @@
 import type { PlayerRef } from '@remotion/player';
+import { finalizeRecording } from './finalize-recording.mjs';
 type CroppableTrack = MediaStreamTrack & { cropTo: (target: unknown) => Promise<void> };
 type CaptureWindow = Window & { CropTarget?: { fromElement: (element: HTMLElement) => Promise<unknown> } };
 
@@ -26,13 +27,14 @@ export async function recordPreview(player: PlayerRef, element: HTMLElement, fra
     player.play();
     await track.cropTo(await crop.fromElement(element));
     if (needsAudio && !capture.getAudioTracks().length) throw new Error('PREVIEW_RECORD_AUDIO_REQUIRED');
-    const mimeType = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'].find(type => MediaRecorder.isTypeSupported(type));
+    const mimeType = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp8'].find(type => MediaRecorder.isTypeSupported(type));
     if (!mimeType) throw new Error('PREVIEW_RECORD_UNSUPPORTED');
     signal.throwIfAborted(); player.pause(); player.seekTo(0);
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    recorder = new MediaRecorder(capture, { mimeType });
+    recorder = new MediaRecorder(capture, { mimeType, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000,
+      videoKeyFrameIntervalDuration: 1000 } as MediaRecorderOptions);
     const recording = recorder, chunks: Blob[] = [];
-    return await new Promise<Blob>((resolve, reject) => {
+    const recorded = await new Promise<Blob>((resolve, reject) => {
       let finished = false;
       const cleanup = () => {
         clearTimeout(timeout); signal.removeEventListener('abort', abort); track.removeEventListener('ended', stopped);
@@ -41,7 +43,7 @@ export async function recordPreview(player: PlayerRef, element: HTMLElement, fra
       const fail = (reason: unknown) => { if (finished) return; finished = true; cleanup(); reject(reason); };
       const abort = () => fail(signal.reason), stopped = () => fail(new Error('PREVIEW_RECORD_STOPPED'));
       const failed = () => fail(new Error('PREVIEW_RECORD_FAILED'));
-      const progress = ({ detail }: { detail: { frame: number } }) => onProgress(Math.min(1, (detail.frame + 1) / frames));
+      const progress = ({ detail }: { detail: { frame: number } }) => onProgress(Math.min(0.9, (detail.frame + 1) / frames * 0.9));
       const ended = () => { if (recording.state !== 'inactive') recording.stop(); };
       const timeout = setTimeout(() => fail(new Error('PREVIEW_RECORD_TIMEOUT')), frames / fps * 1000 + 120000);
       recording.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
@@ -57,6 +59,8 @@ export async function recordPreview(player: PlayerRef, element: HTMLElement, fra
       if (signal.aborted) { abort(); return; }
       try { recording.start(1000); player.play(); } catch (reason) { fail(reason); }
     });
+    capture.getTracks().forEach(track => track.stop());
+    return await finalizeRecording(recorded, signal, value => onProgress(0.9 + value * 0.1));
   } finally {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     capture.getTracks().forEach(track => track.stop());

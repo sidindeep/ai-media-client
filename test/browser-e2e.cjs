@@ -62,6 +62,13 @@ async function cdp(url) {
   return { command, evaluate, until, close: () => socket.close() };
 }
 
+async function saveMovieArtifact(client, selector, name) {
+  if (!process.env.MOVIE_ARTIFACT_DIR) return;
+  const encoded = await client.evaluate(`(async()=>{const bytes=new Uint8Array(await(await fetch(document.querySelector(${JSON.stringify(selector)}).href)).arrayBuffer());let text='';for(let offset=0;offset<bytes.length;offset+=8192)text+=String.fromCharCode(...bytes.subarray(offset,offset+8192));return btoa(text);})()`);
+  await fs.mkdir(process.env.MOVIE_ARTIFACT_DIR, { recursive: true });
+  await fs.writeFile(path.join(process.env.MOVIE_ARTIFACT_DIR, name), Buffer.from(encoded, 'base64'));
+}
+
 async function main() {
   if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL is required');
   const id = randomUUID();
@@ -211,11 +218,23 @@ async function main() {
       console.log('Kie/APIMart UI passed: required fields restored, optional fields hidden, Suno common/mode fields and saved drafts preserved; no provider generation');
       return;
     }
-    if (process.env.BROWSER_E2E_MOVIE_ONLY === '1') {
+    if (process.env.BROWSER_E2E_MOVIE_ONLY === '1' || process.env.BROWSER_E2E_MOVIE_GRID_ONLY === '1') {
       await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
       await client.until("document.querySelector('.movie-editor .movie-title-add') && !document.querySelector('.movie-controls').disabled");
       await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
       await client.until("document.querySelector('.movie-scene') && !document.querySelector('.movie-render').disabled");
+      // Selection follows scene identity through edits, reordering and deletion.
+      await client.evaluate("{const el=document.querySelector('.movie-scene textarea');el.value='Grid first';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+      await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
+      await client.until("document.querySelectorAll('.movie-material').length===2 && document.querySelector('.movie-material:last-child').getAttribute('aria-pressed')==='true'");
+      await client.evaluate("{const el=document.querySelector('.movie-scene textarea');el.value='Grid second';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+      await client.evaluate("document.querySelector('.movie-material:first-child').click();void 0");
+      await client.until("document.querySelector('.movie-scene textarea').value==='Grid first'");
+      assert.equal(await client.evaluate("document.querySelectorAll('.movie-scene textarea').length"), 1);
+      await client.evaluate("document.querySelectorAll('.movie-details .movie-scene-actions button')[1].click();void 0");
+      await client.until("document.querySelector('.movie-material:last-child').getAttribute('aria-pressed')==='true' && document.querySelector('.movie-scene textarea').value==='Grid first'");
+      await client.evaluate("document.querySelectorAll('.movie-details .movie-scene-actions button')[2].click();void 0");
+      await client.until("document.querySelectorAll('.movie-material').length===1 && document.querySelector('.movie-scene textarea').value==='Grid second'");
       // Long library filenames must not widen the grid; scene actions remain reachable.
       await client.evaluate("{const option=document.createElement('option');option.textContent='GPT Image 1 Mini · '+ 'long-filename-'.repeat(20)+'.png';document.querySelectorAll('.movie-controls select')[1].append(option);}void 0");
       for (const width of [390, 1024, 1440]) {
@@ -227,6 +246,34 @@ async function main() {
         assert.ok(layout.actionsBottom <= layout.bottom + 1 && layout.bottom <= layout.height + 1, `Scene actions cannot be reached at ${width}: ${JSON.stringify(layout)}`);
       }
       await client.command('Emulation.clearDeviceMetricsOverride');
+      if (process.env.BROWSER_E2E_MOVIE_GRID_ONLY === '1') {
+        // Exercise the shipped scoped CSS in both system motion modes. A
+        // persistent probe avoids racing the completion of small thumbnails.
+        await client.evaluate("{const root=document.querySelector('.movie-material-thumbnail');const probe=document.createElement('span');for(const attr of root.attributes)if(attr.name.startsWith('data-v-'))probe.setAttribute(attr.name,attr.value);probe.className='movie-thumbnail-spinner';probe.id='movie-spinner-probe';root.append(probe);}void 0");
+        for (const motion of ['no-preference', 'reduce']) {
+          await client.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motion }] });
+          const rotates = await client.evaluate("(async()=>{const el=document.querySelector('#movie-spinner-probe');const first=getComputedStyle(el).transform;await new Promise(resolve=>setTimeout(resolve,200));return getComputedStyle(el).animationPlayState==='running' && getComputedStyle(el).transform!==first;})()");
+          assert.equal(rotates, true, `Thumbnail spinner rotates with motion=${motion}`);
+        }
+        await client.command('Emulation.setEmulatedMedia', { features: [] });
+        await client.evaluate("document.querySelector('#movie-spinner-probe').remove();void 0");
+        await client.until("document.querySelector('.movie-draft-status').textContent.includes('сохранён') || document.querySelector('.movie-draft-status').textContent.includes('saved')");
+        await client.command('Page.reload', { ignoreCache: true });
+        await client.until("document.querySelector('.movie-scene textarea')?.value==='Grid second' && document.querySelector('.movie-material')?.getAttribute('aria-pressed')==='true'");
+        // Real image and silent video thumbnails, without starting playback.
+        await client.evaluate("(async()=>{const canvas=document.createElement('canvas');canvas.width=64;canvas.height=32;const ctx=canvas.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,64,32);const image=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const stream=canvas.captureStream(10);const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});const chunks=[];recorder.ondataavailable=event=>chunks.push(event.data);const stopped=new Promise(resolve=>recorder.onstop=resolve);recorder.start();const paint=setInterval(()=>{ctx.fillStyle='red';ctx.fillRect(0,0,64,32);},50);await new Promise(resolve=>setTimeout(resolve,1200));clearInterval(paint);recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());const data=new DataTransfer();data.items.add(new File([image],'thumb.png',{type:'image/png'}));data.items.add(new File(chunks,'thumb.webm',{type:'video/webm'}));const input=document.querySelector('.movie-file input');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()");
+        await client.until("document.querySelectorAll('.movie-material').length===3 && !document.querySelector('.movie-controls').disabled");
+        await client.evaluate("document.querySelector('.movie-material:last-child').scrollIntoView();void 0");
+        await client.until("Array.from(document.querySelectorAll('.movie-material-thumbnail img')).filter(img=>img.complete && img.naturalWidth>0).length===2");
+        assert.equal(await client.evaluate("document.querySelector('.movie-material:last-child .movie-material-thumbnail img').src.startsWith('data:image/jpeg')"), true);
+        assert.equal(await client.evaluate("document.querySelector('.movie-material:last-child .movie-material-thumbnail img').naturalWidth<=320"), true);
+        assert.equal(await client.evaluate("document.querySelectorAll('.movie-thumbnail-play').length"), 1);
+        await client.evaluate("document.querySelectorAll('.movie-material-thumbnail img')[0].dispatchEvent(new Event('error'));void 0");
+        await client.until("document.querySelectorAll('.movie-material')[1].querySelector('.movie-material-icon') && document.querySelectorAll('.movie-material-thumbnail img').length===1");
+        console.log('Movie material grid passed: selection, edit, reorder, delete, responsive layout and draft restore');
+        console.log('Movie thumbnails passed: photo, bounded video still and icon fallback');
+        return;
+      }
       await client.evaluate("document.querySelector('.movie-editor').scrollTop=0;void 0");
       await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-scene textarea').value='Remotion тест';document.querySelector('.movie-scene textarea').dispatchEvent(new Event('input',{bubbles:true}));}void 0");
       await client.evaluate("document.querySelector('.movie-render').click();void 0");
@@ -241,6 +288,7 @@ async function main() {
       assert.deepEqual([rendered.width, rendered.height], [720, 1280]);
       assert.ok(rendered.size > 1000);
       assert.ok(Math.abs(rendered.duration - 1) < 0.1);
+      await saveMovieArtifact(client, '.movie-download', 'export-title.mp4');
       await client.evaluate("window.__nativeDisplayCapture=navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getDisplayMedia=async options=>{window.__lastPreviewCapture=await window.__nativeDisplayCapture(options);return window.__lastPreviewCapture;};document.querySelector('.movie-record-preview').click();void 0");
       await client.until("Boolean(document.querySelector('.movie-preview-download, .movie-editor .form-error')) && !document.querySelector('.movie-controls').disabled");
       assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
@@ -248,6 +296,8 @@ async function main() {
       assert.ok(recorded.size > 1000);
       assert.ok(recorded.height > recorded.width, `Only the portrait composition is captured: ${JSON.stringify(recorded)}`);
       assert.ok(recorded.filename.endsWith(recorded.type.startsWith('video/mp4') ? '.mp4' : '.webm'));
+      await saveMovieArtifact(client, '.movie-preview-download', recorded.type.startsWith('video/mp4') ? 'preview-title.mp4' : 'preview-title.webm');
+      assert.equal(await client.evaluate("(async()=>{const v=document.createElement('video');v.src=document.querySelector('.movie-preview-download').href;await new Promise((resolve,reject)=>{v.onloadedmetadata=resolve;v.onerror=reject;});if(!Number.isFinite(v.duration)||v.duration<=0)throw new Error('Missing finalized duration');const t=v.duration*0.6;const seeked=new Promise((resolve,reject)=>{v.onseeked=resolve;v.onerror=reject;});v.currentTime=t;await seeked;return Math.abs(v.currentTime-t)<0.1;})()"), true);
       assert.equal(await client.evaluate("window.__lastPreviewCapture.getTracks().every(track=>track.readyState==='ended')"), true);
       await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='5';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
       await client.until("!document.querySelector('.movie-preview-download')");
@@ -260,12 +310,12 @@ async function main() {
       await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
       // Real locally uploaded image + previously rendered video and PCM audio.
       await client.evaluate("(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const ctx=canvas.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,32,32);const image=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const data=new DataTransfer();data.items.add(new File([image],'test.png',{type:'image/png'}));data.items.add(new File([window.__movieBlob],'test.mp4',{type:'video/mp4'}));const input=document.querySelector('.movie-file input');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));const buffer=new ArrayBuffer(44+48000*2);const view=new DataView(buffer);function text(at,value){for(let i=0;i<value.length;i++)view.setUint8(at+i,value.charCodeAt(i));}text(0,'RIFF');view.setUint32(4,buffer.byteLength-8,true);text(8,'WAVEfmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,48000,true);view.setUint32(28,96000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,96000,true);for(let i=0;i<48000;i++)view.setInt16(44+i*2,Math.sin(i*440*2*Math.PI/48000)*5000,true);const audio=new DataTransfer();audio.items.add(new File([buffer],'music.wav',{type:'audio/wav'}));const audioInput=document.querySelector('input[accept=\"audio/*\"]');audioInput.files=audio.files;audioInput.dispatchEvent(new Event('change',{bubbles:true}));})()");
-      await client.until("document.querySelectorAll('.movie-scene').length===3");
+      await client.until("document.querySelectorAll('.movie-material').length===3");
       await client.until("!document.querySelector('.movie-controls').disabled");
-      const fullClipSeconds = await client.evaluate("window.__movieFullSeconds=Number(document.querySelectorAll('.movie-scene input[type=number]')[2].value)");
+      const fullClipSeconds = await client.evaluate("window.__movieFullSeconds=Number(document.querySelector('.movie-scene input[type=number]').value)");
       assert.ok(Math.abs(fullClipSeconds - rendered.duration) <= 1 / 30, 'Imported clip keeps its measured duration to the nearest frame');
-      await client.evaluate("{const el=document.querySelectorAll('.movie-scene input[type=number]')[2];el.value='0.5';el.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-full-clip').click();}void 0");
-      await client.until("!document.querySelector('.movie-controls').disabled && Number(document.querySelectorAll('.movie-scene input[type=number]')[2].value)===window.__movieFullSeconds");
+      await client.evaluate("{const el=document.querySelector('.movie-scene input[type=number]');el.value='0.5';el.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-full-clip').click();}void 0");
+      await client.until("!document.querySelector('.movie-controls').disabled && Number(document.querySelector('.movie-scene input[type=number]').value)===window.__movieFullSeconds");
       // A failed source read must retain a safe, useful cause and allow retry.
       await client.evaluate("window.__renderFetch=window.fetch;window.fetch=(input,init)=>/\\/api\\/(content|sources)\\//.test(String(input))?Promise.reject(new TypeError('Failed to fetch private-source?token=secret')):window.__renderFetch(input,init);document.querySelector('.movie-render').click();void 0");
       await client.until("document.querySelector('.movie-editor .form-error')?.textContent.includes('media:NETWORK') && !document.querySelector('.movie-render').disabled");
@@ -274,7 +324,10 @@ async function main() {
       // Slow full downloads are allowed; per-frame Range reads and duplicate
       // source requests are forbidden while exporting the prepared local files.
       await client.evaluate("window.__exportReads={};window.fetch=async(input,init)=>{if(document.querySelector('.movie-controls').disabled && /\\/api\\/(content|sources)\\//.test(String(input))){const key=String(input);window.__exportReads[key]=(window.__exportReads[key]||0)+1;if(window.__exportReads[key]>1 || new Headers(init?.headers).has('Range'))throw new Error('Renderer attempted another network source read');await new Promise(resolve=>setTimeout(resolve,2000));}return window.__renderFetch(input,init);};void 0");
-      await client.evaluate("for(const el of document.querySelectorAll('.movie-scene input[type=number]')){el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();void 0");
+      // Simulate a WebCodecs decoder failure after support probing. Recovery
+      // must use native video frames, keep audio and reuse downloaded sources.
+      await client.evaluate("{const decode=VideoDecoder.prototype.decode;VideoDecoder.prototype.decode=function(packet){VideoDecoder.prototype.decode=decode;window.__movieDecoderRecovery=true;throw new Error('Cannot decode video frame');};}void 0");
+      await client.evaluate("(async()=>{for(const tile of document.querySelectorAll('.movie-material')){tile.click();await new Promise(resolve=>setTimeout(resolve,0));const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();})()");
       await client.until("/Подготовка файлов|Preparing files/.test(document.querySelector('.movie-output [role=status]')?.textContent || '')");
       for (let attempt = 0; attempt < 600; attempt++) {
         if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
@@ -283,17 +336,22 @@ async function main() {
       assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
       await client.until("document.querySelector('.movie-download')");
       const finalVideo = await client.evaluate("(async()=>{const blob=await(await fetch(document.querySelector('.movie-download').href)).blob();const video=document.createElement('video');video.src=URL.createObjectURL(blob);await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});video.currentTime=0.99;await new Promise(resolve=>video.onseeked=resolve);const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0);const pixel=Array.from(ctx.getImageData(canvas.width/2,canvas.height/2,1,1).data);const context=new AudioContext();const audio=await context.decodeAudioData(await blob.arrayBuffer());const audible=audio.getChannelData(0).some(sample=>Math.abs(sample)>0.01);await context.close();return {duration:video.duration,size:blob.size,pixel,audible};})()");
+      assert.equal(await client.evaluate('window.__movieDecoderRecovery'), true);
+      const recoveredFrameDifference = await client.evaluate("(async()=>{async function pixels(src,time){const v=document.createElement('video');v.src=src;await new Promise((resolve,reject)=>{v.onloadeddata=resolve;v.onerror=reject;});const seeked=new Promise(resolve=>v.onseeked=resolve);v.currentTime=time;await seeked;const c=document.createElement('canvas');c.width=36;c.height=64;const ctx=c.getContext('2d');ctx.drawImage(v,0,0,36,64);return ctx.getImageData(0,0,36,64).data;}const expected=await pixels(URL.createObjectURL(window.__movieBlob),0.6);const actual=await pixels(document.querySelector('.movie-download').href,1.6);return actual.reduce((sum,value,index)=>sum+Math.abs(value-expected[index]),0)/actual.length;})()");
+      assert.ok(recoveredFrameDifference < 15, `Native recovery retains video pixels: ${recoveredFrameDifference}`);
       assert.ok(Math.abs(finalVideo.duration - 2) < 0.2);
       assert.ok(finalVideo.size > rendered.size);
       assert.ok(finalVideo.pixel[0] > 200 && finalVideo.pixel[1] < 30 && finalVideo.pixel[2] < 30);
       assert.equal(finalVideo.audible, true);
       assert.deepEqual(await client.evaluate("Object.values(window.__exportReads)"), [1, 1, 1]);
       await client.evaluate("window.fetch=window.__renderFetch;void 0");
+      await saveMovieArtifact(client, '.movie-download', 'export-mixed.mp4');
       const sourceHeaders = { Cookie: `media-session=${token}`, Origin: origin, 'X-Media-Client': 'web', 'X-Media-User': accountId, 'Content-Type': 'application/json' };
       await client.evaluate("document.querySelector('.movie-record-preview').click();void 0");
       await client.until("Boolean(document.querySelector('.movie-preview-download, .movie-editor .form-error')) && !document.querySelector('.movie-controls').disabled");
       assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
       assert.equal(await client.evaluate("(async()=>{const b=await(await fetch(document.querySelector('.movie-preview-download').href)).blob();const context=new AudioContext();const audio=await context.decodeAudioData(await b.arrayBuffer());const audible=audio.getChannelData(0).some(sample=>Math.abs(sample)>0.01);await context.close();return audible;})()"), true);
+      await saveMovieArtifact(client, '.movie-preview-download', await client.evaluate("document.querySelector('.movie-preview-download').download.endsWith('.mp4') ? 'preview-mixed.mp4' : 'preview-mixed.webm'"));
       assert.equal((await fetch(origin + '/api/movie/sources/file', { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ id: randomUUID() }) })).status, 404);
       assert.equal((await fetch(origin + '/api/movie/sources/list', { method: 'POST', headers: { ...sourceHeaders, Origin: 'https://other.example' }, body: JSON.stringify({ url: 'https://disk.yandex.ru/d/test' }) })).status, 403);
       assert.equal((await fetch(origin + '/api/movie/sources/list', { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ url: 'https://127.0.0.1/private.png' }) })).status, 400);
@@ -303,9 +361,9 @@ async function main() {
         if(input==='/api/movie/sources/file') {const id=JSON.parse(init.body).id;if(id==='failed')return new Response(JSON.stringify({error:'Файл недоступен'}),{status:422,headers:{'Content-Type':'application/json'}});if(id==='clip')return new Response(window.__movieBlob,{headers:{'Content-Type':'video/mp4'}});const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;return new Response(await new Promise(resolve=>canvas.toBlob(resolve,'image/png')),{headers:{'Content-Type':'image/png'}});}
         return window.__sourceFetch(input,init);
       };const link=document.querySelector('.movie-source-import input');link.value='https://disk.yandex.ru/d/test';link.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.movie-source-import').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));void 0`);
-      await client.until("document.querySelectorAll('.movie-scene').length===5 && !document.querySelector('.movie-source-import input').disabled");
+      await client.until("document.querySelectorAll('.movie-material').length===5 && !document.querySelector('.movie-source-import input').disabled");
       assert.ok(await client.evaluate("document.querySelector('.movie-source-import [role=status]').textContent.includes('2')"));
-      assert.equal(await client.evaluate("document.querySelectorAll('.movie-scene')[3].querySelector('strong').textContent.includes('фото.png')"), true);
+      assert.equal(await client.evaluate("document.querySelectorAll('.movie-material')[3].querySelector('.movie-material-name').textContent.includes('фото.png')"), true);
       await client.evaluate(`window.fetch=(input,init)=>{
         if(input==='/api/movie/sources/list')return Promise.resolve(new Response(JSON.stringify({result:{files:[{id:'waiting',name:'waiting.png',type:'image/png',size:9}],skipped:0,truncated:false}}),{headers:{'Content-Type':'application/json'}}));
         if(input==='/api/movie/sources/file')return new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));return window.__sourceFetch(input,init);
@@ -313,23 +371,24 @@ async function main() {
       await client.until("document.querySelector('.movie-source-import button[type=button]')");
       await client.evaluate("document.querySelector('.movie-source-import button[type=button]').click();void 0");
       await client.until("!document.querySelector('.movie-source-import input').disabled");
-      assert.equal(await client.evaluate("document.querySelectorAll('.movie-scene').length"), 5);
+      assert.equal(await client.evaluate("document.querySelectorAll('.movie-material').length"), 5);
       await client.evaluate("window.fetch=window.__sourceFetch;void 0");
-      const beforeAi = await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)");
+      const beforeAi = await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)");
       await client.until("document.querySelector('.movie-scenario select').options.length>0");
       await client.evaluate("{const el=document.querySelector('.movie-scenario textarea');el.value='Сделай короткий ролик про отпуск';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
       await client.until("!document.querySelector('.movie-ai-generate').disabled");
       await client.evaluate("document.querySelector('.movie-ai-generate').click();void 0");
-      await client.until("document.querySelectorAll('.movie-scene').length===4 && document.querySelector('.movie-ai-undo') && !document.querySelector('.movie-ai-generate').disabled");
+      await client.until("document.querySelectorAll('.movie-material').length===4 && document.querySelector('.movie-ai-undo') && !document.querySelector('.movie-ai-generate').disabled");
+      await client.evaluate("document.querySelector('.movie-material').click();void 0");
       assert.equal(await client.evaluate("document.querySelector('.movie-scene textarea').value"), 'Отпуск');
-      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene input[type=number]')).map(el=>el.value)"), ['1', '1', '1', '1']);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-material-meta')).map(el=>el.textContent.match(/(?:· )([0-9.]+)/)[1])"), ['1', '1', '1', '1']);
       await client.evaluate("document.querySelector('.movie-ai-undo').click();void 0");
-      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), beforeAi);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)"), beforeAi);
       // A billed text result with invalid material references must not mutate the montage.
       await client.evaluate("{const el=document.querySelector('.movie-scenario textarea');el.value='INVALID_PLAN_TEST';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-ai-generate').click();void 0");
       await client.until("document.querySelector('.movie-scenario .form-error') && !document.querySelector('.movie-ai-generate').disabled");
       assert.match(await client.evaluate("document.querySelector('.movie-scenario .form-error').textContent"), /некорректный план|invalid plan/);
-      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), beforeAi);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)"), beforeAi);
       const aiRecords = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='codex'", [accountId])).rows;
       assert.equal(aiRecords.length, 2);
       assert.ok(aiRecords.every(row => row.data.kind === 'text' && row.data.state === 'success'));
@@ -337,25 +396,25 @@ async function main() {
       await client.until("document.querySelector('.movie-ai-stop')");
       await client.evaluate("document.querySelector('.movie-ai-stop').click();void 0");
       await client.until("!document.querySelector('.movie-ai-generate').disabled");
-      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), beforeAi);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)"), beforeAi);
       await client.evaluate("document.querySelector('.movie-ai-generate').click();void 0");
-      await client.until("document.querySelectorAll('.movie-scene').length===4 && !document.querySelector('.movie-ai-generate').disabled");
+      await client.until("document.querySelectorAll('.movie-material').length===4 && !document.querySelector('.movie-ai-generate').disabled");
       assert.equal(Number((await pool.query("SELECT count(*) FROM media_records WHERE account_id=$1 AND namespace='codex'", [accountId])).rows[0].count), 3);
       await client.evaluate("document.querySelector('.movie-ai-undo').click();void 0");
       assert.equal(await client.evaluate("(async()=>{const r=await fetch('/api/movie/errors',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:JSON.stringify({code:'ARBITRARY_CODE'})});return r.status;})()"), 400);
       assert.equal(await client.evaluate("(async()=>{const r=await fetch('/api/movie/errors',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:JSON.stringify({code:'MOVIE_RENDER_FAILED',failure:'https://private.test/secret'})});return r.status;})()"), 400);
       await client.until("/Черновик сохранён|Draft saved/.test(document.querySelector('.movie-draft-status')?.textContent || '')");
-      const savedScenes = await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)");
+      const savedScenes = await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)");
       await client.evaluate("document.querySelector('.sidebar-history-link').click();void 0");
       await client.until("location.pathname==='/app/history'");
       await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
       await client.until("location.pathname==='/app/movie' && Boolean(document.querySelector('.movie-scene'))");
-      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), savedScenes);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)"), savedScenes);
       assert.equal((await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='movie-drafts'", [accountId])).rows[0].data.scenes.length, savedScenes.length);
       await client.evaluate("window.__movieBeforeReload=true;void 0");
       await client.command('Page.reload');
       await client.until("!window.__movieBeforeReload && document.readyState==='complete' && /Черновик сохранён|Draft saved/.test(document.querySelector('.movie-draft-status')?.textContent || '') && Boolean(document.querySelector('.movie-scene'))");
-      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-scene strong')).map(el=>el.textContent)"), savedScenes);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.movie-material-name')).map(el=>el.textContent)"), savedScenes);
       assert.equal(await client.evaluate("document.querySelector('.movie-scenario textarea').value"), 'STOP_PLAN_TEST');
       const persistedDraft = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='movie-drafts'", [accountId])).rows[0].data;
       assert.ok(persistedDraft.scenes.filter(scene=>scene.kind!=='title').every(scene=>scene.src.startsWith('/api/') && !scene.src.includes('blob:')));
@@ -364,9 +423,9 @@ async function main() {
       // Match the reported timeline size after restoring persistent sources.
       for (let index = 0; index < 11; index++) {
         await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
-        await client.until(`document.querySelectorAll('.movie-scene').length===${6 + index}`);
+        await client.until(`document.querySelectorAll('.movie-material').length===${6 + index}`);
       }
-      await client.evaluate("Array.from(document.querySelectorAll('.movie-scene input[type=number]')).forEach((el,index)=>{el.value=[2,4].includes(index)?'1':'6.5';el.dispatchEvent(new Event('input',{bubbles:true}));});document.querySelector('.movie-render').click();void 0");
+      await client.evaluate("(async()=>{const tiles=Array.from(document.querySelectorAll('.movie-material'));for(let index=0;index<tiles.length;index++){tiles[index].click();await new Promise(resolve=>setTimeout(resolve,0));const el=document.querySelector('.movie-scene input[type=number]');el.value=[2,4].includes(index)?'1':'6.5';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();})()");
       for (let attempt = 0; attempt < 2400; attempt++) {
         if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
         await sleep(100);
@@ -375,6 +434,7 @@ async function main() {
       await client.until("document.querySelector('.movie-download')");
       const longDuration = await client.evaluate("(async()=>{const video=document.createElement('video');video.src=document.querySelector('.movie-download').href;await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject;});return video.duration;})()");
       assert.ok(Math.abs(longDuration - 85.5) < 0.1, `16-scene export duration: ${longDuration}`);
+      await saveMovieArtifact(client, '.movie-download', 'export-16-scenes.mp4');
       console.log('Remotion E2E passed: MP4, import/cancel, AI workflow, draft storage, navigation and reload with readable media');
       return;
     }

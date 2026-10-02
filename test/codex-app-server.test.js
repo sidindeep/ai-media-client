@@ -302,6 +302,8 @@ test('App-server sandbox and feature policy is per-thread, with no inherited use
   assert.equal(text.sandbox, 'read-only'); assert.equal(text.approvalPolicy, 'never');
   assert.equal(text.ephemeral, true); assert.equal(text.config['features.shell_tool'], false);
   assert.equal(text.config['features.image_generation'], false);
+  assert.equal(text.config.web_search, 'live');
+  assert.equal(image.config.web_search, 'disabled');
   assert.equal(image.config['features.image_generation'], true); assert.equal(image.serviceTier, 'fast');
   const h = await harness(t);
   await fs.writeFile(path.join(h.home, 'config.toml'), '[mcp_servers.untrusted]\ncommand="bad"');

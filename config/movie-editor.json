@@ -4,7 +4,7 @@
   "maxSeconds": 600,
   "maxStillSeconds": 30,
   "transitionFrames": 15,
-  "renderTimeoutMs": 120000,
+  "renderTimeoutMs": 30000,
   "mediaCacheBytes": 268435456,
   "sourceTimeoutMs": 180000,
   "maxFileBytes": 104857600

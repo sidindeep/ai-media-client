@@ -10,6 +10,7 @@ import { checkMovieMedia } from './media-check.mjs';
 import { exportFailure, MovieExportError, type ExportStage } from './export-error.mjs';
 import { MovieMediaError } from './media-check.mjs';
 import { prepareMovieMedia } from './prepare-media.mjs';
+import { renderWithRecovery } from './render-recovery.mjs';
 import limits from '../../../config/movie-editor.json' with { type: 'json' };
 export { MovieExportError } from './export-error.mjs';
 export { MovieMediaError } from './media-check.mjs';
@@ -41,20 +42,21 @@ export function mountPreview(element: HTMLElement, onError: () => void = () => {
   };
 }
 export async function exportMovie(props: MovieProps, width: number, height: number, signal: AbortSignal, onProgress: (progress: number) => void,
-  onPreparationProgress: (completed: number, total: number) => void = () => {}) {
+  onPreparationProgress: (completed: number, total: number) => void = () => {}, onRecovery: () => void = () => {}) {
   let stage: ExportStage = 'support';
   let prepared: Awaited<ReturnType<typeof prepareMovieMedia>> | undefined;
   try {
     const durationInFrames = timeline(props.scenes).durationInFrames;
     const muted = !props.music && !props.scenes.some(scene => scene.kind === 'video' && !props.muteClips);
-    const options = { width, height, container: 'mp4' as const, videoCodec: 'h264' as const, muted };
+    const options = { width, height, container: 'mp4' as const, videoCodec: 'h264' as const, hardwareAcceleration: 'prefer-software' as const, muted };
     const support = await canRenderMediaOnWeb(options);
     if (!support.canRender) throw new Error('BROWSER_UNSUPPORTED');
     stage = 'media';
     prepared = await prepareMovieMedia(props, signal, onPreparationProgress);
     await checkMovieMedia(prepared.props, signal);
     stage = 'render';
-    const result = await renderMediaOnWeb({ ...options, composition: { id: 'ai-media-movie', component: Movie, defaultProps: prepared.props, width, height, fps: FPS, durationInFrames }, inputProps: prepared.props, signal, mediaCacheSizeInBytes: limits.mediaCacheBytes, delayRenderTimeoutInMilliseconds: limits.renderTimeoutMs, onProgress: ({ progress }) => onProgress(progress) });
+    const localProps = prepared.props;
+    const result = await renderWithRecovery(nativeVideo => renderMediaOnWeb({ ...options, keyframeIntervalInSeconds: 1, videoBitrate: 5_000_000, audioBitrate: 128_000, composition: { id: 'ai-media-movie', component: Movie, defaultProps: localProps, width, height, fps: FPS, durationInFrames }, inputProps: { ...localProps, nativeVideo }, signal, mediaCacheSizeInBytes: limits.mediaCacheBytes, delayRenderTimeoutInMilliseconds: limits.renderTimeoutMs, onProgress: ({ progress }) => onProgress(progress) }), signal, props.scenes.some(scene => scene.kind === 'video'), reason => ['render:TIMEOUT', 'render:DECODE'].includes(exportFailure(reason, 'render')), () => { onProgress(0); onRecovery(); });
     stage = 'output';
     return await result.getBlob();
   } catch (reason) {

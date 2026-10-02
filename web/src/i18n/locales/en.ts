@@ -2,6 +2,13 @@ import type {
  TranslationKey } from './ru';
 
 export const en = {
+  'movie.materials': 'Materials',
+  'movie.details': 'Selected material',
+  'movie.selectMaterial': 'Select a material in the grid to open its settings.',
+  'movie.kind.image': 'Photo',
+  'movie.kind.video': 'Video',
+  'movie.kind.text': 'Text',
+  'movie.kind.file': 'File',
   'movie.fullClip': 'Full clip',
   'movie.durationFailed': 'Could not read the video duration. Check the file format and availability; the video has not been added or trimmed.',
   'movie.clipTooLong': 'The video exceeds 10 minutes. Prepare a shorter clip; it is not trimmed automatically.',
@@ -35,12 +42,13 @@ export const en = {
   'movie.export': "Render MP4",
   'movie.recordPreview': 'Download preview',
   'movie.recordDownload': 'Download preview recording',
-  'movie.recordNote': 'Recording plays from start to finish in real time. Select this tab in the browser dialog and share its audio. Keep the preview visible. Format: MP4 if supported, otherwise WebM.',
+  'movie.recordNote': 'Recording runs in real time (up to 90%), then the file is finalized for seeking. Select this tab and share its audio. Keep the preview visible. Download starts after finalization: MP4, otherwise WebM.',
   'movie.recordUnsupported': 'Preview recording requires Chrome or Edge with tab recording and cropping support.',
   'movie.recordTab': 'Select this application tab. Recording the entire screen or another tab is not supported.',
   'movie.recordAudio': 'Enable tab audio sharing in the browser dialog and retry.',
   'movie.recordFailed': 'The preview recording did not finish. Check permission to record this tab and retry.',
   'movie.preparing': 'Preparing files: {current} of {total}',
+  'movie.recovering': 'Rebuilding after a video failure:',
   'movie.cancel': "Cancel",
   'movie.download': "Download MP4",
   'movie.empty': "Add a title card, your files or a generated result.",

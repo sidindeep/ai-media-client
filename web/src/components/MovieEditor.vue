@@ -6,19 +6,33 @@ import { FORMATS, FPS, MAX_SCENES, MAX_SECONDS, MAX_STILL_SECONDS, timeline, typ
 import type { mountPreview } from '../remotion/bridge';
 import { listMovieSources, downloadMovieSource, reportMovieError, uploadSource, getMovieDraft, saveMovieDraft } from '../api/client';
 import MovieScenario from './MovieScenario.vue';
+import MovieMaterialThumbnail from './MovieMaterialThumbnail.vue';
 
 const studio = useStudioStore();
 const { t } = useI18n();
 const scenes = ref<Scene[]>([]);
+const selectedSceneId = ref('');
+const selectedSceneIndex = computed(() => scenes.value.findIndex(scene => scene.id === selectedSceneId.value));
+const selectedScene = computed(() => scenes.value[selectedSceneIndex.value]);
+watch(() => scenes.value.map(scene => scene.id), (ids, previous = []) => {
+  if (!ids.includes(selectedSceneId.value)) {
+    const index = Math.max(0, previous.indexOf(selectedSceneId.value));
+    selectedSceneId.value = ids[Math.min(index, ids.length - 1)] || '';
+  }
+}, { flush: 'sync' });
+function sceneLabel(scene: Scene) { return scene.name || scene.title || t('movie.title'); }
+function sceneType(scene: Scene) { return t(`movie.kind.${scene.kind === 'title' ? 'text' : scene.kind === 'image' ? 'image' : scene.kind === 'video' ? 'video' : 'file'}`); }
 const format = ref<keyof typeof FORMATS>('portrait');
 const background = ref('#151522');
 const muteClips = ref(false);
 const music = ref('');
 const musicName = ref('');
 const preview = ref<HTMLElement>();
+const materialVideo = ref<HTMLVideoElement>();
 const busy = ref(false);
 const progress = ref(0);
 const preparing = ref('');
+const recovering = ref(false);
 const error = ref('');
 const download = ref('');
 const previewDownload = ref('');
@@ -39,6 +53,7 @@ const importing = ref(false);
 const aiBusy = ref(false);
 const previousScenes = ref<Scene[]>();
 const editorLocked = computed(() => !draftReady.value || conflict.value || busy.value || importing.value || aiBusy.value);
+watch(editorLocked, locked => { if (locked) materialVideo.value?.pause(); }, { flush: 'sync' });
 const importStatus = ref('');
 const importFailures = ref<string[]>([]);
 let importController: AbortController | undefined;
@@ -56,7 +71,9 @@ const library = computed(() => studio.history.flatMap(record => record.state ===
   }) : []));
 function add(scene: Omit<Scene, 'id'>) {
   if (scenes.value.length >= MAX_SCENES) { error.value = t('movie.limit'); return; }
-  scenes.value.push({ ...scene, id: crypto.randomUUID() });
+  const id = crypto.randomUUID();
+  scenes.value.push({ ...scene, id });
+  selectedSceneId.value = id;
 }
 function addTitle() { add({ kind: 'title', title: t('movie.defaultTitle'), seconds: 3 }); }
 async function sourceSeconds(kind: string, source: string | Blob) {
@@ -123,7 +140,9 @@ function undoScenario() {
 function move(index: number, offset: number) {
   const other = index + offset;
   if (other < 0 || other >= scenes.value.length) return;
-  [scenes.value[index], scenes.value[other]] = [scenes.value[other]!, scenes.value[index]!];
+  const reordered = [...scenes.value];
+  [reordered[index], reordered[other]] = [reordered[other]!, reordered[index]!];
+  scenes.value = reordered;
 }
 function clearMusic() { release(music.value); music.value = ''; musicName.value = ''; }
 async function importSources() {
@@ -202,7 +221,7 @@ async function downloadPreview() {
 }
 async function render() {
   if (editorLocked.value || !plan.value || !bridge) return;
-  busy.value = true; error.value = ''; progress.value = 0;
+  busy.value = true; error.value = ''; progress.value = 0; recovering.value = false;
   release(download.value); download.value = '';
   controller = new AbortController();
   player?.dispose(); player = undefined;
@@ -210,7 +229,8 @@ async function render() {
     const [width, height] = FORMATS[format.value];
     const blob = await bridge.exportMovie(movieProps.value, width, height, controller.signal,
       value => { preparing.value = ''; progress.value = Math.round(value * 100); },
-      (completed, total) => { preparing.value = t('movie.preparing', { current: completed, total }); });
+      (completed, total) => { preparing.value = t('movie.preparing', { current: completed, total }); },
+      () => { recovering.value = true; });
     if (alive && !controller.signal.aborted) { download.value = own(blob); progress.value = 100; }
   } catch (reason) {
     if (alive && !controller.signal.aborted) {
@@ -222,7 +242,7 @@ async function render() {
       if (failure) error.value += ` (${failure})`;
       if (!unsupported) bridge.reportMovieError('MOVIE_RENDER_FAILED', failure);
     }
-  } finally { if (alive) { busy.value = false; preparing.value = ''; void updatePreview(); } }
+  } finally { if (alive) { busy.value = false; preparing.value = ''; recovering.value = false; void updatePreview(); } }
 }
 async function loadDraft() {
   draftStatus.value = t('movie.draftSaving'); error.value = '';
@@ -303,14 +323,24 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
         </fieldset>
         <p v-if="!scenes.length" class="movie-empty">{{ t('movie.empty') }}</p>
         <fieldset :disabled="editorLocked" class="movie-scenes">
-          <article v-for="(scene, index) in scenes" :key="scene.id" class="movie-scene">
-            <strong>{{ index + 1 }} · {{ scene.name || t('movie.title') }}</strong>
-            <label v-if="scene.kind !== 'title'">{{ t('movie.aiDescription') }}<input v-model="scene.name" type="text" maxlength="255"></label>
-            <label>{{ t('movie.caption') }}<textarea v-model="scene.title" maxlength="300" rows="2"></textarea></label>
-            <label>{{ t('movie.seconds') }}<input v-model.number="scene.seconds" type="number" :min="scene.kind === 'video' ? 1 / FPS : 1" :max="scene.kind === 'video' ? MAX_SECONDS : MAX_STILL_SECONDS" :step="scene.kind === 'video' ? 'any' : 0.5"></label>
-            <button v-if="scene.kind === 'video'" type="button" class="movie-full-clip" @click="fullClip(scene)">{{ t('movie.fullClip') }}</button>
-            <div class="movie-scene-actions"><button type="button" :disabled="index === 0" :aria-label="t('movie.up')" @click="move(index, -1)">↑</button><button type="button" :disabled="index === scenes.length - 1" :aria-label="t('movie.down')" @click="move(index, 1)">↓</button><button type="button" @click="remove(index)">{{ t('movie.remove') }}</button></div>
-          </article>
+          <legend>{{ t('movie.materials') }} · {{ scenes.length }}</legend>
+          <div class="movie-material-grid">
+            <button v-for="(scene, index) in scenes" :key="scene.id" type="button" class="movie-material"
+              :class="{ 'is-selected': scene.id === selectedSceneId }" :aria-pressed="scene.id === selectedSceneId"
+              aria-controls="movie-scene-details" :title="sceneLabel(scene)" @click="selectedSceneId = scene.id">
+              <span class="movie-material-number">{{ index + 1 }}</span>
+              <MovieMaterialThumbnail :kind="scene.kind" :src="scene.src">
+              <svg class="movie-material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <g v-if="scene.kind === 'image'"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></g>
+                <g v-else-if="scene.kind === 'video'"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="m16 10 6-4v12l-6-4z"/></g>
+                <g v-else-if="scene.kind === 'title'"><path d="M4 6V3h16v3M12 3v18M8 21h8"/></g>
+                <g v-else><path d="M14 2H5v20h14V7zM14 2v5h5M8 12h8M8 16h8"/></g>
+              </svg>
+              </MovieMaterialThumbnail>
+              <span class="movie-material-name">{{ sceneLabel(scene) }}</span>
+              <span class="movie-material-meta">{{ sceneType(scene) }} · {{ scene.seconds }} {{ t('movie.secondsShort') }}</span>
+            </button>
+          </div>
         </fieldset>
       </div>
       <div class="movie-output">
@@ -321,11 +351,26 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
         <button type="button" class="movie-render" :disabled="editorLocked || !plan || !bridge" @click="render">{{ t('movie.export') }}</button>
         <button type="button" class="movie-record-preview" :disabled="editorLocked || !plan || !bridge" @click="downloadPreview">{{ t('movie.recordPreview') }}</button>
         <p class="movie-note">{{ t('movie.recordNote') }}</p>
-        <div v-if="busy" role="status"><progress :value="progress" max="100"></progress> {{ preparing || `${progress}%` }} <button type="button" @click="controller?.abort()">{{ t('movie.cancel') }}</button></div>
+        <div v-if="busy" role="status"><progress :value="progress" max="100"></progress> {{ preparing || `${recovering ? t('movie.recovering') + ' ' : ''}${progress}%` }} <button type="button" @click="controller?.abort()">{{ t('movie.cancel') }}</button></div>
         <a v-if="download" class="movie-download" :href="download" download="ai-media-movie.mp4">{{ t('movie.download') }}</a>
         <a v-if="previewDownload" class="movie-preview-download" :href="previewDownload" :download="`ai-media-preview.${previewExtension}`">{{ t('movie.recordDownload') }} ({{ previewExtension.toUpperCase() }})</a>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <p class="movie-note">{{ t('movie.note') }}</p>
+        <fieldset id="movie-scene-details" :disabled="editorLocked" class="movie-details">
+          <legend>{{ t('movie.details') }}</legend>
+          <article v-if="selectedScene" :key="selectedScene.id" class="movie-scene">
+            <strong>{{ selectedSceneIndex + 1 }} · {{ sceneLabel(selectedScene) }}</strong>
+            <span class="movie-note">{{ sceneType(selectedScene) }}</span>
+            <img v-if="selectedScene.kind === 'image' && selectedScene.src" class="movie-source-preview" :src="selectedScene.src" :alt="sceneLabel(selectedScene)">
+            <video v-else-if="selectedScene.kind === 'video' && selectedScene.src" ref="materialVideo" class="movie-source-preview" :src="selectedScene.src" :controls="!editorLocked" preload="metadata" playsinline></video>
+            <label v-if="selectedScene.kind !== 'title'">{{ t('movie.aiDescription') }}<input v-model="selectedScene.name" type="text" maxlength="255"></label>
+            <label>{{ t('movie.caption') }}<textarea v-model="selectedScene.title" maxlength="300" rows="3"></textarea></label>
+            <label>{{ t('movie.seconds') }}<input v-model.number="selectedScene.seconds" type="number" :min="selectedScene.kind === 'video' ? 1 / FPS : 1" :max="selectedScene.kind === 'video' ? MAX_SECONDS : MAX_STILL_SECONDS" :step="selectedScene.kind === 'video' ? 'any' : 0.5"></label>
+            <button v-if="selectedScene.kind === 'video'" type="button" class="movie-full-clip" @click="fullClip(selectedScene)">{{ t('movie.fullClip') }}</button>
+            <div class="movie-scene-actions"><button type="button" :disabled="selectedSceneIndex === 0" :aria-label="t('movie.up')" @click="move(selectedSceneIndex, -1)">↑</button><button type="button" :disabled="selectedSceneIndex === scenes.length - 1" :aria-label="t('movie.down')" @click="move(selectedSceneIndex, 1)">↓</button><button type="button" @click="remove(selectedSceneIndex)">{{ t('movie.remove') }}</button></div>
+          </article>
+          <p v-else class="movie-empty">{{ t('movie.selectMaterial') }}</p>
+        </fieldset>
       </div>
     </div>
   </section>
@@ -336,7 +381,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
 .movie-editor { width:100%; height:100%; min-height:0; min-width:0; overflow-y:auto; padding:0 4px 32px; container:movie / inline-size; scrollbar-width:thin; }
 .movie-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; }
 .movie-layout > div { min-width:0; }
-.movie-controls,.movie-scenes { display:grid; gap:12px; border:0; padding:0; min-width:0; }
+.movie-controls,.movie-scenes,.movie-details { display:grid; gap:12px; border:0; padding:0; min-width:0; }
 .movie-controls label,.movie-scene label { display:grid; gap:6px; }
 .movie-source-import { display:grid; gap:10px; padding:16px; margin-bottom:18px; border:1px solid #7775; border-radius:12px; }
 .movie-source-import label { display:grid; gap:6px; min-width:0; }
@@ -349,6 +394,17 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
 .movie-editor button,.movie-download { padding:10px 14px; border:1px solid #7775; border-radius:8px; background:var(--panel, #242338); color:inherit; cursor:pointer; }
 .movie-editor button:disabled { opacity:.45; cursor:default; }
 .movie-scenes { margin-top:20px; }
+.movie-scenes legend,.movie-details legend { padding:0 0 12px; font-weight:600; }
+.movie-material-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(130px,100%),1fr)); gap:10px; }
+.movie-editor .movie-material { position:relative; display:flex; flex-direction:column; align-items:center; gap:10px; min-width:0; padding:18px 10px 12px; text-align:center; }
+.movie-editor .movie-material.is-selected { border-color:var(--accent,#9691ff); background:color-mix(in srgb,var(--accent,#9691ff) 16%,var(--panel,#171923)); box-shadow:inset 0 0 0 1px var(--accent,#9691ff); }
+.movie-material:focus-visible { outline:2px solid var(--accent,#9691ff); outline-offset:3px; }
+.movie-material-number { position:absolute; top:6px; left:8px; font-size:12px; opacity:.7; }
+.movie-material-icon { width:36px; height:36px; margin:8px 0; flex-shrink:0; }
+.movie-material-name { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.movie-material-meta { font-size:12px; opacity:.7; overflow-wrap:anywhere; }
+.movie-details { margin-top:24px; }
+.movie-source-preview { display:block; width:100%; max-height:240px; object-fit:contain; border-radius:8px; background:#10111b; }
 .movie-scene { display:grid; gap:10px; padding:16px; border:1px solid #7775; border-radius:12px; }
 .movie-scene strong { overflow-wrap:anywhere; }
 .movie-scene-actions { display:flex; flex-wrap:wrap; gap:6px; }
@@ -357,5 +413,5 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
 .movie-render { margin:12px 0; }
 .movie-download { display:block; margin:12px 0; text-align:center; }
 .movie-note,.movie-empty { opacity:.7; font-size:13px; line-height:1.6; }
-@container movie (max-width:700px) { .movie-layout { grid-template-columns:minmax(0,1fr); } .movie-output { grid-row:1; } }
+@container movie (max-width:700px) { .movie-layout { grid-template-columns:minmax(0,1fr); } }
 </style>

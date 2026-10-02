@@ -69,7 +69,7 @@ function createCostRouter({ accounts, apimart, pool, kieUsdPerCredit = policy.ki
           const providerCredits = cost.amountUnits / 1000;
           offer = { providerId: 'kie', modelId: prepared.modelId, priority,
             costUsd: providerCredits * kieUsdPerCredit, providerCredits, usdPerProviderCredit: kieUsdPerCredit,
-            credits: cost.productCredits,
+            credits: cost.productCredits, ...(cost.warning ? { warning: cost.warning } : {}),
             prepared, source: cost.source, tariffVersion: cost.version, costVersion: routingPolicy.version,
             adapterVersion: 'raw-task-v1' };
           if (wallet.balance < cost.productCredits) return { ...offer, unavailable: true, reason: 'Недостаточно кредитов сервиса' };

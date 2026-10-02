@@ -230,7 +230,9 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
       const model = findModel(modelId);
       try {
         const resolved = await resolveNativeProviderQuote(modelId, input, sourceFiles, forceRefresh);
-        const productQuote = { ...resolved.value, source: resolved.source };
+        const productQuote = { ...resolved.value, source: resolved.source,
+          ...(resolved.quote.status ? { status: resolved.quote.status } : {}),
+          ...(resolved.quote.warning ? { warning: resolved.quote.warning } : {}) };
         addProviderDiagnostic('quote', 'ok', `Цена ${model.name}: ${productQuote.credits} кредитов`, Date.now() - started);
         return productQuote;
       } catch (error) {

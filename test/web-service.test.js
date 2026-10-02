@@ -453,6 +453,25 @@ test('media quote falls back to a refreshed official Kie tariff when local and c
   assert.equal(fetches, 2, 'a cache miss refreshes the official Kie list once');
 });
 
+test('Qwen megapixel estimates retain their warning through product and provider quotes', async t => {
+  const dir = await directory();
+  const tariffFetcher = async () => ({ ok: true, async json() { return { code: 200, data: { pages: 1, records: [
+    { modelDescription: 'Qwen Image , text-to-image', creditPrice: '4', creditUnit: 'per megapixel', anchor: 'https://kie.ai/qwen-image' },
+  ] } }; } });
+  const service = await createMediaService({ directory: dir, provider: fakeProvider(), tariffFetcher });
+  t.after(() => cleanup(dir, service));
+  const quote = await service.nativeQuote('qwen/text-to-image', {});
+  assert.equal(quote.credits, 4.195);
+  assert.equal(quote.status, 'estimated');
+  assert.match(quote.warning, /Округление Kie/);
+  const providerQuote = await service.providerCostQuote('qwen/text-to-image', {});
+  assert.equal(providerQuote.productCredits, quote.credits);
+  assert.equal(providerQuote.warning, quote.warning);
+  const unknown = await service.nativeQuote('qwen/text-to-image', { image_size: 'unknown' });
+  assert.equal(unknown.status, 'unavailable');
+  assert.equal(unknown.reason, 'tariff_variant_unknown');
+});
+
 test('Kling 2.6 motion control quotes from stored video metadata before generation', async t => {
   const dir = await directory();
   const rows = [

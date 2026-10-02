@@ -11,6 +11,35 @@ export function setAccountContext(account: { id: string; role: string }) {
   document.querySelector('meta[name="account-id"]')?.setAttribute('content', account.id);
   document.querySelector('meta[name="account-role"]')?.setAttribute('content', account.role);
 }
+export function reportMovieError(code: 'MOVIE_RENDER_FAILED' | 'MOVIE_PREVIEW_FAILED' | 'MOVIE_PLAN_INVALID' | 'MOVIE_IMPORT_FAILED' | 'MOVIE_IMPORT_LIMIT', failure?: string) {
+  void fetch('/api/movie/errors', { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code, failure }) }).catch(() => {});
+}
+export type MovieSourceFile = { id: string; name: string; type: string; size: number | null };
+export type MovieDraft = { scenes: import('../remotion/model.mjs').Scene[]; format: 'portrait' | 'landscape' | 'square'; background: string;
+  muteClips: boolean; music: string; musicName: string; script: string; sourceLink: string; revision: number;
+  scenarioState?: { modelId: string; pending?: { id: string; sources: import('../remotion/model.mjs').Scene[] } } };
+export async function getMovieDraft(projectId: string | null): Promise<MovieDraft | null> {
+  const query = new URLSearchParams(projectId ? { projectId } : {});
+  return (await parse<RpcResult<MovieDraft | null>>(await fetch(`/api/movie/draft?${query}`, { headers: accountHeaders() }))).result;
+}
+export async function saveMovieDraft(projectId: string | null, draft: Omit<MovieDraft, 'revision'>, revision: number): Promise<MovieDraft> {
+  const query = new URLSearchParams(projectId ? { projectId } : {});
+  return (await parse<RpcResult<MovieDraft>>(await fetch(`/api/movie/draft?${query}`, { method: 'PUT', headers: { ...accountHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draft, revision }), keepalive: true }))).result;
+}
+export async function listMovieSources(url: string, limit: number, signal: AbortSignal) {
+  const body = await parse<RpcResult<{ files: MovieSourceFile[]; skipped: number; truncated: boolean }>>(await fetch('/api/movie/sources/list', {
+    method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ url, limit }), signal,
+  }));
+  return body.result;
+}
+export async function downloadMovieSource(id: string, signal: AbortSignal) {
+  const response = await fetch('/api/movie/sources/file', {
+    method: 'POST', headers: { ...accountHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ id }), signal,
+  });
+  if (!response.ok) await parse(response);
+  return response.blob();
+}
 async function parse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { error?: string } | T | null;
   if (response.status === 401) {
@@ -182,11 +211,11 @@ export async function diagnoseProvider(modelId: string, input: Record<string, un
   return rpc('diagnoseProvider', [{ modelId, input, sourceFiles, kieAccountId }]);
 }
 
-export async function uploadSource(file: File, context: { projectId?: string | null; chatId?: string | null } = {}): Promise<{ ref: string; name?: string; type?: string; [key: string]: unknown }> {
+export async function uploadSource(file: File, context: { projectId?: string | null; chatId?: string | null } = {}, movie = false): Promise<{ ref: string; name?: string; type?: string; [key: string]: unknown }> {
   const query = new URLSearchParams({ name: file.name });
   if (context.projectId) query.set('projectId', context.projectId);
   if (context.chatId) query.set('chatId', context.chatId);
-  const response = await fetch(`/api/source?${query}`, { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+  const response = await fetch(`${movie ? '/api/movie/asset' : '/api/source'}?${query}`, { method: 'POST', headers: { ...accountHeaders(), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
   const body = await parse<RpcResult<{ ref: string; name?: string; type?: string; [key: string]: unknown }>>(response);
   return body.result;
 }

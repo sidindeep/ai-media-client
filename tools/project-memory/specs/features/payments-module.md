@@ -58,7 +58,7 @@ AI Media Client — первый потребитель. Другие проду
 - Профиль читает `/api/account`, показывает реальные имя, привязанные входы,
   баланс и starter access, позволяет сохранить имя через
   `/api/account/profile`. Ошибка загрузки каталога не должна скрывать профиль.
-  История кредитов ведёт на существующую страницу расходов. Лимиты и текущая
+  История расходов ведёт на существующую страницу расходов. Лимиты и текущая
   подписка не синтезируются из клиентских данных.
 - Исходники: `web/src/App.vue`, `web/src/components/AccountCommercePage.vue`,
   `web/src/components/AccountMenu.vue`, `web/src/components/HeaderAccountActions.vue`.

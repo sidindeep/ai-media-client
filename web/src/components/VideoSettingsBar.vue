@@ -24,6 +24,9 @@ function change(field: MediaField, raw: string) {
   const option = mediaFieldOptions(field).find(item => String(item) === raw);
   emit('change', field, option ?? raw);
 }
+function optionLabel(field: MediaField, option: unknown) {
+  return field.optionLabels?.[String(option)] || String(option);
+}
 function durationLabel(option: unknown) {
   const seconds = Number(option);
   return Number.isFinite(seconds) ? seconds <= 0 ? t('composer.auto')
@@ -37,18 +40,17 @@ function durationLabel(option: unknown) {
     <label v-for="kind in visibleSelectKinds" :key="kind" class="video-setting" :class="{ invalid: primary[kind] && errors[primary[kind]!.key] }">
       <span class="video-setting-label">{{ t(kind === 'aspect' ? 'composer.video.aspect' : primary.quality?.key === 'quality' ? 'composer.unionField.quality' : 'composer.unionField.resolution') }}</span>
       <select v-if="primary[kind] && mediaFieldOptions(primary[kind]!).length" :value="value(primary[kind]!)" @change="change(primary[kind]!, ($event.target as HTMLSelectElement).value)">
-        <option v-for="option in mediaFieldOptions(primary[kind]!)" :key="String(option)" :value="String(option)">{{ option }}</option>
+        <option v-for="option in mediaFieldOptions(primary[kind]!)" :key="String(option)" :value="String(option)">{{ optionLabel(primary[kind]!, option) }}</option>
       </select>
       <input v-else-if="primary[kind]" type="text" :value="value(primary[kind]!)" @change="change(primary[kind]!, ($event.target as HTMLInputElement).value)" />
       <span v-else class="video-setting-unavailable" :title="t('composer.video.unavailable')">—</span>
       <small v-if="primary[kind] && errors[primary[kind]!.key]" class="field-error">{{ errors[primary[kind]!.key] }}</small>
     </label>
-    <div class="video-setting video-duration-setting" :class="{ invalid: primary.duration && errors[primary.duration.key] }">
+    <div v-if="primary.duration" class="video-setting video-duration-setting" :class="{ invalid: errors[primary.duration.key] }">
       <span class="video-setting-label">{{ t('composer.video.duration') }}</span>
-      <DurationPicker v-if="primary.duration && durationOptions.length" :model-value="String(value(primary.duration))" :label="t('composer.video.duration')" :options="durationChoices" @update:model-value="change(primary.duration!, $event)" />
-      <input v-else-if="primary.duration" :type="primary.duration.type === 'number' ? 'number' : 'text'" :value="value(primary.duration)" :min="primary.duration.min ?? primary.duration.schema?.minimum as number" :max="primary.duration.max ?? primary.duration.schema?.maximum as number" :step="primary.duration.step || 'any'" @input="change(primary.duration, ($event.target as HTMLInputElement).value)" />
-      <span v-else class="video-setting-unavailable" :title="t('composer.video.unavailable')">—</span>
-      <small v-if="primary.duration && errors[primary.duration.key]" class="field-error">{{ errors[primary.duration.key] }}</small>
+      <DurationPicker v-if="durationOptions.length" :model-value="String(value(primary.duration))" :label="t('composer.video.duration')" :options="durationChoices" @update:model-value="change(primary.duration, $event)" />
+      <input v-else :type="primary.duration.type === 'number' ? 'number' : 'text'" :value="value(primary.duration)" :min="primary.duration.min ?? primary.duration.schema?.minimum as number" :max="primary.duration.max ?? primary.duration.schema?.maximum as number" :step="primary.duration.step || 'any'" @input="change(primary.duration, ($event.target as HTMLInputElement).value)" />
+      <small v-if="errors[primary.duration.key]" class="field-error">{{ errors[primary.duration.key] }}</small>
     </div>
     <button type="button" class="video-settings-toggle" :title="t('composer.advanced')" :aria-label="t('composer.advanced')" :aria-expanded="expanded" aria-controls="video-advanced-settings" @click="emit('update:expanded', !expanded)">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m9 3-.6 2.2-1.8 1L4.4 6 2.9 8.6l1.6 1.7v2.1l-1.6 1.7 1.5 2.6 2.2-.3 1.8 1L9 20h3l.6-2.6 1.8-1 2.2.3 1.5-2.6-1.6-1.7v-2.1l1.6-1.7L16.6 6l-2.2.2-1.8-1L12 3Z" transform="translate(1.5 .5)"/><circle cx="12" cy="12" r="3"/></svg>

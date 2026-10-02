@@ -6,6 +6,49 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 
+test('missing or malformed Vue translations show keys and leave subsequent translations usable', async () => {
+  const ts = require('typescript');
+  function compile(source, requireModule = require) {
+    const exports = {};
+    vm.runInNewContext(ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS },
+    }).outputText, { exports, require: requireModule });
+    return exports;
+  }
+  const ru = compile(await readFile(path.join(root, 'web/src/i18n/locales/ru.ts'), 'utf8')).ru;
+  const en = compile(await readFile(path.join(root, 'web/src/i18n/locales/en.ts'), 'utf8')).en;
+  const i18n = compile(await readFile(path.join(root, 'web/src/i18n/index.ts'), 'utf8'), name => {
+    if (name === './locales/ru') return { ru };
+    if (name === './locales/en') return { en };
+    if (name === 'vue') return require('vue');
+    throw new Error(`Unexpected import: ${name}`);
+  });
+  for (const locale of ['ru', 'en']) {
+    i18n.setLocale(locale);
+    const dictionary = locale === 'ru' ? ru : en;
+    const missingKey = 'journal.provider.future-provider';
+    assert.equal(i18n.t(missingKey), missingKey);
+    assert.equal(i18n.t('toString'), 'toString');
+    for (const invalid of [undefined, null, 123, {}, '', '   ']) {
+      dictionary['test.invalid'] = invalid;
+      assert.equal(i18n.t('test.invalid'), 'test.invalid');
+      dictionary['test.plural.one'] = invalid;
+      dictionary['test.plural.other'] = invalid;
+      assert.equal(i18n.tp('test.plural', 1), 'test.plural.one');
+    }
+    dictionary['test.plural.other'] = 'Count: {count}';
+    assert.equal(i18n.tp('test.plural', 1), 'Count: 1');
+    dictionary['test.valid'] = 'Hello {name}; {unchanged}';
+    assert.equal(i18n.t('test.valid', { name: 'User' }), 'Hello User; {unchanged}');
+    assert.equal(i18n.t('spending.title'), dictionary['spending.title']);
+  }
+  ru['test.onlyRussian'] = 'Русская строка';
+  assert.equal(i18n.t('test.onlyRussian'), 'test.onlyRussian');
+  assert.equal(i18n.tp('test.missing', 2), 'test.missing.other');
+  i18n.setLocale('ru');
+  assert.equal(i18n.tp('test.missing', 2), 'test.missing.few');
+});
+
 test('parameter captions switch locale without changing provider keys or contextual labels', async () => {
   const ts = require('typescript');
   function compile(source, requireModule = () => { throw new Error('Unexpected import'); }) {

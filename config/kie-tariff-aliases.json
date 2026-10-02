@@ -1,0 +1,21 @@
+{
+  "kling-3.0/video": { "path": "kling-3-0", "description": "^Kling 3\\.0,\\s*video," },
+  "kling/v3-turbo-text-to-video": { "path": "kling-3-0-turbo", "description": "^kling 3\\.0 turbo,\\s*text-to-video," },
+  "kling/v3-turbo-image-to-video": { "path": "kling-3-0-turbo", "description": "^kling 3\\.0 turbo,\\s*image-to-video," },
+  "kling-3.0/motion-control": { "path": "kling-3-motion-control", "description": "^kling 3\\.0 motion control," },
+  "kling/ai-avatar-standard": { "path": "kling-ai-avatar", "description": "^Kling AI Avtar.*Standard-", "durationSource": "audio" },
+  "kling/ai-avatar-pro": { "path": "kling-ai-avatar", "description": "^Kling AI Avtar.*Pro-", "durationSource": "audio" },
+  "qwen/text-to-image": { "path": "qwen-image", "description": "^Qwen Image\\s*,\\s*text-to-image" },
+  "qwen/image-to-image": { "path": "qwen-image", "description": "^Qwen Image\\s*,\\s*image-to-image" },
+  "qwen2/text-to-image": { "path": "qwen-image-2", "description": "^Qwen2 - Image edit,\\s*text-to-image" },
+  "qwen2/image-edit": { "path": "qwen-image-2", "description": "^Qwen2 - Image edit,\\s*image-to-image" },
+  "qwen2-1/text-to-image": { "path": "qwen-image-2.1", "description": "^Qwen-Image-2\\.1,\\s*text to image," },
+  "qwen2-1/image-to-image": { "path": "qwen-image-2.1", "description": "^Qwen-Image-2\\.1,\\s*image to image," },
+  "infinitalk/from-audio": { "path": "infinitalk", "description": "^MeiGen-AI InfiniteTalk,", "durationSource": "audio" },
+  "runway": { "path": "runway-api", "description": "^Runway," },
+  "topaz/video-upscale": { "path": "topaz-video-upscaler", "description": "^Topaz Video Upscaler,", "durationSource": "video" },
+  "wan/2-2-a14b-speech-to-video-turbo": { "path": "wan-speech-to-video-turbo", "description": "^Wan 2\\.2 A14B Turbo API Speech to Video," },
+  "wan/2-2-animate-move": { "path": "wan-animate", "description": "^wan 2\\.2 Animate,\\s*2\\.2 Animate Move,", "durationSource": "video" },
+  "wan/2-2-animate-replace": { "path": "wan-animate", "description": "^wan 2\\.2 Animate,\\s*2\\.2 Animate Replace,", "durationSource": "video" },
+  "google/gemini-2-5-pro-tts": { "path": "gemini-2.5-pro-preview-tts", "description": "^Gemini 2\\.5 Pro TTS," }
+}

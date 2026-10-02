@@ -36,7 +36,7 @@ function publicResultUrl(value) {
   return url;
 }
 
-async function fetchPublicResult(target, signal, lookupImpl = lookup, requestImpl = https.request) {
+async function fetchPublicResult(target, signal, lookupImpl = lookup, requestImpl = https.request, requestHeaders = {}) {
   const url = publicResultUrl(target);
   let selected;
   if (!isIP(url.hostname)) {
@@ -50,6 +50,7 @@ async function fetchPublicResult(target, signal, lookupImpl = lookup, requestImp
   return new Promise((resolve, reject) => {
     const request = requestImpl(url, {
       signal,
+      headers: requestHeaders,
       ...(selected ? { lookup: (_host, options, callback) => options?.all
         ? callback(null, [selected]) : callback(null, selected.address, selected.family) } : {}),
     }, incoming => {
@@ -387,4 +388,4 @@ async function createContentService({ pool, storage, dataDirectory, fetchImpl = 
   };
 }
 
-module.exports = { createContentService, parseContentRef, publicAsset, fetchPublicResult };
+module.exports = { createContentService, parseContentRef, publicAsset, fetchPublicResult, publicResultUrl };

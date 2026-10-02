@@ -2,6 +2,7 @@ const Ajv = require('ajv');
 const { rawTask, semanticKey: commonKey, contentRefs } = require('../../media/generation-task');
 const { buildRequest } = require('../../adapters');
 const { validateTaskAction } = require('../../media/task-actions');
+const { motionControlMode } = require('../../media/kling-motion-control');
 const ajv = new Ajv({ allErrors: true, strict: false, validateFormats: false });
 
 function semanticKey(key, modelId) {
@@ -43,7 +44,7 @@ function prepareTask(task, model) {
       throw new Error(`Параметр ${key} не поддерживается Kie`);
     }
     const target = candidates[0], schema = properties[target];
-    let mapped = value;
+    let mapped = target === 'mode' ? motionControlMode(model.id, value) : value;
     if (schema.type === 'array' && !Array.isArray(mapped)) mapped = [mapped];
     if (schema.type === 'string' && Array.isArray(mapped) && mapped.length === 1) mapped = mapped[0];
     if (schema.enum) {

@@ -20,3 +20,9 @@ test('file wire shape follows the schema even when only one file is allowed', ()
   assert.deepEqual(Array.from(normalizeMediaInput([arrayField], { input_urls: 'https://example.com/image.png' }).input_urls), ['https://example.com/image.png']);
   assert.equal(normalizeMediaInput([scalarField], { image_url: ['https://example.com/image.png'] }).image_url, 'https://example.com/image.png');
 });
+
+test('invalid saved option falls back to the provider wire default', () => {
+  const field = { key: 'mode', options: ['std', 'pro'], default: 'std' };
+  assert.equal(normalizeMediaInput([field], { mode: '720p' }).mode, 'std');
+  assert.equal(normalizeMediaInput([field], { mode: 'pro' }).mode, 'pro');
+});

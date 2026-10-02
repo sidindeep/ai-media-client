@@ -29,6 +29,8 @@ const { createTelegramLinkService } = require('./src/services/telegram-link');
 const { openDatabase } = require('./src/database/database');
 const { createDatabaseAvailability } = require('./src/database/availability');
 const { createAuth } = require('./src/auth/service');
+const { createAccountRegistration } = require('./src/services/account-registration');
+const { createPostgresAuthStore } = require('./src/auth/postgres-store');
 const { createAccounts } = require('./src/services/accounts');
 const { createCodexWorker } = require('./src/services/codex-worker');
 const { createStarterPack } = require('./src/billing/starter-pack');
@@ -174,7 +176,9 @@ async function startRuntime({ config, provider, paymentProvider, pool: suppliedP
       await systemErrors.step('startup', 'model-config', () => require('./src/services/service-model-configs').ensureCurrentModelConfig(pool));
       content = await systemErrors.step('startup', 'createContentService', () => createContentService({ pool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica }));
       const starterPack = createStarterPack({ pool, config: config.starterPack });
-      auth = await systemErrors.step('startup', 'createAuth', () => createAuth({ pool, config: config.auth, providers: authProviders, starterPack }));
+      const registerAccount = createAccountRegistration({ starterPack });
+      auth = await systemErrors.step('startup', 'createAuth', () => createAuth({ pool, config: config.auth, providers: authProviders,
+        registerAccount, store: createPostgresAuthStore({ pool, registerAccount, adminIdentities: config.auth.adminIdentities }) }));
       accounts = await systemErrors.step('startup', 'createAccounts', () => createAccounts({ pool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content }));
       changeListener = listenForAccountChanges(pool, accountId => accounts?.notifyContent(accountId));
       telegramLinks = createTelegramLinkService(pool);
@@ -213,7 +217,9 @@ async function startRuntime({ config, provider, paymentProvider, pool: suppliedP
             await systemErrors.step('startup', 'model-config', () => require('./src/services/service-model-configs').ensureCurrentModelConfig(nextPool));
             nextContent = await systemErrors.step('startup', 'createContentService', () => createContentService({ pool: nextPool, storage, dataDirectory: config.dataDirectory, maxStagingBytes: config.contentStagingLimit, onChange: accountId => accounts?.notifyContent(accountId), background: !webReplica }));
             const starterPack = createStarterPack({ pool: nextPool, config: config.starterPack });
-            const nextAuth = await systemErrors.step('startup', 'createAuth', () => createAuth({ pool: nextPool, config: config.auth, providers: authProviders, starterPack }));
+            const registerAccount = createAccountRegistration({ starterPack });
+            const nextAuth = await systemErrors.step('startup', 'createAuth', () => createAuth({ pool: nextPool, config: config.auth, providers: authProviders,
+              registerAccount, store: createPostgresAuthStore({ pool: nextPool, registerAccount, adminIdentities: config.auth.adminIdentities }) }));
             nextAccounts = createAccounts({ pool: nextPool, config, provider, legacy: service, tariffFetcher, starterPack, storage, content: nextContent });
             const nextTelegramLinks = createTelegramLinkService(nextPool);
             await systemErrors.step('startup', 'accounts-recovery', () => nextAccounts.recover());

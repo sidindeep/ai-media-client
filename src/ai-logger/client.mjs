@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 
 import { createSanitizer } from './sanitize.mjs';
 import identity from './identity.js';
-const { text } = createSanitizer();
+import { sanitizeGenerationContext } from './generation-context.mjs';
+const sanitizer = createSanitizer();
+const { text } = sanitizer;
 
 const LEVELS = new Set(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']);
 const CONTEXT_FIELDS = new Set([
@@ -37,7 +39,7 @@ function isPrivateLanHost(hostname) {
     || (octets[0] === 192 && octets[1] === 168);
 }
 
-/** Send only selected diagnostic fields. Callers keep prompts and provider payloads local. */
+/** Selected diagnostics plus the owner's explicit generation-error context. */
 export class AiLoggerClient {
   constructor({ serverUrl, project, service = 'app', environment = 'production', instanceId = null,
     fallbackJsonlPath = null, timeoutMs = 5000, fetchImpl = fetch, allowPrivateHttp = false } = {}) {
@@ -69,7 +71,7 @@ export class AiLoggerClient {
     });
   }
 
-  async send({ level = 'ERROR', logger = 'app', message, context = {}, exception = null }) {
+  async send({ level = 'ERROR', logger = 'app', message, context = {}, exception = null, generation = null }) {
     const normalizedLevel = String(level).toUpperCase();
     if (!LEVELS.has(normalizedLevel) || !message) throw new Error('Valid level and message are required');
     const selectedContext = {
@@ -81,6 +83,7 @@ export class AiLoggerClient {
         selectedContext[key] = cleanText(value, key === 'description' ? 1000 : 200);
       }
     }
+    if (normalizedLevel === 'ERROR') Object.assign(selectedContext, sanitizeGenerationContext(generation, sanitizer));
     const record = {
       id: randomUUID(), timestamp: new Date().toISOString(), logger: cleanText(logger, 200),
       level: normalizedLevel, message: cleanText(message), context: selectedContext,

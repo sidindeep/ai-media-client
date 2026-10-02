@@ -1,6 +1,5 @@
-const { randomBytes, randomUUID, createHash, createHmac, timingSafeEqual } = require('node:crypto');
+const { randomBytes, createHash, createHmac, timingSafeEqual } = require('node:crypto');
 const { transaction } = require('../database/database');
-const { ensureDefaultChatRow } = require('../services/workspaces');
 
 const token = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -31,8 +30,9 @@ function verifyMaxInitData(initData, botToken) {
   return { state, subject, name: name.slice(0, 200) || 'Пользователь MAX' };
 }
 
-function createMaxAuth({ pool, config, starterPack, issueSession, cookieValue }) {
+function createMaxAuth({ pool, config, registerAccount, issueSession, cookieValue }) {
   if (!config.max?.botName || !config.max?.botToken) return null;
+  if (typeof registerAccount !== 'function') throw new Error('Account registration is required');
   const secure = config.origin.startsWith('https:');
   const flowName = secure ? '__Host-media-max-flow' : 'media-max-flow';
   const cookie = (value, age) => `${flowName}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secure ? '; Secure' : ''}`;
@@ -62,13 +62,9 @@ function createMaxAuth({ pool, config, starterPack, issueSession, cookieValue })
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`max:${profile.subject}`]);
         let identity = (await client.query('SELECT account_id FROM media_identities WHERE provider=$1 AND subject=$2', ['max', profile.subject])).rows[0];
         if (!identity) {
-          const accountId = randomUUID();
           const isAdmin = config.adminIdentities.includes(`max:${profile.subject}`);
-          await client.query('INSERT INTO media_accounts(id,display_name,role) VALUES($1,$2,$3)', [accountId, profile.name, isAdmin ? 'admin' : 'user']);
+          const accountId = await registerAccount(client, { name: profile.name, role: isAdmin ? 'admin' : 'user' });
           await client.query('INSERT INTO media_identities(provider,subject,account_id) VALUES($1,$2,$3)', ['max', profile.subject, accountId]);
-          if (starterPack) await starterPack.enroll(client, accountId, isAdmin ? 'admin' : 'user');
-          else await client.query('INSERT INTO media_wallets(account_id) VALUES($1)', [accountId]);
-          await ensureDefaultChatRow(client, accountId);
           identity = { account_id: accountId };
         }
         await client.query('UPDATE media_max_login_flows SET account_id=$2 WHERE state_hash=$1', [hash(profile.state), identity.account_id]);

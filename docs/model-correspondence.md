@@ -1,6 +1,6 @@
 # Единая таблица моделей
 
-Версия: 2026-09-30-unified-1. Строк: 499.
+Версия: 2026-10-01-unified-2. Строк: 561.
 
 Первые столбцы — роутеры, последний — стабильный ID модели/действия в проекте.
 Пустая ячейка означает отсутствие соответствия. Параметры и API-запрос формируют адаптеры.
@@ -222,6 +222,56 @@
 | — | text-embedding-ada-002 | auto | text.text-embedding-ada-002 |
 | — | text-moderation-latest | auto | text.text-moderation-latest |
 | — | text-moderation-stable | auto | text.text-moderation-stable |
+| — | chatgpt-image-latest | auto | text.chatgpt-image-latest |
+| — | computer-use-preview | auto | text.computer-use-preview |
+| — | computer-use-preview-2025-03-11 | auto | text.computer-use-preview-2025-03-11 |
+| — | gpt-3.5-turbo-instruct-0914 | auto | text.gpt-3.5-turbo-instruct-0914 |
+| — | gpt-4 | auto | text.gpt-4 |
+| — | gpt-4-0613 | auto | text.gpt-4-0613 |
+| — | gpt-4-turbo | auto | text.gpt-4-turbo |
+| — | gpt-4-turbo-2024-04-09 | auto | text.gpt-4-turbo-2024-04-09 |
+| — | gpt-4-turbo-preview | auto | text.gpt-4-turbo-preview |
+| — | gpt-4o-2024-08-06 | auto | text.gpt-4o-2024-08-06 |
+| — | gpt-4o-mini-2024-07-18 | auto | text.gpt-4o-mini-2024-07-18 |
+| — | gpt-4o-mini-search-preview | auto | text.gpt-4o-mini-search-preview |
+| — | gpt-4o-mini-search-preview-2025-03-11 | auto | text.gpt-4o-mini-search-preview-2025-03-11 |
+| — | gpt-4o-mini-transcribe-2025-03-20 | auto | text.gpt-4o-mini-transcribe-2025-03-20 |
+| — | gpt-4o-mini-transcribe-2025-12-15 | auto | text.gpt-4o-mini-transcribe-2025-12-15 |
+| — | gpt-4o-realtime-preview-2025-06-03 | auto | text.gpt-4o-realtime-preview-2025-06-03 |
+| — | gpt-4o-search-preview | auto | text.gpt-4o-search-preview |
+| — | gpt-4o-search-preview-2025-03-11 | auto | text.gpt-4o-search-preview-2025-03-11 |
+| — | gpt-4o-transcribe-diarize | auto | text.gpt-4o-transcribe-diarize |
+| — | gpt-5-codex-mini | auto | text.gpt-5-codex-mini |
+| — | gpt-5-codex-mini-openai-compact | auto | text.gpt-5-codex-mini-openai-compact |
+| — | gpt-5-codex-openai-compact | auto | text.gpt-5-codex-openai-compact |
+| — | gpt-5-openai-compact | auto | text.gpt-5-openai-compact |
+| — | gpt-5.1-codex-max-openai-compact | auto | text.gpt-5.1-codex-max-openai-compact |
+| — | gpt-5.1-codex-mini-openai-compact | auto | text.gpt-5.1-codex-mini-openai-compact |
+| — | gpt-5.1-codex-openai-compact | auto | text.gpt-5.1-codex-openai-compact |
+| — | gpt-5.1-openai-compact | auto | text.gpt-5.1-openai-compact |
+| — | gpt-5.2-2025-12-11 | auto | text.gpt-5.2-2025-12-11 |
+| — | gpt-5.2-codex-openai-compact | auto | text.gpt-5.2-codex-openai-compact |
+| — | gpt-5.2-openai-compact | auto | text.gpt-5.2-openai-compact |
+| — | gpt-5.2-pro-2025-12-11 | auto | text.gpt-5.2-pro-2025-12-11 |
+| — | gpt-5.3-chat-latest | auto | text.gpt-5.3-chat-latest |
+| — | gpt-5.3-codex-openai-compact | auto | text.gpt-5.3-codex-openai-compact |
+| — | gpt-5.3-codex-spark | auto | text.gpt-5.3-codex-spark |
+| — | gpt-5.3-codex-spark-openai-compact | auto | text.gpt-5.3-codex-spark-openai-compact |
+| — | gpt-5.4-2026-03-05 | auto | text.gpt-5.4-2026-03-05 |
+| — | gpt-5.4-openai-compact | auto | text.gpt-5.4-openai-compact |
+| — | gpt-5.4-pro-2026-03-05 | auto | text.gpt-5.4-pro-2026-03-05 |
+| — | gpt-5.5-pro | auto | text.gpt-5.5-pro |
+| — | gpt-5.6-sol-pro | auto | text.gpt-5.6-sol-pro |
+| — | gpt-6.1-sol | auto | text.gpt-6.1-sol |
+| — | gpt-realtime | auto | text.gpt-realtime |
+| — | gpt-realtime-1.5 | auto | text.gpt-realtime-1.5 |
+| — | gpt-realtime-2 | auto | text.gpt-realtime-2 |
+| — | gpt-realtime-2025-08-28 | auto | text.gpt-realtime-2025-08-28 |
+| — | gpt-realtime-mini | auto | text.gpt-realtime-mini |
+| — | gpt-realtime-mini-2025-10-06 | auto | text.gpt-realtime-mini-2025-10-06 |
+| — | gpt-realtime-mini-2025-12-15 | auto | text.gpt-realtime-mini-2025-12-15 |
+| — | omni-moderation-2024-09-26 | auto | text.omni-moderation-2024-09-26 |
+| — | text-embedding-v1 | auto | text.text-embedding-v1 |
 
 ## image
 
@@ -323,6 +373,8 @@
 | wan/2-7-image-pro | wan2.7-image-pro | auto | image.wan.2-7-image-pro |
 | — | z-image-turbo | auto | image.z-image-turbo |
 | z-image | — | auto | image.z-image |
+| — | dall-e-2 | auto | image.dall-e-2 |
+| — | gpt-image-1-mini | auto | image.gpt-image-1-mini |
 
 ## video
 
@@ -530,3 +582,13 @@
 | v3-api | — | auto | audio.v3-api |
 | ai-music-api/separate-vocals | — | auto | audio.ai-music-api.separate-vocals |
 | — | whisper-1 | auto | audio.whisper-1 |
+| — | gpt-4o-audio-preview-2024-12-17 | auto | audio.gpt-4o-audio-preview-2024-12-17 |
+| — | gpt-4o-audio-preview-2025-06-03 | auto | audio.gpt-4o-audio-preview-2025-06-03 |
+| — | gpt-4o-mini-audio-preview | auto | audio.gpt-4o-mini-audio-preview |
+| — | gpt-4o-mini-audio-preview-2024-12-17 | auto | audio.gpt-4o-mini-audio-preview-2024-12-17 |
+| — | gpt-4o-mini-tts-2025-03-20 | auto | audio.gpt-4o-mini-tts-2025-03-20 |
+| — | gpt-4o-mini-tts-2025-12-15 | auto | audio.gpt-4o-mini-tts-2025-12-15 |
+| — | gpt-audio | auto | audio.gpt-audio |
+| — | gpt-audio-1.5 | auto | audio.gpt-audio-1.5 |
+| — | gpt-audio-2025-08-28 | auto | audio.gpt-audio-2025-08-28 |
+| — | gpt-audio-mini-2025-12-15 | auto | audio.gpt-audio-mini-2025-12-15 |

@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const systemErrors = require('../system-errors');
 const { recordFailure } = require('../provider-diagnostics');
+const { generationContext } = require('../ai-logger/generation-context.mjs');
 
 const NAMESPACE = 'generation-journal';
 
@@ -32,7 +33,8 @@ async function appendGenerationEvent(client, accountId, provider, record, event,
     const failure = recordFailure(record, provider);
     systemErrors.record('generation', `${provider}.${event}`,
       { code: failure.code, message: failure.message || item.error || event },
-      { accountId, requestId: item.requestId, jobId: item.jobId, model: item.model, providerTaskId: item.providerTaskId });
+      { generation: generationContext(record, provider),
+        diagnostic: { description: failure.message || item.error || event } });
   }
   return item;
 }

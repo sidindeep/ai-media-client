@@ -1,0 +1,1 @@
+import{s as e}from"./bridge-Fpjtx0Qr.js";export default e();

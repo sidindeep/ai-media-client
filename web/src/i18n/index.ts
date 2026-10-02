@@ -37,6 +37,12 @@ function interpolate(message: string, params: TranslationParams = {}) {
   ));
 }
 
+function translation(key: string): string | undefined {
+  const dictionary = dictionaries[activeLocale.value] as Record<string, unknown>;
+  const message = Object.prototype.hasOwnProperty.call(dictionary, key) ? dictionary[key] : undefined;
+  return typeof message === 'string' && message.trim() ? message : undefined;
+}
+
 function applyLocale(locale: Locale) {
   activeLocale.value = locale;
   if (typeof document !== 'undefined') document.documentElement.lang = locale;
@@ -55,16 +61,16 @@ export function setLocale(locale: Locale | 'eng' | 'rus') {
 }
 
 export function t(key: TranslationKey, params?: TranslationParams): string {
-  const message = dictionaries[activeLocale.value][key] ?? dictionaries[DEFAULT_LOCALE][key];
-  return interpolate(message, params);
+  const message = translation(key);
+  return message === undefined ? key : interpolate(message, params);
 }
 
 export function tp(key: PluralKey, count: number, params: TranslationParams = {}) {
   const category = new Intl.PluralRules(activeLocale.value).select(count);
   const candidate = `${key}.${category}` as TranslationKey;
   const fallback = `${key}.other` as TranslationKey;
-  const dictionary = dictionaries[activeLocale.value] as Record<string, string>;
-  return interpolate(dictionary[candidate] ?? dictionary[fallback] ?? dictionaries[DEFAULT_LOCALE][fallback], { ...params, count });
+  const message = translation(candidate) ?? translation(fallback);
+  return message === undefined ? candidate : interpolate(message, { ...params, count });
 }
 
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions) {

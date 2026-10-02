@@ -1,3 +1,4 @@
+const pageAliases = require('../../config/kie-tariff-aliases.json');
 function modelIdFromAnchor(anchor) {
   try {
     const url = new URL(anchor);
@@ -32,6 +33,12 @@ function modelCandidates(model, rows) {
   const aliases = new Set([model.apiModel, model.id?.replace(/^kie:/, '')].filter(Boolean));
   const exact = rows.filter(row => aliases.has(modelIdFromAnchor(row.anchor)));
   if (exact.length) return exact;
+
+  // Shared marketing pages need an explicit API identity AND a mode selector.
+  // Never accept another model's explicit ?model=, even on the same page.
+  const page = pageAliases[model.apiModel];
+  if (page) return rows.filter(row => pathModelIdFromAnchor(row.anchor) === page.path
+    && new RegExp(page.description, 'i').test(String(row.modelDescription || '')));
 
   // Kie publishes this model's output tiers on a shared page without ?model=.
   if (model.apiModel === 'seedream/5-pro-image-to-image') {

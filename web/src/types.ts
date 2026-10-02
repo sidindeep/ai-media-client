@@ -46,6 +46,9 @@ export type MediaModel = {
 };
 export type MediaField = {
   key: string;
+  uiHidden?: boolean;
+  uiHiddenReason?: string;
+  uiVisibleReason?: string;
   label?: string;
   hint?: string;
   type?: string;
@@ -53,6 +56,7 @@ export type MediaField = {
   default?: unknown;
   apiDefault?: unknown;
   options?: Array<string | number | boolean>;
+  optionLabels?: Record<string, string>;
   scalar?: boolean;
   maxFiles?: number;
   maxSizeMb?: number;

@@ -2,6 +2,25 @@
 // Kept separate from generated OpenAPI imports so refreshes preserve these fixes.
 function applyOverrides(models) {
   const result=structuredClone(models);
+  require('./catalog-qwen').applyQwenCorrections(result);
+  // The official OpenAPI contradicts its descriptions and Playground: uploaded
+  // audio cannot also have an audio_id; a stem is required only for advanced
+  // splitting. Correct the effective catalog, never the generated source.
+  const separation=result.find(model=>model.apiModel==='ai-music-api/separate-vocals');
+  if(separation){
+    const schema=separation.inputSchema;
+    const uploaded=schema.oneOf.find(variant=>variant.properties?.audio_url);
+    uploaded.required=uploaded.required.filter(key=>key!=='audio_id');
+    delete uploaded.properties.audio_id;
+    uploaded['x-apidog-orders']=uploaded['x-apidog-orders'].filter(key=>key!=='audio_id');
+    schema.required=(schema.required||[]).filter(key=>key!=='stem_name');
+    schema.allOf=[...(schema.allOf||[]),{
+      if:{required:['type'],properties:{type:{const:'split_stem_advanced'}}},
+      then:{required:['stem_name']}
+    }];
+    separation.fields.find(field=>field.key==='stem_name').required=false;
+    separation.correctionSource='https://kie.ai/suno-api';
+  }
   const durationRules=require('./duration');
   // A few imported property names contain trailing whitespace that is absent
   // from the documented request body. Keep field and schema keys in
@@ -165,6 +184,18 @@ function applyOverrides(models) {
     quickStart.inputSchema.required=quickStart.inputSchema.required.filter(key=>key!=='image_urls');
     quickStart.fields.sort((a,b)=>(a.key==='prompt'?-1:b.key==='prompt'?1:0));
   }
-  return result;
+  for (const model of result.filter(model => ['kling-3.0/video', 'kling-3.0/motion-control'].includes(model.apiModel))) {
+    const klingMode = model.fields.find(field => field.key === 'mode');
+    if (klingMode) klingMode.pricingAliases = { std: '720P', pro: '1080P', '720p': '720P', '1080p': '1080P', '4K': '4K' };
+    if (model.apiModel === 'kling-3.0/motion-control' && klingMode) {
+      const options = ['720p', '1080p'];
+      const accepted = [...options, 'std', 'pro'];
+      const schema = model.inputSchema?.properties?.mode;
+      Object.assign(klingMode, { label: 'Разрешение', type: 'select', options, default: '720p' });
+      if (klingMode.schema) Object.assign(klingMode.schema, { enum: accepted, default: '720p' });
+      if (schema) Object.assign(schema, { enum: accepted, default: '720p' });
+    }
+  }
+  return result.map(model => require('./model-ui-visibility').applyModelUiVisibility(model));
 }
 module.exports={applyOverrides};

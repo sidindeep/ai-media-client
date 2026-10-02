@@ -1,3 +1,5 @@
+const { createPostgresAuthStore } = require('../src/auth/postgres-store');
+const { createAccountRegistration } = require('../src/services/account-registration');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -94,7 +96,7 @@ test('incomplete login integrations stay visible but cannot begin authentication
   const { createAuth } = require('../src/auth/service');
   const broken = loadConfig({ MAX_LOGIN_BOT_NAME: '@bad', MAX_LOGIN_BOT_TOKEN: 'placeholder',
     MEDIA_EMAIL_AUTH_ENABLED: 'true', MEDIA_SMTP_PORT: 'invalid', GOOGLE_CLIENT_ID: ' ', GOOGLE_CLIENT_SECRET: 'secret' });
-  const auth = createAuth({ pool: {}, config: broken.auth });
+  const auth = createAuth({ pool: {}, store: createPostgresAuthStore({ pool: {}, registerAccount: createAccountRegistration() }), registerAccount: createAccountRegistration(), config: broken.auth });
   assert.equal(auth.max, null);
   assert.equal(broken.auth.max.invalid, true);
   assert.equal(auth.email, null);
@@ -103,10 +105,10 @@ test('incomplete login integrations stay visible but cannot begin authentication
     ['google', false], ['vk', false], ['yandex', false], ['telegram', false], ['max', false], ['email', false]
   ]);
   const placeholder = loadConfig({ MAX_LOGIN_BOT_NAME: 'StudioBot', MAX_LOGIN_BOT_TOKEN: 'placeholder' });
-  assert.equal(createAuth({ pool: {}, config: placeholder.auth }).max, null);
+  assert.equal(createAuth({ pool: {}, store: createPostgresAuthStore({ pool: {}, registerAccount: createAccountRegistration() }), registerAccount: createAccountRegistration(), config: placeholder.auth }).max, null);
   const ready = loadConfig({ MAX_LOGIN_BOT_NAME: 'StudioBot', MAX_LOGIN_BOT_TOKEN: 'sample-signing-value-123',
     GOOGLE_CLIENT_ID: 'client', GOOGLE_CLIENT_SECRET: 'secret' });
-  const available = createAuth({ pool: {}, config: ready.auth });
+  const available = createAuth({ pool: {}, store: createPostgresAuthStore({ pool: {}, registerAccount: createAccountRegistration() }), registerAccount: createAccountRegistration(), config: ready.auth });
   assert.deepEqual(available.providerChoices().filter(item => item.enabled).map(item => item.id), ['google', 'max']);
   assert.deepEqual(available.providers().map(item => item.id), ['google', 'max']);
 });

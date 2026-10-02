@@ -3,6 +3,7 @@ const { calculate } = require('./quote-engine');
 const { normalizePricingInput } = require('./normalize-request');
 const { modelIdFromAnchor, modelCandidates } = require('./kie-tariff-resolver');
 const fallbackConfig = require('../../config/kie-price-fallbacks.json');
+const pageAliases = require('../../config/kie-tariff-aliases.json');
 
 function buildFallbackIndex(config) {
   if (config?.schemaVersion !== 1 || !config.version || !config.source || !config.models) {
@@ -74,10 +75,12 @@ function candidateScore(row, input, model) {
   let score = 0;
   const seedreamPro = ['seedream/5-pro-text-to-image', 'seedream/5-pro-image-to-image'].includes(model.apiModel);
   const qualityResolution = seedreamPro ? { basic: '1K', high: '2K' }[String(input?.quality || '').toLowerCase()] : undefined;
-  for (const key of ['resolution', 'quality', 'mode', 'duration']) {
-    const value = key === 'resolution' ? input?.resolution ?? input?.image_resolution ?? input?.output_resolution ?? qualityResolution
+  for (const key of ['resolution', 'quality', 'mode', 'duration', 'upscale_factor']) {
+    const rawValue = key === 'resolution' ? input?.resolution ?? input?.image_resolution ?? input?.output_resolution ?? qualityResolution
       : key === 'mode' ? input?.mode ?? input?.rendering_speed
         : input?.[key] ?? input?.[`output_${key}`];
+    const value = key === 'upscale_factor' && rawValue != null ? `${rawValue}x`
+      : (model.fields || []).find(field => field.key === key)?.pricingAliases?.[rawValue] ?? rawValue;
     const matches = key === 'duration' ? containsDuration(description, value)
       : key === 'resolution' ? containsResolution(model.apiModel === 'grok-imagine/upscale'
         ? description.split(/→|->/).at(-1) : description, value)
@@ -120,18 +123,19 @@ function inputReferences(value, result = new Set()) {
   return result;
 }
 
-function referencedVideoDuration(input, context) {
+function referencedMediaDuration(input, context, kind) {
   const references = inputReferences(input);
-  const videos = (context?.sourceFiles || []).filter(file => references.has(file.ref) && String(file.type || '').startsWith('video/'));
-  if (!videos.length) throw new Error('Для расчёта цены нужна длительность исходного видео');
+  const videos = (context?.sourceFiles || []).filter(file => references.has(file.ref) && String(file.type || '').startsWith(`${kind}/`));
+  if (!videos.length) throw new Error(`Для расчёта цены нужна длительность исходного ${kind === 'video' ? 'видео' : 'аудио'}`);
   let total = 0;
   for (const video of videos) {
     const duration = Number(video.durationSeconds);
-    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Не удалось определить длительность исходного видео');
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Не удалось определить длительность исходного медиа');
     total += duration;
   }
   return total;
 }
+const referencedVideoDuration = (input, context) => referencedMediaDuration(input, context, 'video');
 
 function imageCount(input, model, defaultCount) {
   const count = Number(input?.num_images ?? input?.number_of_images ?? input?.output_count ?? input?.image_count ?? input?.n ?? defaultCount);
@@ -142,9 +146,12 @@ function imageCount(input, model, defaultCount) {
 function multiplier(row, input, context, model) {
   const unit = String(row.creditUnit || '').trim().toLowerCase();
   if (unit === 'per second') {
-    if (model.apiModel === 'kling-2.6/motion-control') {
+    if (['kling-2.6/motion-control', 'kling-3.0/motion-control'].includes(model.apiModel)) {
       return calculate({ strategy: 'second', rate: 1, quantity: referencedVideoDuration(input, context) });
     }
+    const durationSource = pageAliases[model.apiModel]?.durationSource;
+    if (durationSource) return calculate({ strategy: 'second', rate: 1,
+      quantity: referencedMediaDuration(input, context, durationSource) });
     const duration = Number(input?.duration);
     if (!Number.isSafeInteger(duration) || duration <= 0) throw new Error('Для расчёта цены нужна длительность в секундах');
     // Kie publishes Seedance reference-video tariffs as Price × (Input +

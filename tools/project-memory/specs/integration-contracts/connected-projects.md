@@ -60,3 +60,7 @@ sendMessage/answerCallbackQuery; серверный токен, private allowlis
 Браузер Kie изолирован persistent partition; очистка затрагивает его storage/cache и кэш цен, а не общий браузер пользователя. Навигация ограничивается кодом allowedNavigation. Контракт сессии покрыт test/kie-session.test.js; это не независимый аудит безопасности.
 
 Runtime-зависимости от внешних рабочих каталогов по абсолютным путям нет. Указанный пользователем внешний источник провайдеров учтён выше. Task-manager не подключён; опциональный выбор WorkNest/none предложен отдельно и не блокирует локальную документацию.
+
+## Remotion (2026-10-01)
+
+https://www.remotion.dev/docs — библиотека монтажа, React Player и Web Renderer внутри веб-клиента. Пакеты фиксированы в package.json и pnpm-lock.yaml; локальных внешних каталогов и сервисов не требуется. Контракт: [монтаж](../features/remotion-video-editor.md). Медиа не передаются Remotion; экспорт производится браузером, лицензия и ограничения описаны в docs/remotion-video-editor.md. Плагин ChatGPT является средством разработки, runtime его не использует.

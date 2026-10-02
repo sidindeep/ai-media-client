@@ -2,7 +2,8 @@ const aiLogger = require('./ai-logger');
 const { sanitizer: { clean, text }, diagnostic } = require('./ai-logger/diagnostics');
 function record(source, event, error, details = {}) {
   try { return aiLogger.reportSystemError({ source: clean(String(source)), event: clean(String(event)), code: clean(error)?.code ?? clean(error?.providerCode) ?? clean(error?.status),
-    error, diagnostic: diagnostic(source, event, error, { ...(typeof error === 'string' ? { description: text(error) } : {}), ...details.diagnostic }) }); }
+    error, generation: details.generation,
+    diagnostic: diagnostic(source, event, error, { ...(typeof error === 'string' ? { description: text(error) } : {}), ...details.diagnostic }) }); }
   catch { return false; }
 }
 function captureConsole(target = console) {

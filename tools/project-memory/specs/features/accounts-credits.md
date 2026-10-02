@@ -1,5 +1,55 @@
 # Аккаунты и нативные кредиты
 
+## Граница регистрации аккаунта — 2026-10-01
+
+Продолжение: OAuth-ядро (`auth/oauth.js`) получает store с операциями
+createFlow/consumeFlow/completeLogin/replaceSession/getSession/deleteSession/identities.
+В ядре нет SQL, PostgreSQL, таблиц продукта или правил ролей. Google adapter
+(`auth/google.js`) и фабрика (`auth/google-auth.js`) переносятся вместе с ядром
+как три файла без npm-зависимостей. Origin/cookiePrefix/callbackPath/sessionSeconds
+и client credentials задаёт принимающий проект. Контракт хранилища:
+[перенос Google](../../../../docs/google-auth-integration.md). consumeFlow
+атомарен и одноразов, проверяет срок, браузер и провайдера. completeLogin
+атомарно связывает provider+subject с аккаунтом и новой сессией. Ядро передаёт
+только хеши session/state/browser; PKCE verifier живёт до consume, access token
+Google не хранится. getSession возвращает актуальные права проекта; logout
+отзывает сессию. HTTP CSRF/origin остаётся обязанностью принимающего приложения.
+
+AI Media Client использует `auth/postgres-store.js`: SQL flows/сессий/identities
+и политика admin bootstrap/invitations. completeLogin сохраняет прежние advisory
+locks, регистрацию, verified Google email и аудит роли в транзакции с заменой
+сессии. `auth/service.js` собирает OAuth и существующие email/MAX интеграции;
+их специфическое хранение не входит в Google-модуль. Store собирается в server.js
+при старте и восстановлении БД. Схема БД, cookie media и HTTP-маршруты сохраняются.
+Проверки: test/google-auth.test.js, test/module-boundaries.test.js, accounts и
+account-registration. Живой внешний Google не заменяется тестовым store.
+
+Область Accounts владеет операцией `createAccountRegistration({ starterPack })`
+в `src/services/account-registration.js`. Она возвращает
+`registerAccount(transactionClient, { name, role = 'user' }) -> accountId`:
+создаёт аккаунт с ролью user/admin, кошелёк через starterPack.enroll (либо
+пустой кошелёк без сервиса пакета) и основной системный чат. Название ограничено
+200 символами; неизвестная роль отклоняется до записи. Своя транзакция не
+открывается: операция участвует в транзакции вызывающего сценария и передаёт
+ошибки ему. Владение правилами выдачи кредитов остаётся у StarterPack,
+создания чата — у Workspaces.
+
+Auth владеет подтверждением личности, identity, email credentials, OAuth/MAX
+flows, сессиями и проверкой прав. Все пути первого входа получают registerAccount
+из composition root `server.js`, в том числе при восстановлении подключения
+к БД. Auth не импортирует регистрацию/Workspaces/StarterPack и не пишет
+кошельки, проводки или чаты. При существующей identity регистрация не вызывается.
+Identity и email credentials записываются после регистрации, сессия — в той же
+транзакции (MAX выдаёт сессию отдельно после подтверждённого flow, как прежде).
+Ошибка откатывает аккаунт, кошелёк, выдачу пакета, чат и транзакционные auth-записи.
+OAuth state остаётся одноразовым и при отказе; пользователь начинает новый flow.
+HTTP API, схема БД, назначения ролей и правила сессий не меняются.
+
+Контракт проверяют `test/account-registration.test.js`, `test/accounts.test.js`,
+`test/email-auth.test.js`, `test/max-login.test.js` и `test/module-boundaries.test.js`:
+повторный вход, роли и кредиты, откат после ошибки сессии, сборка реальных путей
+входа и отсутствие зависимостей auth от продуктовых начальных данных.
+
 ## Рабочее подключение к БД — 2026-09-30
 
 Локальная студия и хостинг используют общую PostgreSQL из заданного владельцем
@@ -77,7 +127,8 @@ MAX использует отдельный десятиминутный flow: �
 
 По указанию владельца серверный Codex доступен всем пользователям через их
 внутренние кредитные счета. В `config/native-prices.json` опубликованы
-все 54 режима Codex по 4 кредита за запрос. Переключатель веба явно
+опубликованные режимы Codex по 10 кредитов за запрос (обновление владельца
+от 2026-10-01), включая GPT-6-Sol и GPT-6-Luna. Переключатель веба явно
 разделяет Kie (медиа) и Codex (изображения/текст), для Codex доступны модель, effort и
 standard/fast. Резерв и финализация используют существующий кошелёк;
 неизвестное завершение удерживает резерв до сверки. При восстановлении после

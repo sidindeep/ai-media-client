@@ -1,5 +1,24 @@
 # История архитектуры
 
+2026-10-01: Google protocol adapter и OAuth lifecycle выделены в переносимые
+auth/google.js, auth/oauth.js, auth/google-auth.js. SQL и прикладная политика
+идентичности/роли/сессии перенесены без изменения схемы в auth/postgres-store.js.
+Composition root передаёт store при старте и восстановлении БД. Cookie, HTTP,
+одноразовый OAuth flow, locks и общая транзакция сохранены. Откат требует
+согласованного возврата auth/service.js, providers.js и server.js; данных
+мигрировать не нужно. Контракт: specs/features/accounts-credits.md и
+docs/google-auth-integration.md; проверки google-auth/accounts/registration.
+
+2026-10-01: начальная регистрация аккаунта выделена из OAuth, MAX и email в
+services/account-registration.js. Auth получает registerAccount из server.js;
+знание кошельков, StarterPack и чатов остаётся в операции Accounts. Общая
+транзакция с identity/credentials/сессией сохранена, повторный вход не вызывает
+регистрацию. При восстановлении БД зависимость собирается заново. HTTP и схема
+не меняются; миграций данных нет. Откат — вернуть согласованный комплект
+auth/service.js, auth/email.js, auth/max-login.js и server.js. Контракт:
+specs/features/accounts-credits.md. Проверки: account-registration, accounts,
+email-auth, max-login, roles и module-boundaries.
+
 2026-10-01: следующий пакет модульности RouterAI сохраняет HTTP API, схему и
 namespace записей. Сборка вынесена в server/routerai-module.js; HTTP использует
 provider/admin, records владеет атомарными операциями записи/кошелька/журнала,

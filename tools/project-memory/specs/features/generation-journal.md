@@ -120,3 +120,31 @@ DATABASE_VERSION_NEWER и HTTP 503. Исправление должно вклю
 и переход runtime на центральную диагностику: прежний runtime обращался
 к удалённой media_system_errors. До применения следующих миграций общей
 БД совместимый пакет должен быть доступен в Git всем рабочим установкам.
+
+## Контекст ошибок генерации — 2026-10-01
+
+Явное решение владельца: ERROR-диагностика генерации передаёт промпт и ссылки
+на исходники в ai_logger. Это исключение из прежнего запрета prompts в HTTP;
+бизнес-журнал остаётся без промптов и медиа. Отдельная generation allowlist
+в recorder/client выбирает context.prompt (32768 символов), source_urls
+(до 100 по 2048), provider/model/job_id/request_id; очищает секреты и
+credentials/query/fragment. Произвольные details и INFO не получают эти поля.
+Reader открыт: текст промпта доступен читателям ai_logger.
+
+Общий builder src/ai-logger/generation-context.mjs берёт исходный запрос
+(prompt/input.prompt/payload.prompt, sourceFiles/input/parameters/payload),
+собирает устойчивые ссылки на owner-protected content/sources, не публикует S3,
+не пересылает байты и resultUrls. Без исходника список пустой. Внешние URL не
+означают архивирования файлов. Контекст передают journal всех четырёх
+провайдеров, Kie trace.run и явные перехваты Codex/RouterAI/APIMart. Старые
+логи не переписываются. Original Error, код, стек и текущая БД сохраняются.
+Проверки: test/generation-error-context.test.js; scripts/verify-central-diagnostics.cjs
+проверяет реальный ingest/readback на синтетических данных.
+
+Классификатор src/provider-errors.js узнаёт Content review failed и китайский
+эквивалент; код 1501 сам по себе остаётся unknown. publicRecord обновляет
+пояснение старых неизвестных ошибок при чтении, без записи истории/миграций.
+
+Codex worker также передаёт контекст исходного запроса для run.error и
+persist.error; images/base64 и account ID не включаются. Compose передаёт
+MEDIA_PUBLIC_ORIGIN worker для абсолютных ссылок на исходники.

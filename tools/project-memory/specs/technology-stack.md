@@ -69,6 +69,17 @@ flowchart LR
 
 ## Frontend
 
+### Монтаж роликов (добавлено 2026-10-01)
+
+В `/app/movie` Vue монтирует лениво загружаемый React 19.2 остров с Remotion
+4.0.530: `remotion`, `@remotion/player`, `@remotion/media` и
+`@remotion/web-renderer`. Экспорт MP4 H.264/AAC выполняется в браузере через
+WebCodecs; комплектные аудиокодеки используют WASM/worker. Общая БД и очередь
+провайдеров в экспорт не вовлечены. Контракт и ограничения:
+[монтаж Remotion](features/remotion-video-editor.md).
+TypeScript проверяет исходники строго; `skipLibCheck` исключает конфликтующие
+декларации WebCodecs/asset imports сторонних пакетов Remotion и Vite.
+
 ### Основная студия
 
 - **Vue 3.5** с Composition API.

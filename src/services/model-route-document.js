@@ -40,4 +40,30 @@ function publicRows(rows) {
   return rows.map(row => ({ ...row, kie: row.providers.kie || null, apimart: row.providers.apimart || null,
     kiePrice: row.publishedTariffs.kie || '', apimartPrice: row.publishedTariffs.apimart || '' }));
 }
-module.exports = { normalizeRows, validateDocument, publicRows };
+function mergeSeedDocument(current, seed) {
+  const models = structuredClone(normalizeRows(current.models));
+  const sameIdentity = (left, right) => left.kind === right.kind && left.action === right.action
+    && Object.keys(left.providers).length === Object.keys(right.providers).length
+    && Object.entries(left.providers).every(([provider, id]) => right.providers[provider] === id);
+  for (const source of seed.models) {
+    const existing = models.find(row => row.id === source.id || sameIdentity(row, source));
+    if (!existing) { models.push(structuredClone(source)); continue; }
+    if (!sameIdentity(existing, source)) continue;
+    for (const [provider, price] of Object.entries(source.publishedTariffs))
+      if ((!existing.publishedTariffs[provider] || existing.publishedTariffs[provider] === '—') && price && price !== '—')
+        existing.publishedTariffs[provider] = price;
+    if (existing.providers.kie === 'kie:qwen2/image-edit' && existing.name === 'Qwen2 - Text To Image')
+      existing.name = 'Qwen2 Image Edit';
+  }
+  return validateDocument({ version: seed.version, models });
+}
+function managedVersion(version) {
+  const match = /^(\d{4}-\d{2}-\d{2})-unified-(\d+)$/.exec(version || '');
+  return match ? { date: match[1], revision: Number(match[2]) } : null;
+}
+function isNewerManagedVersion(candidate, installed) {
+  const next = managedVersion(candidate), current = managedVersion(installed);
+  return Boolean(next && current && (next.date > current.date
+    || next.date === current.date && next.revision > current.revision));
+}
+module.exports = { normalizeRows, validateDocument, publicRows, mergeSeedDocument, managedVersion, isNewerManagedVersion };

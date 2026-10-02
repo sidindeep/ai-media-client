@@ -18,24 +18,7 @@ export function createSanitizer() {
       if (/^[\[{]/.test(value.trim())) {
         try { return clean(JSON.parse(value), '', depth + 1); } catch { /* ordinary text */ }
       }
-      for (const item of secrets) value = value.split(item).join('[REDACTED]');
-      return value.replace(/(?:https?|postgres(?:ql)?):\/\/[^\s"<>]+/g, address => {
-          try {
-            const url = new URL(address);
-            url.username = ''; url.password = ''; url.search = ''; url.hash = '';
-            return url.href;
-          } catch { return '[URL]'; }
-        })
-        .replace(/\{[^\n]*\}|\[[^\n]*\]/g, payload => {
-          try { const parsed = JSON.parse(payload); return parsed && typeof parsed === 'object' ? '[REDACTED PAYLOAD]' : payload; } catch { return payload; }
-        })
-        .replace(/(cookie\s*[:=]\s*)[^\n]+/gi, '$1[REDACTED]')
-        .replace(/((?:prompt|cookie|account[_-]?id|email|authorization|api[_-]?key|password|token|secret)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\n;]+)/gi, '$1[REDACTED]')
-        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[REDACTED EMAIL]')
-        .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]')
-        .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}/g, '[REDACTED]')
-        .replace(/((?:api[_-]?key|password|token|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
-        .slice(0, 32768);
+      return scrub(value);
     }
     if (Array.isArray(value)) return value.slice(0, 100).map(item => clean(item, '', depth + 1));
     if (value && typeof value === 'object') return Object.fromEntries(
@@ -43,6 +26,34 @@ export function createSanitizer() {
     );
     return typeof value === 'bigint' ? String(value) : value;
   }
+  function scrub(value, allowPrompt = false) {
+    for (const item of secrets) value = value.split(item).join('[REDACTED]');
+    // Avoid quadratic email matching on long unbroken prompt text without an @.
+    if (value.includes('@')) value = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[REDACTED EMAIL]');
+    return value.replace(/(?:https?|postgres(?:ql)?):\/\/[^\s"<>]+/g, address => {
+          try {
+            const url = new URL(address);
+            url.username = ''; url.password = ''; url.search = ''; url.hash = '';
+            return url.href;
+          } catch { return '[URL]'; }
+        })
+        .replace(/\{[^\n]*\}|\[[^\n]*\]/g, payload => {
+          if (allowPrompt) return payload;
+          try { const parsed = JSON.parse(payload); return parsed && typeof parsed === 'object' ? '[REDACTED PAYLOAD]' : payload; } catch { return payload; }
+        })
+        .replace(/(cookie\s*[:=]\s*)[^\n]+/gi, '$1[REDACTED]')
+        .replace(allowPrompt
+          ? /(["']?(?:cookie|account[_-]?id|email|authorization|api[_-]?key|password|token|secret)["']?\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\n;,}]+)/gi
+          : /((?:prompt|cookie|account[_-]?id|email|authorization|api[_-]?key|password|token|secret)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\n;]+)/gi, '$1[REDACTED]')
+        .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]')
+        .replace(/\b(?:sk|sess)-[A-Za-z0-9_-]+/g, '[REDACTED]')
+        .replace(/data:[^\s,]*;base64,[A-Za-z0-9+/=]+/g, '[image data]')
+        .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}/g, '[REDACTED]')
+        .replace(/((?:api[_-]?key|password|token|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
+        .slice(0, 32768);
+  }
   function text(value) { const safe = clean(value); return typeof safe === 'object' && safe !== null ? '[REDACTED PAYLOAD]' : String(safe ?? ''); }
-  return { clean, secret, text };
+  // Only the explicit generation-error contract permits prompt prose/JSON.
+  const prompt = value => typeof value === 'string' ? scrub(value, true) : '';
+  return { clean, secret, text, prompt };
 }

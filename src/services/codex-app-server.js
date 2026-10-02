@@ -3,7 +3,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { codexEnvironment } = require('./codex-runtime');
-const { codexPrompt, codexWebSearch, disabledFeatures, imageFeatures } = require('./codex-request');
+const { codexWebSearch, disabledFeatures, imageFeatures } = require('./codex-request');
+const { prepareCodexPrompt } = require('./codex-web-context');
 const { collectImage, validatePng } = require('./codex-images');
 const { normalizeUsage } = require('./codex-usage');
 const { providerError, imageGenerationError } = require('./codex-errors');
@@ -26,7 +27,7 @@ function threadParams(request, cwd) {
 // One stdio connection multiplexes isolated ephemeral threads. No generation replay.
 function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
   rpcTimeoutMs = Number(process.env.MEDIA_CODEX_RPC_TIMEOUT_MS || 60000), textTimeoutMs = 180000, imageTimeoutMs = 300000,
-  collect = collectImage, diagnostic = event => console.warn(JSON.stringify({ component: 'codex-app-server', ...event })) } = {}) {
+  collect = collectImage, preparePrompt = prepareCodexPrompt, diagnostic = event => console.warn(JSON.stringify({ component: 'codex-app-server', ...event })) } = {}) {
   if (!Number.isSafeInteger(rpcTimeoutMs) || rpcTimeoutMs < 1) throw new Error('Invalid MEDIA_CODEX_RPC_TIMEOUT_MS');
   const report = event => { try { diagnostic(event); } catch {} };
   let session, starting, closed = false;
@@ -194,11 +195,15 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
     if (signal?.aborted || closed) throw uncertain();
     let current, threadId, job, timer, aborted = false, completed = false;
     let rejectStop;
+    const pageController = new AbortController();
+    const pageSignal = signal ? AbortSignal.any([signal, pageController.signal]) : pageController.signal;
     const stopped = new Promise((resolve, reject) => { rejectStop = reject; });
-    const abort = () => { aborted = true; rejectStop(uncertain()); };
+    const abort = () => { aborted = true; pageController.abort(); rejectStop(uncertain()); };
     signal?.addEventListener('abort', abort, { once: true });
     timer = setTimeout(abort, request.kind === 'image' ? imageTimeoutMs : textTimeoutMs);
     const operation = (async () => {
+      const prompt = await preparePrompt(request, { signal: pageSignal });
+      if (aborted || signal?.aborted) throw uncertain();
       current = await start();
       if (aborted || signal?.aborted) throw uncertain();
       const response = await current.rpc('thread/start', threadParams(request, current.cwd), reply => {
@@ -219,7 +224,7 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
         if (id) await current.rpc('turn/interrupt', { threadId, turnId: id }).catch(() => {});
         await current.rpc('thread/unsubscribe', { threadId }).catch(() => {});
       };
-      const input = [{ type: 'text', text: codexPrompt(request) }, ...(request.images || []).map(url => ({ type: 'image', url }))];
+      const input = [{ type: 'text', text: prompt }, ...(request.images || []).map(url => ({ type: 'image', url }))];
       const turn = current.rpc('turn/start', { threadId, input,
         effort: request.effort, serviceTier: request.speed === 'fast' ? 'fast' : 'default' }, stopLateTurn)
         .then(async reply => {
@@ -250,6 +255,7 @@ function createCodexAppServer({ launch = spawn, environment = codexEnvironment,
     runs.add(operation);
     try { return await Promise.race([operation, stopped]); }
     finally {
+      pageController.abort();
       clearTimeout(timer); signal?.removeEventListener('abort', abort);
       runs.delete(operation);
       if (current && threadId) {

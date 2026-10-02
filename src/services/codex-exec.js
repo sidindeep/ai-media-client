@@ -2,7 +2,8 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { codexArguments, codexPrompt } = require('./codex-request');
+const { codexArguments } = require('./codex-request');
+const { prepareCodexPrompt } = require('./codex-web-context');
 const { collectImage } = require('./codex-images');
 const { parseCodexOutput } = require('./codex-usage');
 const { codexEnvironment } = require('./codex-runtime');
@@ -12,6 +13,7 @@ async function execute(request, { signal } = {}) {
   if (signal?.aborted) throw new Error('Сервис Codex остановлен.');
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'media-codex-'));
   try {
+    const prompt = await prepareCodexPrompt(request, { signal });
     const imagePaths = [];
     for (const [index, image] of (request.images || []).entries()) { const match = /^data:image\/(png|jpeg|webp);base64,(.+)$/.exec(image); if (match) { const filename = path.join(directory, `reference-${index}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`); await fs.writeFile(filename, Buffer.from(match[2], 'base64')); imagePaths.push(filename); } }
     const output = await new Promise((resolve, reject) => {
@@ -41,7 +43,7 @@ async function execute(request, { signal } = {}) {
         }
         resolve(output.trim());
       });
-      child.stdin.end(codexPrompt(request));
+      child.stdin.end(prompt);
     });
     const parsed = parseCodexOutput(output);
     if (request.kind !== 'image') {

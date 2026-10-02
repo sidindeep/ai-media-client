@@ -80,6 +80,18 @@ test('App-server reads every visible model page and reuses the recent catalog', 
   assert.equal(h.calls.filter(call => call.method === 'model/list').length, 2);
 });
 
+test('App-server sends prepared public page evidence in the same single turn', async t => {
+  const { prepareCodexPrompt } = require('../src/services/codex-web-context');
+  const h = await harness(t, data => { if (data.m.method === 'turn/start') complete(data, 'Исследование сайта'); }, {
+    preparePrompt: (request, options) => prepareCodexPrompt(request, { ...options,
+      readPage: async url => ({ url, status: 200, text: 'Публичная студия генерации' }) }),
+  });
+  assert.equal((await h.adapter.run(request('Изучи https://example.com/'))).output, 'Исследование сайта');
+  const turns = h.calls.filter(call => call.method === 'turn/start');
+  assert.equal(turns.length, 1);
+  assert.match(turns[0].params.input[0].text, /Публичная студия генерации/);
+});
+
 test('App-server startup failure is unknown, does not replay, and a new request can start a new process', async t => {
   let fail = true;
   const h = await harness(t, data => { if (data.m.method === 'turn/start') { if (fail) data.child.kill(); else complete(data, 'OK'); } });

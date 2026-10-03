@@ -59,6 +59,7 @@ function describeModel(item) {
   if (item.id.includes('-edit-apimart') || item.id === 'wan2.6-i2v') fields = fields.map(field => field.key === 'image_urls' ? { ...field, required: true } : field);
   return require('../../model-ui-visibility').applyModelUiVisibility({ id: item.id, name: item.id, kind, endpoint, fields, promptRequired,
     ...(metadata?.taskActions ? { taskActions: metadata.taskActions } : {}),
+    ...(metadata?.durationMode ? { durationMode: metadata.durationMode } : {}),
     capabilities: Array.isArray(item.capability_tags) ? item.capability_tags.filter(value => typeof value === 'string') : [],
     ...(metadata?.source ? { documentation: metadata.source } : {}) }, 'apimart');
 }

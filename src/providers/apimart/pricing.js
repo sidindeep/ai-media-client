@@ -131,6 +131,7 @@ function mediaEstimate(payload, model, options = {}) {
       }
     }
   } else if (model.kind === 'video' && data.billing_type === 'per_second') {
+    if (model.durationMode === 'automatic') return null;
     const resolution = String(selected('resolution', '')).toUpperCase();
     const referenceVideo = Array.isArray(options.video_urls) && options.video_urls.length > 0;
     // APIMart bills reference duration plus output duration. URL count alone
@@ -166,6 +167,8 @@ function unavailableMediaReason(payload, model, options = {}) {
   if (options.layer_decomposition === true)
     return 'Нет тарифа разделения на слои для выбранного размера или нужен ровно один исходник';
   if (data.billing_type === 'per_second') {
+    if (model.durationMode === 'automatic')
+      return 'Длительность результата выбирает модель; API не принимает duration. Точная цена по посекундному тарифу известна после генерации';
     if (options.video_urls?.length) return 'Для цены нужна подтверждённая длительность исходного видео';
     const duration = options.duration ?? model.fields?.find(field => field.key === 'duration')?.apiDefault;
     if (!(Number(duration) > 0)) return 'Укажите длительность видео для расчёта цены';

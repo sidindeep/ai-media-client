@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { createApimartClient } = require('../src/providers/apimart/client');
 const { createApimartJobs } = require('../src/services/apimart-jobs');
 const { defineProvider } = require('../src/providers/contract');
-const { simpleRates, estimate, usedCost, mediaEstimate, publishedMediaTariff } = require('../src/providers/apimart/pricing');
+const { simpleRates, estimate, usedCost, mediaEstimate, unavailableMediaReason, publishedMediaTariff } = require('../src/providers/apimart/pricing');
 const { readProviderStatus } = require('../src/services/provider-status');
 const { describeModel } = require('../src/providers/apimart/catalog');
 const { openDatabase } = require('../src/database/database');
@@ -441,4 +441,17 @@ test('sparse video tariff uses the documented default and never substitutes unkn
   assert.equal(mediaEstimate(tariff, model).amountUsd, 0.25);
   assert.equal(mediaEstimate(tariff, model, { resolution: '1080p' }).amountUsd, 0.4);
   assert.equal(mediaEstimate(tariff, model, { resolution: '4K' }), null);
+});
+
+test('Gemini Omni automatic output duration cannot produce a per-second quote from a supplied duration', () => {
+  const tariff = { data: { billing_type: 'per_second', paid_price: 0.05 } };
+  for (const id of ['gemini-omni-1.1-flash', 'gemini-omni-flash-preview']) {
+    const model = describeModel({ id, category: 'video' });
+    assert.equal(model.fields.some(field => field.key === 'duration'), false);
+    for (const options of [{}, { duration: 5 }, { video_urls: ['https://example.com/clip.mp4'] }]) {
+      assert.equal(mediaEstimate(tariff, model, options), null);
+      assert.match(unavailableMediaReason(tariff, model, options), /Длительность результата выбирает модель/);
+    }
+  }
+  assert.ok(Math.abs(mediaEstimate(tariff, describeModel({ id: 'gemini-omni-1.1-flash-ext', category: 'video' })).amountUsd - 0.3) < 1e-10);
 });

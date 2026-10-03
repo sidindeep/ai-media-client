@@ -1300,6 +1300,7 @@
       ]
     },
     "gemini-omni-1.1-flash": {
+      "durationMode": "automatic",
       "endpoint": "/v1/videos/generations",
       "source": "https://docs.apimart.ai/en/api-reference/videos/gemini-omni-1.1-flash/generation",
       "promptRequired": false,
@@ -1495,6 +1496,7 @@
       ]
     },
     "gemini-omni-flash-preview": {
+      "durationMode": "automatic",
       "endpoint": "/v1/videos/generations",
       "source": "https://docs.apimart.ai/en/api-reference/videos/gemini-omni-flash-preview/generation",
       "promptRequired": true,

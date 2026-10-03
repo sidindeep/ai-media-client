@@ -6,11 +6,14 @@ const { resolveGitCommit } = require('../../scripts/resolve-git-commit.cjs');
 // Identify shipped application files, including when hosting mounts sources over /app.
 function buildInfo(root = path.resolve(__dirname, '../..'), manifest = '/opt/media-build.json', commitFile = '/opt/media-commit') {
   const hash = createHash('sha256');
+  let sourceUpdatedMs = 0;
   function add(relative) {
     const filename = path.join(root, relative);
-    if (fs.statSync(filename).isDirectory()) {
+    const stat = fs.statSync(filename);
+    if (stat.isDirectory()) {
       for (const name of fs.readdirSync(filename).sort()) add(relative + '/' + name);
     } else {
+      sourceUpdatedMs = Math.max(sourceUpdatedMs, stat.mtimeMs);
       const content = fs.readFileSync(filename);
       hash.update(relative + '\0' + content.length + '\0'); hash.update(content);
     }
@@ -33,7 +36,7 @@ function buildInfo(root = path.resolve(__dirname, '../..'), manifest = '/opt/med
     }
   } catch { /* Local source runs have no Docker build manifest. */ }
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  return { version: pkg.version, channel: pkg.releaseChannel, commit, build: sourceId.slice(0, 12), sourceId, builtAt };
+  return { version: pkg.version, channel: pkg.releaseChannel, commit, build: sourceId.slice(0, 12), sourceId, builtAt, sourceUpdatedAt: new Date(sourceUpdatedMs).toISOString() };
 }
 if (require.main === module) {
   fs.writeFileSync(process.argv[2], JSON.stringify({ ...buildInfo(undefined, undefined, process.argv[3]), builtAt: new Date().toISOString() }) + '\n');

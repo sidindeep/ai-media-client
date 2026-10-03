@@ -80,6 +80,18 @@ test('App-server reads every visible model page and reuses the recent catalog', 
   assert.equal(h.calls.filter(call => call.method === 'model/list').length, 2);
 });
 
+test('App-server sends prepared public page evidence in the same single turn', async t => {
+  const { prepareCodexPrompt } = require('../src/services/codex-web-context');
+  const h = await harness(t, data => { if (data.m.method === 'turn/start') complete(data, 'Исследование сайта'); }, {
+    preparePrompt: (request, options) => prepareCodexPrompt(request, { ...options,
+      readPage: async url => ({ url, status: 200, text: 'Публичная студия генерации' }) }),
+  });
+  assert.equal((await h.adapter.run(request('Изучи https://example.com/'))).output, 'Исследование сайта');
+  const turns = h.calls.filter(call => call.method === 'turn/start');
+  assert.equal(turns.length, 1);
+  assert.match(turns[0].params.input[0].text, /Публичная студия генерации/);
+});
+
 test('App-server startup failure is unknown, does not replay, and a new request can start a new process', async t => {
   let fail = true;
   const h = await harness(t, data => { if (data.m.method === 'turn/start') { if (fail) data.child.kill(); else complete(data, 'OK'); } });
@@ -302,6 +314,8 @@ test('App-server sandbox and feature policy is per-thread, with no inherited use
   assert.equal(text.sandbox, 'read-only'); assert.equal(text.approvalPolicy, 'never');
   assert.equal(text.ephemeral, true); assert.equal(text.config['features.shell_tool'], false);
   assert.equal(text.config['features.image_generation'], false);
+  assert.equal(text.config.web_search, 'live');
+  assert.equal(image.config.web_search, 'disabled');
   assert.equal(image.config['features.image_generation'], true); assert.equal(image.serviceTier, 'fast');
   const h = await harness(t);
   await fs.writeFile(path.join(h.home, 'config.toml'), '[mcp_servers.untrusted]\ncommand="bad"');

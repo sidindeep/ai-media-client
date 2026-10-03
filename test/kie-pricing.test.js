@@ -52,6 +52,43 @@ test('Qwen3 image editing adds each input image to the selected output tariff', 
   assert.throws(() => quoteKie(model, { resolution: '1K', image_urls: [] }, tariffData), /исходные изображения/);
 });
 
+test('legacy Qwen estimates live megapixel rates for every documented output size', () => {
+  const model = require('../src/catalog').models.find(item => item.apiModel === 'qwen/text-to-image');
+  const tariff = { fetchedAt: '2026-10-02T00:00:00Z', rows: [
+    { modelDescription: 'Qwen Image , text-to-image', creditPrice: '4.0', creditUnit: 'per megapixel', anchor: 'https://kie.ai/qwen-image' },
+    { modelDescription: 'Qwen Image, image-to-image', creditPrice: '9', creditUnit: 'per megapixel', anchor: 'https://kie.ai/qwen-image' },
+  ] };
+  const prices = { square: 1.049, square_hd: 4.195, portrait_4_3: 3.146,
+    portrait_16_9: 2.36, landscape_4_3: 3.146, landscape_16_9: 2.36 };
+  for (const [image_size, credits] of Object.entries(prices)) {
+    const quote = quoteKie(model, { image_size }, tariff);
+    assert.equal(quote.credits, credits, image_size);
+    assert.equal(quote.status, 'estimated');
+    assert.match(quote.warning, /Округление Kie/);
+    assert.match(quote.version, /qwen-output-pixels-2026-10-02/);
+  }
+  assert.equal(quoteKie(model, {}, tariff).credits, 4.195, 'quote uses the same catalog default as the request');
+  assert.equal(quoteKie(model, { image_size: 'square' }, { ...tariff, rows: [
+    { ...tariff.rows[0], creditPrice: '8' },
+  ] }).credits, 2.098, 'rate remains live, not copied from a marketing table');
+  for (const image_size of ['auto', 'toString', { width: 1024, height: 1024 }])
+    assert.throws(() => quoteKie(model, { image_size }, tariff), /параметров/);
+  const editing = require('../src/catalog').models.find(item => item.apiModel === 'qwen/image-to-image');
+  assert.throws(() => quoteKie(editing, { image_size: 'square' }, tariff), /Единица тарифа/,
+    'a caller cannot invent an output size for a model whose API has no size field');
+});
+
+test('Qwen Image Edit megapixels include output count and reject invalid counts', () => {
+  const model = require('../src/catalog').models.find(item => item.apiModel === 'qwen/image-edit');
+  const tariff = { rows: [{ modelDescription: 'Qwen image-edit, image-to-image', creditPrice: '5',
+    creditUnit: 'per megapixel', anchor: 'https://kie.ai/qwen/image-edit' }] };
+  assert.equal(quoteKie(model, {}, tariff).credits, 3.933);
+  assert.equal(quoteKie(model, { image_size: 'square_hd', num_images: '4' }, tariff).credits, 20.972);
+  for (const num_images of [0, -1, 1.5, 5, 'bad'])
+    assert.throws(() => quoteKie(model, { num_images }, tariff), /количество/);
+  assert.throws(() => quoteKie(model, {}, { rows: [] }), /временно недоступна/);
+});
+
 test('Kie dynamic pricing resolves an exact model id from an anchor path', () => {
   const model = { id: 'kie:nano-banana-2-lite', apiModel: 'nano-banana-2-lite', providerId: 'kie' };
   const row = { modelDescription: 'nano-banana-2-lite, 1k', creditPrice: '4', creditUnit: 'per image', anchor: 'https://kie.ai/nano-banana-2-lite' };

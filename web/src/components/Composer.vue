@@ -181,13 +181,28 @@ const autoOfferLabel = (providerId: string) => providerId === 'kie' ? 'Kie.ai ·
   : providerId === 'apimart' ? 'APIMart' : providerId;
 const autoPublishedTariff = (offer: AutoRouteQuote['offers'][number]) => offer.publishedTariff || publishedTariffForRoute(
   modelChoice.value, offer.providerId, offer.modelId, studio.serviceModelConfig?.models || []);
-const quotedPrice = computed(() => (autoRouting.value ? Boolean(quote.value?.selectedProviderId) : studio.provider === 'apimart')
-  && quote.value?.status === 'estimated'
-  && quote.value.credits != null && quote.value.amountUsd != null
-  ? t('composer.estimatedTotal', {
-    credits: formatNumber(quote.value.credits, { maximumFractionDigits: 8 }),
-    usd: formatNumber(quote.value.amountUsd, { maximumFractionDigits: 8 }),
-  }) : '');
+const quotedPrice = computed(() => {
+  const current = quote.value;
+  if (autoRouting.value) {
+    const hasPrice = (credits: unknown): credits is number => typeof credits === 'number'
+      && Number.isFinite(credits) && credits > 0;
+    const kie = current?.autoOffers?.find(offer => offer.providerId === 'kie' && hasPrice(offer.credits));
+    const credits = kie?.credits ?? current?.credits
+      ?? current?.autoOffers?.find(offer => !offer.unavailable && hasPrice(offer.credits))?.credits;
+    if (!hasPrice(credits)) return '';
+    if (studio.isAdmin && current?.selectedProviderId && hasPrice(current.credits)
+      && current.amountUsd != null && Number.isFinite(current.amountUsd)) {
+      return t('composer.autoButtonPriceAdmin', { credits: formatCreditCost(credits),
+        selectedCredits: formatCreditCost(current.credits),
+        usd: formatNumber(current.amountUsd, { maximumFractionDigits: 8 }) });
+    }
+    return t('composer.autoButtonPrice', { credits: formatCreditCost(credits) });
+  }
+  return studio.provider === 'apimart' && current?.status === 'estimated'
+    && current.credits != null && current.amountUsd != null
+    ? t('composer.estimatedTotal', { credits: formatNumber(current.credits, { maximumFractionDigits: 8 }),
+      usd: formatNumber(current.amountUsd, { maximumFractionDigits: 8 }) }) : '';
+});
 const apimartBreakdown = computed(() => studio.provider === 'apimart' && quote.value?.status === 'estimated'
   && quote.value.estimatedInputTokens != null && quote.value.estimatedOutputTokens != null
   && quote.value.inputUsdPerToken != null && quote.value.outputUsdPerToken != null

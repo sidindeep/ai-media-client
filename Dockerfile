@@ -4,6 +4,7 @@ RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-workspace
 COPY web ./web
+COPY src/movie ./src/movie
 COPY config/cost-routing-compatibility.json config/service-models.json config/movie-editor.json ./config/
 COPY public ./public
 RUN pnpm check:web:vue && pnpm build:web

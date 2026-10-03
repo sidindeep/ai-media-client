@@ -224,6 +224,7 @@ export type ReleaseInfo = {
   build: string;
   commit: string | null;
   builtAt?: string | null;
+  sourceUpdatedAt?: string | null;
 };
 
 export type CodexModel = {

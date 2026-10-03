@@ -1,0 +1,21 @@
+{
+  "version": "qwen-output-pixels-2026-10-02",
+  "sizes": {
+    "square": [512, 512],
+    "square_hd": [1024, 1024],
+    "portrait_4_3": [768, 1024],
+    "portrait_16_9": [576, 1024],
+    "landscape_4_3": [1024, 768],
+    "landscape_16_9": [1024, 576]
+  },
+  "models": {
+    "qwen/text-to-image": {
+      "sizeField": "image_size"
+    },
+    "qwen/image-edit": {
+      "sizeField": "image_size",
+      "countField": "num_images",
+      "maxCount": 4
+    }
+  }
+}

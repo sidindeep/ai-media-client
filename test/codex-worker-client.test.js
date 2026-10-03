@@ -37,3 +37,16 @@ test('Codex worker client keeps confirmed rejection evidence and sanitizes error
     assert.match(error.message, /некорректный ответ/); return true;
   });
 });
+
+test('worker identity is taken only from a valid private response header, including missing-job errors', async () => {
+  let instanceId = require('node:crypto').randomUUID();
+  const client = createCodexWorkerClient({ url: 'http://worker', fetchImpl: async url => ({
+    ok: url.endsWith('/health'), status: url.endsWith('/health') ? 200 : 404,
+    headers: { get: () => instanceId }, json: async () => ({ error: 'Запрос не найден' }),
+  }) });
+  assert.equal(await client.getIdentity(), instanceId);
+  await assert.rejects(client.getTask('account-a', 'request-a'), error => error.workerInstanceId === instanceId);
+  instanceId = 'DO_NOT_STORE_PAYLOAD';
+  assert.equal(await client.getIdentity(), null);
+  await assert.rejects(client.getTask('account-a', 'request-a'), error => error.workerInstanceId === null);
+});

@@ -141,6 +141,79 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
+    if (process.env.BROWSER_E2E_POPUPS_ONLY === '1') {
+      await client.evaluate("window.prompt=window.confirm=window.alert=()=>{throw new Error('Native dialog called')};window.__popupStudio=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');void 0");
+      const openAdd = async () => {
+        await client.evaluate("{const button=document.querySelector('.sidebar-toolbar .icon-button');button.focus();button.click();}void 0");
+        await client.until("Boolean(document.querySelector('.popup-dialog[open] input'))");
+      };
+      const setName = async name => client.evaluate(`{const input=document.querySelector('.popup-field input');input.value=${JSON.stringify(name)};input.dispatchEvent(new Event('input',{bubbles:true}));}void 0`);
+      const submit = async () => {
+        await client.evaluate("document.querySelector('.popup-submit').click();void 0");
+        await client.until("!document.querySelector('.popup-dialog[open]')");
+      };
+      const chatAction = async index => {
+        await client.evaluate("Array.from(document.querySelectorAll('.sidebar-entry')).find(entry=>entry.querySelector('strong')?.textContent==='Окно: чат').querySelector('.entry-menu').click();void 0");
+        await client.evaluate(`document.querySelectorAll('.entry-actions button')[${index}].click();void 0`);
+        await client.until("Boolean(document.querySelector('.popup-dialog[open]'))");
+      };
+      const initialChats = await client.evaluate('window.__popupStudio.chats.length');
+      await openAdd();
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.popup-field input') && document.activeElement.selectionEnd===document.activeElement.value.length"), true);
+      await setName('   ');
+      assert.equal(await client.evaluate("document.querySelector('.popup-submit').disabled"), true);
+      await client.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await client.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal(await client.evaluate('window.__popupStudio.chats.length'), initialChats);
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.sidebar-toolbar .icon-button')"), true);
+      await openAdd();
+      await client.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: 2, y: 2, button: 'left', clickCount: 1 });
+      await client.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 2, y: 2, button: 'left', clickCount: 1 });
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal(await client.evaluate('window.__popupStudio.chats.length'), initialChats);
+      await openAdd();
+      await setName('Окно: чат');
+      // One transport failure proves that input survives and retry uses the real API.
+      await client.evaluate("window.__popupFetch=window.fetch;window.fetch=(input,init)=>{if(init?.method==='POST' && new URL(String(input),location.origin).pathname==='/api/chats'){window.fetch=window.__popupFetch;return Promise.reject(new Error('Popup retry test'))}return window.__popupFetch(input,init)};document.querySelector('.popup-submit').click();void 0");
+      await client.until("Boolean(document.querySelector('.popup-error'))");
+      assert.equal(await client.evaluate("document.querySelector('.popup-field input').value"), 'Окно: чат');
+      assert.equal(await client.evaluate("document.querySelector('.popup-submit').disabled"), false);
+      await client.evaluate("document.querySelector('.popup-field input').focus();void 0");
+      await client.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 });
+      await client.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await client.until("!document.querySelector('.popup-dialog[open]') && window.__popupStudio.chats.some(chat=>chat.name==='Окно: чат')");
+      const chatId = await client.evaluate("window.__popupStudio.chats.find(chat=>chat.name==='Окно: чат').id");
+      assert.equal((await pool.query('SELECT name FROM media_chats WHERE id=$1', [chatId])).rows[0].name, 'Окно: чат');
+      await chatAction(0);
+      assert.equal(await client.evaluate("document.querySelector('.popup-field input').value"), 'Окно: чат');
+      await setName('Не сохранять');
+      await client.evaluate("document.querySelector('.popup-cancel').click();void 0");
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal(await client.evaluate(`window.__popupStudio.chats.find(chat=>chat.id===${JSON.stringify(chatId)}).name`), 'Окно: чат');
+      const projects = await client.evaluate("Promise.all([window.__popupStudio.createProject('Одинаковый'),window.__popupStudio.createProject('Одинаковый')]).then(projects=>projects.map(project=>project.id))");
+      await chatAction(1);
+      assert.deepEqual(await client.evaluate("Array.from(document.querySelectorAll('.popup-field option')).filter(option=>option.textContent==='Одинаковый').map(option=>option.value).sort()"), [...projects].sort());
+      await client.evaluate(`{const select=document.querySelector('.popup-field select');select.value=${JSON.stringify(projects[1])};select.dispatchEvent(new Event('change',{bubbles:true}));}void 0`);
+      await submit();
+      assert.equal((await pool.query('SELECT project_id FROM media_chats WHERE id=$1', [chatId])).rows[0].project_id, projects[1]);
+      // Return to standalone so archive exercises the same visible consumer.
+      await client.evaluate(`window.__popupStudio.moveChat(${JSON.stringify(chatId)},null)`);
+      await chatAction(2);
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.popup-cancel')"), true);
+      await submit();
+      assert.ok((await pool.query('SELECT archived_at FROM media_chats WHERE id=$1', [chatId])).rows[0].archived_at);
+      await client.evaluate("document.querySelectorAll('.sidebar-tabs button')[2].click();void 0");
+      await client.until("Boolean(document.querySelector('.archive-delete'))");
+      await client.evaluate("document.querySelector('.archive-delete').click();void 0");
+      await client.until("Boolean(document.querySelector('.popup-dialog[open].popup-danger'))");
+      assert.equal(await client.evaluate("document.activeElement===document.querySelector('.popup-cancel')"), true);
+      await client.evaluate("document.querySelector('.popup-cancel').click();void 0");
+      await client.until("!document.querySelector('.popup-dialog[open]')");
+      assert.equal((await pool.query('SELECT name FROM media_chats WHERE id=$1', [chatId])).rowCount, 1);
+      console.log('Popup browser E2E passed: native dialogs forbidden, cancel/Escape/backdrop, focus, retry/Enter, real chat creation, project IDs and archive/delete confirmation');
+      return;
+    }
     if (process.env.BROWSER_E2E_OMNIHUMAN_ONLY === '1') {
       await client.evaluate("document.querySelectorAll('.composer-tabs button')[2].click();void 0");
       await client.evaluate("document.querySelector('.sidebar-provider-menu').open=true;document.querySelector('.sidebar-provider-option[data-provider=media]').click();void 0");
@@ -218,7 +291,7 @@ async function main() {
       console.log('Kie/APIMart UI passed: required fields restored, optional fields hidden, Suno common/mode fields and saved drafts preserved; no provider generation');
       return;
     }
-    if (process.env.BROWSER_E2E_MOVIE_ONLY === '1' || process.env.BROWSER_E2E_MOVIE_GRID_ONLY === '1') {
+    if (process.env.BROWSER_E2E_MOVIE_ONLY === '1' || process.env.BROWSER_E2E_MOVIE_GRID_ONLY === '1' || process.env.BROWSER_E2E_MOVIE_EDIT_ONLY === '1') {
       await client.evaluate("document.querySelector('.sidebar-movie-link').click();void 0");
       await client.until("document.querySelector('.movie-editor .movie-title-add') && !document.querySelector('.movie-controls').disabled");
       await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
@@ -246,6 +319,89 @@ async function main() {
         assert.ok(layout.actionsBottom <= layout.bottom + 1 && layout.bottom <= layout.height + 1, `Scene actions cannot be reached at ${width}: ${JSON.stringify(layout)}`);
       }
       await client.command('Emulation.clearDeviceMetricsOverride');
+      if (process.env.BROWSER_E2E_MOVIE_EDIT_ONLY === '1') {
+        // A real changing video lets the exported pixel prove that trimStart
+        // is applied, including after split and the native decoder recovery.
+        await client.evaluate(`(async()=>{
+          const c=document.createElement('canvas');c.width=160;c.height=90;const ctx=c.getContext('2d');
+          ctx.fillStyle='red';ctx.fillRect(0,0,160,90);
+          const photo=await new Promise(resolve=>c.toBlob(resolve,'image/png'));
+          const stream=c.captureStream(30);const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});
+          const chunks=[];recorder.ondataavailable=e=>chunks.push(e.data);const stopped=new Promise(resolve=>recorder.onstop=resolve);
+          recorder.start();const started=performance.now();const paint=setInterval(()=>{ctx.fillStyle=performance.now()-started<1000?'red':'lime';ctx.fillRect(0,0,160,90);},30);
+          await new Promise(resolve=>setTimeout(resolve,3100));clearInterval(paint);recorder.stop();await stopped;stream.getTracks().forEach(t=>t.stop());
+          const files=new DataTransfer();files.items.add(new File([photo],'framing.png',{type:'image/png'}));files.items.add(new File(chunks,'trim.webm',{type:'video/webm'}));
+          const input=document.querySelector('.movie-file input');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+        })()`);
+        await client.until("document.querySelectorAll('.movie-material').length===3 && !document.querySelector('.movie-controls').disabled");
+        await client.evaluate(`{
+          const buffer=new ArrayBuffer(44+48000*3*2),view=new DataView(buffer);
+          const text=(at,s)=>{for(let i=0;i<s.length;i++)view.setUint8(at+i,s.charCodeAt(i));};
+          text(0,'RIFF');view.setUint32(4,buffer.byteLength-8,true);text(8,'WAVEfmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,48000,true);view.setUint32(28,96000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,buffer.byteLength-44,true);
+          for(let i=0;i<48000*3;i++)view.setInt16(44+i*2,Math.sin(i*440*2*Math.PI/48000)*9000,true);
+          const data=new DataTransfer();data.items.add(new File([buffer],'sound.wav',{type:'audio/wav'}));const input=document.querySelector('input[accept="audio/*"]');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+        }void 0`);
+        await client.until("document.querySelector('.movie-music-volume') && !document.querySelector('.movie-controls').disabled");
+        await client.evaluate("{const el=document.querySelector('.movie-music-volume');el.value='0.25';el.dispatchEvent(new Event('input',{bubbles:true}));const fields=document.querySelectorAll('.movie-music-settings input[type=number]');for(const [index,val] of [[0,'1'],[1,'0.2'],[2,'0.3'],[3,'0.4']]){fields[index].value=val;fields[index].dispatchEvent(new Event('input',{bubbles:true}));}}void 0");
+        await client.evaluate(`{
+          function set(selector,value,event='change'){const el=document.querySelector(selector);el.value=value;el.dispatchEvent(new Event(event,{bubbles:true}));}
+          set('.movie-trim-end','2.5');set('.movie-trim-start','1.5');
+          document.querySelector('.movie-seek-scene').click();
+        }void 0`);
+        await client.until("Number(document.querySelector('.movie-duration').value)===1");
+        await client.evaluate("{const el=document.querySelector('.movie-playhead');el.value='255';el.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+        // Title=3s and image=5s, so frame 255 is 0.5s into trimmed video.
+        await client.until("!document.querySelector('.movie-split').disabled");
+        await client.evaluate("document.querySelector('.movie-split').click();void 0");
+        await client.until("document.querySelectorAll('.movie-material').length===4 && Number(document.querySelector('.movie-trim-start').value)===2");
+        await client.evaluate(`{
+          document.querySelectorAll('.movie-material')[1].click();
+        }void 0`);
+        await client.evaluate(`{
+          function set(selector,value,event='change'){const el=document.querySelector(selector);el.value=value;el.dispatchEvent(new Event(event,{bubbles:true}));}
+          set('.movie-fit','cover');set('.movie-scale','1.3','input');set('.movie-offset-x','10','input');set('.movie-motion','zoom-in');
+          const text=document.querySelector('.movie-scene textarea');text.value='Монтаж';text.dispatchEvent(new Event('input',{bubbles:true}));
+        }void 0`);
+        await client.until("document.querySelector('.movie-caption-start')");
+        await client.evaluate(`{
+          function set(selector,value,event='change'){const el=document.querySelector(selector);el.value=value;el.dispatchEvent(new Event(event,{bubbles:true}));}
+          set('.movie-caption-start','0.3');set('.movie-caption-end','1.2');set('.movie-transition','slide');
+        }void 0`);
+        await client.until("document.querySelector('.movie-transition-seconds')");
+        await client.evaluate("{const el=document.querySelector('.movie-transition-seconds');el.value='0.2';el.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+        await client.until("/сохранён|saved/.test(document.querySelector('.movie-draft-status').textContent)");
+        const edited = await client.evaluate("(async()=>{const r=await fetch('/api/movie/draft',{headers:{'X-Media-Client':'web'}});return (await r.json()).result;})()");
+        assert.deepEqual(edited.scenes.slice(2).map(s=>[s.trimStart,s.seconds]), [[1.5,0.5],[2,0.5]]);
+        assert.deepEqual([edited.scenes[1].fit,edited.scenes[1].scale,edited.scenes[1].motion,edited.scenes[1].captionStart,edited.scenes[1].captionEnd], ['cover',1.3,'zoom-in',0.3,1.2]);
+        assert.equal(edited.scenes[1].title, 'Монтаж');
+        assert.deepEqual([edited.musicSettings.volume,edited.musicSettings.start,edited.musicSettings.trimStart], [0.25,1,0.2]);
+        assert.equal(await client.evaluate("document.querySelectorAll('.timeline-track').length"), 4);
+        await client.command('Page.reload', { ignoreCache: true });
+        await sleep(500);
+        await client.until("document.querySelectorAll('.movie-material').length===4 && !document.querySelector('.movie-render').disabled");
+        await client.evaluate("document.querySelectorAll('.movie-material')[3].click();void 0");
+        await client.until("Number(document.querySelector('.movie-trim-start').value)===2");
+        // Frame 8.4 seconds is within the last half of the trimmed source.
+        await client.evaluate("{const decode=VideoDecoder.prototype.decode;VideoDecoder.prototype.decode=function(packet){VideoDecoder.prototype.decode=decode;window.__editRecovery=true;throw new Error('Cannot decode video frame');};document.querySelector('.movie-render').click();}void 0");
+        for(let attempt=0;attempt<1200;attempt++) { if(await client.evaluate("Boolean(document.querySelector('.movie-download,.movie-editor .form-error'))"))break;await sleep(100); }
+        assert.equal(await client.evaluate("document.querySelector('.movie-editor .form-error')?.textContent || ''"), '');
+        await client.until("document.querySelector('.movie-download')");
+        const pixels = await client.evaluate(`(async()=>{
+          const v=document.createElement('video');v.src=document.querySelector('.movie-download').href;
+          await new Promise((resolve,reject)=>{v.onloadeddata=resolve;v.onerror=reject;});
+          const sought=new Promise(resolve=>v.onseeked=resolve);v.currentTime=8.4;await sought;
+          const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext('2d');ctx.drawImage(v,0,0);
+          const blob=await(await fetch(v.src)).blob();const context=new AudioContext();const audio=await context.decodeAudioData(await blob.arrayBuffer());const samples=audio.getChannelData(0);const energy=(start,end)=>{let total=0,count=0;for(let i=Math.round(start*audio.sampleRate);i<Math.min(samples.length,Math.round(end*audio.sampleRate));i++){total+=samples[i]*samples[i];count++;}return Math.sqrt(total/Math.max(1,count));};const silent=energy(0.1,0.5),audible=energy(1.6,2),faded=energy(3.65,3.8);await context.close();
+          return {duration:v.duration,pixel:Array.from(ctx.getImageData(c.width/2,c.height/2,1,1).data),silent,audible,faded};
+        })()`);
+        assert.ok(Math.abs(pixels.duration-8.8)<0.1, `Edited duration ${pixels.duration}`);
+        assert.ok(pixels.pixel[1]>180 && pixels.pixel[0]<60, `Trimmed recovery frame ${pixels.pixel}`);
+        assert.ok(pixels.silent < 0.001 && pixels.audible > 0.01 && pixels.audible < 0.08 && pixels.faded < pixels.audible / 2, `Music delay/volume/fade ${JSON.stringify(pixels)}`);
+        assert.equal(await client.evaluate('window.__editRecovery'), true);
+        await saveMovieArtifact(client, '.movie-download', 'export-edited.mp4');
+        console.log('Movie editing passed: trim/split, framing/motion, timed text, transition, timeline seek, persistent draft and exported source pixels with decoder recovery');
+        return;
+      }
       if (process.env.BROWSER_E2E_MOVIE_GRID_ONLY === '1') {
         // Exercise the shipped scoped CSS in both system motion modes. A
         // persistent probe avoids racing the completion of small thumbnails.
@@ -327,7 +483,7 @@ async function main() {
       // Simulate a WebCodecs decoder failure after support probing. Recovery
       // must use native video frames, keep audio and reuse downloaded sources.
       await client.evaluate("{const decode=VideoDecoder.prototype.decode;VideoDecoder.prototype.decode=function(packet){VideoDecoder.prototype.decode=decode;window.__movieDecoderRecovery=true;throw new Error('Cannot decode video frame');};}void 0");
-      await client.evaluate("(async()=>{for(const tile of document.querySelectorAll('.movie-material')){tile.click();await new Promise(resolve=>setTimeout(resolve,0));const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();})()");
+      await client.evaluate("(async()=>{for(const tile of document.querySelectorAll('.movie-material')){tile.click();await new Promise(resolve=>setTimeout(resolve,0));const el=document.querySelector('.movie-scene input[type=number]');el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));const transition=document.querySelector('.movie-transition');transition.value='fade';transition.dispatchEvent(new Event('change',{bubbles:true}));}document.querySelector('.movie-render').click();})()");
       await client.until("/Подготовка файлов|Preparing files/.test(document.querySelector('.movie-output [role=status]')?.textContent || '')");
       for (let attempt = 0; attempt < 600; attempt++) {
         if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
@@ -425,7 +581,7 @@ async function main() {
         await client.evaluate("document.querySelector('.movie-title-add').click();void 0");
         await client.until(`document.querySelectorAll('.movie-material').length===${6 + index}`);
       }
-      await client.evaluate("(async()=>{const tiles=Array.from(document.querySelectorAll('.movie-material'));for(let index=0;index<tiles.length;index++){tiles[index].click();await new Promise(resolve=>setTimeout(resolve,0));const el=document.querySelector('.movie-scene input[type=number]');el.value=[2,4].includes(index)?'1':'6.5';el.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('.movie-render').click();})()");
+      await client.evaluate("(async()=>{const tiles=Array.from(document.querySelectorAll('.movie-material'));for(let index=0;index<tiles.length;index++){tiles[index].click();await new Promise(resolve=>setTimeout(resolve,0));const el=document.querySelector('.movie-scene input[type=number]');el.value=[2,4].includes(index)?'1':'6.5';el.dispatchEvent(new Event('input',{bubbles:true}));const transition=document.querySelector('.movie-transition');transition.value='fade';transition.dispatchEvent(new Event('change',{bubbles:true}));}document.querySelector('.movie-render').click();})()");
       for (let attempt = 0; attempt < 2400; attempt++) {
         if (await client.evaluate("Boolean(document.querySelector('.movie-download, .movie-editor .form-error'))")) break;
         await sleep(100);

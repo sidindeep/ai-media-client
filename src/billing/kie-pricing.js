@@ -4,6 +4,7 @@ const { normalizePricingInput } = require('./normalize-request');
 const { modelIdFromAnchor, modelCandidates } = require('./kie-tariff-resolver');
 const fallbackConfig = require('../../config/kie-price-fallbacks.json');
 const pageAliases = require('../../config/kie-tariff-aliases.json');
+const megapixelConfig = require('../../config/kie-megapixel-pricing.json');
 
 function buildFallbackIndex(config) {
   if (config?.schemaVersion !== 1 || !config.version || !config.source || !config.models) {
@@ -236,6 +237,27 @@ function qwen3ImageQuote(model, input, candidates) {
   return component('output') + component('input') * inputCount;
 }
 
+function megapixelQuote(row, model, input) {
+  if (String(row.creditUnit || '').trim().toLowerCase() !== 'per megapixel') return null;
+  const policy = megapixelConfig.models[model.apiModel];
+  if (!policy) throw new Error('Единица тарифа Kie пока не поддерживается');
+  const dimensions = Object.hasOwn(megapixelConfig.sizes, input[policy.sizeField])
+    ? megapixelConfig.sizes[input[policy.sizeField]] : null;
+  if (!dimensions) throw new Error('Цена выбранных параметров Kie ещё не определена');
+  const count = policy.countField ? Number(input[policy.countField] ?? 1) : 1;
+  if (!Number.isSafeInteger(count) || count < 1 || count > (policy.maxCount || 1)) {
+    throw new Error('Для расчёта цены нужно количество изображений');
+  }
+  const pixels = dimensions[0] * dimensions[1] * count;
+  const numerator = decimalUnits(row.creditPrice) * pixels;
+  if (!Number.isSafeInteger(numerator)) throw new Error('Некорректная сумма кредитов');
+  return {
+    amountUnits: units(Math.ceil(numerator / 1_000_000)),
+    status: 'estimated',
+    warning: 'Предварительная оценка по размеру изображения и тарифу за мегапиксель. Округление Kie может отличаться; это не подтверждённое списание провайдера.',
+  };
+}
+
 function quoteKiePublic(model, input, tariffData, context = {}) {
   input = checkedInput(model, input);
   const rows = Array.isArray(tariffData?.rows) ? tariffData.rows : [];
@@ -246,14 +268,16 @@ function quoteKiePublic(model, input, tariffData, context = {}) {
   }
   const qwenAmountUnits = qwen3ImageQuote(model, input, candidates);
   const row = qwenAmountUnits === null ? selectTariff(model, input || {}, rows) : null;
-  const amountUnits = units(qwenAmountUnits ?? (Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model))
+  const megapixel = row && megapixelQuote(row, model, input);
+  const amountUnits = units(megapixel?.amountUnits ?? qwenAmountUnits ?? (Math.ceil(decimalUnits(row.creditPrice) * multiplier(row, input || {}, context, model))
     + seedreamProInputSurcharge(model, input, rows)));
   return {
     amountUnits,
     credits: amountUnits / SCALE,
     scale: SCALE,
     currency: 'credits',
-    version: `kie-live-${String(tariffData.fetchedAt || '').slice(0, 10) || 'unknown'}`,
+    version: `kie-live-${String(tariffData.fetchedAt || '').slice(0, 10) || 'unknown'}${megapixel ? ':' + megapixelConfig.version : ''}`,
+    ...(megapixel ? { status: megapixel.status, warning: megapixel.warning } : {}),
   };
 }
 

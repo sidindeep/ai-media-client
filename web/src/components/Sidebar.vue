@@ -4,6 +4,7 @@ import { useStudioStore } from '../stores/studio';
 import { deleteChat as deleteChatRequest, getChats, getProjects, getProviderStatus, restoreChat as restoreChatRequest, restoreProject as restoreProjectRequest } from '../api/client';
 import type { ProviderStatus } from '../api/client';
 import { useI18n } from '../i18n';
+import { popups } from '../popups/service';
 import type { Chat, Project } from '../types';
 
 const props = defineProps<{ activeSection: 'landing' | 'home' | 'movie' | 'workspace' | 'history' | 'spending' | 'profile' | 'plans' }>();
@@ -122,34 +123,53 @@ async function loadArchive() {
 const releaseLabel = computed(() => {
   const release = studio.release;
   if (!release) return t('sidebar.versionUnavailable');
-  const builtAt = release.builtAt ? new Date(release.builtAt) : null;
+  const timestamp = release.builtAt || release.sourceUpdatedAt;
+  const builtAt = timestamp ? new Date(timestamp) : null;
   const date = builtAt && !Number.isNaN(builtAt.getTime())
     ? formatDate(builtAt, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', '')
     : null;
   return `${release.channel === 'debug' ? 'DEBUG · ' : ''}${t('landing.version', { version: release.version, date: date ? ` · ${date}` : '', build: release.commit?.slice(0, 12) || '—' })}`;
 });
 
-function askName(label: string, current = '') {
-  const value = window.prompt(label, current);
-  return value?.trim() || '';
+function askName(label: string, current: string, onConfirm: (name: string) => Promise<void>, confirmLabel = t('common.save')) {
+  return popups.prompt({ title: label, label, initialValue: current, maxLength: 200, confirmLabel, onConfirm });
 }
-async function addProject() { const name = askName(t('sidebar.projectName')); if (name) await studio.createProject(name); }
+async function addProject() {
+  await askName(t('sidebar.projectName'), '', async name => { await studio.createProject(name); }, t('popup.create'));
+}
 async function addChat(projectId: string | null = null) {
-  const name = askName(t('sidebar.chatName'), t('navigation.newChat'));
-  if (!name) return;
-  await studio.createChat(name, projectId);
-  if (projectId) selectedProjectId.value = projectId;
+  await askName(t('sidebar.chatName'), t('navigation.newChat'), async name => {
+    await studio.createChat(name, projectId);
+    if (projectId) selectedProjectId.value = projectId;
+  }, t('popup.create'));
 }
-async function renameProject(project: Project) { const name = askName(t('sidebar.newProjectName'), project.name); if (name && name !== project.name) await studio.renameProject(project.id, name); menuId.value = null; }
-async function renameChat(chat: Chat) { const name = askName(t('sidebar.newChatName'), chat.name); if (name && name !== chat.name) await studio.renameChat(chat.id, name); menuId.value = null; }
-async function archiveProject(project: Project) { if (window.confirm(t('sidebar.archiveProject', { name: project.name }))) { await studio.archiveProject(project.id); if (selectedProjectId.value === project.id) selectedProjectId.value = null; } menuId.value = null; }
-async function archiveChat(chat: Chat) { if (window.confirm(t('sidebar.archiveChat', { name: chat.name }))) await studio.archiveChat(chat.id); menuId.value = null; }
+async function renameProject(project: Project) {
+  menuId.value = null;
+  await askName(t('sidebar.newProjectName'), project.name, async name => { if (name !== project.name) await studio.renameProject(project.id, name); });
+}
+async function renameChat(chat: Chat) {
+  menuId.value = null;
+  await askName(t('sidebar.newChatName'), chat.name, async name => { if (name !== chat.name) await studio.renameChat(chat.id, name); });
+}
+async function archiveProject(project: Project) {
+  menuId.value = null;
+  await popups.confirm({ title: t('sidebar.archive'), message: t('sidebar.archiveProject', { name: project.name }), confirmLabel: t('sidebar.archive'), onConfirm: async () => {
+    await studio.archiveProject(project.id);
+    if (selectedProjectId.value === project.id) selectedProjectId.value = null;
+  } });
+}
+async function archiveChat(chat: Chat) {
+  menuId.value = null;
+  await popups.confirm({ title: t('sidebar.archive'), message: t('sidebar.archiveChat', { name: chat.name }), confirmLabel: t('sidebar.archive'), onConfirm: async () => { await studio.archiveChat(chat.id); } });
+}
 async function moveChat(chat: Chat) {
-  const options = [t('sidebar.noProject'), ...studio.projects.map(project => project.name)];
-  const choice = window.prompt(t('sidebar.moveChat', { options: options.join(', ') }), chat.projectId ? studio.projects.find(project => project.id === chat.projectId)?.name : t('sidebar.noProject'));
-  if (choice === null) return;
-  const project = studio.projects.find(item => item.name.toLowerCase() === choice.trim().toLowerCase());
-  await studio.moveChat(chat.id, project?.id || null); menuId.value = null;
+  menuId.value = null;
+  await popups.select({ title: t('popup.moveTitle'), label: t('popup.chooseProject'), confirmLabel: t('sidebar.move'),
+    initialValue: chat.projectId || '', options: [
+      { value: '', label: t('sidebar.noProject') },
+      ...studio.projects.map(project => ({ value: project.id, label: project.name })),
+    ], onConfirm: async projectId => { if ((chat.projectId || '') !== projectId) await studio.moveChat(chat.id, projectId || null); },
+  });
 }
 function selectChat(chat: Chat) { studio.selectChat(chat.id); menuId.value = null; emit('workspace'); }
 function toggleEntryMenu(id: string, event: MouseEvent) {
@@ -178,12 +198,15 @@ async function restoreArchivedChat(chat: Chat) {
   catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
 }
 async function deleteArchivedChat(chat: Chat) {
-  if (deletingChatId.value || !window.confirm(t('sidebar.deleteChatConfirm', { name: chat.name }))) return;
-  deletingChatId.value = chat.id;
-  archiveError.value = '';
-  try { await deleteChatRequest(chat.id); await studio.refreshFull(false); await loadArchive(); }
-  catch (error) { archiveError.value = error instanceof Error ? error.message : String(error); }
-  finally { deletingChatId.value = null; }
+  if (deletingChatId.value) return;
+  await popups.confirm({ title: t('sidebar.deleteForever'), message: t('sidebar.deleteChatConfirm', { name: chat.name }),
+    confirmLabel: t('sidebar.deleteForever'), danger: true, onConfirm: async () => {
+      deletingChatId.value = chat.id;
+      archiveError.value = '';
+      try { await deleteChatRequest(chat.id); await studio.refreshFull(false); await loadArchive(); }
+      finally { deletingChatId.value = null; }
+    },
+  });
 }
 async function restoreArchivedProject(project: Project) {
   archiveError.value = '';

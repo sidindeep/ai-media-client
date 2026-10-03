@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import Sidebar from './components/Sidebar.vue';
+import PopupHost from './popups/PopupHost.vue';
 import Composer from './components/Composer.vue';
 import ChatResults from './components/ChatResults.vue';
 import HistoryPage from './components/HistoryPage.vue';
@@ -246,6 +247,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <PopupHost />
   <div v-if="!initialReady || (activeSection !== 'landing' && !studio.accountReady)" class="site-boot-screen" role="status" aria-live="polite" :aria-label="t('boot.aria')">
     <div class="site-boot-rings" aria-hidden="true"><span></span><span></span><span></span></div>
     <div class="site-boot-content"><img class="site-boot-logo" src="/brand-logo.png" alt="AI Media Client"><span class="site-boot-line"></span><p>{{ startupTitle }}</p><small>{{ studio.providerReadiness === 'checking' ? t('boot.services') : t('boot.necessaryData') }}</small><button v-if="studio.error" type="button" @click="studio.initialize">{{ t('common.retry') }}</button></div>

@@ -20,12 +20,14 @@ function createMovieDrafts({ pool, workspaces, content, sourceFile, resultFile, 
     return file;
   }
   async function validate(owner, value) {
+    const { sceneEditing, musicEditing } = await import('../movie/editing.mjs');
     if (!value || !Array.isArray(value.scenes) || value.scenes.length > limits.maxScenes || JSON.stringify(value).length > 100000) throw bad('Некорректный черновик');
     if (!['portrait', 'landscape', 'square'].includes(value.format) || !/^#[a-f0-9]{6}$/i.test(value.background)
       || typeof value.muteClips !== 'boolean') throw bad('Некорректные параметры ролика');
     const ids = new Set();
     const scenes = [];
     for (const scene of value.scenes) {
+      if (!scene || typeof scene !== 'object') throw bad('Некорректная сцена');
       if (!UUID.test(scene.id) || ids.has(scene.id) || !['title', 'image', 'video'].includes(scene.kind)
         || typeof scene.title !== 'string' || scene.title.length > 300 || !Number.isFinite(scene.seconds)
         || scene.seconds < (scene.kind === 'video' ? 1 / limits.fps : 1)
@@ -35,7 +37,9 @@ function createMovieDrafts({ pool, workspaces, content, sourceFile, resultFile, 
         const file = await source(owner, scene.src);
         if (!file.type.startsWith(scene.kind === 'image' ? 'image/' : 'video/')) throw bad('Неверный тип материала сцены');
       }
-      scenes.push({ id: scene.id, kind: scene.kind, title: scene.title, seconds: scene.seconds,
+      let editing;
+      try { editing = sceneEditing(scene); } catch { throw bad('Некорректные параметры монтажа сцены'); }
+      scenes.push({ ...editing, id: scene.id, kind: scene.kind, title: scene.title, seconds: scene.seconds,
         ...(scene.kind !== 'title' ? { src: scene.src } : {}), name: String(scene.name || '').slice(0, 255) });
     }
     if (value.music && !(await source(owner, value.music)).type.startsWith('audio/')) throw bad('Неверный тип музыки');
@@ -49,7 +53,9 @@ function createMovieDrafts({ pool, workspaces, content, sourceFile, resultFile, 
       const pending = await validate(owner, { ...value, scenes: state.pending.sources, scenarioState: undefined });
       scenarioState.pending = { id: state.pending.id, sources: pending.scenes };
     }
-    return { scenes, format: value.format, background: value.background, muteClips: value.muteClips,
+    let musicSettings;
+    try { musicSettings = musicEditing(value.musicSettings); } catch { throw bad('Некорректные параметры музыки'); }
+    return { scenes, musicSettings, format: value.format, background: value.background, muteClips: value.muteClips,
       music: value.music || '', musicName: String(value.musicName || '').slice(0, 255), script,
       sourceLink: String(value.sourceLink || '').slice(0, 2048), scenarioState };
   }

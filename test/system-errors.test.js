@@ -52,3 +52,24 @@ test('failed logger never turns a successful business action into an error', asy
   try { assert.equal(errors.record('server', 'example.error', new Error('failure')), false); }
   finally { aiLogger.reportSystemError = original; }
 });
+
+test('network diagnostics preserve bounded nested causes without secrets or arbitrary payloads', () => {
+  const { diagnostic, sanitizer } = require('../src/ai-logger/diagnostics');
+  sanitizer.secret('private-cause-fixture');
+  const socket = Object.assign(new Error('Connection reset private-cause-fixture; token=private-token-fixture'),
+    { code: 'ECONNRESET', request: 'DO_NOT_SEND_REQUEST' });
+  const timeout = Object.assign(new Error('Connection timed out'), { code: 'ETIMEDOUT' });
+  const nested = new AggregateError([socket, timeout], 'All connections failed');
+  const failure = new TypeError('fetch failed', { cause: nested });
+  socket.cause = failure;
+  const stack = failure.stack;
+  const row = diagnostic('provider', 'apimart.connection.error', failure,
+    { description: 'Не удалось подключиться к APIMart' });
+  assert.match(row.description, /^Не удалось подключиться к APIMart; cause:/);
+  assert.match(row.description, /ECONNRESET/);
+  assert.match(row.description, /ETIMEDOUT/);
+  for (const privateText of ['private-cause-fixture', 'private-token-fixture', 'DO_NOT_SEND_REQUEST'])
+    assert.ok(!JSON.stringify(row).includes(privateText));
+  assert.ok(row.description.length <= 1000);
+  assert.equal(failure.stack, stack);
+});

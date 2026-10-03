@@ -54,6 +54,15 @@ function fixture({ kieUnits = 5000, apimartUsd = 0.03, walletBalance = 100,
     loadModelRoutes: async () => routeDocument }), rows, sent, balanceAccounts };
 }
 
+test('auto route keeps the Kie estimate warning on the selected offer', async () => {
+  const env = fixture({ apimartUsd: null });
+  env.scoped.providerCostQuote = async () => ({ amountUnits: 4195, productCredits: 4.195,
+    version: 'megapixel-estimate', source: 'public', warning: 'Megapixel estimate' });
+  const quote = await env.router.quote(user, request);
+  assert.equal(quote.selected.warning, 'Megapixel estimate');
+  assert.equal(quote.selected.credits, 4.195);
+});
+
 test('unified model IDs route without reading retired conversion tables', async () => {
   const env = fixture();
   const priced = await env.router.quote(user, { ...request, modelId: 'gpt-image-2.text-to-image', originModelId: request.modelId });

@@ -30,6 +30,13 @@
 исполнителей потребуются task lease/fencing, общий лимитер и межузловой
 staging; этот контракт их не обещает.
 
+Для Codex отрицательный результат 404 ограничен экземпляром приватного worker
+(X-Codex-Worker-Instance). Перезапуск media не повторяет GET отсутствующего
+задания на этом worker; другой worker может восстановить результат из своих
+файлов. До подтверждённого success/fail сохраняется unknown и денежный резерв.
+Это не вводит распределённое владение или автоматический повтор генерации.
+Подробности: [транспорты Codex](codex-transports.md).
+
 Проверки: `test/replica-web.test.js` (включая запуск двух executor на одной БД),
 `tools/load-test/replica-failover.cjs`, `tools/load-test/replicas-read.cjs`.
 Операционный запуск: `docs/replica-ownership.md`; реализация: `server.js`,

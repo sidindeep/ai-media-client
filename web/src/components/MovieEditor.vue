@@ -2,11 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
-import { FORMATS, FPS, MAX_SCENES, MAX_SECONDS, MAX_STILL_SECONDS, timeline, type Scene } from '../remotion/model.mjs';
+import { FORMATS, FPS, MAX_SCENES, MAX_SECONDS, MAX_STILL_SECONDS, timeline, sceneEditing, musicEditing, trimScene, splitScene, type Scene } from '../remotion/model.mjs';
 import type { mountPreview } from '../remotion/bridge';
 import { listMovieSources, downloadMovieSource, reportMovieError, uploadSource, getMovieDraft, saveMovieDraft } from '../api/client';
 import MovieScenario from './MovieScenario.vue';
 import MovieMaterialThumbnail from './MovieMaterialThumbnail.vue';
+import MovieTimeline from './MovieTimeline.vue';
+import MovieSceneSettings from './MovieSceneSettings.vue';
+import limits from '../../../config/movie-editor.json';
 
 const studio = useStudioStore();
 const { t } = useI18n();
@@ -27,6 +30,8 @@ const background = ref('#151522');
 const muteClips = ref(false);
 const music = ref('');
 const musicName = ref('');
+const musicSettings = ref(musicEditing());
+const playhead = ref(0);
 const preview = ref<HTMLElement>();
 const materialVideo = ref<HTMLVideoElement>();
 const busy = ref(false);
@@ -62,8 +67,54 @@ let controller: AbortController | undefined;
 let player: ReturnType<typeof mountPreview> | undefined;
 let bridge: typeof import('../remotion/bridge') | undefined;
 let alive = true;
-const plan = computed(() => { try { return timeline(scenes.value); } catch { return null; } });
-const movieProps = computed(() => ({ scenes: scenes.value.map(scene => ({ ...scene })), background: background.value, muteClips: muteClips.value, music: music.value || undefined }));
+const plan = computed(() => { try { musicEditing(musicSettings.value); return timeline(scenes.value); } catch { return null; } });
+const movieProps = computed(() => ({ scenes: scenes.value.map(scene => ({ ...scene })), background: background.value, muteClips: muteClips.value, music: music.value || undefined, musicSettings: musicSettings.value }));
+const selectedFrom = computed(() => plan.value?.scenes.find(scene => scene.id === selectedSceneId.value)?.from || 0);
+const canSplit = computed(() => Boolean(selectedScene.value?.kind === 'video' && scenes.value.length < MAX_SCENES
+  && playhead.value > selectedFrom.value && playhead.value < selectedFrom.value + Math.round(selectedScene.value.seconds * FPS) - 1));
+function seek(frame: number) { playhead.value = Math.max(0, Math.min(Math.round(frame), (plan.value?.durationInFrames || 1) - 1)); player?.seek(playhead.value); }
+function seekScene() { seek(selectedFrom.value); }
+function patchScene(value: Partial<Scene>) {
+  if (!selectedScene.value || editorLocked.value) return;
+  const scene = { ...selectedScene.value, ...value };
+  try { sceneEditing(scene); Object.assign(selectedScene.value, value); error.value = ''; }
+  catch { error.value = t('movie.invalidEdit'); }
+}
+function trimSelected(start: number, end: number) {
+  if (!selectedScene.value || editorLocked.value) return;
+  try { Object.assign(selectedScene.value, trimScene(selectedScene.value, start, end)); error.value = ''; }
+  catch { error.value = t('movie.invalidTrim'); }
+}
+function splitSelected() {
+  if (!canSplit.value || editorLocked.value) return;
+  const scene = selectedScene.value!;
+  try {
+    const [left, right] = splitScene(scene, (playhead.value - selectedFrom.value) / FPS, crypto.randomUUID());
+    scenes.value.splice(selectedSceneIndex.value, 1, left, right);
+    selectedSceneId.value = right.id; error.value = '';
+  } catch { error.value = t('movie.invalidTrim'); }
+}
+function reorder(id: string, target: string) {
+  if (editorLocked.value || id === target) return;
+  const from = scenes.value.findIndex(scene => scene.id === id), to = scenes.value.findIndex(scene => scene.id === target);
+  if (from < 0 || to < 0) return;
+  const reordered = [...scenes.value]; const [scene] = reordered.splice(from, 1); reordered.splice(to, 0, scene!); scenes.value = reordered;
+}
+function setDuration(scene: Scene, event: Event) {
+  const seconds = Number((event.target as HTMLInputElement).value);
+  const previous = scene.seconds;
+  const candidate = { ...scene, seconds, captionStart: Math.min(scene.captionStart ?? 0, seconds),
+    captionEnd: scene.captionEnd === undefined || Math.abs(scene.captionEnd - previous) < 1 / FPS ? seconds : Math.min(scene.captionEnd, seconds) };
+  try { timeline(scenes.value.map(item => item.id === scene.id ? candidate : item)); Object.assign(scene, candidate); error.value = ''; }
+  catch { error.value = t('movie.invalidTrim'); }
+}
+function sourceMetadata(event: Event) {
+  const video = event.target as HTMLVideoElement;
+  const scene = selectedScene.value;
+  if (scene?.kind === 'video' && Number.isFinite(video.duration) && video.duration <= MAX_SECONDS) {
+    scene.sourceDuration = Math.round(video.duration * FPS) / FPS;
+  }
+}
 const library = computed(() => studio.history.flatMap(record => record.state === 'success' && ['image', 'video'].includes(record.kind || '')
   ? (record.localFiles || []).flatMap((file, index) => {
     const src = file.url || file.previewUrl;
@@ -72,7 +123,7 @@ const library = computed(() => studio.history.flatMap(record => record.state ===
 function add(scene: Omit<Scene, 'id'>) {
   if (scenes.value.length >= MAX_SCENES) { error.value = t('movie.limit'); return; }
   const id = crypto.randomUUID();
-  scenes.value.push({ ...scene, id });
+  scenes.value.push({ ...scene, id, transition: limits.editing.defaultTransition as Scene['transition'], ...(scene.kind === 'video' ? { sourceDuration: scene.seconds } : {}) });
   selectedSceneId.value = id;
 }
 function addTitle() { add({ kind: 'title', title: t('movie.defaultTitle'), seconds: 3 }); }
@@ -84,7 +135,7 @@ async function sourceSeconds(kind: string, source: string | Blob) {
 async function fullClip(scene: Scene) {
   if (!scene.src || editorLocked.value) return;
   importing.value = true; error.value = '';
-  try { scene.seconds = await sourceSeconds('video', scene.src); }
+  try { const seconds = await sourceSeconds('video', scene.src); Object.assign(scene, { seconds, sourceDuration: seconds, trimStart: 0, captionStart: 0, captionEnd: seconds }); }
   catch (reason) { error.value = reason instanceof Error ? reason.message : t('movie.durationFailed'); }
   finally { importing.value = false; }
 }
@@ -113,7 +164,8 @@ async function upload(event: Event, audio = false) {
   importing.value = true;
   try { for (const file of Array.from(input.files || [])) {
     if (file.size > 100 * 1024 * 1024 || !(audio ? file.type.startsWith('audio/') : /^(image\/(png|jpeg|webp)|video\/(mp4|webm))$/.test(file.type))) { error.value = t('movie.fileError'); continue; }
-    if (audio) { release(music.value); music.value = await storedSource(file, file.name); musicName.value = file.name; await persistDraft(); break; }
+    if (audio) { const duration = await (await import('../remotion/video-duration.mjs')).audioSeconds(file); const src = await storedSource(file, file.name);
+      release(music.value); music.value = src; musicSettings.value = musicEditing({ sourceDuration: duration }); musicName.value = file.name; await persistDraft(); break; }
     if (scenes.value.length >= MAX_SCENES) { error.value = t('movie.limit'); break; }
     const kind = file.type.startsWith('image/') ? 'image' : 'video';
     const seconds = await sourceSeconds(kind, file);
@@ -144,7 +196,7 @@ function move(index: number, offset: number) {
   [reordered[index], reordered[other]] = [reordered[other]!, reordered[index]!];
   scenes.value = reordered;
 }
-function clearMusic() { release(music.value); music.value = ''; musicName.value = ''; }
+function clearMusic() { release(music.value); music.value = ''; musicName.value = ''; musicSettings.value = musicEditing(); }
 async function importSources() {
   if (editorLocked.value || !sourceLink.value.trim()) return;
   const slots = MAX_SCENES - scenes.value.length;
@@ -192,9 +244,10 @@ async function importSources() {
 async function updatePreview() {
   if (!bridge || !preview.value) return;
   if (!plan.value) { player?.dispose(); player = undefined; return; }
-  player ||= bridge.mountPreview(preview.value, () => { error.value = t('movie.renderError'); });
+  player ||= bridge.mountPreview(preview.value, () => { error.value = t('movie.renderError'); }, frame => { playhead.value = frame; });
   const [width, height] = FORMATS[format.value];
   player.update(movieProps.value, width, height);
+  if (playhead.value >= plan.value.durationInFrames) seek(plan.value.durationInFrames - 1);
 }
 watch([movieProps, format], () => { release(download.value); download.value = ''; release(previewDownload.value); previewDownload.value = ''; void updatePreview(); }, { deep: true });
 async function downloadPreview() {
@@ -251,7 +304,7 @@ async function loadDraft() {
     if (!alive) return;
     if (draft) {
       scenes.value = draft.scenes; format.value = draft.format; background.value = draft.background;
-      muteClips.value = draft.muteClips; music.value = draft.music; musicName.value = draft.musicName;
+      muteClips.value = draft.muteClips; music.value = draft.music; musicName.value = draft.musicName; musicSettings.value = musicEditing(draft.musicSettings);
       script.value = draft.script; sourceLink.value = draft.sourceLink; scenarioState.value = draft.scenarioState || { modelId: '' }; revision = draft.revision;
     }
     draftReady.value = true; draftStatus.value = t('movie.draftSaved');
@@ -264,7 +317,7 @@ onMounted(async () => {
 });
 function snapshot() {
   return JSON.parse(JSON.stringify({ scenes: scenes.value, format: format.value, background: background.value, muteClips: muteClips.value,
-    music: music.value, musicName: musicName.value, script: script.value, sourceLink: sourceLink.value, scenarioState: scenarioState.value }));
+    music: music.value, musicName: musicName.value, musicSettings: musicSettings.value, script: script.value, sourceLink: sourceLink.value, scenarioState: scenarioState.value }));
 }
 function persistDraft() {
   if (!draftReady.value || conflict.value) return Promise.resolve();
@@ -282,7 +335,7 @@ function persistDraft() {
   });
   return operation;
 }
-watch([scenes, format, background, muteClips, music, musicName, script, sourceLink, scenarioState], () => {
+watch([scenes, format, background, muteClips, music, musicName, musicSettings, script, sourceLink, scenarioState], () => {
   if (!draftReady.value || conflict.value) return;
   draftStatus.value = t('movie.draftSaving'); if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { void persistDraft().catch(() => {}); }, 400);
@@ -320,6 +373,13 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
           <label>{{ t('movie.music') }}<input type="file" accept="audio/*" @change="upload($event, true)"></label>
           <span v-if="musicName">{{ musicName }} <button type="button" @click="clearMusic">×</button></span>
           <label class="movie-check"><input v-model="muteClips" type="checkbox"> {{ t('movie.mute') }}</label>
+          <div v-if="music" class="movie-music-settings">
+            <label>{{ t('movie.volume') }} · {{ Math.round(musicSettings.volume * 100) }}%<input v-model.number="musicSettings.volume" class="movie-music-volume" type="range" min="0" max="1" step="0.01"></label>
+            <label>{{ t('movie.musicStart') }}<input v-model.number="musicSettings.start" type="number" min="0" :max="MAX_SECONDS" step="0.1"></label>
+            <label>{{ t('movie.musicTrim') }}<input v-model.number="musicSettings.trimStart" type="number" min="0" :max="musicSettings.sourceDuration ? musicSettings.sourceDuration - 1 / FPS : MAX_SECONDS" step="0.1"></label>
+            <label>{{ t('movie.audioFadeIn') }}<input v-model.number="musicSettings.fadeIn" type="number" min="0" :max="limits.editing.maxFadeSeconds" step="0.1"></label>
+            <label>{{ t('movie.audioFadeOut') }}<input v-model.number="musicSettings.fadeOut" type="number" min="0" :max="limits.editing.maxFadeSeconds" step="0.1"></label>
+          </div>
         </fieldset>
         <p v-if="!scenes.length" class="movie-empty">{{ t('movie.empty') }}</p>
         <fieldset :disabled="editorLocked" class="movie-scenes">
@@ -342,6 +402,8 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
             </button>
           </div>
         </fieldset>
+        <MovieTimeline :scenes="scenes" :selected="selectedSceneId" :frame="playhead" :disabled="editorLocked" :music="music" :music-settings="musicSettings" :mute-clips="muteClips"
+          @select="selectedSceneId = $event" @seek="seek" @reorder="reorder" />
       </div>
       <div class="movie-output">
         <h2>{{ t('movie.preview') }}</h2>
@@ -362,12 +424,13 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
             <strong>{{ selectedSceneIndex + 1 }} · {{ sceneLabel(selectedScene) }}</strong>
             <span class="movie-note">{{ sceneType(selectedScene) }}</span>
             <img v-if="selectedScene.kind === 'image' && selectedScene.src" class="movie-source-preview" :src="selectedScene.src" :alt="sceneLabel(selectedScene)">
-            <video v-else-if="selectedScene.kind === 'video' && selectedScene.src" ref="materialVideo" class="movie-source-preview" :src="selectedScene.src" :controls="!editorLocked" preload="metadata" playsinline></video>
+            <video v-else-if="selectedScene.kind === 'video' && selectedScene.src" ref="materialVideo" class="movie-source-preview" :src="selectedScene.src" :controls="!editorLocked" preload="metadata" playsinline @loadedmetadata="sourceMetadata"></video>
             <label v-if="selectedScene.kind !== 'title'">{{ t('movie.aiDescription') }}<input v-model="selectedScene.name" type="text" maxlength="255"></label>
             <label>{{ t('movie.caption') }}<textarea v-model="selectedScene.title" maxlength="300" rows="3"></textarea></label>
-            <label>{{ t('movie.seconds') }}<input v-model.number="selectedScene.seconds" type="number" :min="selectedScene.kind === 'video' ? 1 / FPS : 1" :max="selectedScene.kind === 'video' ? MAX_SECONDS : MAX_STILL_SECONDS" :step="selectedScene.kind === 'video' ? 'any' : 0.5"></label>
+            <label>{{ t('movie.seconds') }}<input :value="selectedScene.seconds" class="movie-duration" type="number" :min="selectedScene.kind === 'video' ? 1 / FPS : 1" :max="selectedScene.kind === 'video' ? (selectedScene.sourceDuration || MAX_SECONDS) - (selectedScene.trimStart || 0) : MAX_STILL_SECONDS" :step="selectedScene.kind === 'video' ? 'any' : 0.5" @input="setDuration(selectedScene, $event)"></label>
             <button v-if="selectedScene.kind === 'video'" type="button" class="movie-full-clip" @click="fullClip(selectedScene)">{{ t('movie.fullClip') }}</button>
             <div class="movie-scene-actions"><button type="button" :disabled="selectedSceneIndex === 0" :aria-label="t('movie.up')" @click="move(selectedSceneIndex, -1)">↑</button><button type="button" :disabled="selectedSceneIndex === scenes.length - 1" :aria-label="t('movie.down')" @click="move(selectedSceneIndex, 1)">↓</button><button type="button" @click="remove(selectedSceneIndex)">{{ t('movie.remove') }}</button></div>
+            <MovieSceneSettings :scene="selectedScene" :frame="playhead" :from="selectedFrom" :can-split="canSplit" @patch="patchScene" @trim="trimSelected" @split="splitSelected" @seek="seekScene" />
           </article>
           <p v-else class="movie-empty">{{ t('movie.selectMaterial') }}</p>
         </fieldset>

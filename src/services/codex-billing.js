@@ -41,6 +41,11 @@ function createCodexBilling({ records, worker, pricing, conversion, dataDirector
     const job = await read(account, requestId);
     if (['success', 'fail', 'queued'].includes(job.state)) return job;
     try {
+      // A shared DB can be read by another executor whose worker still has the result.
+      if (job.state === 'unknown' && job.errorCode === 'CODEX_WORKER_JOB_MISSING'
+        && Array.isArray(job.missingWorkerInstanceIds) && job.missingWorkerInstanceIds.length
+        && typeof worker.getIdentity === 'function'
+        && job.missingWorkerInstanceIds.includes(await worker.getIdentity())) return job;
       const result = await worker.getTask(account, requestId);
       if (result.state === 'success') {
         let contentAssetId = null;
@@ -74,20 +79,28 @@ function createCodexBilling({ records, worker, pricing, conversion, dataDirector
             finally { await fs.unlink(temporary).catch(() => {}); }
           } } catch { contentSaveError = 'Изображение создано, но постоянное сохранение требует повтора.'; }
         }
-        const saved = await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', ...(typeof contentAssetId === 'string' ? { contentAssetId } : {}), ...(contentSaveError ? { contentSaveError } : {}), error: null });
+        const saved = await update(account, requestId, { state: 'success', output: result.output, usage: normalizeUsage(result.usage), hasImage: job.kind === 'image', ...(typeof contentAssetId === 'string' ? { contentAssetId } : {}), ...(contentSaveError ? { contentSaveError } : {}), error: null,
+          ...(job.errorCode === 'CODEX_WORKER_JOB_MISSING' ? { missingWorkerInstanceIds: null, errorCode: null } : {}) });
         if (job.kind === 'image' && !contentSaveError && result.hasImage === true)
           await worker.acknowledgeImage(account, requestId).catch(() => {});
         return saved;
       }
       if (result.state === 'failed') return await update(account, requestId, { state: 'fail',
+        ...(job.errorCode === 'CODEX_WORKER_JOB_MISSING' ? { missingWorkerInstanceIds: null, errorCode: null } : {}),
         ...(result.errorCode ? { errorCode: safeErrorText(String(result.errorCode)).slice(0, 100) } : {}),
         error: safeErrorText(result.error) || 'Codex request failed.' });
       if (result.state === 'unknown') return await update(account, requestId, { state: 'unknown', error: safeErrorText(result.error) || 'Codex result is unknown.' });
       return job;
-    } catch (error) { require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(job, 'codex') });
+    } catch (error) {
+      // A new worker must still be checked for a recoverable result, but its 404
+      // is not a new failure when the shared record already marks this job missing.
+      if (error.remoteStatus !== 404 || job.errorCode !== 'CODEX_WORKER_JOB_MISSING')
+        require('../system-errors').record('provider', 'codex-billing.error', error, { diagnostic: { entity: 'provider' }, generation: generationContext(job, 'codex') });
       // Unknown completion must never release or charge automatically.
       if (error.remoteStatus === 404) return await update(account, requestId, {
-        state: 'unknown', error: 'Worker больше не хранит задание. Результат требует проверки; резерв сохранён.'
+        state: 'unknown', errorCode: 'CODEX_WORKER_JOB_MISSING',
+        missingWorkerInstanceIds: error.workerInstanceId ? [error.workerInstanceId] : [],
+        error: 'Worker больше не хранит задание. Результат требует проверки; резерв сохранён.'
       });
       return await update(account, requestId, { state: 'unknown', error: 'Статус Codex уточняется. Резерв сохранён. ' + safeErrorText(error.message) });
     }

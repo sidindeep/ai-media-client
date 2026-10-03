@@ -1,3 +1,6 @@
+/* Shared Iconoir 7.12.1 presentation; geometry lives in /app/iconoir/sprite.svg. */
+.app-icon { display: inline-block; flex: 0 0 auto; width: 1em; height: 1em; font-size: 18px; vertical-align: -.15em; color: inherit; pointer-events: none; }
+
 .site-booting { overflow: hidden; }
 .site-boot-screen {
   position: fixed;

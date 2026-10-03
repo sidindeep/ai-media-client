@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import type { MediaField } from '../types';
 import { useI18n } from '../i18n';
 
@@ -15,7 +16,7 @@ function selectFiles(event: Event, field: MediaField) {
 
 <template>
   <label v-for="(field, index) in fields" :key="field.key" class="attach-button">
-    ＋ {{ t(index === 0 ? 'composer.frame.first' : 'composer.frame.last') }}{{ field.required ? ' *' : '' }}
+    <AppIcon name="add" /> {{ t(index === 0 ? 'composer.frame.first' : 'composer.frame.last') }}{{ field.required ? ' *' : '' }}
     <input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="selectFiles($event, field)" />
   </label>
 </template>

@@ -24,7 +24,8 @@
     emailInput.required = !reset;
     passwordInput.required = !forgotMode;
     passwordInput.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
-    submit.textContent = mode === 'register' ? 'Зарегистрироваться' : reset ? 'Сохранить пароль' : forgotMode ? 'Отправить ссылку' : 'Войти →';
+    submit.querySelector('[data-login-submit-label]').textContent = mode === 'register' ? 'Зарегистрироваться' : reset ? 'Сохранить пароль' : forgotMode ? 'Отправить ссылку' : 'Войти';
+    submit.querySelector('[data-login-submit-icon]').hidden = mode !== 'login';
     prompt.textContent = mode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?';
     modeAction.textContent = mode === 'login' ? 'Зарегистрироваться' : 'Войти';
     emailStatus.textContent = '';
@@ -35,6 +36,7 @@
     const shown = passwordInput.type === 'text';
     passwordInput.type = shown ? 'password' : 'text';
     document.getElementById('showPassword').setAttribute('aria-label', shown ? 'Показать пароль' : 'Скрыть пароль');
+    document.querySelector('#showPassword use').setAttribute('href', '/app/iconoir/sprite.svg#' + (shown ? 'eye' : 'eye-off'));
   });
   form.addEventListener('submit', async event => {
     event.preventDefault();

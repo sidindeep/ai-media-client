@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, ref } from 'vue';
 import { saveSourceAttachment } from '../domain/source-attachments';
 import { useI18n } from '../i18n';
@@ -80,7 +81,7 @@ async function selectFile(event: Event) {
       @input="changeScalar(($event.target as HTMLTextAreaElement).value)"></textarea>
     <input v-else type="text" :value="String(modelValue ?? '')" :maxlength="schema.maxLength"
       @input="changeScalar(($event.target as HTMLInputElement).value)" />
-    <label v-if="canUpload" class="attach-button">＋ {{ t('composer.structured.upload') }}
+    <label v-if="canUpload" class="attach-button"><AppIcon name="add" /> {{ t('composer.structured.upload') }}
       <input type="file" :accept="`${kind}/*`" :disabled="uploading" @change="selectFile" />
     </label>
     <small v-if="uploadedName">{{ t('composer.structured.uploaded', { name: uploadedName }) }}</small>

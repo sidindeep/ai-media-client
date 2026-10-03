@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import type { GenerationRecord } from '../types';
@@ -43,7 +44,7 @@ const queueError = computed(() => studio.queue.error ? (studio.isAdmin ? studio.
 <template>
   <section class="queue-card">
     <div class="panel-heading"><div><span class="eyebrow">{{ t('queue.eyebrow') }}</span><h2>{{ studio.active.length ? tp('queue.active', studio.active.length) : t('queue.noneActive') }}</h2><small v-if="studio.accountActive.length > studio.active.length" class="account-queue-indicator">{{ t('queue.otherChats', { count: studio.accountActive.length - studio.active.length }) }}</small></div><div class="queue-actions"><button type="button" class="text-button" @click="studio.toggleQueue">{{ studio.queue.paused ? t('queue.resume') : t('queue.pause') }}</button><button type="button" class="text-button danger" :disabled="!removableItems.length" @click="clearAll">{{ t('queue.clear') }}</button></div></div>
-    <div v-if="studio.active.length" class="queue-list"><div v-for="item in studio.active" :key="item.id" class="queue-row"><button type="button" class="queue-item" :class="{ selected: studio.selectedId === item.id, optimistic: item.optimistic }" :data-task-id="item.id" @click="studio.select(item.id)"><span class="queue-status-dot"></span><span><strong>{{ resultModelLabel(item, studio.isAdmin) }}</strong><small>{{ statusLabel(item) }} · {{ item.input?.prompt || t('common.noPrompt') }}</small></span><span class="queue-arrow">›</span></button><button v-if="canRemove(item)" type="button" class="queue-remove" :aria-label="t('queue.remove')" :title="t('queue.remove')" @click="removeItem(item)">×</button></div></div>
+    <div v-if="studio.active.length" class="queue-list"><div v-for="item in studio.active" :key="item.id" class="queue-row"><button type="button" class="queue-item" :class="{ selected: studio.selectedId === item.id, optimistic: item.optimistic }" :data-task-id="item.id" @click="studio.select(item.id)"><span class="queue-status-dot"></span><span><strong>{{ resultModelLabel(item, studio.isAdmin) }}</strong><small>{{ statusLabel(item) }} · {{ item.input?.prompt || t('common.noPrompt') }}</small></span><span class="queue-arrow"><AppIcon name="chevron-right" /></span></button><button v-if="canRemove(item)" type="button" class="queue-remove" :aria-label="t('queue.remove')" :title="t('queue.remove')" @click="removeItem(item)"><AppIcon name="close" /></button></div></div>
     <p v-else class="empty-state">{{ t('queue.empty') }}</p>
     <p v-if="queueError" class="form-error">{{ queueError }}</p>
   </section>

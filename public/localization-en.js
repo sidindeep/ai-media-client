@@ -1,4 +1,14 @@
 window.aiMediaEnglish = {
+  "Доступ к моделям": "Model access",
+  "Доступ к моделям настраивается отдельно для каждого пользователя.": "Model access is configured separately for each user.",
+  "Доступ": "Access",
+  "Только GPT-модели": "GPT models only",
+  "Все модели": "All models",
+  "Доступ: только GPT-модели": "Access: GPT models only",
+  "Доступ: все модели": "Access: all models",
+  "Сохранить доступ": "Save access",
+  "Доступ к моделям сохранён": "Model access saved",
+  "Стартовый пакет ограничивает доступ до первой оплаты. Выбор «Все модели» сохраняет это условие. Изменение применяется к новым запросам без повторного входа.": "The starter pack restricts access until the first payment. Selecting All models preserves this condition. Changes apply to new requests without signing in again.",
   "Интерфейс пользователя": "User interface",
   "{0} · {1}: {2} → {3} · {4} · администратор: {5}": "{0} · {1}: {2} → {3} · {4} · administrator: {5}",
   "Уровень рассуждения": "Level of Reasoning",
@@ -1222,5 +1232,13 @@ window.aiMediaEnglish = {
   "Поставщик": "Provider",
   "Клиент или ID задачи": "Customer or task ID",
   "Задачи для проверки": "Tasks to review",
-  "Поиск": "Search"
+  "Поиск": "Search",
+  "На главную": "Home",
+  "Назад": "Back",
+  "Далее": "Next",
+  "Удалить предыдущий символ": "Delete previous character",
+  "Обновить баланс": "Refresh balance",
+  "Открыть вход Kie": "Open Kie sign-in",
+  "Открыть страницу входа OpenAI": "Open OpenAI sign-in page",
+  "Быстрая (Fast)": "Fast"
 };

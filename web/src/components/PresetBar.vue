@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, nextTick, ref } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
@@ -68,22 +69,22 @@ async function remove(preset: GenerationPreset) {
 <template>
   <details ref="root" class="preset-bar">
     <summary class="preset-summary" :title="t('preset.open')">
-      <span class="preset-summary-icon" aria-hidden="true">✦</span>
+      <span class="preset-summary-icon" aria-hidden="true"><AppIcon name="presets" /></span>
       <span class="preset-summary-copy"><small>{{ hasSelectedChanges ? t('preset.changed') : t('preset.label') }}</small><strong>{{ displayedPreset?.name || t('preset.none') }}</strong></span>
-      <span class="preset-summary-chevron" aria-hidden="true">⌄</span>
+      <span class="preset-summary-chevron" aria-hidden="true"><AppIcon name="chevron-down" /></span>
     </summary>
     <div class="preset-popover">
       <header class="preset-popover-header">
         <span>{{ t('preset.plural') }}</span>
         <span class="preset-header-actions">
           <button type="button" class="preset-update" :disabled="busy || editorOpen || !hasSelectedChanges" :title="selectedPreset ? t('preset.updateNamed', { name: selectedPreset.name }) : t('preset.applyFirst')" @click="updateSelected">{{ busy && !editorOpen ? t('common.saving') : t('common.save') }}</button>
-          <button type="button" class="preset-add" :aria-label="t('preset.saveCurrent')" @click="openEditor">＋</button>
+          <button type="button" class="preset-add" :aria-label="t('preset.saveCurrent')" @click="openEditor"><AppIcon name="add" /></button>
         </span>
       </header>
       <div class="preset-list">
         <span v-for="preset in studio.presets" :key="preset.id" class="preset-chip" :class="{ active: preset.id === activeId }">
           <button type="button" class="preset-apply" :title="t('preset.applyNamed', { name: preset.name })" @click="apply(preset)">{{ preset.name }}</button>
-          <button type="button" class="preset-remove" :aria-label="t('preset.deleteNamed', { name: preset.name })" @click="remove(preset)">×</button>
+          <button type="button" class="preset-remove" :aria-label="t('preset.deleteNamed', { name: preset.name })" @click="remove(preset)"><AppIcon name="close" /></button>
         </span>
         <span v-if="!studio.presets.length" class="preset-empty">{{ t('preset.empty') }}</span>
       </div>

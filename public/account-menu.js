@@ -2,15 +2,15 @@
   const mount = document.getElementById('accountMenuMount');
   if (!mount) return;
   mount.innerHTML = `<details class="account-dropdown" id="accountDropdown">
-    <summary aria-label="Меню аккаунта"><span class="account-avatar" id="accountAvatar">•</span><span class="account-trigger-identity"><span id="accountName">Аккаунт</span><small id="accountEmail" hidden></small></span><span>⌄</span></summary>
+    <summary aria-label="Меню аккаунта"><span class="account-avatar" id="accountAvatar">•</span><span class="account-trigger-identity"><span id="accountName">Аккаунт</span><small id="accountEmail" hidden></small></span><span><svg class="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/app/iconoir/sprite.svg#chevron-down"></use></svg></span></summary>
     <div class="account-popover"><strong id="menuName"></strong><span id="menuRole" class="hint"></span>
       <div class="menu-credit-row"><span>Кредиты</span><b id="menuBalance">—</b></div>
-      <button id="menuTopup" class="primary" type="button">＋ Пополнить</button>
+      <button id="menuTopup" class="primary" type="button"><svg class="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/app/iconoir/sprite.svg#add"></use></svg> Пополнить</button>
       <hr><button id="menuProfile" type="button">Аккаунт</button><a id="menuHistory" href="/?view=history">История</a>
       <button id="menuSettings" type="button">Настройки</button><a id="menuAdmin" href="/admin.html" hidden>Администрирование</a>
       <hr><button id="logout" type="button">Выйти</button><p id="menuStatus" role="status"></p>
     </div></details>
-    <dialog id="accountDialog" class="studio-dialog"><div class="dialog-heading"><h2 id="accountDialogTitle">Аккаунт</h2><button id="closeAccountDialog" type="button" aria-label="Закрыть">×</button></div>
+    <dialog id="accountDialog" class="studio-dialog"><div class="dialog-heading"><h2 id="accountDialogTitle">Аккаунт</h2><button id="closeAccountDialog" type="button" aria-label="Закрыть"><svg class="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/app/iconoir/sprite.svg#close"></use></svg></button></div>
       <form id="profileForm"><label>Имя<input id="profileName" maxlength="200" required></label><p id="profileIdentity" class="hint"></p><button type="submit">Сохранить имя</button></form>
       <form id="accountSettingsForm" hidden><label class="check"><input id="accountAutoSave" type="checkbox">Сохранять готовые файлы на сервере</label><label>Одновременно генераций<select id="accountConcurrency"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><button type="submit">Сохранить настройки</button></form>
       <p id="topupInfo" hidden>Покупка кредитов пока не подключена. Для пополнения обратитесь к администратору.</p><p id="accountDialogStatus" role="status"></p>

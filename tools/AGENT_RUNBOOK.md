@@ -94,3 +94,15 @@ Docker копирует этот конфиг. В auth-режиме Telegram р�
 
 Central diagnostic metadata: `docker compose exec -T media node scripts/read-central-errors.cjs 50`.
 The reader uses only HTTP; it does not connect to logger PostgreSQL. Legacy media_system_errors is removed by schema v21.
+
+## GI tester
+
+`gi test` / `ги тест` explains local scenarios, settings, required content and gaps.
+`gi test start` / `ги тест старт` executes the selected scenario; `gi full test`
+requests full-system verification. Canonical test inventory and commands:
+[test/README.md](../test/README.md); manual UI scenarios and contracts:
+[test/manual-ui/README.md](../test/manual-ui/README.md). Preserve their runtime,
+backup, restoration and evidence requirements. Required content, approved
+sources or synthetic recipes, destination fields, acceptance checks and
+cleanup/retention belong to the selected local scenario. The optional
+[authoring scaffold](../templates/PROJECT_TESTING.template.md) is not a runner.

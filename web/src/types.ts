@@ -200,6 +200,7 @@ export type Account = {
   id: string;
   name: string;
   role: 'user' | 'admin';
+  modelPermissions?: { policy: 'gpt-only' | 'all'; modelAccess: 'gpt-only' | 'all' };
   identities: Array<{ provider: string; subject: string; email?: string }>;
   wallet: {
     balanceUnits: number;

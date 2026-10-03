@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "../components/AppIcon.vue";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from '../i18n';
 import { popups } from './service';
@@ -73,9 +74,9 @@ onBeforeUnmount(() => {
       @pointerdown="backdropPress" @pointerup="backdropRelease">
       <form v-if="active" @submit.prevent="popups.submit(value)">
         <header class="popup-header">
-          <span class="popup-icon" aria-hidden="true">{{ active.danger ? '!' : active.kind === 'confirm' ? '◇' : '✦' }}</span>
+          <span class="popup-icon" aria-hidden="true"><AppIcon :name="active.danger ? 'error' : active.kind === 'confirm' ? 'question' : 'rename'" /></span>
           <h2 id="popup-title">{{ active.title }}</h2>
-          <button class="popup-close" type="button" :disabled="busy" :aria-label="t('common.close')" @click="popups.cancel()">×</button>
+          <button class="popup-close" type="button" :disabled="busy" :aria-label="t('common.close')" @click="popups.cancel()"><AppIcon name="close" /></button>
         </header>
         <p v-if="active.message" id="popup-message" class="popup-message">{{ active.message }}</p>
         <label v-if="active.kind === 'prompt' || active.kind === 'select'" class="popup-field">

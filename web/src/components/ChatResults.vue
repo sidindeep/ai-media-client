@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import type { GenerationRecord } from '../types';
@@ -272,7 +273,7 @@ onBeforeUnmount(() => {
           <button type="button" class="chat-result-header" :aria-label="t('generation.openDetails', { model: resultModelLabel(record, studio.isAdmin) })" @click.stop="select(record)">
             <span class="chat-result-state" :class="`state-${record.state}`" aria-hidden="true"></span>
             <span class="chat-result-title"><strong>{{ resultModelLabel(record, studio.isAdmin) }}</strong><small>{{ status(record) }}</small></span>
-            <span class="chat-result-arrow" aria-hidden="true">›</span>
+            <span class="chat-result-arrow" aria-hidden="true"><AppIcon name="chevron-right" /></span>
           </button>
           <p class="chat-result-prompt">{{ prompt(record) }}</p>
           <div v-if="resultUrls(record).length" class="chat-result-media">
@@ -289,7 +290,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="resultUrls(record).length" class="chat-result-download-row">
           <a class="chat-result-download" :href="resultDownloadUrl(record, 0, resultUrls(record)[0])" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>
+            <AppIcon name="download" />
             {{ t('common.download') }}
           </a>
         </div>
@@ -297,14 +298,14 @@ onBeforeUnmount(() => {
     </div>
     <Transition name="chat-latest">
       <button v-if="showLatestButton" type="button" class="chat-latest-button" :aria-label="t('generation.latest')" :title="t('generation.latest')" @click="scrollToLatest">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v14m-6-6 6 6 6-6" /></svg>
+        <AppIcon name="arrow-down" />
       </button>
     </Transition>
     <Teleport to="body">
       <dialog v-if="errorRecord" ref="errorDialog" class="chat-error-dialog" aria-labelledby="chat-error-dialog-title" @click.self="closeErrorDetails" @close="onErrorDialogClose">
         <header class="chat-error-dialog-header">
           <div><h2 id="chat-error-dialog-title">{{ t('generation.errorDetails') }}</h2><p>{{ resultModelLabel(errorRecord, studio.isAdmin) }}</p></div>
-          <button type="button" class="chat-error-dialog-close" :aria-label="t('common.close')" @click="closeErrorDetails">×</button>
+          <button type="button" class="chat-error-dialog-close" :aria-label="t('common.close')" @click="closeErrorDetails"><AppIcon name="close" /></button>
         </header>
         <div class="chat-error-dialog-content">
           <h3>{{ t('history.prompt') }}</h3>

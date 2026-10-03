@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio';
 import { useI18n } from '../i18n';
@@ -366,12 +367,12 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
         <fieldset :disabled="editorLocked" class="movie-controls">
           <label>{{ t('movie.format') }}<select v-model="format"><option value="portrait">9:16 · 720 × 1280</option><option value="landscape">16:9 · 1280 × 720</option><option value="square">1:1 · 720 × 720</option></select></label>
           <label>{{ t('movie.background') }}<input v-model="background" type="color"></label>
-          <button type="button" class="movie-title-add" @click="addTitle">＋ {{ t('movie.title') }}</button>
+          <button type="button" class="movie-title-add" @click="addTitle"><AppIcon name="add" /> {{ t('movie.title') }}</button>
           <label class="movie-file">{{ t('movie.files') }}<input type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm" multiple @change="upload($event)"></label>
           <label>{{ t('movie.library') }}<select v-model="selectedAsset"><option value="">{{ t('movie.select') }}</option><option v-for="asset in library" :key="asset.key" :value="asset.key">{{ asset.name }}</option></select></label>
           <button type="button" :disabled="!selectedAsset" @click="addLibrary">{{ t('movie.add') }}</button>
           <label>{{ t('movie.music') }}<input type="file" accept="audio/*" @change="upload($event, true)"></label>
-          <span v-if="musicName">{{ musicName }} <button type="button" @click="clearMusic">×</button></span>
+          <span v-if="musicName">{{ musicName }} <button type="button" :aria-label="t('movie.remove')" @click="clearMusic"><AppIcon name="close" /></button></span>
           <label class="movie-check"><input v-model="muteClips" type="checkbox"> {{ t('movie.mute') }}</label>
           <div v-if="music" class="movie-music-settings">
             <label>{{ t('movie.volume') }} · {{ Math.round(musicSettings.volume * 100) }}%<input v-model.number="musicSettings.volume" class="movie-music-volume" type="range" min="0" max="1" step="0.01"></label>
@@ -390,12 +391,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
               aria-controls="movie-scene-details" :title="sceneLabel(scene)" @click="selectedSceneId = scene.id">
               <span class="movie-material-number">{{ index + 1 }}</span>
               <MovieMaterialThumbnail :kind="scene.kind" :src="scene.src">
-              <svg class="movie-material-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <g v-if="scene.kind === 'image'"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></g>
-                <g v-else-if="scene.kind === 'video'"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="m16 10 6-4v12l-6-4z"/></g>
-                <g v-else-if="scene.kind === 'title'"><path d="M4 6V3h16v3M12 3v18M8 21h8"/></g>
-                <g v-else><path d="M14 2H5v20h14V7zM14 2v5h5M8 12h8M8 16h8"/></g>
-              </svg>
+              <AppIcon class="movie-material-icon" :name="scene.kind === 'image' ? 'image' : scene.kind === 'video' ? 'video' : scene.kind === 'title' ? 'title' : 'text'" />
               </MovieMaterialThumbnail>
               <span class="movie-material-name">{{ sceneLabel(scene) }}</span>
               <span class="movie-material-meta">{{ sceneType(scene) }} · {{ scene.seconds }} {{ t('movie.secondsShort') }}</span>
@@ -429,7 +425,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', protectUnsave
             <label>{{ t('movie.caption') }}<textarea v-model="selectedScene.title" maxlength="300" rows="3"></textarea></label>
             <label>{{ t('movie.seconds') }}<input :value="selectedScene.seconds" class="movie-duration" type="number" :min="selectedScene.kind === 'video' ? 1 / FPS : 1" :max="selectedScene.kind === 'video' ? (selectedScene.sourceDuration || MAX_SECONDS) - (selectedScene.trimStart || 0) : MAX_STILL_SECONDS" :step="selectedScene.kind === 'video' ? 'any' : 0.5" @input="setDuration(selectedScene, $event)"></label>
             <button v-if="selectedScene.kind === 'video'" type="button" class="movie-full-clip" @click="fullClip(selectedScene)">{{ t('movie.fullClip') }}</button>
-            <div class="movie-scene-actions"><button type="button" :disabled="selectedSceneIndex === 0" :aria-label="t('movie.up')" @click="move(selectedSceneIndex, -1)">↑</button><button type="button" :disabled="selectedSceneIndex === scenes.length - 1" :aria-label="t('movie.down')" @click="move(selectedSceneIndex, 1)">↓</button><button type="button" @click="remove(selectedSceneIndex)">{{ t('movie.remove') }}</button></div>
+            <div class="movie-scene-actions"><button type="button" :disabled="selectedSceneIndex === 0" :aria-label="t('movie.up')" @click="move(selectedSceneIndex, -1)"><AppIcon name="arrow-up" /></button><button type="button" :disabled="selectedSceneIndex === scenes.length - 1" :aria-label="t('movie.down')" @click="move(selectedSceneIndex, 1)"><AppIcon name="arrow-down" /></button><button type="button" @click="remove(selectedSceneIndex)">{{ t('movie.remove') }}</button></div>
             <MovieSceneSettings :scene="selectedScene" :frame="playhead" :from="selectedFrom" :can-split="canSplit" @patch="patchScene" @trim="trimSelected" @split="splitSelected" @seek="seekScene" />
           </article>
           <p v-else class="movie-empty">{{ t('movie.selectMaterial') }}</p>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { ref, watch } from 'vue';
 import { useI18n } from '../i18n';
 
@@ -20,10 +21,10 @@ watch(() => props.src, close);
     <dialog ref="dialog" class="result-image-lightbox" :aria-label="t('result.expandedImage')" @click.self="close" @close="restoreFocus">
       <div class="result-image-lightbox-toolbar">
         <a class="result-image-lightbox-download" :href="downloadUrl" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>
+          <AppIcon name="download" />
           {{ t('common.download') }}
         </a>
-        <button type="button" class="result-image-lightbox-close" :aria-label="t('common.close')" @click="close">×</button>
+        <button type="button" class="result-image-lightbox-close" :aria-label="t('common.close')" @click="close"><AppIcon name="close" /></button>
       </div>
       <img class="result-image-lightbox-image" :src="src" :alt="alt">
     </dialog>

@@ -183,6 +183,33 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await assert.rejects(runtime.accounts.scope({ id: alice.id, role: alice.role }, bob.id), /Доступ запрещён/);
   assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).active, false);
   assert.equal((await runtime.accounts.starterPack.status(alice.id, alice.role)).modelAccess, 'all');
+  const accessRequest = (actor, policy, reason = 'Проверка доступа') => request('/api/admin/model-access', { method: 'POST',
+    headers: { Cookie: actor.cookie, 'X-Media-Client': 'web', 'X-Media-User': actor.id, 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({ accountId: alice.id, policy, reason }) });
+  assert.equal((await accessRequest(alice, 'all')).status, 403, 'users cannot grant themselves model access');
+  assert.equal((await accessRequest(owner, 'invalid')).status, 400);
+  assert.equal((await accessRequest(owner, 'gpt-only', '')).status, 400);
+  assert.deepEqual(await result(accessRequest(owner, 'gpt-only')), { policy: 'gpt-only', modelAccess: 'gpt-only' });
+  const accountAfterRestriction = (await request('/api/account', { headers: { Cookie: alice.cookie } }).then(r => r.json())).result;
+  assert.equal(accountAfterRestriction.starterPack.modelAccess, 'all', 'admin restriction is independent of payment');
+  assert.equal(accountAfterRestriction.modelPermissions.modelAccess, 'gpt-only');
+  assert.match(await request('/app', { headers: { Cookie: alice.cookie } }).then(r => r.text()), /account-model-access" content="gpt-only/);
+  assert.deepEqual(await result(rpc(alice, 'getCatalog')), { providers: [], models: [] });
+  for (const route of ['/api/auto/quote', '/api/auto/jobs', '/api/routerai/jobs', '/api/apimart/jobs']) {
+    const response = await request(route, { method: 'POST', headers: { Cookie: alice.cookie, 'X-Media-Client': 'web', 'X-Media-User': alice.id, 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(response.status, 403, route);
+    if (route !== '/api/apimart/jobs') assert.equal((await response.json()).code, 'MODEL_ACCESS_RESTRICTED', route);
+  }
+  assert.equal((await rpc(alice, 'createTask', [{ modelId, input, requestId: 'restricted-admin-policy' }])).status, 403);
+  assert.equal((await rpc(alice, 'nativeQuote', [{ modelId, input }])).status, 403);
+  await runtime.accounts.modelPermissions.assertProvider(alice.id, alice.role, 'codex');
+  const storedAccessAudit = (await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='model-access-audit'", [alice.id])).rows;
+  assert.equal(storedAccessAudit[0].data.reason, 'Проверка доступа');
+  assert.deepEqual(await result(accessRequest(owner, 'all')), { policy: 'all', modelAccess: 'all' });
+  assert.ok((await result(rpc(alice, 'getCatalog'))).models.length);
+  await runtime.accounts.setModelAccess(owner.id, bob.id, 'gpt-only', 'Проверка изоляции');
+  assert.equal((await runtime.accounts.modelPermissions.status(alice.id, alice.role)).modelAccess, 'all');
+  await runtime.accounts.setModelAccess(owner.id, bob.id, 'all', 'Восстановление тестового доступа');
   assert.equal((await rpc(alice, 'createTask', [{ modelId, input, requestId: 'forbidden-kie-account', kieAccountId: 'secondary' }])).status, 403);
   assert.equal((await result(rpc(alice, 'getCatalog'))).kieAccounts, undefined);
   assert.equal((await result(rpc(owner, 'getCatalog'))).kieAccounts[0].id, 'primary');
@@ -280,6 +307,14 @@ test('OAuth, account isolation, RBAC, atomic reservations, settlement, replay an
   await result(rpc(bob, 'saveDrafts', [olderDraft]));
   assert.ok((await pool.query("SELECT 1 FROM media_records WHERE account_id=$1 AND namespace='drafts' AND id=$2", [bob.id, `chat:${recoveredChat[0].id}`])).rows.length, 'the next save binds the older draft to the default chat');
   assert.deepEqual((await pool.query("SELECT id FROM media_records WHERE account_id=$1 AND namespace='drafts'", [alice.id])).rows.map(row => row.id).sort(), [`chat:${activeChat.id}`, `chat:${aliceDefaultChat.id}`].sort());
+  const favorites = ['media:video:demo', 'apimart:video:demo', 'codex:image:demo', 'routerai:text:demo', 'auto:image:demo'];
+  assert.deepEqual(await result(rpc(alice, 'setModelFavorites', [[...favorites, favorites[0]]])), favorites);
+  assert.deepEqual(await result(rpc(alice, 'getModelFavorites')), favorites);
+  assert.deepEqual(await result(rpc(bob, 'getModelFavorites')), [], 'favorites belong to the account');
+  assert.equal((await rpc(alice, 'setModelFavorites', [['invalid:video:demo']])).status, 400);
+  assert.equal((await rpc(alice, 'setModelFavorites', [Array(501).fill(favorites[0])])).status, 400);
+  assert.deepEqual(await result(rpc(alice, 'getModelFavorites')), favorites, 'invalid writes preserve favorites');
+  assert.deepEqual(await result(rpc(alice, 'setModelFavorites', [[favorites[1]]])), [favorites[1]]);
   const savedPreset = await result(rpc(alice, 'saveGenerationPreset', [{ name: 'Мой Grok', provider: 'media', mode: 'video', quantity: 2, mediaModelId: modelId, mediaInput: { ...input, prompt: 'не сохранять', image_urls: ['https://example.test/private.png'] } }]));
   assert.equal(savedPreset.name, 'Мой Grok');
   assert.equal(Object.hasOwn(savedPreset, 'quantity'), false);

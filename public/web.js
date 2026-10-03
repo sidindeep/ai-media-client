@@ -69,7 +69,7 @@
     if (scenarioRoot && prompt) {
       scenarioRoot.replaceChildren(...scenarios.map(([title, text]) => {
         const card = document.createElement('button'); card.type = 'button'; card.className = 'scenario-card';
-        card.innerHTML = `<span class="scenario-icon">✦</span><strong>${title}</strong><small>${text}</small>`;
+        card.innerHTML = `<span class="scenario-icon"><svg class="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/app/iconoir/sprite.svg#spark"></use></svg></span><strong>${title}</strong><small>${text}</small>`;
         card.onclick = () => { prompt.value = text; prompt.focus(); prompt.dispatchEvent(new Event('input', { bubbles: true })); };
         return card;
       }));
@@ -79,7 +79,7 @@
     if (showcase) {
       showcase.replaceChildren(...[['GPT-5.5', 'Универсальный редактор', 'Точный prompt и сложные правки'], ['GPT-5.5 · Fast', 'Быстрый черновик', 'Быстрый результат для итераций']].map(([name, kind, text]) => {
         const card = document.createElement('button'); card.type = 'button'; card.className = 'model-card';
-        card.innerHTML = `<span class="model-card-mark">✦</span><span><strong>${name}</strong><small>${kind}</small><em>${text}</em></span>`;
+        card.innerHTML = `<span class="model-card-mark"><svg class="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/app/iconoir/sprite.svg#spark"></use></svg></span><span><strong>${name}</strong><small>${kind}</small><em>${text}</em></span>`;
         card.onclick = () => { if (codexModel && [...codexModel.options].some(option => option.textContent.includes(name.split(' · ')[0]))) { codexModel.value = [...codexModel.options].find(option => option.textContent.includes(name.split(' · ')[0])).value; codexModel.dispatchEvent(new Event('change', { bubbles: true })); } };
         return card;
       }));

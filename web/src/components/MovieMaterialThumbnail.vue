@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = defineProps<{ kind: string; src?: string }>();
@@ -73,7 +74,7 @@ onBeforeUnmount(() => observer?.disconnect());
     <img v-if="thumbnail && !failed" v-show="!loading" :src="thumbnail" alt="" decoding="async" @load="loading = false" @error="failed = true; loading = false">
     <slot v-else-if="!loading" />
     <span v-if="loading" class="movie-thumbnail-spinner" aria-hidden="true"></span>
-    <svg v-if="kind === 'video' && thumbnail && !failed && !loading" class="movie-thumbnail-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m9 6 9 6-9 6z"/></svg>
+    <AppIcon v-if="kind === 'video' && thumbnail && !failed && !loading" class="movie-thumbnail-play" name="play" />
   </span>
 </template>
 

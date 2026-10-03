@@ -56,6 +56,28 @@ export const useStudioStore = defineStore('studio', () => {
   const unassignedCount = ref(0);
   const pendingSubmissions = ref<GenerationRecord[]>([]);
   const presets = ref<GenerationPreset[]>([]);
+  const modelFavorites = ref<string[]>([]);
+  const modelFavoritesBusy = ref(false);
+  const modelFavoritesError = ref(false);
+  const modelFavoritesReady = ref(false);
+  async function loadModelFavorites() {
+    modelFavoritesReady.value = false;
+    modelFavoritesError.value = false;
+    try {
+      modelFavorites.value = await api.getModelFavorites();
+      modelFavoritesReady.value = true;
+    } catch { modelFavoritesError.value = true; }
+  }
+  async function toggleModelFavorite(id: string) {
+    if (modelFavoritesBusy.value || !modelFavoritesReady.value) return;
+    modelFavoritesBusy.value = true;
+    modelFavoritesError.value = false;
+    try {
+      const next = modelFavorites.value.includes(id) ? modelFavorites.value.filter(item => item !== id) : [...modelFavorites.value, id];
+      modelFavorites.value = await api.setModelFavorites(next);
+    } catch { modelFavoritesError.value = true; }
+    finally { modelFavoritesBusy.value = false; }
+  }
   const selectedPresetId = ref<string | null>(null);
   const projects = ref<Project[]>([]);
   const chats = ref<Chat[]>([]);
@@ -435,10 +457,12 @@ export const useStudioStore = defineStore('studio', () => {
 
   async function refreshAccess() {
     const account = await api.getAccount();
-    const next = account.starterPack?.modelAccess === 'gpt-only' ? 'gpt-only' : 'all';
+    const next = account.modelPermissions?.modelAccess || account.starterPack?.modelAccess || 'all';
     if (next === modelAccess.value) return;
     setModelAccess(next);
     catalog.value = await api.getCatalog().catch(() => null);
+    [routerAiCatalog.value, apimartCatalog.value] = fullModelAccess.value
+      ? await Promise.all([api.getRouterAiCatalog().catch(() => null), api.getApimartCatalog().catch(() => null)]) : [null, null];
     normalizeMediaControls();
   }
 
@@ -689,6 +713,7 @@ export const useStudioStore = defineStore('studio', () => {
     rememberSelection();
     modelAccess.value = value;
     if (!fullModelAccess.value) {
+      autoRouting.value = false;
       provider.value = 'codex';
       if (!['text', 'image'].includes(mode.value)) mode.value = 'image';
       useRememberedModel();
@@ -872,7 +897,7 @@ export const useStudioStore = defineStore('studio', () => {
         if (!status.authenticated) { window.location.assign('/login'); return; }
         if (status.account) {
           accountRole.value = status.account.role === 'admin' ? 'admin' : 'user';
-          setModelAccess(status.account.starterPack?.modelAccess === 'gpt-only' ? 'gpt-only' : 'all');
+          setModelAccess(status.account.modelPermissions?.modelAccess || status.account.starterPack?.modelAccess || 'all');
           api.setAccountContext(status.account);
         }
         if (!accountReady.value) await loadAccountState();
@@ -1106,6 +1131,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
+    modelFavorites, modelFavoritesBusy, modelFavoritesError, modelFavoritesReady, loadModelFavorites, toggleModelFavorite,
     catalog, codexCatalog, routerAiCatalog, apimartCatalog, serviceModelConfig, serviceModelConfigs, serviceModelChoices, serviceModelConfigLoading, serviceModelConfigError, selectServiceModelConfig, release, history, historyNext, historyLoading, loadOlderHistory, chatHistoryNext, chatHistoryLoaded, chatHistoryLoading, chatHistoryError, loadChatHistory, presets, selectedPresetId, queue, selectedId, selected, active, accountActive, completed, loading, error,
     databaseState, providerReadiness, providerDiagnosticRequest, accountReady, accountRole, canAdmin, userInterface, toggleInterface, isAdmin, modelAccess, fullModelAccess, connectionElapsedMs, dataLoadElapsedMs, readyElapsedMs,
     prompt, provider, autoRouting, autoModelId, autoOriginModelId, kieAccountId, mode, mediaModelId, mediaInput, mediaModels, currentMediaModel, sourceFiles, setMode, setProvider, setAutoProvider, setAutoModel, setSelectedModel, setModelAccess,

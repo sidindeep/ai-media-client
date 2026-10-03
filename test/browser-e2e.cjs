@@ -141,6 +141,94 @@ async function main() {
     await client.command('Page.navigate', { url: origin + '/app' });
     await client.until("Boolean(document.querySelector('.studio-main .composer-body textarea'))");
     assert.equal(await client.evaluate("document.querySelector('.studio-main') !== null"), true);
+    if (process.env.BROWSER_E2E_MODEL_ACCESS_ONLY === '1') {
+      await client.until("document.querySelectorAll('.model-native-select option').length > 1");
+      assert.equal(await client.evaluate("document.querySelector('.sidebar-provider-menu')"), null);
+      await client.until("Boolean(document.querySelector('.model-native-select option[value^=\"codex|\"]')) && Boolean(document.querySelector('.model-native-select option[value^=\"auto|\"]'))");
+      await client.evaluate("{const select=document.querySelector('.model-native-select');select.value=Array.from(select.options).find(option=>option.value.startsWith('codex|')).value;select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+      await client.until("document.querySelector('.model-native-select')?.value.startsWith('codex|')");
+      await client.evaluate("{const prompt=document.querySelector('.composer-body textarea');prompt.value='Черновик доступа';prompt.dispatchEvent(new Event('input',{bubbles:true}));const select=document.querySelector('.model-native-select');select.value=Array.from(select.options).find(option=>option.value.startsWith('auto|')).value;select.dispatchEvent(new Event('change',{bubbles:true}));}void 0");
+      await client.until("document.querySelector('.model-native-select')?.value.startsWith('auto|')");
+      assert.equal(await client.evaluate("document.querySelector('.composer-body textarea').value"), 'Черновик доступа');
+      async function checkUserModelDetails() {
+        const priceBefore = await client.evaluate("document.querySelector('.generate-button').textContent");
+        await client.evaluate("document.querySelector('.model-picker-trigger').click();void 0");
+        await client.until("document.querySelectorAll('.model-catalog-row').length > 0");
+        assert.equal(await client.evaluate("document.querySelector('.model-catalog-price')"), null, 'model row prices are admin-only');
+        assert.equal(await client.evaluate("document.querySelector('.model-catalog-variants')"), null, 'technical catalog variants are admin-only');
+        assert.equal(await client.evaluate("Array.from(document.querySelectorAll('.model-catalog-copy small, .model-catalog-copy .model-catalog-provider, .model-brand-list strong')).some(node=>/\\b(?:APIMart|Kie(?:\\.ai)?|RouterAI|Codex)\\b|\\$/.test(node.textContent))"), false);
+        assert.equal(await client.evaluate("Array.from(document.querySelectorAll('.model-catalog-copy small')).every(node=>node.textContent.trim().length > 0)"), true, 'users retain useful descriptions');
+        assert.equal(await client.evaluate("document.querySelector('.generate-button').textContent"), priceBefore, 'opening the list does not change the generate-button price');
+        await client.evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));void 0");
+      }
+      await checkUserModelDetails();
+      await sleep(800);
+      const adminId = randomUUID(), adminToken = randomBytes(32).toString('base64url');
+      await pool.query("INSERT INTO media_accounts(id,display_name,role) VALUES($1,'Access admin','admin')", [adminId]);
+      await pool.query('INSERT INTO media_wallets(account_id,balance) VALUES($1,0)', [adminId]);
+      await pool.query("INSERT INTO media_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", [hash(adminToken), adminId]);
+      await client.command('Network.setCookie', { name: 'media-session', value: adminToken, url: origin, httpOnly: true, sameSite: 'Lax' });
+      await client.command('Page.navigate', { url: origin + '/admin.html' });
+      await client.until(`Boolean(document.querySelector('[data-model-access-account="${accountId}"]'))`);
+      await client.evaluate(`document.querySelector('[data-model-access-account="${accountId}"]').click();document.querySelector('#modelAccessValue').value='gpt-only';document.querySelector('#modelAccessReason').value='Проверка прав из админки';document.querySelector('#modelAccessForm').requestSubmit();void 0`);
+      await client.until("!document.querySelector('#modelAccessDialog').open && /сохранён|saved/.test(document.querySelector('#adminStatus').textContent)");
+      const policy = (await fetch(origin + '/api/admin/accounts', { headers: { Cookie: `media-session=${adminToken}` } }).then(r => r.json())).result.find(row => row.id === accountId);
+      assert.equal(policy.modelPermissions.modelAccess, 'gpt-only');
+      assert.equal((await pool.query("SELECT data FROM media_records WHERE account_id=$1 AND namespace='model-access-audit'", [accountId])).rows[0].data.reason, 'Проверка прав из админки');
+      await client.command('Network.setCookie', { name: 'media-session', value: token, url: origin, httpOnly: true, sameSite: 'Lax' });
+      await client.command('Page.navigate', { url: origin + '/app' });
+      await client.until("document.querySelector('.model-native-select')?.value.startsWith('codex|') && document.querySelectorAll('.composer-tabs button').length===2");
+      assert.equal(await client.evaluate("document.querySelector('.sidebar-provider-menu')"), null);
+      assert.equal(await client.evaluate("Array.from(document.querySelectorAll('.model-native-select option')).every(option=>option.value.startsWith('codex|'))"), true);
+      assert.equal(await client.evaluate("document.querySelector('.composer-body textarea').value"), 'Черновик доступа');
+      const denied = await client.evaluate(`(async()=>{const response=await fetch('/api/admin/model-access',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':'${accountId}','Content-Type':'application/json'},body:JSON.stringify({accountId:'${accountId}',policy:'all',reason:'self grant'})});return response.status;})()`);
+      assert.equal(denied, 403);
+      await runtime.accounts.setModelAccess(adminId, accountId, 'all', 'Восстановление доступа');
+      await client.until("Boolean(document.querySelector('.model-native-select option[value^=\"auto|\"]')) && document.querySelectorAll('.composer-tabs button').length===4");
+      await runtime.accounts.setModelAccess(adminId, accountId, 'gpt-only', 'Ограничение в открытой студии');
+      await client.until("Array.from(document.querySelectorAll('.model-native-select option')).every(option=>option.value.startsWith('codex|')) && document.querySelectorAll('.composer-tabs button').length===2");
+      await runtime.accounts.setModelAccess(adminId, accountId, 'all', 'Восстановление тестового доступа');
+      await client.until("Boolean(document.querySelector('.model-native-select option[value^=\"auto|\"]')) && document.querySelectorAll('.composer-tabs button').length===4");
+      await client.command('Network.setCookie', { name: 'media-session', value: adminToken, url: origin, httpOnly: true, sameSite: 'Lax' });
+      await client.command('Page.navigate', { url: origin + '/app?interface=user' });
+      await client.until("Boolean(document.querySelector('.model-picker-trigger:not(:disabled)'))");
+      assert.equal(await client.evaluate("document.querySelector('.sidebar-provider-menu')"), null, 'admin user preview also hides the block');
+      await checkUserModelDetails();
+      await client.evaluate("document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio').toggleInterface();void 0");
+      await client.until("Boolean(document.querySelector('.sidebar-provider-menu'))");
+      await client.evaluate("document.querySelector('.sidebar-provider-option[data-provider=auto]').click();document.querySelector('.model-picker-trigger').click();void 0");
+      await client.until("document.querySelectorAll('.model-catalog-price').length > 0 && document.querySelector('.model-catalog-variants')");
+      assert.equal(await client.evaluate("/Kie|APIMart/.test(document.querySelector('.model-catalog-price').textContent)"), true, 'admin retains published provider prices');
+      console.log('PASS: user model picker, hidden provider names and prices, preserved admin tariffs, generate-button price, admin access form, UTF-8 audit, restrictions, API self-grant rejection, restored access and admin user preview.');
+      return;
+    }
+    if (process.env.BROWSER_E2E_FAVORITES_ONLY === '1') {
+      assert.equal(await client.evaluate("Boolean(document.querySelector('.preset-bar'))"), false);
+      await client.evaluate("document.querySelector('.model-picker-trigger').click();void 0");
+      await client.until("Boolean(document.querySelector('.model-favorite-toggle:not(:disabled)'))");
+      const before = await client.evaluate("document.querySelector('.model-native-select').value");
+      const label = await client.evaluate("document.querySelector('.model-catalog-row .model-catalog-copy strong').textContent");
+      await client.evaluate("document.querySelector('.model-favorite-toggle').click();void 0");
+      await client.until("Boolean(document.querySelector('.model-favorite-toggle.active:not(:disabled)'))");
+      assert.equal(await client.evaluate("document.querySelector('.model-native-select').value"), before);
+      assert.equal(await client.evaluate("Boolean(document.querySelector('.model-catalog-popover'))"), true);
+      await client.evaluate("document.querySelector('.model-favorites-icon').closest('button').click();void 0");
+      await client.until("document.querySelectorAll('.model-catalog-row').length===1");
+      assert.equal(await client.evaluate("document.querySelector('.model-catalog-copy strong').textContent"), label);
+      await client.evaluate("{const search=document.querySelector('.model-catalog-search input');search.value='no-such-model-12345';search.dispatchEvent(new Event('input',{bubbles:true}));}void 0");
+      await client.until("document.querySelectorAll('.model-catalog-row').length===0");
+      await client.command('Page.reload');
+      await client.until("Boolean(document.querySelector('.model-picker-trigger:not(:disabled)'))");
+      await client.evaluate("document.querySelector('.model-picker-trigger').click();void 0");
+      await client.until("Boolean(document.querySelector('.model-favorite-toggle.active:not(:disabled)'))");
+      assert.equal(await client.evaluate("document.querySelector('.model-catalog-copy strong').textContent"), label);
+      assert.equal(await client.evaluate("document.querySelectorAll('.model-catalog-row').length"), 1);
+      await client.evaluate("document.querySelector('.model-favorite-toggle').click();void 0");
+      await client.until("document.querySelectorAll('.model-catalog-row').length===0 && Boolean(document.querySelector('.model-catalog-empty'))");
+      assert.deepEqual(await client.evaluate("fetch('/api/rpc/getModelFavorites',{method:'POST',headers:{'X-Media-Client':'web','X-Media-User':document.querySelector('meta[name=account-id]').content,'Content-Type':'application/json'},body:'[]'}).then(r=>r.json()).then(r=>r.result)"), []);
+      console.log('Favorites browser E2E passed: star, scoped list, search, persistence, remove, no model change');
+      return;
+    }
     if (process.env.BROWSER_E2E_POPUPS_ONLY === '1') {
       await client.evaluate("window.prompt=window.confirm=window.alert=()=>{throw new Error('Native dialog called')};window.__popupStudio=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('studio');void 0");
       const openAdd = async () => {

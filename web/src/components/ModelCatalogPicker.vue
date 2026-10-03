@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { MODEL_BRANDS, modelBrand, modelSummary, type ModelPickerOption } from '../domain/model-catalog';
 import { useI18n } from '../i18n';
 import type { ServiceModelConfigSummary } from '../types';
+import { useStudioStore } from '../stores/studio';
 
 const props = defineProps<{
   modelValue: string;
+  favoriteScope?: string;
   models: ModelPickerOption[];
   price?: string;
   catalogs?: ServiceModelConfigSummary[];
@@ -15,6 +18,23 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string]; 'select-catalog': [id: string] }>();
 const { locale, t } = useI18n();
+const studio = useStudioStore();
+const displayModels = computed(() => studio.isAdmin ? props.models : props.models.map(model => ({
+  ...model,
+  description: modelSummary(model.label, model.description, false),
+  price: undefined,
+  disabledReason: model.disabledReason ? t('model.unavailable') : undefined,
+  groupId: model.groupId === 'codex' ? 'openai' : ['apimart', 'routerai'].includes(model.groupId) ? 'other' : model.groupId,
+})));
+const favoriteKey = (value: string) => {
+  if (props.favoriteScope?.startsWith('user:') && value.includes('|')) {
+    const separator = value.indexOf('|');
+    return `${value.slice(0, separator)}:${props.favoriteScope.slice(5)}:${value.slice(separator + 1)}`;
+  }
+  return `${props.favoriteScope}:${value}`;
+};
+const isFavorite = (value: string) => studio.modelFavorites.includes(favoriteKey(value));
+const favoriteModels = computed(() => displayModels.value.filter(model => isFavorite(model.value)));
 
 const root = ref<HTMLElement | null>(null);
 const trigger = ref<HTMLButtonElement | null>(null);
@@ -25,26 +45,29 @@ const search = ref('');
 const activeGroup = ref('');
 const panelStyle = ref<Record<string, string>>({});
 
-const selected = computed(() => props.models.find(model => model.value === props.modelValue && !model.disabled)
-  || props.models.find(model => !model.disabled));
+const selected = computed(() => displayModels.value.find(model => model.value === props.modelValue && !model.disabled)
+  || displayModels.value.find(model => !model.disabled));
 const selectedBrand = computed(() => modelBrand(selected.value?.groupId || 'other'));
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
 const matchingModels = computed(() => {
-  if (!normalizedSearch.value) return props.models;
-  return props.models.filter(model => `${model.label} ${model.description || ''} ${modelBrand(model.groupId).label}`.toLocaleLowerCase(locale.value).includes(normalizedSearch.value));
+  if (!normalizedSearch.value) return displayModels.value;
+  return displayModels.value.filter(model => `${model.label} ${model.description || ''} ${modelBrand(model.groupId).label}`.toLocaleLowerCase(locale.value).includes(normalizedSearch.value));
 });
-const groupIds = computed(() => [...MODEL_BRANDS.map(brand => brand.id), ...new Set(props.models.map(model => model.groupId))]
+const groupIds = computed(() => [...MODEL_BRANDS.map(brand => brand.id), ...new Set(displayModels.value.map(model => model.groupId))]
   .filter((id, index, values) => values.indexOf(id) === index));
 const groups = computed(() => groupIds.value.map(id => ({
   ...modelBrand(id),
-  count: props.models.filter(model => model.groupId === id).length,
+  count: displayModels.value.filter(model => model.groupId === id).length,
   matchCount: matchingModels.value.filter(model => model.groupId === id).length,
 })).filter(group => group.count > 0));
-const shownModels = computed(() => normalizedSearch.value
+const shownModels = computed(() => activeGroup.value === 'favorites'
+  ? matchingModels.value.filter(model => isFavorite(model.value))
+  : normalizedSearch.value
   ? matchingModels.value
-  : props.models.filter(model => model.groupId === activeGroup.value));
+  : displayModels.value.filter(model => model.groupId === activeGroup.value));
 
 function setInitialGroup() {
+  if (props.favoriteScope && favoriteModels.value.length) { activeGroup.value = 'favorites'; return; }
   const selectedGroup = selected.value?.groupId;
   activeGroup.value = groups.value.some(group => group.id === selectedGroup) ? selectedGroup! : (groups.value[0]?.id || '');
 }
@@ -66,10 +89,17 @@ function updatePosition() {
 }
 
 async function show() {
-  if (!props.models.length && !props.catalogs?.length) return;
+  if (!displayModels.value.length && !props.catalogs?.length) return;
   setInitialGroup();
   search.value = '';
   open.value = true;
+  await nextTick();
+  updatePosition();
+  if (props.favoriteScope && !studio.modelFavoritesReady && !studio.modelFavoritesBusy) {
+    await studio.loadModelFavorites();
+    setInitialGroup();
+  }
+  if (!open.value) return;
   await nextTick();
   updatePosition();
   searchInput.value?.focus();
@@ -112,7 +142,8 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') close();
 }
 
-watch(() => props.models, () => {
+watch(() => displayModels.value, () => {
+  if (activeGroup.value === 'favorites') return;
   if (!groups.value.some(group => group.id === activeGroup.value)) setInitialGroup();
 }, { deep: true });
 watch(() => props.catalogId, () => {
@@ -148,14 +179,14 @@ onBeforeUnmount(() => {
         <span v-else>{{ selectedBrand.label.slice(0, 1) }}</span>
       </span>
       <strong>{{ selected?.label || t('model.none') }}</strong>
-      <span class="model-picker-chevron" aria-hidden="true">⌄</span>
+      <span class="model-picker-chevron" aria-hidden="true"><AppIcon name="chevron-down" /></span>
     </button>
     <select class="model-native-select" :value="modelValue" tabindex="-1" aria-hidden="true" @change="nativeChange">
       <option v-for="model in models" :key="model.value" :value="model.value" :disabled="model.disabled">{{ model.label }}</option>
     </select>
     <Teleport to="body">
       <section v-if="open" ref="panel" class="model-catalog-popover" role="dialog" :style="panelStyle" :aria-label="t('model.select')">
-        <nav v-if="catalogs && catalogs.length > 1" class="model-catalog-variants" :aria-label="t('composer.serviceCatalog')">
+        <nav v-if="studio.isAdmin && catalogs && catalogs.length > 1" class="model-catalog-variants" :aria-label="t('composer.serviceCatalog')">
           <button v-for="catalog in catalogs" :key="catalog.id" type="button"
             :class="{ active: catalog.id === catalogId }" :aria-current="catalog.id === catalogId ? 'true' : undefined"
             :disabled="catalogLoading" @click="chooseCatalog(catalog.id)">
@@ -163,14 +194,19 @@ onBeforeUnmount(() => {
           </button>
         </nav>
         <p v-if="catalogError" class="model-catalog-status" role="alert">{{ t('model.catalogSwitchFailed') }}</p>
+        <p v-if="favoriteScope && studio.modelFavoritesError" class="model-catalog-status" role="alert">{{ t('model.favoritesError') }} <button v-if="!studio.modelFavoritesReady" type="button" @click="studio.loadModelFavorites()">{{ t('common.retry') }}</button></p>
         <p v-else-if="catalogLoading" class="model-catalog-status" role="status">{{ t('model.catalogLoading') }}</p>
         <label class="model-catalog-search">
-          <span aria-hidden="true">⌕</span>
+          <span aria-hidden="true"><AppIcon name="search" /></span>
           <input ref="searchInput" v-model="search" type="search" :placeholder="t('model.search')" autocomplete="off">
-          <button v-if="search" type="button" :aria-label="t('common.clearSearch')" @click="search = ''">×</button>
+          <button v-if="search" type="button" :aria-label="t('common.clearSearch')" @click="search = ''"><AppIcon name="close" /></button>
         </label>
         <div class="model-catalog-body">
           <nav class="model-brand-list" :aria-label="t('model.developers')">
+            <button v-if="favoriteScope" type="button" :class="{ active: activeGroup === 'favorites' }" @click="chooseGroup('favorites')">
+              <span class="model-brand-icon model-favorites-icon" aria-hidden="true"><AppIcon name="star" /></span>
+              <strong>{{ t('model.favorites') }}</strong><small>{{ favoriteModels.length }}</small>
+            </button>
             <button v-for="group in groups" :key="group.id" type="button" :class="{ active: !normalizedSearch && activeGroup === group.id, muted: normalizedSearch && !group.matchCount }" @click="chooseGroup(group.id)">
               <span class="model-brand-icon" :style="{ '--brand-accent': group.accent }">
                 <img v-if="group.icon" :src="group.icon" alt="" :class="{ monochrome: group.monochrome }">
@@ -180,23 +216,26 @@ onBeforeUnmount(() => {
               <small>{{ normalizedSearch ? group.matchCount : group.count }}</small>
             </button>
           </nav>
-          <div class="model-catalog-list" role="listbox" :aria-label="normalizedSearch ? t('model.searchResults') : modelBrand(activeGroup).label">
-            <button v-for="model in shownModels" :key="model.value" type="button" class="model-catalog-item" role="option" :aria-selected="model.value === modelValue" :class="{ selected: model.value === modelValue }" :disabled="model.disabled" @click="choose(model.value)">
+          <div class="model-catalog-list" role="list" :aria-label="activeGroup === 'favorites' ? t('model.favorites') : normalizedSearch ? t('model.searchResults') : modelBrand(activeGroup).label">
+            <div v-for="model in shownModels" :key="model.value" class="model-catalog-row" role="listitem">
+            <button type="button" class="model-catalog-item" :aria-pressed="model.value === modelValue" :class="{ selected: model.value === modelValue }" :disabled="model.disabled" @click="choose(model.value)">
               <span class="model-brand-icon row-icon" :style="{ '--brand-accent': modelBrand(model.groupId).accent }">
                 <img v-if="modelBrand(model.groupId).icon" :src="modelBrand(model.groupId).icon" alt="" :class="{ monochrome: modelBrand(model.groupId).monochrome }">
                 <span v-else>{{ modelBrand(model.groupId).label.slice(0, 1) }}</span>
               </span>
               <span class="model-catalog-copy">
                 <strong>{{ model.label }}</strong>
-                <small>{{ modelSummary(model.label, model.description) }}</small>
-                <span v-if="model.value === modelValue && price" class="model-catalog-price">↯ {{ price }}</span>
-                <span v-if="model.price" class="model-catalog-price" :title="model.price">{{ model.price }}</span>
+                <small>{{ modelSummary(model.label, model.description, studio.isAdmin) }}</small>
+                <span v-if="studio.isAdmin && model.value === modelValue && price" class="model-catalog-price"><AppIcon name="credits" /> {{ price }}</span>
+                <span v-if="studio.isAdmin && model.price" class="model-catalog-price" :title="model.price">{{ model.price }}</span>
                 <span v-if="model.disabledReason" class="model-catalog-provider">{{ model.disabledReason }}</span>
-                <span v-else-if="model.value !== modelValue || !price" class="model-catalog-provider">{{ modelBrand(model.groupId).label }}</span>
+                <span v-else-if="studio.isAdmin && (model.value !== modelValue || !price)" class="model-catalog-provider">{{ modelBrand(model.groupId).label }}</span>
               </span>
-              <span v-if="model.value === modelValue" class="model-selected-check" aria-hidden="true">✓</span>
+              <span v-if="model.value === modelValue" class="model-selected-check" aria-hidden="true"><AppIcon name="check" /></span>
             </button>
-            <p v-if="!shownModels.length" class="model-catalog-empty">{{ t('model.notFound') }}</p>
+            <button v-if="favoriteScope" type="button" class="model-favorite-toggle" :class="{ active: isFavorite(model.value) }" :aria-pressed="isFavorite(model.value)" :aria-label="t(isFavorite(model.value) ? 'model.removeFavorite' : 'model.addFavorite', { name: model.label })" :title="t(isFavorite(model.value) ? 'model.removeFavorite' : 'model.addFavorite', { name: model.label })" :disabled="studio.modelFavoritesBusy || !studio.modelFavoritesReady" @click="studio.toggleModelFavorite(favoriteKey(model.value))"><AppIcon name="star" /></button>
+            </div>
+            <p v-if="!shownModels.length" class="model-catalog-empty">{{ activeGroup === 'favorites' && !normalizedSearch ? t('model.favoritesEmpty') : t('model.notFound') }}</p>
           </div>
         </div>
       </section>

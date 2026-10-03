@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { MediaField } from '../types';
 import { useStudioStore } from '../stores/studio';
@@ -237,22 +238,22 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="hasSourcePicker || visibleSources.length || uploading" class="source-strip">
-    <label v-if="studio.provider === 'codex' && hasSourcePicker" class="attach-button">＋ {{ t('composer.sources') }}<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
+    <label v-if="studio.provider === 'codex' && hasSourcePicker" class="attach-button"><AppIcon name="add" /> {{ t('composer.sources') }}<input type="file" accept="image/png,image/jpeg,image/webp" multiple @change="addFiles($event)" /></label>
     <template v-else>
       <FrameSourcePicker v-if="frameFields" :fields="frameFields" @selected="uploadFiles" />
-      <label v-for="field in otherFileFields" :key="field.key" class="attach-button">＋ {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
+      <label v-for="field in otherFileFields" :key="field.key" class="attach-button"><AppIcon name="add" /> {{ sourceButtonLabel(field) }}{{ field.required ? ' *' : '' }}<input type="file" :accept="field.accept" :multiple="!field.scalar && field.maxFiles !== 1" @change="addFiles($event, field)" /></label>
     </template>
     <span v-if="uploading" class="uploading">{{ t('composer.uploading') }}</span>
     <article v-for="file in visibleSources" :key="file.ref + file.sourceIndex" class="source-preview">
       <img v-if="file.type.startsWith('image/')" :src="sourcePreviewUrl(file.ref)" :alt="t('composer.thumbnail', { name: file.name })" loading="lazy">
-      <span v-else class="source-file-icon" aria-hidden="true">▧</span>
-      <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(file.sourceIndex)">×</button>
+      <span v-else class="source-file-icon" aria-hidden="true"><AppIcon :name="file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'text'" /></span>
+      <button type="button" class="source-remove" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(file.sourceIndex)"><AppIcon name="close" /></button>
     </article>
   </div>
   <Teleport to="body">
     <div v-if="draggingFiles" class="chat-drop-overlay" :class="{ unavailable: !dropReady }" @dragover.prevent>
       <section class="chat-drop-panel" role="status" aria-live="assertive">
-        <span class="chat-drop-icon" aria-hidden="true">⇩</span>
+        <span class="chat-drop-icon" aria-hidden="true"><AppIcon name="upload" /></span>
         <strong>{{ dropTitle }}</strong>
         <p>{{ dropDescription }}</p>
         <div v-if="dropReady && dropFields.length > 1" class="chat-drop-targets">

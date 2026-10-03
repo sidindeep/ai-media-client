@@ -5,7 +5,7 @@ const snapshotCatalog = require('../../../config/codex-models.json');
 async function handleGenerationRequest({ req, res, url, user, accounts, codexProvider, routerAi, routerAiAdmin, apimart, costRouter,
   send, readBody, sendMedia, sendStored, sendFile, headers }) {
   if (url.pathname.startsWith('/api/auto/')) {
-    await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
+    await (accounts?.modelPermissions || accounts?.starterPack)?.assertProvider(user.id, user.role, 'media');
     if (!costRouter) return send(503, { error: 'Автоматический выбор не настроен' });
     if (req.method !== 'POST' || !['/api/auto/quote', '/api/auto/jobs'].includes(url.pathname)) return send(404, { error: 'Не найдено' });
     if (req.headers['x-media-client'] !== 'web') return send(403, { error: 'Недопустимый источник запроса' });
@@ -20,7 +20,7 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codexPro
     return send(200, await costRouter.submit(user, raw));
   }
   if (url.pathname.startsWith('/api/codex/')) {
-    await accounts?.starterPack?.assertProvider(user.id, user.role, 'codex');
+    await (accounts?.modelPermissions || accounts?.starterPack)?.assertProvider(user.id, user.role, 'codex');
     if (req.method === 'GET' && url.pathname === '/api/codex/status') return send(200, { enabled: Boolean(codexProvider), allowed: Boolean(accounts) });
     if (!codexProvider) return send(503, { error: 'Codex требует подключённого сервиса и кредитного счёта.' });
     if (req.method === 'GET' && url.pathname === '/api/codex/models') {
@@ -54,7 +54,7 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codexPro
   if (url.pathname.startsWith('/api/apimart/')) {
     if (req.method === 'GET' && (url.pathname === '/api/apimart/models'
       || /^\/api\/apimart\/jobs\/[a-f0-9-]{36}$/.test(url.pathname)))
-      await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
+      await (accounts?.modelPermissions || accounts?.starterPack)?.assertProvider(user.id, user.role, 'media');
     else assertAdminRole(user.role);
     if (!apimart) return send(503, { error: 'APIMart не настроен' });
     if (req.method === 'GET' && url.pathname === '/api/apimart/models') {
@@ -82,7 +82,7 @@ async function handleGenerationRequest({ req, res, url, user, accounts, codexPro
     return send(404, { error: 'Не найдено' });
   }
   if (url.pathname.startsWith('/api/routerai/')) {
-    await accounts?.starterPack?.assertProvider(user.id, user.role, 'media');
+    await (accounts?.modelPermissions || accounts?.starterPack)?.assertProvider(user.id, user.role, 'media');
     if (!routerAi) return send(503, { error: 'RouterAI не настроен.' });
     if (req.method === 'GET' && url.pathname === '/api/routerai/models') return send(200, await routerAi.listModelCatalog(user.role));
     if (url.pathname.startsWith('/api/routerai/admin/')) {

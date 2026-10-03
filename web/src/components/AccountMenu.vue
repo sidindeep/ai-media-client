@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as api from '../api/client';
 import { useI18n } from '../i18n';
@@ -181,7 +182,7 @@ onBeforeUnmount(() => {
     <button class="account-trigger" type="button" aria-haspopup="menu" :aria-expanded="menuOpen" :disabled="!ready" @click="toggleMenu">
       <span class="account-avatar" aria-hidden="true">{{ initials }}</span>
       <span class="account-trigger-copy"><strong>{{ account?.name || (ready ? t('account.profile') : t('account.connecting')) }}</strong><small>{{ account ? t('common.credits', { count: formatCredits(account.wallet?.balance) }) : t('common.account') }}</small></span>
-      <span class="account-chevron" aria-hidden="true">⌄</span>
+      <span class="account-chevron" aria-hidden="true"><AppIcon name="chevron-down" /></span>
     </button>
     <div v-if="menuOpen" class="account-popover" role="menu">
       <div class="account-summary">
@@ -189,7 +190,7 @@ onBeforeUnmount(() => {
         <span><strong>{{ account?.name }}</strong><small>{{ account?.role === 'admin' ? t('common.admin') : t('common.user') }}</small></span>
       </div>
       <div class="account-balance"><span>{{ t('account.available') }}</span><strong>{{ formatCredits(account?.wallet?.balance) }} {{ t('common.creditsShort') }}</strong></div>
-      <a class="account-topup" :href="'/app/plans' + (studio.canAdmin && studio.userInterface ? '?interface=user' : '')" role="menuitem">＋ {{ t('account.topUp') }}</a>
+      <a class="account-topup" :href="'/app/plans' + (studio.canAdmin && studio.userInterface ? '?interface=user' : '')" role="menuitem"><AppIcon name="add" /> {{ t('account.topUp') }}</a>
       <div class="account-menu-section">
         <a :href="'/app/profile' + (studio.canAdmin && studio.userInterface ? '?interface=user' : '')" role="menuitem"><span>{{ t('account.profile') }}</span><small>{{ t('account.profileHint') }}</small></a>
         <button type="button" role="menuitem" @click="openHistory"><span>{{ t('navigation.history') }}</span><small>{{ t('account.historyHint') }}</small></button>
@@ -205,7 +206,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div v-if="modal" class="account-modal-backdrop" @mousedown.self="closeModal">
       <section class="account-modal" role="dialog" aria-modal="true" :aria-labelledby="'account-dialog-title'">
-        <header><div><span class="eyebrow">{{ t('account.dialogEyebrow') }}</span><h2 id="account-dialog-title">{{ dialogTitle }}</h2></div><button type="button" :aria-label="t('common.close')" @click="closeModal">×</button></header>
+        <header><div><span class="eyebrow">{{ t('account.dialogEyebrow') }}</span><h2 id="account-dialog-title">{{ dialogTitle }}</h2></div><button type="button" :aria-label="t('common.close')" @click="closeModal"><AppIcon name="close" /></button></header>
         <form v-if="modal === 'settings'" class="account-form" @submit.prevent="saveSettings">
           <label class="account-check"><input v-model="autoSave" type="checkbox"> {{ t('account.autoSave') }}</label>
           <label for="accountConcurrency">{{ t('account.concurrency') }}</label>

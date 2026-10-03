@@ -39,7 +39,7 @@
   };
   const model = () => catalog?.models.find(item => item.id === $('codexModel').value);
   const effort = () => model()?.efforts[Number($('codexEffort').value)];
-  const route = value => `Codex CLI → ${value.model}${value.kind === 'image' ? ' → генератор изображений' : ' · Текст'} · ${names[value.effort] || value.effort} · ${value.speed === 'fast' ? '⚡ Fast' : 'Обычная скорость'}`;
+  const route = value => `Codex CLI → ${value.model}${value.kind === 'image' ? ' → генератор изображений' : ' · Текст'} · ${names[value.effort] || value.effort} · ${value.speed === 'fast' ? 'Fast' : 'Обычная скорость'}`;
   const routeNode = document.createElement('p'); routeNode.id = 'kieRoute'; routeNode.className = 'card'; routeNode.setAttribute('role', 'status');
   $('generate').before(routeNode);
   const updateKieRoute = () => { routeNode.textContent = `Запрос пойдёт через Kie.ai → ${$('title').textContent}`; };

@@ -52,6 +52,10 @@ async function handleAdminRequest({ req, url, user, accounts, config, codexAdmin
     } catch (error) { return send(502, { error: error.remoteStatus ? 'Обновите и проверьте сервис Codex на сервере.' : 'Сервис Codex не отвечает. Проверьте его запуск.' }); }
   }
   if (url.pathname === '/api/admin/accounts' && req.method === 'GET') return send(200, { result: await accounts.list() });
+  if (url.pathname === '/api/admin/model-access' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
+    const body = JSON.parse((await readBody(4096)).toString('utf8'));
+    return send(200, { result: await accounts.setModelAccess(user.id, body.accountId, body.policy, body.reason) });
+  }
   if (url.pathname === '/api/admin/starter-pack' && req.method === 'GET') return send(200, { result: await accounts.starterOverview() });
   if (url.pathname === '/api/admin/roles' && req.method === 'POST' && req.headers['x-media-client'] === 'web') {
     const body = JSON.parse((await readBody(4096)).toString('utf8'));

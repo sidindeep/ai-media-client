@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "./AppIcon.vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as api from '../api/client';
 import { useStudioStore } from '../stores/studio';
@@ -74,7 +75,7 @@ async function loadAccount() {
   try {
     const previousId = account.value?.id;
     account.value = await api.getAccount();
-    studio.setModelAccess(account.value.starterPack?.modelAccess === 'gpt-only' ? 'gpt-only' : 'all');
+    studio.setModelAccess(account.value.modelPermissions?.modelAccess || account.value.starterPack?.modelAccess || 'all');
     if (account.value.id !== previousId) restoreSeen();
   } catch {
     account.value = null;
@@ -136,13 +137,13 @@ onBeforeUnmount(() => {
     </button>
 
     <span class="header-credit-balance" :title="t('header.balance')" :aria-label="t('header.balance')">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8L12 3.5Z"/><path d="m8.5 10 3.5 2 3.5-2M12 12v4"/></svg>
+      <AppIcon name="credits" />
       <strong>{{ formatCredits(balance) }}</strong><span>{{ t('common.creditsShort') }}</span>
     </span>
 
     <div class="notification-control">
       <button class="notification-button" type="button" :aria-label="t('header.notifications')" aria-haspopup="menu" :aria-expanded="notificationsOpen" @click="toggleNotifications">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg>
+        <AppIcon name="notifications" />
         <span v-if="unreadCount" class="notification-count">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
       </button>
       <div v-if="notificationsOpen" class="notification-popover" role="menu">
@@ -159,8 +160,8 @@ onBeforeUnmount(() => {
     </div>
 
     <button class="theme-button" type="button" :aria-label="theme === 'dark' ? t('theme.enableLight') : t('theme.enableDark')" :title="theme === 'dark' ? t('theme.light') : t('theme.dark')" :aria-pressed="theme === 'light'" @click="toggleTheme">
-      <svg v-if="theme === 'dark'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-      <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.7 8.7 0 0 1 8.8 3.5 8.8 8.8 0 1 0 20.5 15.2Z"/></svg>
+      <AppIcon v-if="theme === 'dark'" name="sun" />
+      <AppIcon v-else name="moon" />
     </button>
   </div>
 

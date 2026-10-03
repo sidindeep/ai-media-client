@@ -14,6 +14,7 @@ const { generationHistory, generationHistorySince, generationHistoryPage, genera
 const { spendingHistory } = require('./spending-history');
 const { generationJournal } = require('./generation-journal');
 const { createWorkspaces } = require('./workspaces');
+const { createModelAccess } = require('./model-access');
 const trace = require('../generation-log');
 const { recordFailure } = require('../provider-diagnostics');
 const { ROLES, isAccountRole, isAdminRole, assertAdminAccount, assertAccountAccess } = require('../auth/roles');
@@ -46,6 +47,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
   idleServiceMs = 30 * 60 * 1000 }) {
   if (!Number.isInteger(idleServiceMs) || idleServiceMs < 1) throw new Error('Некорректный срок простоя сервиса аккаунта');
   const services = new Map(), lastUsed = new Map(), closing = new Map();
+  const modelPermissions = createModelAccess({ pool, starterPack });
   let closed = false, sweeping = null;
   const wallet = createWallet(pool, { onPurchase: async accountId => {
     const operation = services.get(accountId);
@@ -104,7 +106,13 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
     Math.min(5 * 60 * 1000, Math.max(1000, Math.floor(idleServiceMs / 2))));
   sweepTimer.unref?.();
   return {
-    pool, wallet, pricing, conversion, workspaces, starterPack, content, provider: routedProvider, get, sweepIdle,
+    pool, wallet, pricing, conversion, workspaces, starterPack, modelPermissions, content, provider: routedProvider, get, sweepIdle,
+    async setModelAccess(actorId, accountId, policy, reason) {
+      const access = await modelPermissions.set(actorId, accountId, policy, reason);
+      const service = services.get(accountId);
+      if (service) (await service).events.emit('changed');
+      return access;
+    },
     databaseState: options => checkDatabase(pool, options),
     modelConfigs: createModelConfigReader(pool, { refresh: createModelRouteSynchronizer({ pool,
       apiKey: config.apimart?.apiKey, ...(tariffFetcher ? { fetcher: tariffFetcher } : {}) }) }),
@@ -163,12 +171,12 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
           if (method === 'saveGenerationPreset') return service.dispatch(method, [args[0], { routerAiRole: ROLES.ADMIN }]);
           if (method === 'createTask') {
             const [, binding] = await Promise.all([
-              starterPack?.assertProvider(accountId, account.role, 'media'),
+              modelPermissions.assertProvider(accountId, account.role, 'media'),
               workspaces.assertBinding(accountId, args[0]?.projectId, args[0]?.chatId),
             ]);
             return service.createTask({ ...args[0], ...binding });
           }
-          if (['nativeQuote', 'diagnoseProvider'].includes(method)) await starterPack?.assertProvider(accountId, account.role, 'media');
+          if (['nativeQuote', 'diagnoseProvider'].includes(method)) await modelPermissions.assertProvider(accountId, account.role, 'media');
           return service.dispatch(method, args);
         }
       };
@@ -177,8 +185,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
         async dispatch(method, args) {
           switch (method) {
             case 'getCatalog': {
-              const access = starterPack ? await starterPack.status(accountId, account.role) : { active: false };
-              if (access.active) return { providers: [], models: [] };
+              const access = await modelPermissions.status(accountId, account.role);
+              if (access.modelAccess === 'gpt-only') return { providers: [], models: [] };
               const catalog = service.catalog();
               return { providers: [{ id: 'media', name: catalog.providers[0]?.name || 'Медиастудия' }], models: catalog.models.map(model => ({
                 id: model.id, apiModel: model.id, providerId: 'media', name: model.name, kind: model.kind,
@@ -195,7 +203,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
               if (!args[0]?.requestId) throw new Error('Требуется идентификатор запроса');
               const started = Date.now();
               const [, binding] = await Promise.all([
-                starterPack?.assertProvider(accountId, account.role, 'media'),
+                modelPermissions.assertProvider(accountId, account.role, 'media'),
                 workspaces.assertBinding(accountId, args[0].projectId, args[0].chatId),
               ]);
               trace.timing('generation.preflight', { elapsedMs: Date.now() - started, poolWaiting: pool.waitingCount ?? null });
@@ -210,8 +218,8 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             case 'getBalance': return wallet.get(accountId);
             case 'getSpending': return spendingHistory(pool, accountId, args[0]);
             case 'getGenerationJournal': return generationJournal(pool, accountId, args[0]);
-            case 'nativeQuote': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
-            case 'diagnoseProvider': await starterPack?.assertProvider(accountId, account.role, 'media'); return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+            case 'nativeQuote': await modelPermissions.assertProvider(accountId, account.role, 'media'); return service.nativeQuote(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
+            case 'diagnoseProvider': await modelPermissions.assertProvider(accountId, account.role, 'media'); return service.diagnoseProvider(args[0]?.modelId, args[0]?.input, args[0]?.sourceFiles);
             case 'nativeLedger': return wallet.ledger(accountId);
             case 'queueStatus': return { paused: service.queue.paused, concurrency: service.queue.concurrency, error: service.queue.error ? 'Очередь приостановлена. Проверьте историю.' : null };
             case 'costSettings': return { rubPerCredit: 0, native: true };
@@ -220,6 +228,7 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
             case 'keyStatus': case 'startQueue': case 'pauseQueue': case 'setConcurrency': case 'cancelQueued':
             case 'removeQueued': case 'clearQueue': case 'acknowledgeTask': case 'getFavoriteModels': case 'setFavoriteModels':
             case 'saveGenerationPreset': return service.dispatch(method, [args[0], { routerAiRole: ROLES.USER }]);
+            case 'getModelFavorites': case 'setModelFavorites':
             case 'listTemplates': case 'saveTemplate': case 'removeTemplate': case 'listGenerationPresets': case 'removeGenerationPreset':
             case 'storageSettings': case 'setAutoSave': case 'saveResults': return service.dispatch(method, args);
             default: throw Object.assign(new Error('Доступ запрещён'), { status: 403 });
@@ -228,12 +237,17 @@ function createAccounts({ pool, config, provider, legacy, tariffFetcher, starter
       };
     },
     async list() {
-      const rows = (await pool.query(`SELECT a.id,a.display_name AS name,a.role,a.created_at,w.balance,w.held,
+      const rows = (await pool.query(`SELECT a.id,a.display_name AS name,a.role,a.created_at,w.balance,w.held,ma.data->>'policy' AS model_policy,
         (SELECT string_agg(verified_email,', ') FROM media_identities i WHERE i.account_id=a.id) AS email,
         EXISTS(SELECT 1 FROM media_ledger l WHERE l.account_id=a.id AND l.kind='grant' AND l.reference=$1) AS starter_enrolled,
         EXISTS(SELECT 1 FROM media_ledger l WHERE l.account_id=a.id AND l.kind='purchase') AS starter_paid
-        FROM media_accounts a JOIN media_wallets w ON w.account_id=a.id ORDER BY a.created_at DESC LIMIT 500`, [starterPack?.reference || 'starter-pack-disabled'])).rows;
-      return rows.map(row => ({ ...row, starterPack: starterPack?.summarize(row.role, row.starter_enrolled, row.starter_paid) || null }));
+        FROM media_accounts a JOIN media_wallets w ON w.account_id=a.id
+        LEFT JOIN media_records ma ON ma.account_id=a.id AND ma.namespace='model-access' AND ma.id='policy'
+        ORDER BY a.created_at DESC LIMIT 500`, [starterPack?.reference || 'starter-pack-disabled'])).rows;
+      return rows.map(row => {
+        const starter = starterPack?.summarize(row.role, row.starter_enrolled, row.starter_paid) || null;
+        return { ...row, starterPack: starter, modelPermissions: modelPermissions.summarize(row.role, row.model_policy, starter) };
+      });
     },
     async starterOverview() {
       if (!starterPack) return null;

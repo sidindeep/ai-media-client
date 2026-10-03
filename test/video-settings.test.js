@@ -24,6 +24,16 @@ test('video settings hide unsupported resolution and preserve catalog resolution
   vm.runInNewContext(output, { exports: componentExports, require: id => {
     if (id === 'vue') return require('vue');
     if (id.endsWith('DurationPicker.vue')) return { default: { render: () => null } };
+    if (id.endsWith('AspectRatioPicker.vue')) return { default: { render: () => null } };
+    if (id.endsWith('AppIcon.vue')) return { default: { render: () => null } };
+    if (id.endsWith('ParameterPicker.vue')) {
+      const { descriptor: pickerDescriptor } = parse(fs.readFileSync(path.join(__dirname, '../web/src/components/ParameterPicker.vue'), 'utf8'));
+      const pickerScript = compileScript(pickerDescriptor, { id: 'parameter-picker-test', inlineTemplate: true });
+      const pickerExports = {};
+      vm.runInNewContext(ts.transpileModule(pickerScript.content, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
+        { exports: pickerExports, require: dependency => dependency === 'vue' ? require('vue') : { default: { render: () => null } } });
+      return pickerExports;
+    }
     if (id.endsWith('/video-settings')) return moduleExports;
     if (id.endsWith('/media-fields')) return { mediaFieldOptions: field => field.options || field.schema?.enum || [] };
     if (id === '../i18n') return { useI18n: () => ({ t: key => key }) };

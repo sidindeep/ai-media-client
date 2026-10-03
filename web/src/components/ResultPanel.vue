@@ -135,7 +135,7 @@ const route = computed(() => {
   const model = resultModelLabel(record, isAdmin.value);
   const kind = record.kind === 'image' ? t('result.imageGenerator') : record.kind === 'text' ? t('result.textKind') : record.kind || t('result.resultKind');
   const effort = typeof record.input?.effort === 'string' ? reasoningEffortLabel(record.input.effort) : '';
-  const speed = record.input?.speed === 'fast' ? '⚡ Fast' : record.input?.speed === 'standard' ? t('result.standardSpeed') : '';
+  const speed = record.input?.speed === 'fast' ? 'Fast' : record.input?.speed === 'standard' ? t('result.standardSpeed') : '';
   return [provider, model, kind, effort, speed].filter(Boolean).join(' → ');
 });
 const tokenSummary = computed(() => {

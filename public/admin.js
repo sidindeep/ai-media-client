@@ -2,6 +2,7 @@ let grantReference = crypto.randomUUID();
 let accountRows = [];
 let creditScale = 1000;
 let roleTargetId;
+let modelAccessTargetId;
 let ledgerSequence = 0;
 const formatCredits = value => new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 3 }).format(value);
 function showBalance() {
@@ -186,12 +187,28 @@ function renderAccounts() {
     const starter = row.starterPack?.active ? 'стартер-пак: только GPT' : row.starterPack?.unlockedByPayment ? 'весь каталог открыт оплатой' : 'без стартер-ограничения';
     detail.textContent = `${row.email || row.id} · ${row.role === 'admin' ? 'Администратор' : 'Пользователь'} · ${starter} · доступно ${formatCredits((Number(row.balance) - Number(row.held)) / creditScale)} кредитов`;
     info.append(link, detail);
+    const accessInfo = document.createElement('p');
+    accessInfo.textContent = row.modelPermissions?.modelAccess === 'gpt-only' ? 'Доступ: только GPT-модели' : 'Доступ: все модели';
+    info.append(accessInfo);
     const actions = document.createElement('div'); actions.className = 'account-controls';
     const grant = document.createElement('button'); grant.textContent = 'Пополнить'; grant.type = 'button';
     grant.onclick = () => { document.getElementById('grantAccount').value = row.id; showBalance(); location.hash = 'credits'; };
     const role = document.createElement('button'); role.textContent = 'Изменить роль'; role.type = 'button'; role.dataset.accountId = row.id;
     role.onclick = () => { roleTargetId = row.id; document.getElementById('roleTarget').textContent = `${row.name} · ${row.email || row.id}`; document.getElementById('roleValue').value = row.role; document.getElementById('roleReason').value = ''; document.getElementById('roleStatus').textContent = ''; document.getElementById('roleDialog').showModal(); };
-    actions.append(grant, role); card.append(info, actions); return card;
+    actions.append(grant, role);
+    if (row.role !== 'admin') {
+      const access = document.createElement('button'); access.type = 'button'; access.textContent = 'Доступ к моделям'; access.dataset.modelAccessAccount = row.id;
+      access.onclick = () => {
+        modelAccessTargetId = row.id;
+        document.getElementById('modelAccessTarget').textContent = `${row.name} · ${row.email || row.id}`;
+        document.getElementById('modelAccessValue').value = row.modelPermissions?.policy || 'all';
+        document.getElementById('modelAccessReason').value = '';
+        document.getElementById('modelAccessStatus').textContent = '';
+        document.getElementById('modelAccessDialog').showModal();
+      };
+      actions.append(access);
+    }
+    card.append(info, actions); return card;
   }));
 }
 document.getElementById('accountSearch').oninput = renderAccounts;
@@ -233,6 +250,18 @@ async function loadLedger() {
   } catch (error) { if (sequence === ledgerSequence) document.getElementById('creditLedger').textContent = error.message; }
 }
 document.getElementById('closeRoleDialog').onclick = () => document.getElementById('roleDialog').close();
+document.getElementById('closeModelAccessDialog').onclick = () => document.getElementById('modelAccessDialog').close();
+document.getElementById('modelAccessForm').onsubmit = async event => {
+  event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
+  try {
+    await adminRequest('/api/admin/model-access', { method: 'POST', body: JSON.stringify({ accountId: modelAccessTargetId,
+      policy: document.getElementById('modelAccessValue').value, reason: document.getElementById('modelAccessReason').value }) });
+    document.getElementById('modelAccessDialog').close();
+    document.getElementById('adminStatus').textContent = 'Доступ к моделям сохранён';
+    await loadAccounts();
+  } catch (error) { document.getElementById('modelAccessStatus').textContent = error.message; }
+  finally { button.disabled = false; }
+};
 document.getElementById('roleForm').onsubmit = async event => {
   event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
   try {

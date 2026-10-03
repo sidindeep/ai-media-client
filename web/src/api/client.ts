@@ -131,6 +131,8 @@ export const getChatHistoryPage = (chatId: string, cursor: string | null = null)
 export const loadDraft = (chatId?: string | null) => rpc<Record<string, unknown> | null>('loadDrafts', chatId ? [{ chatId }] : []);
 export const saveDraft = (draft: Record<string, unknown>, chatId?: string | null) => rpc<boolean>('saveDrafts', [draft, chatId ? { chatId } : {}]);
 export const listGenerationPresets = () => rpc<GenerationPreset[]>('listGenerationPresets');
+export const getModelFavorites = () => rpc<string[]>('getModelFavorites');
+export const setModelFavorites = (ids: string[]) => rpc<string[]>('setModelFavorites', [ids]);
 export const saveGenerationPreset = (preset: Omit<GenerationPreset, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => rpc<GenerationPreset>('saveGenerationPreset', [preset]);
 export const removeGenerationPreset = (id: string) => rpc<boolean>('removeGenerationPreset', [id]);
 
@@ -172,7 +174,7 @@ export type StartupStatus = {
   database: { state: 'connecting' | 'connected' | 'unavailable' | 'disabled'; code?: string; attempt?: number; retryInMs?: number; latencyMs?: number };
   provider: { state: 'idle' | 'checking' | 'ready' | 'error'; checkedAt?: string; model?: { id: string; name: string }; quote?: { credits?: number } | null; checks?: Array<{ step: string; status: string; durationMs: number }> };
   authenticated: boolean;
-  account: { id: string; role: string; starterPack?: Account['starterPack'] } | null;
+  account: { id: string; role: string; starterPack?: Account['starterPack']; modelPermissions?: Account['modelPermissions'] } | null;
 };
 
 export async function getStartupStatus(): Promise<StartupStatus> {

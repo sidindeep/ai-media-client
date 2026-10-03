@@ -59,3 +59,17 @@ test('preview URL survives reload, and cannot grant admin presentation to a user
   studio.toggleInterface();
   assert.equal(studio.isAdmin, true);
 });
+
+test('revoking media access exits automatic routing and preserves the prompt', () => {
+  const { studio } = studioAt();
+  studio.prompt = 'Existing draft';
+  studio.provider = 'media';
+  studio.autoRouting = true;
+  studio.mode = 'video';
+  studio.setModelAccess('gpt-only');
+  assert.equal(studio.provider, 'codex');
+  assert.equal(studio.autoRouting, false);
+  assert.equal(studio.mode, 'image');
+  assert.equal(studio.prompt, 'Existing draft');
+  assert.equal(studio.fullModelAccess, false);
+});

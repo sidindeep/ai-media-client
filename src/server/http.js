@@ -273,7 +273,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         if (!relative || relative.split('/').includes('..')) return json(res, 404, { error: 'Не найдено' });
         const sendVueIndex = async () => {
           let html = await fs.readFile(path.join(root, 'index.html'), 'utf8');
-          const starterStatus = user && accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null;
+          const starterStatus = user && accounts?.modelPermissions ? await accounts.modelPermissions.status(user.id, user.role) : null;
           html = html.replace('<head>', `<head><meta name="account-id" content="${user?.id || 'pending'}"><meta name="account-role" content="${user?.role || 'pending'}"><meta name="account-model-access" content="${starterStatus?.modelAccess || 'pending'}">`);
           if (user && req.method === 'GET' && (url.pathname === vueAppPrefix || url.pathname === `${vueAppPrefix}/`)) {
             recordSystemInfo('studio', 'chat.page.served', 'Chat page served', {
@@ -313,6 +313,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
           provider: readiness?.provider || { state: 'idle' },
           authenticated: config.auth.enabled ? Boolean(startupUser) : true,
           account: startupUser ? { id: startupUser.id, role: startupUser.role,
+            modelPermissions: await accounts?.modelPermissions?.status(startupUser.id, startupUser.role),
             starterPack: accounts?.starterPack ? await accounts.starterPack.status(startupUser.id, startupUser.role) : null } : null,
         });
       }
@@ -440,6 +441,7 @@ function createHttpServer({ config, service: legacyService, auth, accounts, read
         return await sendVueApplication(user);
       }
       if (req.method === 'GET' && url.pathname === '/api/account') return json(res, 200, { result: { ...user, identities: auth ? await auth.identities(user.id) : [], wallet: accounts ? await accounts.wallet.get(user.id) : null,
+        modelPermissions: await accounts?.modelPermissions?.status(user.id, user.role),
         starterPack: accounts?.starterPack ? await accounts.starterPack.status(user.id, user.role) : null } });
       if (accounts && url.pathname.startsWith('/api/commerce/')) {
         return handleCommerceRequest({ req, url, user, config, commerce,

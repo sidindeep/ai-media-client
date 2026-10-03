@@ -1,0 +1,468 @@
+{
+  "name": "AI Media UI Icons",
+  "version": 1,
+  "source": {
+    "library": "lucide-static",
+    "version": "1.51.0",
+    "url": "https://registry.npmjs.org/lucide-static/-/lucide-static-1.51.0.tgz",
+    "integrity": "sha512-ts58ApMc5w5SHHUJBtGO+mgf9lo79FApQ1LttKQoJiMrWNZt8zxWA7R6owK6DoGA3XLjJXc/7rDJh1feonl79g=="
+  },
+  "style": {
+    "viewBox": "0 0 24 24",
+    "strokeWidth": 1.75,
+    "stroke": "currentColor",
+    "fill": "none",
+    "linecap": "round",
+    "linejoin": "round"
+  },
+  "icons": [
+    {
+      "name": "house",
+      "label": "Главная",
+      "group": "Навигация",
+      "file": "house.svg",
+      "source": "https://lucide.dev/icons/house",
+      "sha256": "87ba29096099d2f6eeaf877dccc4f6f9cccd3e73a0d893e6c643531573a44156"
+    },
+    {
+      "name": "layout-grid",
+      "label": "Каталог",
+      "group": "Навигация",
+      "file": "layout-grid.svg",
+      "source": "https://lucide.dev/icons/layout-grid",
+      "sha256": "4b03b5320d0e0e99166e0ed2e6e25802aa1f1ebe434f4bcbda3597d615fda683"
+    },
+    {
+      "name": "folder",
+      "label": "Проект",
+      "group": "Навигация",
+      "file": "folder.svg",
+      "source": "https://lucide.dev/icons/folder",
+      "sha256": "aeffa1cc94fab9c15276ac1584cbcdef70f6d0d3a7184301ccf17dcc334d6280"
+    },
+    {
+      "name": "folder-plus",
+      "label": "Новый проект",
+      "group": "Навигация",
+      "file": "folder-plus.svg",
+      "source": "https://lucide.dev/icons/folder-plus",
+      "sha256": "503f13697f64a0ef4f84a15e0bf7f87cd5049da243f6e29e176a12a793dd3737"
+    },
+    {
+      "name": "message-circle",
+      "label": "Чат",
+      "group": "Навигация",
+      "file": "message-circle.svg",
+      "source": "https://lucide.dev/icons/message-circle",
+      "sha256": "78d826b0a32765dc789805fb3574a032d3894eb1fe51fa3f83bc90e3256360a6"
+    },
+    {
+      "name": "history",
+      "label": "История",
+      "group": "Навигация",
+      "file": "history.svg",
+      "source": "https://lucide.dev/icons/history",
+      "sha256": "67f533b7e42eb7d4ab0ddb471f08c503697308876e6741d7bb3a6b72044ad461"
+    },
+    {
+      "name": "archive",
+      "label": "Архив",
+      "group": "Навигация",
+      "file": "archive.svg",
+      "source": "https://lucide.dev/icons/archive",
+      "sha256": "9f9dbdac16fccbea43aa2ebec0863949fe53711c2745a1fbc4286707b2ad6d0e"
+    },
+    {
+      "name": "panel-left",
+      "label": "Боковая панель",
+      "group": "Навигация",
+      "file": "panel-left.svg",
+      "source": "https://lucide.dev/icons/panel-left",
+      "sha256": "860930312487f6787b6be9b2141edced37005651c3936814ddc83e2a363196f8"
+    },
+    {
+      "name": "sparkles",
+      "label": "Сгенерировать",
+      "group": "Генерация",
+      "file": "sparkles.svg",
+      "source": "https://lucide.dev/icons/sparkles",
+      "sha256": "f81cd1e3490968e0a306a48bd40be2d7785686398d202ededd75c7843fd07d8b"
+    },
+    {
+      "name": "wand-sparkles",
+      "label": "Улучшить промпт",
+      "group": "Генерация",
+      "file": "wand-sparkles.svg",
+      "source": "https://lucide.dev/icons/wand-sparkles",
+      "sha256": "8a6787c315525baeecee136267f692f3b966f719dd5875889aa2d3a20b390cc7"
+    },
+    {
+      "name": "image",
+      "label": "Изображение",
+      "group": "Генерация",
+      "file": "image.svg",
+      "source": "https://lucide.dev/icons/image",
+      "sha256": "93882c56c3db34a8a1840437ddfbebd8c498e7252ddfb1f4ff3672de067006e1"
+    },
+    {
+      "name": "video",
+      "label": "Видео",
+      "group": "Генерация",
+      "file": "video.svg",
+      "source": "https://lucide.dev/icons/video",
+      "sha256": "49c7cd5425c86f980b5e6af882751cf02fe83b88ecdbadd84b6bd2b1e0f7514a"
+    },
+    {
+      "name": "audio-lines",
+      "label": "Аудио",
+      "group": "Генерация",
+      "file": "audio-lines.svg",
+      "source": "https://lucide.dev/icons/audio-lines",
+      "sha256": "2b34f7f2d20e7c030b3a9f0b615a52e3f202cd89d996fc669a699aac078dfe52"
+    },
+    {
+      "name": "mic",
+      "label": "Голос",
+      "group": "Генерация",
+      "file": "mic.svg",
+      "source": "https://lucide.dev/icons/mic",
+      "sha256": "81065698eea6fcc61f6b5170cb4e8e59285ec48b42ce87af6dd62d31c107980f"
+    },
+    {
+      "name": "sliders-horizontal",
+      "label": "Параметры",
+      "group": "Генерация",
+      "file": "sliders-horizontal.svg",
+      "source": "https://lucide.dev/icons/sliders-horizontal",
+      "sha256": "ffa3d277042418dc5bd3017b63da3acd1e089aa0ba80b1fe4dfc2754cc1e04e1"
+    },
+    {
+      "name": "send",
+      "label": "Отправить",
+      "group": "Генерация",
+      "file": "send.svg",
+      "source": "https://lucide.dev/icons/send",
+      "sha256": "6d739fc2d2e3b3e218d83c7a18e8c84060ba360eb2919675c88b4d444b8e5bb9"
+    },
+    {
+      "name": "plus",
+      "label": "Добавить",
+      "group": "Действия",
+      "file": "plus.svg",
+      "source": "https://lucide.dev/icons/plus",
+      "sha256": "1ee5cfc63c27d2ff6b492222d8c0fbf5b77572dbb2756827422d599a688cbe4f"
+    },
+    {
+      "name": "search",
+      "label": "Поиск",
+      "group": "Действия",
+      "file": "search.svg",
+      "source": "https://lucide.dev/icons/search",
+      "sha256": "77e1cfa2f9d6901fe4ea035473d981214a8c8e15067fe62bc0ed173fc5be64d3"
+    },
+    {
+      "name": "upload",
+      "label": "Загрузить",
+      "group": "Действия",
+      "file": "upload.svg",
+      "source": "https://lucide.dev/icons/upload",
+      "sha256": "49c6cf4d140e1ab524cf69963b5462f507e93f03ca2e609c877a15bf4334471f"
+    },
+    {
+      "name": "download",
+      "label": "Скачать",
+      "group": "Действия",
+      "file": "download.svg",
+      "source": "https://lucide.dev/icons/download",
+      "sha256": "54492fff55a7bee60841b9810417595af2c22941249a71e5e2a716b864da8def"
+    },
+    {
+      "name": "copy",
+      "label": "Копировать",
+      "group": "Действия",
+      "file": "copy.svg",
+      "source": "https://lucide.dev/icons/copy",
+      "sha256": "910708cea44737ea6b725bd9dfd0073d2ef473a8a69c3efa6387a854dd89ebbd"
+    },
+    {
+      "name": "check",
+      "label": "Готово",
+      "group": "Действия",
+      "file": "check.svg",
+      "source": "https://lucide.dev/icons/check",
+      "sha256": "85f150fd341041bea4126c4299f6ddf57f26a4de77e1ac07e8b900ff8f3693dc"
+    },
+    {
+      "name": "trash-2",
+      "label": "Удалить",
+      "group": "Действия",
+      "file": "trash-2.svg",
+      "source": "https://lucide.dev/icons/trash-2",
+      "sha256": "31f5454cbfa213208d7ce48a61c4d545ab83d63771aae7d36ae18c220f6749c2"
+    },
+    {
+      "name": "ellipsis",
+      "label": "Ещё",
+      "group": "Действия",
+      "file": "ellipsis.svg",
+      "source": "https://lucide.dev/icons/ellipsis",
+      "sha256": "2aed9fd57f8163712b4e07caa63d8347bc1c1355c3c2e9b3fc2de9751ed7ca12"
+    },
+    {
+      "name": "pencil",
+      "label": "Переименовать",
+      "group": "Редактор",
+      "file": "pencil.svg",
+      "source": "https://lucide.dev/icons/pencil",
+      "sha256": "ebd874a79806a481bfa64576d411d15405221848767fd698a3dd356c6c0064ea"
+    },
+    {
+      "name": "scissors",
+      "label": "Разрезать",
+      "group": "Редактор",
+      "file": "scissors.svg",
+      "source": "https://lucide.dev/icons/scissors",
+      "sha256": "eabef4351fca92b83b4635716cbebc537af4b394620073f260d3fa3146127cab"
+    },
+    {
+      "name": "crop",
+      "label": "Кадрировать",
+      "group": "Редактор",
+      "file": "crop.svg",
+      "source": "https://lucide.dev/icons/crop",
+      "sha256": "caed9901481303fc033fc331440805a0de129f224a7c65cd854a01d7b54730e6"
+    },
+    {
+      "name": "rotate-ccw",
+      "label": "Отменить",
+      "group": "Редактор",
+      "file": "rotate-ccw.svg",
+      "source": "https://lucide.dev/icons/rotate-ccw",
+      "sha256": "0d1f1e72c85c4d4a42f3d4c5dd9c05216b9613101baa708a6e2a50de2e0d1e38"
+    },
+    {
+      "name": "maximize",
+      "label": "Развернуть",
+      "group": "Редактор",
+      "file": "maximize.svg",
+      "source": "https://lucide.dev/icons/maximize",
+      "sha256": "99f100b8cfa3abbd2386bc37e3dfae8aed5f58983ac9e1f0ecdfb10160c76662"
+    },
+    {
+      "name": "play",
+      "label": "Воспроизвести",
+      "group": "Редактор",
+      "file": "play.svg",
+      "source": "https://lucide.dev/icons/play",
+      "sha256": "b70872e433bed171d8e6a02183af190c9976cb8fe93b12a02ee6e8affd0556ad"
+    },
+    {
+      "name": "pause",
+      "label": "Пауза",
+      "group": "Редактор",
+      "file": "pause.svg",
+      "source": "https://lucide.dev/icons/pause",
+      "sha256": "d100c2bcc24c5d3650954e26448779bb95346e62b8fa4db883de1f1ca35bdd05"
+    },
+    {
+      "name": "square",
+      "label": "Остановить",
+      "group": "Редактор",
+      "file": "square.svg",
+      "source": "https://lucide.dev/icons/square",
+      "sha256": "9780335c678b83a75ffb1bad6f44a87c81b598ef785f581f0322adc77d01958a"
+    },
+    {
+      "name": "user",
+      "label": "Профиль",
+      "group": "Аккаунт",
+      "file": "user.svg",
+      "source": "https://lucide.dev/icons/user",
+      "sha256": "7994af55a5f46f903f6977dc8cb496da65b4ab89e43bdc96a29385fcdb165f1c"
+    },
+    {
+      "name": "settings",
+      "label": "Настройки",
+      "group": "Аккаунт",
+      "file": "settings.svg",
+      "source": "https://lucide.dev/icons/settings",
+      "sha256": "1b121f2d6dc47e303f51ca87a8973a6fff08bed704a25160a2623f68e6e1cd3e"
+    },
+    {
+      "name": "bell",
+      "label": "Уведомления",
+      "group": "Аккаунт",
+      "file": "bell.svg",
+      "source": "https://lucide.dev/icons/bell",
+      "sha256": "efaf6f0d9bad6e5cb4c61bc520354dd35dad6396ec91dd2fa9fd5b77aebd2737"
+    },
+    {
+      "name": "coins",
+      "label": "Кредиты",
+      "group": "Аккаунт",
+      "file": "coins.svg",
+      "source": "https://lucide.dev/icons/coins",
+      "sha256": "319e12df8cc47e386127a41c047b2ddd0e858fdade1e46fd02b86c736d5059cd"
+    },
+    {
+      "name": "credit-card",
+      "label": "Оплата",
+      "group": "Аккаунт",
+      "file": "credit-card.svg",
+      "source": "https://lucide.dev/icons/credit-card",
+      "sha256": "e1a3f6b3ab2b0027dc1fa65a5d2964fd2d42d8e38c55b3de7d7bb9c021574725"
+    },
+    {
+      "name": "shield-check",
+      "label": "Безопасность",
+      "group": "Аккаунт",
+      "file": "shield-check.svg",
+      "source": "https://lucide.dev/icons/shield-check",
+      "sha256": "063d8bb7e27a39652eadfce57b8bf93641f4dad86d093717b350c048d4b95169"
+    },
+    {
+      "name": "sun",
+      "label": "Светлая тема",
+      "group": "Аккаунт",
+      "file": "sun.svg",
+      "source": "https://lucide.dev/icons/sun",
+      "sha256": "2c806b7ea48ef62d4ec527855da8e9ec4192d194a1e54afdc1fb3c2b254606f6"
+    },
+    {
+      "name": "moon",
+      "label": "Тёмная тема",
+      "group": "Аккаунт",
+      "file": "moon.svg",
+      "source": "https://lucide.dev/icons/moon",
+      "sha256": "5c2444f88b032ab64928cd02d42d39c6321433838382419064a6423b5e62e662"
+    },
+    {
+      "name": "chevron-left",
+      "label": "Назад",
+      "group": "Состояния и управление",
+      "file": "chevron-left.svg",
+      "source": "https://lucide.dev/icons/chevron-left",
+      "sha256": "d4d02077c8fc2cd81d0fa56ba116d6e55aed0ada9dc0272046596ce0fa8174cc"
+    },
+    {
+      "name": "chevron-right",
+      "label": "Вперёд",
+      "group": "Состояния и управление",
+      "file": "chevron-right.svg",
+      "source": "https://lucide.dev/icons/chevron-right",
+      "sha256": "29a977460ac7902fe965cbde4a3219ecd8a1eec6925c4100a42141721c526b84"
+    },
+    {
+      "name": "chevron-down",
+      "label": "Раскрыть",
+      "group": "Состояния и управление",
+      "file": "chevron-down.svg",
+      "source": "https://lucide.dev/icons/chevron-down",
+      "sha256": "75211abf36dcd95c4d9839866d55b4431fd36a5e8839a71fc1644eb512b299b5"
+    },
+    {
+      "name": "chevron-up",
+      "label": "Свернуть",
+      "group": "Состояния и управление",
+      "file": "chevron-up.svg",
+      "source": "https://lucide.dev/icons/chevron-up",
+      "sha256": "d6a4bd822688b52f05300b174acfdadbe4c6a58c8085ee043935d44194b3dd92"
+    },
+    {
+      "name": "x",
+      "label": "Закрыть",
+      "group": "Состояния и управление",
+      "file": "x.svg",
+      "source": "https://lucide.dev/icons/x",
+      "sha256": "80771fbba3c5c7c8d3f739fa0f7eea936c5cbecd7225006e165afd6820c6ef02"
+    },
+    {
+      "name": "info",
+      "label": "Информация",
+      "group": "Состояния и управление",
+      "file": "info.svg",
+      "source": "https://lucide.dev/icons/info",
+      "sha256": "c6fc9a95042fc7057a16267b9a0fd23e285fb413c6d2f02b0f633dfd0e45dbe0"
+    },
+    {
+      "name": "circle-alert",
+      "label": "Ошибка",
+      "group": "Состояния и управление",
+      "file": "circle-alert.svg",
+      "source": "https://lucide.dev/icons/circle-alert",
+      "sha256": "1901f6fe712d9e3fbfdd12a596729adf6e887faffdcc91b6203db100dc255d3f"
+    },
+    {
+      "name": "loader-circle",
+      "label": "Загрузка",
+      "group": "Состояния и управление",
+      "file": "loader-circle.svg",
+      "source": "https://lucide.dev/icons/loader-circle",
+      "sha256": "29231b9e426092e3171bf0bfa301c9cc96c5c08c76a7d4597035a6697faa23d1"
+    },
+    {
+      "name": "music",
+      "label": "Музыка",
+      "group": "Материалы",
+      "file": "music.svg",
+      "source": "https://lucide.dev/icons/music",
+      "sha256": "3e07a704f3aa4108a81fd7095c3bf6c256125084502e486f3abc4a225635c5ad"
+    },
+    {
+      "name": "file-text",
+      "label": "Текст",
+      "group": "Материалы",
+      "file": "file-text.svg",
+      "source": "https://lucide.dev/icons/file-text",
+      "sha256": "98109783d3733c38348263b4fd5335413d6f8d7e882582f1640559d2eebdafc6"
+    },
+    {
+      "name": "link",
+      "label": "Ссылка",
+      "group": "Материалы",
+      "file": "link.svg",
+      "source": "https://lucide.dev/icons/link",
+      "sha256": "993d38059d8bf01bd29d0846fa6dde947d6ced11c92800bdd5eb650bbd9ece2d"
+    },
+    {
+      "name": "external-link",
+      "label": "Открыть отдельно",
+      "group": "Материалы",
+      "file": "external-link.svg",
+      "source": "https://lucide.dev/icons/external-link",
+      "sha256": "f78c6b4acf3e2ebb0d26c83606c3f11642a11b77b4d6c852b3b1a9521fbc6ef0"
+    },
+    {
+      "name": "heart",
+      "label": "Нравится",
+      "group": "Материалы",
+      "file": "heart.svg",
+      "source": "https://lucide.dev/icons/heart",
+      "sha256": "9c2dae3da600cba0d4d4a78083cc1f75a23b8b5ce1f6bb09b042cb4e3252cea7"
+    },
+    {
+      "name": "bookmark",
+      "label": "Сохранить",
+      "group": "Материалы",
+      "file": "bookmark.svg",
+      "source": "https://lucide.dev/icons/bookmark",
+      "sha256": "ddc46e1ad226bd97245a5b91c16230d9fd4a132d4a3f6cede969695ee342eede"
+    },
+    {
+      "name": "log-out",
+      "label": "Выйти",
+      "group": "Материалы",
+      "file": "log-out.svg",
+      "source": "https://lucide.dev/icons/log-out",
+      "sha256": "7330d847c6907c71de3ae4d9d97f777a0fd6b3fdfbe632a3248e0c01f5aee671"
+    },
+    {
+      "name": "circle-check",
+      "label": "Успешно",
+      "group": "Материалы",
+      "file": "circle-check.svg",
+      "source": "https://lucide.dev/icons/circle-check",
+      "sha256": "737c0a80ec4bd5391dd201ce169fe1f8ea9fe7b249668a815e52a16d42c96332"
+    }
+  ]
+}

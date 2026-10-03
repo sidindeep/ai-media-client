@@ -393,25 +393,22 @@ or:
   test commands and produce a compact verification plan for the current feature,
   bug fix, or release check. Plan first; run checks only when the user asks or
   when the current task already requires verification.
-- Treat `gi test task`, `gi testing task`, `gi тест таск`, `ги тест таск`, and
-  equivalent wording as requests to set the active release/full-system
-  verification workload for the current project. The supplied task text is the
-  scenario for the next `gi test`, not evidence that the scenario already
-  passed.
-- Treat `gi test`, `ги тест`, `gi full test`, `gi release test`, and equivalent
-  full-project test wording as requests to run the documented verification flow
-  against the active test task. Do not confuse this with `gi test plan`, which
-  remains plan-only by default. Dry-runs, simulations, dispatcher-only runs,
-  replayed logs, mock-only checks, and compile/unit-only checks are diagnostics
-  only and must not be run during `gi test` unless the user explicitly asks for
-  that diagnostic mode; they must never be reported as a passed `gi test`.
-  Exercise the documented live runtime surface for the selected task, including
-  apps, backend/API, storage, queues/workers, UI/auth, service discovery,
-  orchestrator or agent handoff loops, and health/contract endpoints when the
-  project defines them. If the live system cannot be started or reached, report
-  `gi test` as blocked or not checked. Old summaries, screenshots, completed
-  demos, previous task statuses, and old chat snippets are evidence only; rerun
-  the current documented checks or report the exact blocker.
+- Treat `gi test` / `ги тест` as information about the tester and local scenarios,
+  settings, prerequisites, and gaps; do not execute or mutate runtime state.
+- Treat `gi test start` / `ги тест старт` as execution of the selected local
+  scenario. `gi test task` / `ги тест таск` selects its workload without running.
+  Follow `patterns/AGENTS_RUNTIME/09-testing.md` for authorization, evidence,
+  checkpoint/resume, restoration, and completion states. Projects own scenario
+  modes, settings, links, roles, inputs, commands, and artifact locations.
+- Include content entry when the selected test needs it: resolve authorized
+  material or permitted synthetic inputs, validate case/field mapping, confirm
+  acceptance, and track introduced content through cleanup/restoration. Keep
+  content values and source paths local; do not invent real IDs or links.
+- Use `gi full test`, `gi release test`, or `gi system test` for full-system
+  verification, following `patterns/AGENTS_RUNTIME/09-full-testing.md` as well.
+  Apply full-system resets only to that flow; an observational scenario uses
+  its own state contract. Old evidence and mocked/partial checks do not prove
+  a fresh live full-system run.
 - For verification plans and smoke checks, confirm exact CLI flags, ports,
   routes, methods, JSON payload fields, and required environment variables from
   current local instructions, manifests, config, or source code. Summaries and

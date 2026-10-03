@@ -450,6 +450,13 @@ async function createMediaService({ directory, provider, rubPerCredit = 0.51, do
           return { ...record, resultJson: JSON.stringify({ resultUrls: urls(record) }) };
         }
         case 'getFavoriteModels': return (await preference('favorites', {})).ids || [];
+        case 'getModelFavorites': return (await preference('model-favorites', {})).ids || [];
+        case 'setModelFavorites': {
+          if (!Array.isArray(args[0]) || args[0].length > 500 || args[0].some(id => typeof id !== 'string' || id.length > 512 || !/^(auto|media|codex|routerai|apimart):(text|image|video|audio):\S+$/.test(id))) throw new Error('Некорректное избранное');
+          const ids = [...new Set(args[0])];
+          await preferences.update('model-favorites', { ids });
+          return ids;
+        }
         case 'setFavoriteModels': {
           if (!Array.isArray(args[0]) || args[0].length > 500 || args[0].some(id => !models.some(m => m.id === id))) throw new Error('Некорректное избранное');
           const ids = [...new Set(args[0])]; await preferences.update('favorites', { ids }); return ids;

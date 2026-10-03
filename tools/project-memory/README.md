@@ -37,6 +37,7 @@
 - [Всплывающие окна](specs/features/popups.md) — общий модуль ввода, выбора и подтверждения в студии.
 - [Монтаж Remotion](specs/features/remotion-video-editor.md) — сцены, предпросмотр, локальный MP4 и границы данных.
 - [Локализация](specs/features/localization.md) — RU/EN-словари, ключи, plural rules, выбор языка и границы перевода.
+- [Иконки интерфейса](specs/features/interface-icons.md) — Iconoir, семантические имена, единый SVG-компонент и доступность.
 - [Стоимость](specs/business-rules/cost-accounting.md) — оценки, списания и сверка.
 - [Исследование ценовой политики](specs/business-rules/pricing-policy-research.md) — рыночные цены Kie, налоговая модель и сценарий патента.
 - [Юридические документы](specs/business-rules/legal-documents.md) — публичные страницы, изученный пример ERA2, факты продукта и блокеры перед публикацией.

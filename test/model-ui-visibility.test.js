@@ -206,6 +206,8 @@ test('SchemaField recursively hides marked controls for users and renders them f
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
     { exports, structuredClone, require: id => {
       if (id === 'vue') return require('vue');
+      // Decorative icons do not affect the recursive field-visibility contract.
+      if (id === './AppIcon.vue') return { default: { render: () => null } };
       if (id.endsWith('/model-ui-visibility')) return loadFrontendDomain();
       if (id.endsWith('/source-attachments')) return {};
       if (id.endsWith('/studio')) return { useStudioStore: () => ({ sourceFiles: [] }) };

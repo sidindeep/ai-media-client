@@ -93,6 +93,12 @@
 
 ## Git
 
+- Keep rebuildable builds, frontend bundles, installers, and intermediate
+  output in dedicated ignored directories; exclude them from staging, commits,
+  and pushes to source repositories unless an exact project-specific exception
+  is explicitly approved. Keep source and build inputs versioned. Follow
+  `patterns/AGENTS_RUNTIME/09-build-and-install.md` for authorized output-layout
+  cleanup, index removal that preserves local files, and clean-checkout checks.
 - Default: the agent edits and verifies; the user reviews and commits.
 - This default permits agent commits on explicit GI Git-finish commands below.
   If a project intentionally forbids all agent commits, state that exception

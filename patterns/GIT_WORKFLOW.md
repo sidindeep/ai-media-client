@@ -71,6 +71,19 @@ language preferences.
   selection. `gi only push` does not select working-tree changes.
 - Do not commit secrets, credentials, local databases, logs, or generated
   caches.
+- Keep rebuildable application builds, frontend bundles, installers, and
+  intermediate build output in dedicated ignored directories. Do not add,
+  stage, commit, or push them to source repositories without an explicit
+  approved project-specific exception. Keep source, required source assets,
+  manifests, lockfiles, build configuration, and build/packaging scripts
+  versioned. Follow `patterns/AGENTS_RUNTIME/09-build-and-install.md` for
+  output layout, tracked-output cleanup, and clean-checkout verification.
+- Exclude build output during Git finish, including already tracked output
+  changes; allow scoped index removals from authorized output cleanup.
+  Do not mistake generated code or database migrations for build
+  artifacts. Git finish alone does not authorize moving output, changing
+  build/deployment paths, or removing unrelated tracked files from the index;
+  complete that work during an authorized implementation/cleanup task.
 - Never add, stage, commit, or push content payloads such as LLM or other model
   weights/checkpoints, photos, video, audio, datasets, archives, or similar
   large binary artifacts. Keep them in project-approved artifact or object

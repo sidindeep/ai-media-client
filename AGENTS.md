@@ -88,6 +88,10 @@ Windows: `desktop/`, запуск `pnpm start:desktop`.
   audio, datasets, archives, or similar large content payloads. Use approved
   artifact storage and commit compact manifests, checksums, sources, or
   retrieval instructions unless the exact exception is explicitly approved.
+- Keep rebuildable build output in dedicated ignored directories and out of
+  source Git; version build inputs. Follow
+  `patterns/AGENTS_RUNTIME/09-build-and-install.md` for authorized cleanup,
+  verification, and explicitly approved project exceptions.
 - `tools/` is for durable reusable development and agent tooling. Product code,
   tests, docs, outputs, screenshots, exports, downloaded data, build bundles,
   and one-off probes belong in documented project locations.

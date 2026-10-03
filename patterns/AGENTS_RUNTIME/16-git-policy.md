@@ -51,3 +51,12 @@ and project commit-message language preferences.
   leave unrelated prohibited content unstaged and report it. Proceed only when
   the user explicitly approves an exact project-specific exception and storage
   approach.
+- Exclude rebuildable application builds, frontend bundles, installers, and
+  intermediate build output from staging and commits, including changes to
+  already tracked output; allow scoped index removals from authorized cleanup.
+  Keep output in dedicated ignored directories;
+  retain source, build configuration, and dependency lockfiles in Git. Follow
+  `patterns/AGENTS_RUNTIME/09-build-and-install.md` for authorized layout and
+  tracking cleanup. Git finish alone does not authorize that cleanup; generated
+  source and database migrations are not automatically build artifacts. An
+  exception requires explicit approval of the exact output and storage approach.
